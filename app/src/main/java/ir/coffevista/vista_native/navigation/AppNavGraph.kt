@@ -1,0 +1,153 @@
+package ir.coffevista.vista_native.navigation
+
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import ir.coffevista.vista_native.core.auth.AuthenticationState
+import ir.coffevista.vista_native.core.di.AppContainer
+import ir.coffevista.vista_native.features.auth.AuthScreen
+import ir.coffevista.vista_native.features.auth.AuthViewModel
+import ir.coffevista.vista_native.features.authenticated.AuthenticatedBoundaryScreen
+import ir.coffevista.vista_native.features.onboarding.OnboardingScreen
+import ir.coffevista.vista_native.features.onboarding.OnboardingViewModel
+import ir.coffevista.vista_native.features.startup.MaintenanceScreen
+import ir.coffevista.vista_native.features.startup.StartupDestination
+import ir.coffevista.vista_native.features.startup.StartupResolver
+import ir.coffevista.vista_native.features.startup.StartupScreen
+import ir.coffevista.vista_native.features.startup.StartupViewModel
+
+object Routes {
+    const val STARTUP = "startup"
+    const val ONBOARDING = "onboarding"
+    const val AUTH = "auth"
+    const val AUTHENTICATED = "authenticated-boundary"
+    const val MAINTENANCE = "maintenance"
+}
+
+@Composable
+fun VistaApp(container: AppContainer) {
+    val navController = rememberNavController()
+    val authState by container.authenticationStateOwner.state.collectAsStateWithLifecycle()
+
+    NavHost(
+        navController = navController,
+        startDestination = Routes.STARTUP,
+    ) {
+        composable(Routes.STARTUP) {
+            val startupViewModel: StartupViewModel = viewModel(
+                factory = StartupViewModel.Factory(
+                    StartupResolver(
+                        authRepository = container.authRepository,
+                        onboardingStore = container.onboardingStore,
+                        sessionStore = container.sessionStore,
+                    ),
+                ),
+            )
+            val state by startupViewModel.state.collectAsStateWithLifecycle()
+
+            LaunchedEffect(state.destination) {
+                val route = when (val destination = state.destination) {
+                    StartupDestination.Loading,
+                    is StartupDestination.RecoverableError,
+                    -> null
+                    StartupDestination.Maintenance -> Routes.MAINTENANCE
+                    StartupDestination.Onboarding -> Routes.ONBOARDING
+                    StartupDestination.Authentication -> {
+                        container.authenticationStateOwner.signOut()
+                        Routes.AUTH
+                    }
+                    is StartupDestination.Authenticated -> {
+                        container.authenticationStateOwner.accept(destination.context)
+                        if (destination.context.passwordRequired) {
+                            Routes.AUTH
+                        } else {
+                            Routes.AUTHENTICATED
+                        }
+                    }
+                }
+                if (route != null) {
+                    navController.navigate(route) {
+                        popUpTo(Routes.STARTUP) { inclusive = true }
+                        launchSingleTop = true
+                    }
+                }
+            }
+
+            StartupScreen(state = state, onRetry = startupViewModel::retry)
+        }
+
+        composable(Routes.MAINTENANCE) {
+            MaintenanceScreen(
+                onRetry = {
+                    navController.navigate(Routes.STARTUP) {
+                        popUpTo(Routes.MAINTENANCE) { inclusive = true }
+                    }
+                },
+            )
+        }
+
+        composable(Routes.ONBOARDING) {
+            val onboardingViewModel: OnboardingViewModel = viewModel(
+                factory = OnboardingViewModel.Factory(container.onboardingStore),
+            )
+            val state by onboardingViewModel.state.collectAsStateWithLifecycle()
+            OnboardingScreen(
+                state = state,
+                onAction = onboardingViewModel::onAction,
+                onCompleted = {
+                    navController.navigate(Routes.AUTH) {
+                        popUpTo(Routes.ONBOARDING) { inclusive = true }
+                        launchSingleTop = true
+                    }
+                },
+            )
+        }
+
+        composable(Routes.AUTH) {
+            val startInPasswordSetup =
+                (authState as? AuthenticationState.SignedIn)?.context?.passwordRequired == true
+            val authViewModel: AuthViewModel = viewModel(
+                factory = AuthViewModel.Factory(
+                    repository = container.authRepository,
+                    sessionStore = container.sessionStore,
+                    authStateOwner = container.authenticationStateOwner,
+                    startInPasswordSetup = startInPasswordSetup,
+                ),
+            )
+            val state by authViewModel.state.collectAsStateWithLifecycle()
+            AuthScreen(
+                state = state,
+                onAction = authViewModel::onAction,
+                onAuthenticated = {
+                    navController.navigate(Routes.AUTHENTICATED) {
+                        popUpTo(Routes.AUTH) { inclusive = true }
+                        launchSingleTop = true
+                    }
+                },
+            )
+        }
+
+        composable(Routes.AUTHENTICATED) {
+            val signedIn = authState as? AuthenticationState.SignedIn
+            if (signedIn == null) {
+                LaunchedEffect(Unit) {
+                    navController.navigate(Routes.STARTUP) {
+                        popUpTo(navController.graph.findStartDestination().id) {
+                            inclusive = true
+                        }
+                    }
+                }
+            } else {
+                AuthenticatedBoundaryScreen(
+                    context = signedIn.context,
+                )
+            }
+        }
+    }
+}

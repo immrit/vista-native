@@ -1,0 +1,36 @@
+# Gradle and Android build output
+.gradle/
+.kotlin/
+**/build/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Local SDK and developer configuration
+local.properties
+*.iml
+.idea/
+.agents/
+.codex/
+.DS_Store
+Thumbs.db
+
+# Signing material and injected secrets
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.pem
+*.key
+keystore.properties
+signing.properties
+secrets.properties
+secrets/
+.env
+.env.*
+!.env.example
+
+# Reports and local artifacts
+dependency-check-report/
+dependency-check-data/
+artifacts/
