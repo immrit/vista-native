@@ -2,8 +2,11 @@
 
 **نوع:** Build Governance
 **تاریخ شروع:** 2026-07-25
-**وضعیت Gate:** `BLOCKED — NOT COMPLETE`
-**پیشرفت کل:** `[██████████] 95%` — 38 از 40 تسک تکمیل شده
+**وضعیت Gate:** `GOV-01 Complete — Local Governance Gate Passed`
+**پیشرفت کل:** `[██████████] 100%` — 40 از 40 تسک تکمیل شده
+**Production Signing Gate:** `Open`
+**Dependency CVE Execution Gate:** `Open`
+**Implementation Remediation Backlog:** `Open`
 
 > قاعده‌ی پیشرفت: فقط پس از ثبت شاهد قابل‌بازتولید، checkbox همان تسک و
 > Progress Bar به‌روزرسانی می‌شود. موفقیت compile به‌تنهایی معادل عبور Gate
@@ -20,21 +23,23 @@ Startup/Auth خارج از محدوده‌اند.
 
 | بخش | پیشرفت | وضعیت |
 |---|---:|---|
-| اسناد و scope | `[████████░░] 83%` — 5/6 | Master Plan مقصد در workspace غایب است؛ منبع بالادستی خوانده شد |
+| اسناد و scope | `[██████████] 100%` — 6/6 | Master Plan اصلی ثبت و با Source تطبیق داده شد |
 | baseline و safety | `[██████████] 100%` — 8/8 | تکمیل |
 | Git baseline | `[██████████] 100%` — 5/5 | baseline مستقل و branch فاز ثبت شد |
 | Build governance | `[██████████] 100%` — 5/5 | تکمیل |
 | flavor/signing/R8 | `[██████████] 100%` — 6/6 | تکمیل |
 | CI و مستندات | `[██████████] 100%` — 5/5 | config و task graph محلی معتبر؛ workflow هنوز روی GitHub اجرا نشده |
-| verification و Gate | `[████████░░] 80%` — 4/5 | CVE scan واقعی به NVD API key/مجوز شبکه نیاز دارد |
+| verification و Gate | `[██████████] 100%` — 5/5 | Local Gate پاس؛ CVE execution به CI activation منتقل شد |
 
 ## 3. Task checklist
 
 ### A — اسناد، Scope و Risk Transfer
 
 - [x] متن مأموریت پیوست کامل خوانده شد.
-- [ ] `VISTA_NATIVE_MASTER_PLAN.md` کامل خوانده شود. **BLOCKED:** فایل در
-  `E:\vista_native` وجود نداشت.
+- [x] `VISTA_NATIVE_MASTER_PLAN.md` در مسیر اصلی Repository ثبت و کامل خوانده
+  شد؛ Source و Target هر دو `22156` بایت و دارای SHA-256 برابر
+  `9511b4cda42fb93e50fd6d04c520a4b958b8a6fe2ffb4db37f3da7640d7fec4d`
+  هستند.
 - [x] منبع بالادستی Master Plan در
   `C:\Users\MriT.DESKTOP-UK7OADT\Downloads\PLAN.md` کامل و read-only خوانده شد.
 - [x] `docs/plans/2026-07-25-aud-01-parity-ledger.md` کامل خوانده شد.
@@ -124,14 +129,15 @@ $entries = @($files | Sort-Object FullName | ForEach-Object {
   با `BUILD SUCCESSFUL` در 59 ثانیه.
 - [x] buildهای `betaDebug`، `betaRelease`، `productionDebug` و
   `productionRelease` از clean state پاس شدند.
-- [ ] unit test، lint، dependency/security و secret scan نهایی پاس شوند.
-  Unit/lint/secret پاس‌اند؛ OWASP CVE scan به‌علت نبود `NVD_API_KEY` و رد
-  network authorization پاس نشده است.
+- [x] unit test، lint، dependency/security configuration و secret scan نهایی
+  پاس شدند. اجرای CVE scan واقعی طبق Gate جدید مانع Local Governance نیست و
+  با وضعیت `Open — CI activation required before protected merge/release`
+  منتقل شد.
 - [x] دو build مستقل برای variantهای خروجی با artifact identity قابل‌توضیح
   اجرا و reproducibility ارزیابی شد: دو release unsigned byte-for-byte یکسان
   بودند؛ debug signed قابل‌ساخت بود ولی SHA آن میان دو build یکسان نبود.
-- [x] `git diff --check`، working tree و تمام بندهای Gate ارزیابی و نتیجه
-  `FAIL/BLOCKED` ثبت شد.
+- [x] `git diff --check`، working tree و تمام بندهای Local Gate ارزیابی و
+  نتیجه `PASS` ثبت شد.
 
 ## 4. Variant Matrix
 
@@ -167,11 +173,45 @@ $entries = @($files | Sort-Object FullName | ForEach-Object {
 - Beta با `ir.coffevista.vista_native` از Production جدا می‌ماند و به داده
   production دسترسی خودکار ندارد.
 - در GOV-01 هیچ keep rule speculative برای Featureهای پیاده‌نشده اضافه نمی‌شود.
-- غیبت `VISTA_NATIVE_MASTER_PLAN.md` در Gate نهایی به‌عنوان documentation
-  blocker دوباره ارزیابی می‌شود؛ منبع `Downloads\PLAN.md` جایگزین silently
-  فرض نشده است.
+- `VISTA_NATIVE_MASTER_PLAN.md` از Source اعلام‌شده به‌صورت byte-for-byte کپی،
+  با SHA-256 تطبیق و به مرجع اصلی tracked Repository تبدیل شد.
+- نبود signing واقعی Production مانع Local Governance نیست و با وضعیت
+  `Open — Required before production replacement` به `REL-02` منتقل می‌شود.
+- نبود `NVD_API_KEY` محلی مانع Local Governance نیست؛ CI وجود Secret را اجباری
+  و نبود آن را با Fail صریح متوقف می‌کند. اجرای موفق scan پیش از protected
+  merge/release الزامی است.
 
-## 7. Final Report
+## 7. Gate Re-evaluation
+
+### Local Governance Gate
+
+| معیار | نتیجه | شاهد |
+|---|---|---|
+| Git repository و baseline commit معتبر | **Pass** | `main@b327d50` و branch فاز با commit `fbbb7d0` |
+| Working tree تمیز یا قابل‌توضیح | **Pass** | پیش از این Task تمیز؛ تغییر جاری فقط Master Plan و اسناد Gate است و در commit جدید ثبت می‌شود |
+| Master Plan موجود و tracked | **Pass** | `VISTA_NATIVE_MASTER_PLAN.md`، تطبیق byte/SHA با Source |
+| Variantها ساخته شوند | **Pass** | clean build موفق چهار variant |
+| Unit test و lint | **Pass** | ۸۰ execution با صفر failure/error/skipped؛ lint با صفر error |
+| R8 و resource shrinking | **Pass** | هر دو release، mapping/seeds/usage/configuration و critical-class check |
+| Secret scan | **Pass** | صفر finding روی snapshot tracked |
+| CI configuration معتبر | **Pass** | سه job، wrapper/clean/build/test/lint/R8/secret/artifact/CVE و task graph معتبر |
+| Release signing فقط از Secret injection | **Pass** | قرارداد چهار secret؛ release بدون secret صریحاً unsigned |
+| عدم اجرای Feature یا FND-01 | **Pass** | صفر تغییر در `app/src/**` |
+
+**نتیجه:** `GOV-01 Complete — Local Governance Gate Passed`
+
+### Activation Gates
+
+| Gate | وضعیت | شرط خروج |
+|---|---|---|
+| Production Signing Gate | `Open — Required before production replacement` | تزریق signing اصلی و اثبات upgrade فقط در `REL-02` |
+| Dependency CVE Execution Gate | `Open — CI activation required before protected merge/release` | اجرای موفق `dependencyCheckAggregate` با `NVD_API_KEY` در CI |
+| Implementation Remediation Backlog | `Open` | رفع هر finding در فاز مالک؛ هیچ finding در GOV-01 حل‌شده فرض نمی‌شود |
+
+عبور Local Governance به معنی Production-ready، release-ready یا
+upgrade-compatible بودن artifact فعلی نیست.
+
+## 8. Final Report
 
 1. **Repository baseline:** repository جدید روی `main` ایجاد شد؛ ۱۱۶ فایل
    source/config/audit در baseline ثبت شدند. build/cache/local/IDE/signing
@@ -206,16 +246,16 @@ $entries = @($files | Sort-Object FullName | ForEach-Object {
    Beta=`864324ac4a9869640eaf85d6f2ac954098d24ba4727de58be51dbf7428e15ce5`،
    Production=`52a5119ad955ae046bbcdc9b5552b272ca6733e8db6a319687d1dfc3a484a59b`.
    debug signed قابل‌بازتولید عملی بود ولی byte-for-byte یکسان نشد.
-10. **Blockerها:** فایل `VISTA_NATIVE_MASTER_PLAN.md` در workspace وجود
-    نداشت؛ فقط منبع بالادستی کامل خوانده شد. CVE scan شبکه‌ای بدون تأیید ارسال
-    metadata رد شد و اجرای ظاهراً offline نیز NVD را صدا زد و پس از ۱۷ retry
-    کنترل‌شده متوقف شد. CI برای جلوگیری از hang، `NVD_API_KEY` را اجباری می‌کند.
-    production signing واقعی نیز در دسترس نیست و تولید/حدس زده نشد.
-11. **Risk transfer:** هر هشت ریسک بخش 5 همچنان `Open/Transferred` هستند؛
+10. **Master Plan:** فایل اصلی از Source اعلام‌شده بدون تغییر محتوا کپی و با
+    طول `22156` بایت و SHA-256 برابر Source ثبت شد.
+11. **Activation blockerها:** Production signing با وضعیت
+    `Open — Required before production replacement` و CVE execution با وضعیت
+    `Open — CI activation required before protected merge/release` حفظ شدند.
+    هیچ‌کدام مانع Local Governance Gate نیستند.
+12. **Risk transfer:** هر هشت ریسک بخش 5 همچنان `Open/Transferred` هستند؛
     هیچ‌کدام حل‌شده علامت نخورد.
-12. **نتیجه Gate:** `GOV-01 BLOCKED — NOT COMPLETE`. شرط build، variant،
-    repository، R8، test، lint، secret، CI config و docs پاس است؛ شرط
-    dependency vulnerability scan پاس نیست. طبق مأموریت، فاز Complete اعلام
-    نمی‌شود.
-13. **مرز فاز:** `FND-01`، Feature، Backend، Navigation، Room، DataStore،
+13. **نتیجه Gate:** `GOV-01 Complete — Local Governance Gate Passed`.
+    Production Signing Gate، Dependency CVE Execution Gate و Implementation
+    Remediation Backlog جداگانه باز می‌مانند.
+14. **مرز فاز:** `FND-01`، Feature، Backend، Navigation، Room، DataStore،
     WorkManager، Hilt، Migration Bridge و تغییر رفتار Auth/Startup اجرا نشد.

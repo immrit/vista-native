@@ -105,7 +105,19 @@ Artifact identity با موارد زیر تعریف می‌شود:
   بحرانی startup/auth در mapping باقی ماندند.
 - secret scan: ۱۲۸ فایل tracked، صفر finding.
 - OWASP task graph با `dependencyCheckAggregate --dry-run` معتبر بود، اما scan
-  واقعی به‌دلیل نبود `NVD_API_KEY` و مجوز شبکه Pass نشده است.
+  واقعی به‌دلیل نبود `NVD_API_KEY` محلی اجرا نشده است. وضعیت آن
+  `Open — CI activation required before protected merge/release` است و مانع
+  Local Governance Gate نیست.
+
+## Gate separation
+
+- `GOV-01 Complete — Local Governance Gate Passed`
+- `Production Signing Gate: Open — Required before production replacement`
+- `Dependency CVE Execution Gate: Open — CI activation required before protected merge/release`
+- `Implementation Remediation Backlog: Open`
+
+این تفکیک فقط Repository و Build Governance را کامل می‌کند و به معنای
+Production-ready بودن artifactهای unsigned یا عبور Release Gate نیست.
 
 ## Scope boundary
 
