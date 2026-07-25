@@ -1,48 +1,86 @@
 plugins {
-    alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
-    alias(libs.plugins.kotlin.compose)
+    id("vista.android.application")
+}
+
+fun injectedValue(gradleName: String, environmentName: String): String? =
+    providers.gradleProperty(gradleName)
+        .orElse(providers.environmentVariable(environmentName))
+        .orNull
+        ?.takeIf { it.isNotBlank() }
+
+val signingValues = mapOf(
+    "storeFile" to injectedValue("vista.signing.storeFile", "VISTA_SIGNING_STORE_FILE"),
+    "storePassword" to injectedValue("vista.signing.storePassword", "VISTA_SIGNING_STORE_PASSWORD"),
+    "keyAlias" to injectedValue("vista.signing.keyAlias", "VISTA_SIGNING_KEY_ALIAS"),
+    "keyPassword" to injectedValue("vista.signing.keyPassword", "VISTA_SIGNING_KEY_PASSWORD"),
+)
+val configuredSigningValues = signingValues.values.count { it != null }
+check(configuredSigningValues == 0 || configuredSigningValues == signingValues.size) {
+    "Release signing is partially configured. Inject all four VISTA_SIGNING_* values or none."
 }
 
 android {
     namespace = "ir.coffevista.vista_native"
-    compileSdk {
-        version = release(36)
-    }
 
     defaultConfig {
-        applicationId = "ir.coffevista.vista_native"
-        minSdk = 24
-        targetSdk = 36
         versionCode = 1
         versionName = "1.0"
+    }
 
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        buildConfigField("String", "API_BASE_URL", "\"https://api.coffevista.ir\"")
+    signingConfigs {
+        if (configuredSigningValues == signingValues.size) {
+            create("injectedRelease") {
+                storeFile = file(signingValues.getValue("storeFile")!!)
+                storePassword = signingValues.getValue("storePassword")
+                keyAlias = signingValues.getValue("keyAlias")
+                keyPassword = signingValues.getValue("keyPassword")
+                enableV1Signing = true
+                enableV2Signing = true
+                enableV3Signing = true
+            }
+        }
+    }
+
+    flavorDimensions += "environment"
+    productFlavors {
+        create("beta") {
+            dimension = "environment"
+            applicationId = "ir.coffevista.vista_native"
+            versionNameSuffix = "-beta"
+            buildConfigField(
+                "String",
+                "API_BASE_URL",
+                "\"${injectedValue("vista.api.beta", "VISTA_BETA_API_BASE_URL") ?: "https://api.coffevista.ir"}\"",
+            )
+        }
+        create("production") {
+            dimension = "environment"
+            applicationId = "ir.coffevista.vista"
+            buildConfigField(
+                "String",
+                "API_BASE_URL",
+                "\"${injectedValue("vista.api.production", "VISTA_PRODUCTION_API_BASE_URL") ?: "https://api.coffevista.ir"}\"",
+            )
+        }
     }
 
     buildTypes {
-        release {
+        debug {
+            isDebuggable = true
             isMinifyEnabled = false
+            isShrinkResources = false
+            signingConfig = signingConfigs.getByName("debug")
+        }
+        release {
+            isDebuggable = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            signingConfig = signingConfigs.findByName("injectedRelease")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
         }
-    }
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-    buildFeatures {
-        compose = true
-        buildConfig = true
-    }
-    packaging {
-        resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
     }
 }
 

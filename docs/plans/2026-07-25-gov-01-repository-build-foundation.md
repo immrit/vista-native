@@ -2,8 +2,8 @@
 
 **نوع:** Build Governance
 **تاریخ شروع:** 2026-07-25
-**وضعیت Gate:** `IN PROGRESS`
-**پیشرفت کل:** `[████░░░░░░] 38%` — 15 از 40 تسک تکمیل شده
+**وضعیت Gate:** `BLOCKED — NOT COMPLETE`
+**پیشرفت کل:** `[██████████] 95%` — 38 از 40 تسک تکمیل شده
 
 > قاعده‌ی پیشرفت: فقط پس از ثبت شاهد قابل‌بازتولید، checkbox همان تسک و
 > Progress Bar به‌روزرسانی می‌شود. موفقیت compile به‌تنهایی معادل عبور Gate
@@ -20,13 +20,13 @@ Startup/Auth خارج از محدوده‌اند.
 
 | بخش | پیشرفت | وضعیت |
 |---|---:|---|
-| اسناد و scope | `[█████░░░░░] 50%` — 3/6 | Master Plan مقصد در workspace غایب است؛ منبع بالادستی خوانده شد |
+| اسناد و scope | `[████████░░] 83%` — 5/6 | Master Plan مقصد در workspace غایب است؛ منبع بالادستی خوانده شد |
 | baseline و safety | `[██████████] 100%` — 8/8 | تکمیل |
-| Git baseline | `[████░░░░░░] 40%` — 2/5 | parent/nested check تکمیل؛ init/commit باقی است |
-| Build governance | `[██░░░░░░░░] 20%` — 1/5 | Version Catalog موجود و نیازمند تکمیل است |
-| flavor/signing/R8 | `[░░░░░░░░░░] 0%` — 0/6 | شروع نشده |
-| CI و مستندات | `[░░░░░░░░░░] 0%` — 0/5 | شروع نشده |
-| verification و Gate | `[██░░░░░░░░] 20%` — 1/5 | baseline build پاس؛ verification نهایی باقی است |
+| Git baseline | `[██████████] 100%` — 5/5 | baseline مستقل و branch فاز ثبت شد |
+| Build governance | `[██████████] 100%` — 5/5 | تکمیل |
+| flavor/signing/R8 | `[██████████] 100%` — 6/6 | تکمیل |
+| CI و مستندات | `[██████████] 100%` — 5/5 | config و task graph محلی معتبر؛ workflow هنوز روی GitHub اجرا نشده |
+| verification و Gate | `[████████░░] 80%` — 4/5 | CVE scan واقعی به NVD API key/مجوز شبکه نیاز دارد |
 
 ## 3. Task checklist
 
@@ -39,7 +39,7 @@ Startup/Auth خارج از محدوده‌اند.
   `C:\Users\MriT.DESKTOP-UK7OADT\Downloads\PLAN.md` کامل و read-only خوانده شد.
 - [x] `docs/plans/2026-07-25-aud-01-parity-ledger.md` کامل خوانده شد.
 - [x] `docs/audits/2026-07-25-aud-01-parity-ledger.md` کامل خوانده شد.
-- [ ] هشت ریسک منتقل‌شده در Risk Register نهایی با owner و وضعیت `Open`
+- [x] هشت ریسک منتقل‌شده در Risk Register نهایی با owner و وضعیت `Open`
   حفظ شوند.
 
 ### B — Baseline و Safety
@@ -79,38 +79,42 @@ $entries = @($files | Sort-Object FullName | ForEach-Object {
 
 - [x] nested repository ناخواسته وجود ندارد.
 - [x] `.gitignore` فعلی و فایل‌های خروجی/محلی شناسایی شدند.
-- [ ] `.gitignore` امن برای Android/Gradle/IDE/signing/secrets تکمیل شود.
-- [ ] repository روی branch `main` ایجاد و baseline commit مستقل ثبت شود.
-- [ ] branch فاز GOV-01 بدون rewrite کردن history ایجاد شود.
+- [x] `.gitignore` امن برای Android/Gradle/IDE/signing/secrets تکمیل شد.
+- [x] repository روی branch `main` ایجاد و baseline commit مستقل
+  `b327d50` ثبت شد.
+- [x] branch فاز `gov-01/repository-build-foundation` بدون rewrite کردن
+  history ایجاد شد.
 
 ### D — Build Governance
 
 - [x] Version Catalog موجود در `gradle/libs.versions.toml` شناسایی شد.
-- [ ] Version Catalog کامل و تنها منبع version/dependency/plugin مصوب شود.
-- [ ] included build به نام `build-logic` ایجاد شود.
-- [ ] convention plugin محدود به Android application defaults پیاده شود.
-- [ ] پیکربندی تکراری `app` بدون شروع معماری `FND-01` به convention منتقل شود.
+- [x] Version Catalog کامل و تنها منبع version/dependency/plugin مصوب شد.
+- [x] included build به نام `build-logic` ایجاد شد.
+- [x] convention plugin محدود به Android application defaults پیاده شد.
+- [x] پیکربندی تکراری `app` بدون شروع معماری `FND-01` به convention منتقل شد.
 
 ### E — Flavor، Signing و R8
 
-- [ ] flavor `beta` با application ID دقیق
+- [x] flavor `beta` با application ID دقیق
   `ir.coffevista.vista_native` تعریف شود.
-- [ ] flavor `production` با application ID دقیق
+- [x] flavor `production` با application ID دقیق
   `ir.coffevista.vista` تعریف شود.
-- [ ] API/environment source هر flavor بدون secret و قابل override تعریف شود.
-- [ ] release signing فقط از environment/Gradle secret injection دریافت شود؛
+- [x] API/environment source هر flavor بدون secret و قابل override تعریف شد.
+- [x] release signing فقط از environment/Gradle secret injection دریافت می‌شود؛
   در نبود secret، artifact صریحاً unsigned باشد.
-- [ ] R8 و resource shrinking فقط برای release فعال شود و debug بدون تغییر بماند.
-- [ ] mapping/seeds/usage بررسی و حفظ startup/auth بدون keep rule حدسی اثبات شود.
+- [x] R8 و resource shrinking فقط برای release فعال شد و debug بدون تغییر ماند.
+- [x] mapping/seeds/usage/configuration بررسی و حضور پنج کلاس بحرانی startup/auth
+  در mapping، بدون keep rule حدسی، اثبات شد.
 
 ### F — CI، Artifact و Documentation
 
-- [ ] CI شامل wrapper validation، assemble، unit test، lint،
+- [x] CI شامل wrapper validation، assemble، unit test، lint،
   dependency/security check، secret scan، `git diff --check` و artifact metadata شود.
-- [ ] screenshot smoke placeholder یا executable smoke موجود در CI ثبت شود.
-- [ ] Variant Matrix کامل شود.
-- [ ] build/signing/secret strategy و commandهای clean checkout مستند شوند.
-- [ ] artifact name، SHA-256، size، application ID، signing state و R8 metadata
+- [x] screenshot smoke placeholder صریح و executable در CI ثبت شد؛ این gate
+  fresh device evidence نیست.
+- [x] Variant Matrix کامل شد.
+- [x] build/signing/secret strategy و commandهای clean checkout مستند شدند.
+- [x] artifact name، SHA-256، size، application ID، signing state و R8 metadata
   برای خروجی‌ها ثبت شود.
 
 ### G — Verification و Exit Gate
@@ -118,12 +122,16 @@ $entries = @($files | Sort-Object FullName | ForEach-Object {
 - [x] baseline پیش از تغییر پاس شد:
   `.\gradlew.bat --no-daemon test lint assembleDebug assembleRelease "-Pkotlin.incremental=false"`
   با `BUILD SUCCESSFUL` در 59 ثانیه.
-- [ ] buildهای Debug/Beta/Production از clean state پاس شوند.
+- [x] buildهای `betaDebug`، `betaRelease`، `productionDebug` و
+  `productionRelease` از clean state پاس شدند.
 - [ ] unit test، lint، dependency/security و secret scan نهایی پاس شوند.
-- [ ] دو build مستقل برای variantهای خروجی با artifact identity قابل‌توضیح
-  اجرا و reproducibility ارزیابی شود.
-- [ ] `git diff --check`، working tree و تمام بندهای Gate ارزیابی و نتیجه
-  `PASS/FAIL` ثبت شود.
+  Unit/lint/secret پاس‌اند؛ OWASP CVE scan به‌علت نبود `NVD_API_KEY` و رد
+  network authorization پاس نشده است.
+- [x] دو build مستقل برای variantهای خروجی با artifact identity قابل‌توضیح
+  اجرا و reproducibility ارزیابی شد: دو release unsigned byte-for-byte یکسان
+  بودند؛ debug signed قابل‌ساخت بود ولی SHA آن میان دو build یکسان نبود.
+- [x] `git diff --check`، working tree و تمام بندهای Gate ارزیابی و نتیجه
+  `FAIL/BLOCKED` ثبت شد.
 
 ## 4. Variant Matrix
 
@@ -131,10 +139,10 @@ $entries = @($files | Sort-Object FullName | ForEach-Object {
 
 | Variant | Application ID | Build type | Debuggable | R8 | Shrink | Signing | API source | Artifact | Coexistence |
 |---|---|---|---:|---:|---:|---|---|---|---|
-| `betaDebug` | `ir.coffevista.vista_native` | debug | TBD | TBD | TBD | TBD | TBD | TBD | با Production |
-| `betaRelease` | `ir.coffevista.vista_native` | release | TBD | TBD | TBD | TBD | TBD | TBD | با Production |
-| `productionDebug` | `ir.coffevista.vista` | debug | TBD | TBD | TBD | TBD | TBD | TBD | با Beta |
-| `productionRelease` | `ir.coffevista.vista` | release | TBD | TBD | TBD | TBD | TBD | TBD | با Beta |
+| `betaDebug` | `ir.coffevista.vista_native` | debug | بله | خیر | خیر | debug keystore | Gradle/env/fallback | `app-beta-debug.apk` | با Production |
+| `betaRelease` | `ir.coffevista.vista_native` | release | خیر | بله | بله | injected یا unsigned | Gradle/env/fallback | `app-beta-release-unsigned.apk` | با Production |
+| `productionDebug` | `ir.coffevista.vista` | debug | بله | خیر | خیر | debug keystore | Gradle/env/fallback | `app-production-debug.apk` | با Beta؛ نه upgrade Flutter امضاشده |
+| `productionRelease` | `ir.coffevista.vista` | release | خیر | بله | بله | injected یا unsigned | Gradle/env/fallback | `app-production-release-unsigned.apk` | با Beta؛ جایگزینی Flutter فقط با signing اصلی |
 
 ## 5. Risk Register انتقال‌یافته
 
@@ -165,6 +173,49 @@ $entries = @($files | Sort-Object FullName | ForEach-Object {
 
 ## 7. Final Report
 
-پس از پایان کار، نتایج repository baseline، commitها، فایل‌های تغییرکرده،
-variant matrix، signing strategy، CI، build/test/lint، R8، blockerها،
-risk transfer، نتیجه Gate و تأیید عدم اجرای `FND-01` در همین بخش ثبت می‌شوند.
+1. **Repository baseline:** repository جدید روی `main` ایجاد شد؛ ۱۱۶ فایل
+   source/config/audit در baseline ثبت شدند. build/cache/local/IDE/signing
+   material وارد Git نشد.
+2. **Commit baseline:** `b327d50 — chore(gov-01): establish native baseline`.
+   ادامه روی `gov-01/repository-build-foundation` انجام شد.
+3. **فایل‌های Governance:** `build-logic/**`، تنظیمات Gradle و Version Catalog،
+   dependency lock/verification metadata، CI، چهار اسکریپت verification،
+   `.gitignore`/`.gitattributes` و سند build افزوده یا اصلاح شدند. executable
+   source مربوط به Feature/Startup/Auth تغییر نکرد.
+4. **Variant matrix:** جدول بخش 4 و
+   `docs/build/GOV-01-BUILD-SIGNING-AND-VARIANTS.md` مرجع کامل‌اند. package
+   واقعی APKها با `aapt2 dump badging` نیز تأیید شد.
+5. **Signing/secrets:** debug از debug keystore؛ release فقط با تزریق چهار
+   secret کامل. هر دو release فعلی unsigned هستند و production-installable یا
+   release-ready اعلام نمی‌شوند.
+6. **CI:** سه job برای repository safety، build/test/lint/R8/artifact و
+   dependency security تعریف شد. wrapper validation، clean checkout،
+   `git diff --check`، secret scan و screenshot placeholder نیز Gate هستند.
+   workflow هنوز روی GitHub runner اجرا نشده است.
+7. **Build/test/lint:** clean build چهار variant موفق؛ ۸۰ اجرای unit-test با
+   صفر failure/error/skipped؛ lint با صفر error و ۲۳ warning؛ secret scan روی
+   ۱۲۸ فایل tracked با صفر finding.
+8. **R8/shrinking:** هر دو release با minify و resource shrinking ساخته شدند؛
+   mapping/seeds/usage/configuration موجودند. `MainActivity`,
+   `VistaApplication`, `StartupResolver`, `AuthViewModel` و
+   `OkHttpAuthRemoteDataSource` در mapping باقی ماندند. keep rule حدسی افزوده
+   نشد. کد فعلی JSON را دستی parse می‌کند؛ ریسک reflection/serialization
+   Featureهای آینده همچنان باید در فاز مالک ارزیابی شود.
+9. **Reproducibility:** build تمیز اول ۳m۱۷s و build تمیز دوم ۲m۰۲s موفق شد.
+   SHA دو release unsigned در هر دو اجرا دقیقاً یکسان بود:
+   Beta=`864324ac4a9869640eaf85d6f2ac954098d24ba4727de58be51dbf7428e15ce5`،
+   Production=`52a5119ad955ae046bbcdc9b5552b272ca6733e8db6a319687d1dfc3a484a59b`.
+   debug signed قابل‌بازتولید عملی بود ولی byte-for-byte یکسان نشد.
+10. **Blockerها:** فایل `VISTA_NATIVE_MASTER_PLAN.md` در workspace وجود
+    نداشت؛ فقط منبع بالادستی کامل خوانده شد. CVE scan شبکه‌ای بدون تأیید ارسال
+    metadata رد شد و اجرای ظاهراً offline نیز NVD را صدا زد و پس از ۱۷ retry
+    کنترل‌شده متوقف شد. CI برای جلوگیری از hang، `NVD_API_KEY` را اجباری می‌کند.
+    production signing واقعی نیز در دسترس نیست و تولید/حدس زده نشد.
+11. **Risk transfer:** هر هشت ریسک بخش 5 همچنان `Open/Transferred` هستند؛
+    هیچ‌کدام حل‌شده علامت نخورد.
+12. **نتیجه Gate:** `GOV-01 BLOCKED — NOT COMPLETE`. شرط build، variant،
+    repository، R8، test، lint، secret، CI config و docs پاس است؛ شرط
+    dependency vulnerability scan پاس نیست. طبق مأموریت، فاز Complete اعلام
+    نمی‌شود.
+13. **مرز فاز:** `FND-01`، Feature، Backend، Navigation، Room، DataStore،
+    WorkManager، Hilt، Migration Bridge و تغییر رفتار Auth/Startup اجرا نشد.

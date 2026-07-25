@@ -1,0 +1,90 @@
+name: Android GOV-01
+
+on:
+  push:
+    branches: ["main", "gov-01/**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  repository-safety:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: gradle/actions/wrapper-validation@v4
+      - name: Clean checkout
+        shell: pwsh
+        run: |
+          if (git status --porcelain) {
+            throw "Checkout is not clean."
+          }
+      - name: Secret scan
+        shell: pwsh
+        run: ./scripts/secret-scan.ps1
+      - name: Whitespace check
+        run: git diff --check
+      - name: Screenshot smoke placeholder
+        shell: pwsh
+        run: ./scripts/screenshot-smoke-placeholder.ps1
+
+  build-test-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build all governed variants, test and lint
+        run: >-
+          ./gradlew --no-daemon clean
+          test lint
+          assembleBetaDebug assembleBetaRelease
+          assembleProductionDebug assembleProductionRelease
+          -Pkotlin.incremental=false
+      - name: Verify R8 artifacts and critical classes
+        shell: pwsh
+        run: ./scripts/verify-r8.ps1
+      - name: Report artifact identity
+        shell: pwsh
+        run: ./scripts/report-artifacts.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vista-governed-apks
+          path: |
+            app/build/outputs/apk/**/*.apk
+            app/build/outputs/mapping/**/*
+            artifacts/artifact-metadata.json
+          if-no-files-found: error
+
+  dependency-security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Require NVD API key
+        shell: pwsh
+        env:
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:NVD_API_KEY)) {
+            throw "Repository secret NVD_API_KEY is required for the dependency security gate."
+          }
+      - name: OWASP aggregate dependency check
+        env:
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+        run: ./gradlew --no-daemon dependencyCheckAggregate
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dependency-check-report
+          path: build/reports/dependency-check/
+          if-no-files-found: warn
