@@ -1,0 +1,31 @@
+package ir.coffevista.vista_native.core.database
+
+import android.content.Context
+import androidx.room.Room
+import dagger.Module
+import dagger.Provides
+import dagger.hilt.InstallIn
+import dagger.hilt.android.qualifiers.ApplicationContext
+import dagger.hilt.components.SingletonComponent
+import javax.inject.Singleton
+
+@Module
+@InstallIn(SingletonComponent::class)
+object DatabaseModule {
+    @Provides
+    @Singleton
+    fun provideFoundationDatabase(
+        @ApplicationContext context: Context,
+    ): VistaFoundationDatabase = Room.databaseBuilder(
+        context,
+        VistaFoundationDatabase::class.java,
+        VistaFoundationDatabase.DATABASE_NAME,
+    )
+        .addMigrations(VistaFoundationDatabase.MIGRATION_1_2)
+        .build()
+
+    @Provides
+    fun provideVerifiedTlsPolicyDao(
+        database: VistaFoundationDatabase,
+    ): VerifiedTlsPolicyDao = database.verifiedTlsPolicyDao()
+}

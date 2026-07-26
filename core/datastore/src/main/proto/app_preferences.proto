@@ -1,0 +1,10 @@
+syntax = "proto3";
+
+option java_package = "ir.coffevista.vista_native.core.datastore.proto";
+option java_multiple_files = true;
+
+message AppPreferences {
+  uint32 schema_version = 1;
+  bool onboarding_completed = 2;
+  string onboarding_version = 3;
+}

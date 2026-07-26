@@ -1,43 +1,40 @@
 package ir.coffevista.vista_native.core.datastore
 
-import android.annotation.SuppressLint
-import android.content.Context
+import androidx.datastore.core.DataStore
+import ir.coffevista.vista_native.core.datastore.proto.AppPreferences
+import kotlinx.coroutines.flow.first
 
 interface OnboardingStore {
-    fun isCompleted(): Boolean
-    fun markCompleted()
+    suspend fun isCompleted(): Boolean
+    suspend fun markCompleted()
 }
 
-@SuppressLint("ApplySharedPref")
-class SharedPreferencesOnboardingStore(context: Context) : OnboardingStore {
-    private val preferences = context.getSharedPreferences(FILE_NAME, Context.MODE_PRIVATE)
+internal class ProtoOnboardingStore(
+    private val dataStore: DataStore<AppPreferences>,
+) : OnboardingStore {
+    override suspend fun isCompleted(): Boolean {
+        val preferences = dataStore.data.first()
+        return isCurrentOnboardingCompletion(
+            completed = preferences.onboardingCompleted,
+            savedVersion = preferences.onboardingVersion,
+        )
+    }
 
-    override fun isCompleted(): Boolean {
-        val completed = preferences.getBoolean(KEY_COMPLETED, false)
-        val savedVersion = preferences.getString(KEY_VERSION, null)
-        if (completed && !isCurrentOnboardingCompletion(completed, savedVersion)) {
-            preferences.edit().putBoolean(KEY_COMPLETED, false).commit()
-            return false
+    override suspend fun markCompleted() {
+        dataStore.updateData { current ->
+            current.toBuilder()
+                .setSchemaVersion(CURRENT_SCHEMA_VERSION)
+                .setOnboardingCompleted(true)
+                .setOnboardingVersion(CURRENT_ONBOARDING_VERSION)
+                .build()
         }
-        return completed
-    }
-
-    override fun markCompleted() {
-        preferences.edit()
-            .putBoolean(KEY_COMPLETED, true)
-            .putString(KEY_VERSION, CURRENT_VERSION)
-            .commit()
-    }
-
-    companion object {
-        const val CURRENT_VERSION = "1.0.0"
-        private const val FILE_NAME = "vista_onboarding"
-        private const val KEY_COMPLETED = "onboarding_completed"
-        private const val KEY_VERSION = "onboarding_version"
     }
 }
+
+internal const val CURRENT_SCHEMA_VERSION = 1
+internal const val CURRENT_ONBOARDING_VERSION = "1.0.0"
 
 internal fun isCurrentOnboardingCompletion(
     completed: Boolean,
     savedVersion: String?,
-): Boolean = completed && savedVersion == SharedPreferencesOnboardingStore.CURRENT_VERSION
+): Boolean = completed && savedVersion == CURRENT_ONBOARDING_VERSION
