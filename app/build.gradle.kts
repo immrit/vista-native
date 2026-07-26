@@ -1,5 +1,12 @@
 plugins {
     id("vista.android.application")
+    id("vista.hilt")
+    alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.ksp)
+}
+
+hilt {
+    enableAggregatingTask = false
 }
 
 fun injectedValue(gradleName: String, environmentName: String): String? =
@@ -88,8 +95,10 @@ dependencies {
     implementation(project(":core:common"))
     implementation(project(":core:model"))
     implementation(project(":core:network"))
+    implementation(project(":core:database"))
     implementation(project(":core:datastore"))
     implementation(project(":core:security"))
+    implementation(project(":core:worker"))
     implementation(project(":feature:auth"))
 
     implementation(libs.androidx.core.ktx)
@@ -101,8 +110,13 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.navigation.compose)
+    implementation(libs.androidx.hilt.navigation.compose)
+    implementation(libs.androidx.hilt.work)
+    implementation(libs.androidx.work.runtime)
+    implementation(libs.hilt.android)
     implementation(libs.okhttp)
     implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.kotlinx.serialization.json)
 
     testImplementation(libs.junit)
     testImplementation(project(":core:testing"))
@@ -111,5 +125,7 @@ dependencies {
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
+    ksp(libs.hilt.compiler)
+    ksp(libs.androidx.hilt.compiler)
     debugImplementation(libs.androidx.compose.ui.tooling)
 }

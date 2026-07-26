@@ -8,10 +8,15 @@ sealed interface Outcome<out T> {
 enum class ErrorKind {
     VALIDATION,
     NETWORK,
+    TIMEOUT,
     UNAUTHORIZED,
+    FORBIDDEN,
     ACCOUNT_DISABLED,
     RATE_LIMITED,
+    CONFLICT,
     SERVER,
+    TLS,
+    CRYPTO,
     MALFORMED_RESPONSE,
     UNKNOWN,
 }
@@ -21,4 +26,5 @@ data class AppError(
     val messageFa: String,
     val code: String? = null,
     val retryAfterSeconds: Int? = null,
+    val causeType: String? = null,
 )

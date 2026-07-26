@@ -3,8 +3,10 @@ package ir.coffevista.vista_native.core.network
 import ir.coffevista.vista_native.core.common.AppError
 import ir.coffevista.vista_native.core.common.ErrorKind
 import org.json.JSONException
+import kotlinx.serialization.SerializationException
 import java.io.IOException
 import java.net.SocketTimeoutException
+import javax.net.ssl.SSLException
 
 object ErrorClassifier {
     fun classify(throwable: Throwable, contextFa: String): AppError {
@@ -26,35 +28,51 @@ object ErrorClassifier {
             }
             val kind = when (throwable.statusCode) {
                 401 -> ErrorKind.UNAUTHORIZED
-                403 -> ErrorKind.ACCOUNT_DISABLED
+                403 -> if (throwable.code == "account_disabled") {
+                    ErrorKind.ACCOUNT_DISABLED
+                } else {
+                    ErrorKind.FORBIDDEN
+                }
                 429 -> ErrorKind.RATE_LIMITED
+                409 -> ErrorKind.CONFLICT
                 in 500..599 -> ErrorKind.SERVER
-                else -> ErrorKind.UNKNOWN
+                else -> ErrorKind.VALIDATION
             }
             return AppError(
                 kind = kind,
                 messageFa = persianMessage ?: fallback,
                 code = throwable.code,
                 retryAfterSeconds = throwable.retryAfterSeconds,
+                causeType = throwable.cause?.javaClass?.name,
             )
         }
 
         return when (throwable) {
             is SocketTimeoutException -> AppError(
-                ErrorKind.NETWORK,
+                ErrorKind.TIMEOUT,
                 "اتصال به سرور برقرار نشد. لطفاً اینترنت خود را بررسی کنید",
+                causeType = throwable.javaClass.name,
+            )
+            is SSLException -> AppError(
+                ErrorKind.TLS,
+                "برقراری ارتباط امن با سرور ممکن نشد",
+                causeType = throwable.javaClass.name,
             )
             is IOException -> AppError(
                 ErrorKind.NETWORK,
                 "خطا در اتصال به سرور. لطفاً اینترنت خود را بررسی کنید",
+                causeType = throwable.javaClass.name,
             )
-            is JSONException -> AppError(
+            is JSONException,
+            is SerializationException -> AppError(
                 ErrorKind.MALFORMED_RESPONSE,
                 "پاسخ سرور قابل پردازش نبود. لطفاً دوباره تلاش کنید",
+                causeType = throwable.javaClass.name,
             )
             else -> AppError(
                 ErrorKind.UNKNOWN,
                 "خطای غیرمنتظره‌ای رخ داد. لطفاً دوباره تلاش کنید",
+                causeType = throwable.javaClass.name,
             )
         }
     }

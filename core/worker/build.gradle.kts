@@ -5,16 +5,16 @@ plugins {
 }
 
 android {
-    namespace = "ir.coffevista.vista_native.core.security"
+    namespace = "ir.coffevista.vista_native.core.worker"
 }
 
 dependencies {
-    implementation(project(":core:common"))
-    implementation(project(":core:model"))
+    implementation(libs.androidx.work.runtime)
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
+
     testImplementation(libs.junit)
-    testImplementation(libs.json.jvm)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.work.testing)
 }
