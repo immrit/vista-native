@@ -1,11 +1,25 @@
 package ir.coffevista.vista_native.features.auth.data
 
 import ir.coffevista.vista_native.core.common.Outcome
+import ir.coffevista.vista_native.core.common.DefaultDispatcherProvider
+import ir.coffevista.vista_native.core.common.DispatcherProvider
+import ir.coffevista.vista_native.core.common.FoundationSignal
+import ir.coffevista.vista_native.core.common.FoundationTelemetry
+import ir.coffevista.vista_native.core.common.LogLevel
+import ir.coffevista.vista_native.core.common.LogSink
+import ir.coffevista.vista_native.core.common.NoOpFoundationTelemetry
+import ir.coffevista.vista_native.core.common.RedactingLogger
+import ir.coffevista.vista_native.core.common.SecureLogger
 import ir.coffevista.vista_native.core.network.ErrorClassifier
 import ir.coffevista.vista_native.features.auth.domain.AuthRepository
+import kotlinx.coroutines.withContext
+import javax.inject.Inject
 
-class DefaultAuthRepository(
+class DefaultAuthRepository @Inject constructor(
     private val remote: AuthRemoteDataSource,
+    private val dispatchers: DispatcherProvider = DefaultDispatcherProvider,
+    private val telemetry: FoundationTelemetry = NoOpFoundationTelemetry,
+    private val logger: SecureLogger = RedactingLogger(false, LogSink { }),
 ) : AuthRepository {
     override suspend fun lookupIdentifier(identifier: String) =
         call("بررسی شناسه ورود") { remote.lookupIdentifier(identifier) }
@@ -32,10 +46,29 @@ class DefaultAuthRepository(
         call("بررسی وضعیت سیستم") { remote.isMaintenanceMode() }
 
     private suspend fun <T> call(contextFa: String, block: suspend () -> T): Outcome<T> {
-        return try {
-            Outcome.Success(block())
-        } catch (throwable: Throwable) {
-            Outcome.Failure(ErrorClassifier.classify(throwable, contextFa))
+        return withContext(dispatchers.io) {
+            try {
+                Outcome.Success(block())
+            } catch (throwable: Throwable) {
+                val error = ErrorClassifier.classify(throwable, contextFa)
+                telemetry.record(
+                    FoundationSignal(
+                        name = "foundation.auth.request",
+                        outcome = "failure",
+                        attributes = mapOf("kind" to error.kind.name),
+                    ),
+                )
+                logger.log(
+                    level = LogLevel.WARN,
+                    event = "auth_request_failed",
+                    fields = mapOf(
+                        "kind" to error.kind.name,
+                        "code" to error.code,
+                        "cause_type" to error.causeType,
+                    ),
+                )
+                Outcome.Failure(error)
+            }
         }
     }
 }

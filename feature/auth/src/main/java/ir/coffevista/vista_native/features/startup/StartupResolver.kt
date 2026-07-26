@@ -1,23 +1,44 @@
 package ir.coffevista.vista_native.features.startup
 
-import ir.coffevista.vista_native.core.common.ErrorKind
+import ir.coffevista.vista_native.core.common.EpochClock
+import ir.coffevista.vista_native.core.common.FoundationSignal
+import ir.coffevista.vista_native.core.common.FoundationTelemetry
+import ir.coffevista.vista_native.core.common.NoOpFoundationTelemetry
 import ir.coffevista.vista_native.core.common.Outcome
 import ir.coffevista.vista_native.core.datastore.OnboardingStore
 import ir.coffevista.vista_native.core.model.session.AuthenticatedContext
 import ir.coffevista.vista_native.core.security.SessionStore
 import ir.coffevista.vista_native.core.security.StoredSession
+import ir.coffevista.vista_native.core.network.AssumeOnlineNetworkMonitor
+import ir.coffevista.vista_native.core.network.NetworkMonitor
+import ir.coffevista.vista_native.core.network.NetworkState
 import ir.coffevista.vista_native.features.auth.domain.AuthRepository
+import ir.coffevista.vista_native.features.auth.DirectSessionRefreshCoordinator
+import ir.coffevista.vista_native.features.auth.RefreshResolution
+import ir.coffevista.vista_native.features.auth.SessionRefreshCoordinator
+import javax.inject.Inject
 
-class StartupResolver(
+class StartupResolver @Inject constructor(
     private val authRepository: AuthRepository,
     private val onboardingStore: OnboardingStore,
     private val sessionStore: SessionStore,
-    private val nowEpochSeconds: () -> Long = { System.currentTimeMillis() / 1_000L },
+    private val clock: EpochClock,
+    private val networkMonitor: NetworkMonitor = AssumeOnlineNetworkMonitor,
+    private val telemetry: FoundationTelemetry = NoOpFoundationTelemetry,
+    private val refreshCoordinator: SessionRefreshCoordinator =
+        DirectSessionRefreshCoordinator(authRepository, sessionStore),
+    private val fixtures: Set<@JvmSuppressWildcards StartupFixture> = emptySet(),
 ) {
     suspend fun resolve(): StartupDestination {
-        val maintenance = authRepository.maintenanceMode()
-        if (maintenance is Outcome.Success && maintenance.value) {
-            return StartupDestination.Maintenance
+        fixtures.firstNotNullOfOrNull { fixture -> fixture.destinationOrNull() }
+            ?.let { destination -> return destination }
+
+        val isOnline = networkMonitor.currentState() == NetworkState.ONLINE
+        if (isOnline) {
+            val maintenance = authRepository.maintenanceMode()
+            if (maintenance is Outcome.Success && maintenance.value) {
+                return StartupDestination.Maintenance
+            }
         }
 
         val stored = runCatching(sessionStore::read).getOrElse {
@@ -26,7 +47,17 @@ class StartupResolver(
             )
         } ?: return unauthenticatedDestination()
 
-        if (stored.expiresAtEpochSeconds > nowEpochSeconds() + CLOCK_SKEW_SECONDS) {
+        if (!isOnline) {
+            telemetry.record(
+                FoundationSignal(
+                    name = "foundation.startup.session",
+                    outcome = "offline_fallback",
+                ),
+            )
+            return stored.authenticated(offline = true)
+        }
+
+        if (stored.expiresAtEpochSeconds > clock.nowEpochSeconds() + CLOCK_SKEW_SECONDS) {
             return stored.authenticated(offline = false)
         }
 
@@ -35,37 +66,27 @@ class StartupResolver(
             return unauthenticatedDestination()
         }
 
-        return when (val refresh = authRepository.refresh(stored.refreshToken)) {
-            is Outcome.Success -> {
-                runCatching { sessionStore.save(refresh.value) }.getOrElse {
-                    return StartupDestination.RecoverableError(
-                        "ذخیره امن نشست ممکن نشد. لطفاً دوباره تلاش کنید",
-                    )
-                }
+        return when (val refresh = refreshCoordinator.refresh(stored.refreshToken)) {
+            is RefreshResolution.Refreshed -> {
                 StartupDestination.Authenticated(
                     AuthenticatedContext(
-                        userId = refresh.value.user.id,
-                        profileCompleted = refresh.value.user.profileCompleted,
-                        passwordRequired = refresh.value.user.passwordRequired,
+                        userId = refresh.payload.user.id,
+                        profileCompleted = refresh.payload.user.profileCompleted,
+                        passwordRequired = refresh.payload.user.passwordRequired,
                         offline = false,
-                        displayName = refresh.value.user.welcomeName,
+                        displayName = refresh.payload.user.welcomeName,
                     ),
                 )
             }
-            is Outcome.Failure -> {
-                if (refresh.error.kind == ErrorKind.UNAUTHORIZED ||
-                    refresh.error.kind == ErrorKind.ACCOUNT_DISABLED
-                ) {
-                    runCatching(sessionStore::clear)
-                    unauthenticatedDestination()
-                } else {
-                    stored.authenticated(offline = true)
-                }
-            }
+            RefreshResolution.TerminalSession -> unauthenticatedDestination()
+            RefreshResolution.TransientFailure -> stored.authenticated(offline = true)
+            RefreshResolution.PersistenceFailure -> StartupDestination.RecoverableError(
+                "ذخیره امن نشست ممکن نشد. لطفاً دوباره تلاش کنید",
+            )
         }
     }
 
-    private fun unauthenticatedDestination(): StartupDestination {
+    private suspend fun unauthenticatedDestination(): StartupDestination {
         return if (onboardingStore.isCompleted()) {
             StartupDestination.Authentication
         } else {

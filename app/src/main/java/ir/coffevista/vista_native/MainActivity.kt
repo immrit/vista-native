@@ -1,6 +1,7 @@
 package ir.coffevista.vista_native
 
 import android.os.Bundle
+import android.content.Intent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -11,14 +12,31 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
+import dagger.hilt.android.AndroidEntryPoint
+import ir.coffevista.vista_native.features.auth.AuthenticationState
+import ir.coffevista.vista_native.features.auth.AuthenticationStateOwner
+import ir.coffevista.vista_native.features.startup.StartupFixture
 import ir.coffevista.vista_native.navigation.VistaApp
+import ir.coffevista.vista_native.navigation.DeepLinkCoordinator
 import ir.coffevista.vista_native.ui.theme.VistaTheme
+import javax.inject.Inject
 
+@AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+    @Inject
+    lateinit var authenticationStateOwner: AuthenticationStateOwner
+
+    @Inject
+    lateinit var deepLinkCoordinator: DeepLinkCoordinator
+
+    @Inject
+    lateinit var startupFixtures: Set<@JvmSuppressWildcards StartupFixture>
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        configureStartupFixtures(intent)
+        submitDeepLink(intent)
         enableEdgeToEdge()
-        val container = (application as VistaApplication).container
         setContent {
             VistaTheme {
                 Surface(
@@ -26,10 +44,36 @@ class MainActivity : ComponentActivity() {
                     color = MaterialTheme.colorScheme.background,
                 ) {
                     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
-                        VistaApp(container)
+                        VistaApp(
+                            authenticationStateOwner = authenticationStateOwner,
+                            deepLinkCoordinator = deepLinkCoordinator,
+                        )
                     }
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        configureStartupFixtures(intent)
+        submitDeepLink(intent)
+    }
+
+    private fun submitDeepLink(intent: Intent?) {
+        deepLinkCoordinator.submit(
+            rawUri = intent?.dataString,
+            authenticated = authenticationStateOwner.state.value is AuthenticationState.SignedIn,
+        )
+    }
+
+    private fun configureStartupFixtures(intent: Intent?) {
+        val scenario = intent?.getStringExtra(FOUNDATION_FIXTURE_EXTRA)
+        startupFixtures.forEach { fixture -> fixture.configure(scenario) }
+    }
+
+    private companion object {
+        const val FOUNDATION_FIXTURE_EXTRA = "vista.foundation.fixture"
     }
 }

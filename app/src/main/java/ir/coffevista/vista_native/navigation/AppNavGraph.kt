@@ -6,16 +6,17 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.toRoute
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import ir.coffevista.vista_native.core.di.AppContainer
 import ir.coffevista.vista_native.R
 import ir.coffevista.vista_native.features.auth.AuthScreen
 import ir.coffevista.vista_native.features.auth.AuthViewModel
 import ir.coffevista.vista_native.features.auth.AuthenticationState
+import ir.coffevista.vista_native.features.auth.AuthenticationStateOwner
 import ir.coffevista.vista_native.features.auth.AuthVisuals
 import ir.coffevista.vista_native.features.authenticated.AuthenticatedBoundaryScreen
 import ir.coffevista.vista_native.features.onboarding.OnboardingSlide
@@ -23,25 +24,20 @@ import ir.coffevista.vista_native.features.onboarding.OnboardingScreen
 import ir.coffevista.vista_native.features.onboarding.OnboardingViewModel
 import ir.coffevista.vista_native.features.startup.MaintenanceScreen
 import ir.coffevista.vista_native.features.startup.StartupDestination
-import ir.coffevista.vista_native.features.startup.StartupResolver
 import ir.coffevista.vista_native.features.startup.StartupScreen
 import ir.coffevista.vista_native.features.startup.StartupViewModel
 import ir.coffevista.vista_native.ui.components.VistaBrandAsset
 import ir.coffevista.vista_native.ui.components.VistaBrandMark
 import ir.coffevista.vista_native.ui.theme.VistaColors
 
-object Routes {
-    const val STARTUP = "startup"
-    const val ONBOARDING = "onboarding"
-    const val AUTH = "auth"
-    const val AUTHENTICATED = "authenticated-boundary"
-    const val MAINTENANCE = "maintenance"
-}
-
 @Composable
-fun VistaApp(container: AppContainer) {
+fun VistaApp(
+    authenticationStateOwner: AuthenticationStateOwner,
+    deepLinkCoordinator: DeepLinkCoordinator,
+) {
     val navController = rememberNavController()
-    val authState by container.authenticationStateOwner.state.collectAsStateWithLifecycle()
+    val authState by authenticationStateOwner.state.collectAsStateWithLifecycle()
+    val deepLinkState by deepLinkCoordinator.state.collectAsStateWithLifecycle()
     val authVisuals = AuthVisuals(
         accentColor = VistaColors.Cyan,
         personIcon = painterResource(R.drawable.ic_person_outline),
@@ -85,46 +81,79 @@ fun VistaApp(container: AppContainer) {
         ),
     )
 
+    LaunchedEffect(deepLinkState) {
+        when (val delivery = deepLinkState) {
+            is DeepLinkDeliveryState.Ready -> {
+                navController.navigate(
+                    AppRoute.DeferredFeature(
+                        kind = delivery.destination.kind,
+                        reference = delivery.destination.reference,
+                    ),
+                ) {
+                    launchSingleTop = true
+                }
+                deepLinkCoordinator.consume(delivery.id)
+            }
+            is DeepLinkDeliveryState.Failure -> {
+                navController.navigate(AppRoute.DeepLinkFailure(delivery.reason)) {
+                    launchSingleTop = true
+                }
+                deepLinkCoordinator.consume(delivery.id)
+            }
+            DeepLinkDeliveryState.Idle,
+            is DeepLinkDeliveryState.PendingSession,
+            is DeepLinkDeliveryState.PendingFailure,
+            is DeepLinkDeliveryState.PendingAuthentication,
+            -> Unit
+        }
+    }
+
     NavHost(
         navController = navController,
-        startDestination = Routes.STARTUP,
+        startDestination = AppRoute.Startup,
     ) {
-        composable(Routes.STARTUP) {
-            val startupViewModel: StartupViewModel = viewModel(
-                factory = StartupViewModel.Factory(
-                    StartupResolver(
-                        authRepository = container.authRepository,
-                        onboardingStore = container.onboardingStore,
-                        sessionStore = container.sessionStore,
-                    ),
-                ),
-            )
+        composable<AppRoute.Startup> { startupEntry ->
+            val startupViewModel: StartupViewModel = hiltViewModel()
             val state by startupViewModel.state.collectAsStateWithLifecycle()
 
             LaunchedEffect(state.destination) {
-                val route = when (val destination = state.destination) {
+                val destination = state.destination
+                val route: AppRoute? = when (destination) {
                     StartupDestination.Loading,
                     is StartupDestination.RecoverableError,
                     -> null
-                    StartupDestination.Maintenance -> Routes.MAINTENANCE
-                    StartupDestination.Onboarding -> Routes.ONBOARDING
+                    StartupDestination.Maintenance -> AppRoute.Maintenance
+                    StartupDestination.Onboarding -> AppRoute.Onboarding
                     StartupDestination.Authentication -> {
-                        container.authenticationStateOwner.signOut()
-                        Routes.AUTH
+                        authenticationStateOwner.signOut()
+                        AppRoute.Authentication
                     }
                     is StartupDestination.Authenticated -> {
-                        container.authenticationStateOwner.accept(destination.context)
+                        authenticationStateOwner.accept(destination.context)
                         if (destination.context.passwordRequired) {
-                            Routes.AUTH
+                            AppRoute.Authentication
                         } else {
-                            Routes.AUTHENTICATED
+                            AppRoute.AuthenticatedBoundary
                         }
                     }
                 }
                 if (route != null) {
+                    if (navController.currentBackStackEntry?.id != startupEntry.id) {
+                        return@LaunchedEffect
+                    }
                     navController.navigate(route) {
-                        popUpTo(Routes.STARTUP) { inclusive = true }
+                        popUpTo<AppRoute.Startup> { inclusive = true }
                         launchSingleTop = true
+                    }
+                    when {
+                        destination is StartupDestination.Authenticated &&
+                            !destination.context.passwordRequired -> {
+                            deepLinkCoordinator.onSessionResolved(authenticated = true)
+                        }
+                        destination == StartupDestination.Onboarding ||
+                            destination == StartupDestination.Authentication -> {
+                            deepLinkCoordinator.onSessionResolved(authenticated = false)
+                        }
                     }
                 }
             }
@@ -142,20 +171,18 @@ fun VistaApp(container: AppContainer) {
             )
         }
 
-        composable(Routes.MAINTENANCE) {
+        composable<AppRoute.Maintenance> {
             MaintenanceScreen(
                 onRetry = {
-                    navController.navigate(Routes.STARTUP) {
-                        popUpTo(Routes.MAINTENANCE) { inclusive = true }
+                    navController.navigate(AppRoute.Startup) {
+                        popUpTo<AppRoute.Maintenance> { inclusive = true }
                     }
                 },
             )
         }
 
-        composable(Routes.ONBOARDING) {
-            val onboardingViewModel: OnboardingViewModel = viewModel(
-                factory = OnboardingViewModel.Factory(container.onboardingStore),
-            )
+        composable<AppRoute.Onboarding> {
+            val onboardingViewModel: OnboardingViewModel = hiltViewModel()
             val state by onboardingViewModel.state.collectAsStateWithLifecycle()
             OnboardingScreen(
                 state = state,
@@ -163,44 +190,43 @@ fun VistaApp(container: AppContainer) {
                 slides = onboardingSlides,
                 brand = { modifier -> VistaBrandMark(modifier) },
                 onCompleted = {
-                    navController.navigate(Routes.AUTH) {
-                        popUpTo(Routes.ONBOARDING) { inclusive = true }
+                    navController.navigate(AppRoute.Authentication) {
+                        popUpTo<AppRoute.Onboarding> { inclusive = true }
                         launchSingleTop = true
                     }
                 },
             )
         }
 
-        composable(Routes.AUTH) {
+        composable<AppRoute.Authentication> {
             val startInPasswordSetup =
                 (authState as? AuthenticationState.SignedIn)?.context?.passwordRequired == true
-            val authViewModel: AuthViewModel = viewModel(
-                factory = AuthViewModel.Factory(
-                    repository = container.authRepository,
-                    sessionStore = container.sessionStore,
-                    authStateOwner = container.authenticationStateOwner,
-                    startInPasswordSetup = startInPasswordSetup,
-                ),
-            )
+            val authViewModel: AuthViewModel = hiltViewModel()
+            LaunchedEffect(startInPasswordSetup) {
+                if (startInPasswordSetup) {
+                    authViewModel.requirePasswordSetup()
+                }
+            }
             val state by authViewModel.state.collectAsStateWithLifecycle()
             AuthScreen(
                 state = state,
                 onAction = authViewModel::onAction,
                 visuals = authVisuals,
                 onAuthenticated = {
-                    navController.navigate(Routes.AUTHENTICATED) {
-                        popUpTo(Routes.AUTH) { inclusive = true }
+                    navController.navigate(AppRoute.AuthenticatedBoundary) {
+                        popUpTo<AppRoute.Authentication> { inclusive = true }
                         launchSingleTop = true
                     }
+                    deepLinkCoordinator.onAuthenticationChanged(authenticated = true)
                 },
             )
         }
 
-        composable(Routes.AUTHENTICATED) {
+        composable<AppRoute.AuthenticatedBoundary> {
             val signedIn = authState as? AuthenticationState.SignedIn
             if (signedIn == null) {
                 LaunchedEffect(Unit) {
-                    navController.navigate(Routes.STARTUP) {
+                    navController.navigate(AppRoute.Startup) {
                         popUpTo(navController.graph.findStartDestination().id) {
                             inclusive = true
                         }
@@ -211,6 +237,22 @@ fun VistaApp(container: AppContainer) {
                     context = signedIn.context,
                 )
             }
+        }
+
+        composable<AppRoute.DeferredFeature> { backStackEntry ->
+            val route = backStackEntry.toRoute<AppRoute.DeferredFeature>()
+            DeferredDestinationScreen(
+                kind = route.kind,
+                onBack = navController::popBackStack,
+            )
+        }
+
+        composable<AppRoute.DeepLinkFailure> { backStackEntry ->
+            val route = backStackEntry.toRoute<AppRoute.DeepLinkFailure>()
+            DeepLinkFailureScreen(
+                reason = route.reason,
+                onBack = navController::popBackStack,
+            )
         }
     }
 }

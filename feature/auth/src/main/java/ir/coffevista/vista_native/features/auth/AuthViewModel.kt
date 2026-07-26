@@ -1,8 +1,8 @@
 package ir.coffevista.vista_native.features.auth
 
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import dagger.hilt.android.lifecycle.HiltViewModel
 import ir.coffevista.vista_native.core.common.Outcome
 import ir.coffevista.vista_native.core.model.auth.AuthPayload
 import ir.coffevista.vista_native.core.model.auth.OtpVerification
@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import javax.inject.Inject
 
 enum class AuthStep {
     IDENTIFIER,
@@ -50,27 +51,27 @@ sealed interface AuthAction {
     data object ClearMessage : AuthAction
 }
 
-class AuthViewModel(
+@HiltViewModel
+class AuthViewModel @Inject constructor(
     private val repository: AuthRepository,
     private val sessionStore: SessionStore,
     private val authStateOwner: AuthenticationStateOwner,
-    startInPasswordSetup: Boolean,
 ) : ViewModel() {
-    private val mutableState = MutableStateFlow(
-        AuthUiState(
-            step = if (startInPasswordSetup) AuthStep.SET_PASSWORD else AuthStep.IDENTIFIER,
-            infoMessage = if (startInPasswordSetup) {
-                "برای ادامه، یک رمز عبور امن برای حساب خود تعیین کنید."
-            } else {
-                null
-            },
-        ),
-    )
+    private val mutableState = MutableStateFlow(AuthUiState())
     val state: StateFlow<AuthUiState> = mutableState.asStateFlow()
 
     private var pendingTwoFactorToken: String? = null
     private var pendingAuthPayload: AuthPayload? = null
     private var countdownJob: Job? = null
+
+    fun requirePasswordSetup() {
+        val current = mutableState.value
+        if (current.step != AuthStep.IDENTIFIER || current.isLoading) return
+        mutableState.value = current.copy(
+            step = AuthStep.SET_PASSWORD,
+            infoMessage = "برای ادامه، یک رمز عبور امن برای حساب خود تعیین کنید.",
+        )
+    }
 
     fun onAction(action: AuthAction) {
         when (action) {
@@ -455,21 +456,4 @@ class AuthViewModel(
         )
     }
 
-    class Factory(
-        private val repository: AuthRepository,
-        private val sessionStore: SessionStore,
-        private val authStateOwner: AuthenticationStateOwner,
-        private val startInPasswordSetup: Boolean,
-    ) : ViewModelProvider.Factory {
-        @Suppress("UNCHECKED_CAST")
-        override fun <T : ViewModel> create(modelClass: Class<T>): T {
-            require(modelClass.isAssignableFrom(AuthViewModel::class.java))
-            return AuthViewModel(
-                repository,
-                sessionStore,
-                authStateOwner,
-                startInPasswordSetup,
-            ) as T
-        }
-    }
 }
