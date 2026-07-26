@@ -29,3 +29,10 @@ dependencyResolutionManagement {
 
 rootProject.name = "vista_native"
 include(":app")
+include(":core:common")
+include(":core:model")
+include(":core:network")
+include(":core:datastore")
+include(":core:security")
+include(":core:testing")
+include(":feature:auth")

@@ -2,14 +2,14 @@ package ir.coffevista.vista_native.core.di
 
 import android.content.Context
 import ir.coffevista.vista_native.BuildConfig
-import ir.coffevista.vista_native.core.auth.AuthRepository
-import ir.coffevista.vista_native.core.auth.AuthenticationStateOwner
-import ir.coffevista.vista_native.core.auth.DefaultAuthRepository
-import ir.coffevista.vista_native.core.auth.OkHttpAuthRemoteDataSource
-import ir.coffevista.vista_native.core.storage.EncryptedSessionStore
-import ir.coffevista.vista_native.core.storage.OnboardingStore
-import ir.coffevista.vista_native.core.storage.SessionStore
-import ir.coffevista.vista_native.core.storage.SharedPreferencesOnboardingStore
+import ir.coffevista.vista_native.core.datastore.OnboardingStore
+import ir.coffevista.vista_native.core.datastore.SharedPreferencesOnboardingStore
+import ir.coffevista.vista_native.core.security.EncryptedSessionStore
+import ir.coffevista.vista_native.core.security.SessionStore
+import ir.coffevista.vista_native.features.auth.AuthenticationStateOwner
+import ir.coffevista.vista_native.features.auth.data.DefaultAuthRepository
+import ir.coffevista.vista_native.features.auth.data.OkHttpAuthRemoteDataSource
+import ir.coffevista.vista_native.features.auth.domain.AuthRepository
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
 

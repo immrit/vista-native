@@ -10,7 +10,7 @@ $criticalClasses = @(
     "ir.coffevista.vista_native.VistaApplication",
     "ir.coffevista.vista_native.features.startup.StartupResolver",
     "ir.coffevista.vista_native.features.auth.AuthViewModel",
-    "ir.coffevista.vista_native.core.auth.OkHttpAuthRemoteDataSource"
+    "ir.coffevista.vista_native.features.auth.data.OkHttpAuthRemoteDataSource"
 )
 
 foreach ($variant in $Variants) {

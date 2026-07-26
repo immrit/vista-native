@@ -12,7 +12,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import ir.coffevista.vista_native.features.startup.AuthenticatedContext
+import ir.coffevista.vista_native.core.model.session.AuthenticatedContext
 
 @Composable
 fun AuthenticatedBoundaryScreen(

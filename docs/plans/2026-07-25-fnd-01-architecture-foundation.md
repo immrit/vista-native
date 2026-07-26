@@ -2,7 +2,7 @@
 
 **Type:** refactor
 **Status:** in-progress
-**Progress:** `[█░░░░░░░░░] 7%` — 13/193 مورد تکمیل شده
+**Progress:** `[█░░░░░░░░░] 13%` — 25/193 مورد تکمیل شده
 
 ## Problem / Goal
 
@@ -71,19 +71,19 @@ Story، Search، Services، تغییر Backend یا Flutter، Migration Bridge،
 
 ### Phase 1 — Modular Monolith و Dependency Rules
 
-- [ ] `FND-MOD-01` ownership map فعلی `:app` برای Startup/Auth/Network/Storage/DI تهیه شود.
-- [ ] `FND-MOD-02` module graph هدف فقط برای مسئولیت‌های واقعی این فاز نهایی شود: `:app`، `:core:common`، `:core:model`، `:core:network`، `:core:database`، `:core:datastore`، `:core:security`، `:core:testing` و `:feature:auth`.
-- [ ] `FND-MOD-03` هر ماژول پیشنهادی پیش از ایجاد، consumer و کد واقعی مستند داشته باشد؛ ماژول بدون مصرف حذف یا ایجاد نشود.
-- [ ] `FND-MOD-04` conventionهای Gradle موجود GOV-01 بدون شکستن Version Catalog توسعه داده شوند.
-- [ ] `FND-MOD-05` `:app` به Android entry point و composition root محدود شود.
-- [ ] `FND-MOD-06` مدل‌های pure Kotlin مشترک به `:core:model` منتقل و عدم وابستگی آن به Android framework اثبات شود.
-- [ ] `FND-MOD-07` utilityهای واقعاً عمومی و محدود در `:core:common` قرار گیرند و ownership هر مورد ثبت شود.
-- [ ] `FND-MOD-08` Auth موجود با مرزهای واقعی UI/domain/data به `:feature:auth` منتقل شود.
+- [x] `FND-MOD-01` ownership map فعلی `:app` برای Startup/Auth/Network/Storage/DI تهیه شود.
+- [x] `FND-MOD-02` module graph هدف فقط برای مسئولیت‌های واقعی این فاز نهایی شود: `:app`، `:core:common`، `:core:model`، `:core:network`، `:core:database`، `:core:datastore`، `:core:security`، `:core:testing` و `:feature:auth`.
+- [x] `FND-MOD-03` هر ماژول پیشنهادی پیش از ایجاد، consumer و کد واقعی مستند داشته باشد؛ ماژول بدون مصرف حذف یا ایجاد نشود.
+- [x] `FND-MOD-04` conventionهای Gradle موجود GOV-01 بدون شکستن Version Catalog توسعه داده شوند.
+- [x] `FND-MOD-05` `:app` به Android entry point و composition root محدود شود.
+- [x] `FND-MOD-06` مدل‌های pure Kotlin مشترک به `:core:model` منتقل و عدم وابستگی آن به Android framework اثبات شود.
+- [x] `FND-MOD-07` utilityهای واقعاً عمومی و محدود در `:core:common` قرار گیرند و ownership هر مورد ثبت شود.
+- [x] `FND-MOD-08` Auth موجود با مرزهای واقعی UI/domain/data به `:feature:auth` منتقل شود.
 - [ ] `FND-MOD-09` مرزهای مستقل `core:database`، `core:datastore` و `core:security` پیاده شوند.
-- [ ] `FND-MOD-10` contractهای Domain/Repository از implementationها جدا و dependency direction مستند شود.
-- [ ] `FND-MOD-11` Feature-to-Feature dependency، Android type در Domain و cycle با rule/check قابل‌اجرا ممنوع شود.
-- [ ] `FND-MOD-12` Gradle dependency graph نهایی ذخیره و نبود cycle/ماژول خالی بررسی شود.
-- [ ] `FND-MOD-13` هر چهار Variant پس از checkpoint ماژول‌سازی build شوند.
+- [x] `FND-MOD-10` contractهای Domain/Repository از implementationها جدا و dependency direction مستند شود.
+- [x] `FND-MOD-11` Feature-to-Feature dependency، Android type در Domain و cycle با rule/check قابل‌اجرا ممنوع شود.
+- [x] `FND-MOD-12` Gradle dependency graph نهایی ذخیره و نبود cycle/ماژول خالی بررسی شود.
+- [x] `FND-MOD-13` هر چهار Variant پس از checkpoint ماژول‌سازی build شوند.
 
 ### Phase 2 — Hilt Composition Root و Ownership
 
@@ -293,6 +293,7 @@ Story، Search، Services، تغییر Backend یا Flutter، Migration Bridge،
 | ID | وضعیت اولیه | Owner | شرط خروج |
 |---|---|---|---|
 | `FND-DL-01` Deep-link mismatch/cold replay | Open | FND-01 Navigation | suite کامل warm/cold و replay سبز |
+| `FND-MOD-09` database boundary | Deferred، بدون module خالی | FND-01 Room / Phase 5 | ایجاد `core:database` هم‌زمان با schema، DAO و consumer واقعی |
 | `FND-AUTH-01` Maintenance/invalid-session fixture | Open | FND-01 Auth/Test | fixture injectable و instrumentation deterministic |
 | `FND-WEB-01` External URL/WebView policy | Open | FND-01 contract + DISC-01 UI | policy suite Foundation پاس؛ UI Feature در DISC-01 |
 | `FND-QA-01` Native feature instrumentation | Open | FND-01 | suite واقعی Startup/Auth به‌جای template |
@@ -313,6 +314,9 @@ Story، Search، Services، تغییر Backend یا Flutter، Migration Bridge،
 - اجرای واقعی روی branch `fnd-01/architecture-foundation` ادامه دارد.
 - baseline clean چهار Variant، ۸۰ unit execution، lint، R8 و secret scan پاس
   شدند؛ جزئیات در `docs/evidence/2026-07-25-fnd-01/README.md` ثبت است.
+- Phase 1 ماژول‌سازی با چهار Variant، ۴۲ unit execution، rule بدون cycle/module
+  خالی و R8 هر دو release پاس شد. `core:database` عمداً تا Phase 5 defer شد تا
+  همراه schema و consumer واقعی ایجاد و سپس `FND-MOD-09` ارزیابی شود.
 - نخستین clean به‌علت Gradle 8.13 daemon و lock روی `app/build` شکست خورد.
   فقط همان daemon با `gradlew --stop` متوقف شد و clean verification بعدی پاس
   شد؛ daemon 8.14 مربوط به جریان دیگر دست‌نخورده ماند.

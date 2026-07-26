@@ -19,3 +19,11 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# Foundation entry-flow classes are kept as class boundaries so release stack
+# traces and the reproducible R8 gate can still identify Startup/Auth owners
+# after moving their implementation to feature modules. Members may still be
+# optimized and names may still be obfuscated.
+-keep,allowoptimization,allowobfuscation class ir.coffevista.vista_native.features.startup.StartupResolver { *; }
+-keep,allowoptimization,allowobfuscation class ir.coffevista.vista_native.features.auth.AuthViewModel { *; }
+-keep,allowoptimization,allowobfuscation class ir.coffevista.vista_native.features.auth.data.OkHttpAuthRemoteDataSource { *; }

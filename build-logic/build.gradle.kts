@@ -15,5 +15,13 @@ gradlePlugin {
             id = "vista.android.application"
             implementationClass = "VistaAndroidApplicationPlugin"
         }
+        register("vistaAndroidLibrary") {
+            id = "vista.android.library"
+            implementationClass = "VistaAndroidLibraryPlugin"
+        }
+        register("vistaKotlinLibrary") {
+            id = "vista.kotlin.library"
+            implementationClass = "VistaKotlinLibraryPlugin"
+        }
     }
 }
