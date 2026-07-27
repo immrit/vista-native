@@ -89,6 +89,28 @@ class VistaFoundationDatabaseTest {
     }
 
     @Test
+    fun migrationFromV2ToV3CreatesProfileTable() {
+        migrationHelper.createDatabase(TEST_DATABASE, 2).apply {
+            close()
+        }
+
+        migrationHelper.runMigrationsAndValidate(
+            TEST_DATABASE,
+            3,
+            true,
+            VistaFoundationDatabase.MIGRATION_1_2,
+            VistaFoundationDatabase.MIGRATION_2_3
+        ).use { database ->
+            database.query(
+                "SELECT user_id, full_name, is_verified, post_count, follower_count, following_count " +
+                    "FROM own_profile",
+            ).use { cursor ->
+                assertEquals(0, cursor.count) // Table is created and empty
+            }
+        }
+    }
+
+    @Test
     fun failedTransactionRollsBackClearAndInsert() = runBlocking(Dispatchers.IO) {
         val database = Room.inMemoryDatabaseBuilder(
             context,
@@ -121,7 +143,7 @@ class VistaFoundationDatabaseTest {
             VistaFoundationDatabase::class.java,
             TEST_DATABASE,
         )
-            .addMigrations(VistaFoundationDatabase.MIGRATION_1_2)
+            .addMigrations(VistaFoundationDatabase.MIGRATION_1_2, VistaFoundationDatabase.MIGRATION_2_3)
             .build()
 
         assertThrows(SQLiteException::class.java) {

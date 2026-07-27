@@ -102,6 +102,7 @@ dependencies {
     implementation(project(":core:worker"))
     implementation(project(":feature:auth"))
     implementation(project(":feature:shell"))
+    implementation(project(":feature:profile"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)

@@ -33,6 +33,7 @@ import androidx.navigation.compose.navigation
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import androidx.navigation.NavType
+import androidx.hilt.navigation.compose.hiltViewModel
 import ir.coffevista.vista_native.core.designsystem.component.VistaAvatar
 import ir.coffevista.vista_native.core.designsystem.component.VistaBadge
 import ir.coffevista.vista_native.core.designsystem.component.VistaBottomSheet
@@ -50,6 +51,7 @@ import ir.coffevista.vista_native.core.designsystem.component.VistaTopAppBar
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaLayout
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaSpacing
 import ir.coffevista.vista_native.core.model.session.AuthenticatedContext
+import ir.coffevista.vista_native.features.profile.ui.OwnProfileScreen
 import kotlinx.coroutines.launch
 
 @Composable
@@ -192,10 +194,9 @@ fun VistaShell(
             }
             navigation(route = ShellRoutes.ProfileGraph, startDestination = ShellRoutes.ProfileRoot) {
                 composable(ShellRoutes.ProfileRoot) {
-                    ProfilePlaceholderScreen(
-                        context = context,
+                    OwnProfileScreen(
+                        viewModel = hiltViewModel(),
                         onLogout = onLogout,
-                        onDetails = { navController.navigate(ShellRoutes.profileDetail("foundation")) }
                     )
                 }
                 composable(ShellRoutes.ProfileDetailRoute) { ControlledDetailScreen(ShellTab.Profile) }
@@ -269,51 +270,6 @@ private fun ChatPlaceholderScreen(onDetails: () -> Unit) {
         title = "زیرساخت گفت‌وگو آماده است",
         message = "پیام، WebSocket و repository خارج از محدوده این فاز هستند.",
         onDetails = onDetails,
-    )
-}
-
-@Composable
-private fun ProfilePlaceholderScreen(
-    context: AuthenticatedContext,
-    onLogout: () -> Unit,
-    onDetails: () -> Unit,
-) {
-    var confirmLogout by rememberSaveable { mutableStateOf(false) }
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(VistaLayout.ScreenHorizontal),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        VistaAvatar(context.displayName)
-        Text(
-            context.displayName,
-            modifier = Modifier.padding(top = VistaSpacing.Medium),
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold,
-        )
-        VistaBadge("Session امن", Modifier.padding(top = VistaSpacing.Small))
-        VistaDivider(Modifier.padding(vertical = VistaSpacing.XLarge))
-        Text("Feature نمایه در فاز خودش پیاده‌سازی می‌شود.")
-        VistaButton(
-            onClick = onDetails,
-            variant = VistaButtonVariant.Outline,
-            modifier = Modifier.padding(top = VistaSpacing.Large),
-        ) { Text("جزئیات navigation") }
-        VistaButton(
-            onClick = { confirmLogout = true },
-            variant = VistaButtonVariant.Destructive,
-            modifier = Modifier.padding(top = VistaSpacing.Medium),
-        ) { Text("خروج از حساب") }
-    }
-    VistaDialog(
-        visible = confirmLogout,
-        title = "خروج از حساب",
-        message = "Session امن پاک می‌شود و به صفحه ورود برمی‌گردید.",
-        confirmLabel = "خروج",
-        onConfirm = onLogout,
-        onDismiss = { confirmLogout = false },
     )
 }
 

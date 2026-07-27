@@ -21,11 +21,16 @@ object DatabaseModule {
         VistaFoundationDatabase::class.java,
         VistaFoundationDatabase.DATABASE_NAME,
     )
-        .addMigrations(VistaFoundationDatabase.MIGRATION_1_2)
+        .addMigrations(VistaFoundationDatabase.MIGRATION_1_2, VistaFoundationDatabase.MIGRATION_2_3)
         .build()
 
     @Provides
     fun provideVerifiedTlsPolicyDao(
         database: VistaFoundationDatabase,
     ): VerifiedTlsPolicyDao = database.verifiedTlsPolicyDao()
+
+    @Provides
+    fun provideOwnProfileDao(
+        database: VistaFoundationDatabase,
+    ): ir.coffevista.vista_native.core.database.profile.OwnProfileDao = database.ownProfileDao()
 }
