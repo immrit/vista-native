@@ -22,5 +22,5 @@ object ProfileDataModule {
     fun provideOwnProfileRepository(
         api: ProfileApi,
         dao: OwnProfileDao
-    ): OwnProfileRepository = OwnProfileRepository(api, dao)
+    ): OwnProfileRepository = OfflineFirstOwnProfileRepository(api, dao)
 }

@@ -5,7 +5,7 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import ir.coffevista.vista_native.core.common.Outcome
 import ir.coffevista.vista_native.features.auth.AuthenticationState
-import ir.coffevista.vista_native.features.auth.AuthenticationStateOwner
+import ir.coffevista.vista_native.features.auth.AuthenticationStateProvider
 import ir.coffevista.vista_native.features.profile.data.OwnProfileRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -18,7 +18,7 @@ import javax.inject.Inject
 @HiltViewModel
 class OwnProfileViewModel @Inject constructor(
     private val repository: OwnProfileRepository,
-    private val authStateOwner: AuthenticationStateOwner
+    private val authStateProvider: AuthenticationStateProvider
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<OwnProfileUiState>(OwnProfileUiState.Loading)
@@ -28,7 +28,7 @@ class OwnProfileViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            authStateOwner.state.collectLatest { authState ->
+            authStateProvider.state.collectLatest { authState ->
                 if (authState is AuthenticationState.SignedIn) {
                     val userId = authState.context.userId
                     if (userId != currentUserId) {

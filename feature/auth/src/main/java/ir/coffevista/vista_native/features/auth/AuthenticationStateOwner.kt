@@ -14,9 +14,9 @@ sealed interface AuthenticationState {
 }
 
 @Singleton
-class AuthenticationStateOwner @Inject constructor() {
+class AuthenticationStateOwner @Inject constructor() : AuthenticationStateProvider {
     private val mutableState = MutableStateFlow<AuthenticationState>(AuthenticationState.Unknown)
-    val state: StateFlow<AuthenticationState> = mutableState.asStateFlow()
+    override val state: StateFlow<AuthenticationState> = mutableState.asStateFlow()
 
     fun accept(context: AuthenticatedContext) {
         mutableState.value = AuthenticationState.SignedIn(context)
