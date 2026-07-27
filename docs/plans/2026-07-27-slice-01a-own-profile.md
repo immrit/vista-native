@@ -1,8 +1,8 @@
-﻿# SLICE-01A â€” Own Profile End-to-End
+# SLICE-01A — Own Profile End-to-End
 
 **Type:** feature
 **Status:** planning
-**Progress:** `[â–‘â–‘â–‘â–‘â–‘â–‘â–‘â–‘â–‘â–‘] 0%`
+**Progress:** `[██████████] 100%`
 
 ## Problem / Goal
 Implement the Own Profile tab natively in the `vista_native` app using the `GET /v1/me/profile` endpoint, a Room cache, and Vista design components. Replaces the placeholder profile tab.
@@ -53,12 +53,12 @@ Creates a clean architecture implementation for the user's profile:
 - [x] Ensure back-stack behavior is preserved when navigating tabs.
 - [x] Hook up `onLogout` behavior in `OwnProfileScreen` (e.g. settings icon or edit profile placeholder).
 
-### Phase 5 â€” Tests
-- [-] Unit test `ProfileDto` to `OwnProfileEntity` mapper. (Skipped: Requires architecture refactor)
-- [-] Unit test `OwnProfileRepository` cache-first behavior. (Skipped: Requires architecture refactor)
-- [-] Unit test `OwnProfileRepository` network error with cache. (Skipped: Requires architecture refactor)
-- [-] Unit test `OwnProfileViewModel` state emissions. (Skipped: Requires architecture refactor)
-- [-] Unit test `OwnProfileViewModel` refresh action. (Skipped: Requires architecture refactor)
+### Phase 5 — Tests
+- [x] Unit test `ProfileDto` to `OwnProfileEntity` mapper.
+- [x] Unit test `OwnProfileRepository` cache-first behavior.
+- [x] Unit test `OwnProfileRepository` network error with cache.
+- [x] Unit test `OwnProfileViewModel` state emissions.
+- [x] Unit test `OwnProfileViewModel` refresh action.
 - [x] Verify `VistaFoundationDatabase` migration 2 to 3.
 
 ### Phase 6 â€” Runtime
@@ -80,4 +80,5 @@ Creates a clean architecture implementation for the user's profile:
 - We are isolating Own Profile from general profile retrieval to follow the slice boundary strictly.
 - Database entity explicitly handles the active user's profile to avoid mixing accounts.
 - The UI will use standard `Vista*` components from the design system.
+- Refactored `AuthenticationStateOwner` to implement `AuthenticationStateProvider` and created `OwnProfileRepository` interface to allow full testing without Mockito.
 
