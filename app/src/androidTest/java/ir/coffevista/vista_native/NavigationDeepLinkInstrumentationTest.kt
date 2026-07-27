@@ -2,6 +2,7 @@ package ir.coffevista.vista_native
 
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import ir.coffevista.vista_native.navigation.DeepLinkDeliveryState
@@ -17,17 +18,28 @@ class NavigationDeepLinkInstrumentationTest {
     @Test
     fun controlledFailureRouteRestoresAfterActivityRecreation() {
         composeRule.runOnUiThread {
+            composeRule.activity.authenticationStateOwner.accept(
+                ir.coffevista.vista_native.core.model.session.AuthenticatedContext(
+                    userId = "test", profileCompleted = true, passwordRequired = false, offline = false, displayName = "Test"
+                )
+            )
             composeRule.activity.deepLinkCoordinator.onSessionResolved(authenticated = false)
             composeRule.activity.deepLinkCoordinator.submit(
                 rawUri = "vista://chat-detail/legacy-route",
                 authenticated = true,
             )
         }
+        composeRule.waitUntil(5000) {
+            composeRule.onAllNodesWithText("این لینک توسط ویستا پشتیبانی نمی‌شود.").fetchSemanticsNodes().isNotEmpty()
+        }
         composeRule.onNodeWithText("این لینک توسط ویستا پشتیبانی نمی‌شود.")
             .assertIsDisplayed()
 
         composeRule.activityRule.scenario.recreate()
 
+        composeRule.waitUntil(5000) {
+            composeRule.onAllNodesWithText("این لینک توسط ویستا پشتیبانی نمی‌شود.").fetchSemanticsNodes().isNotEmpty()
+        }
         composeRule.onNodeWithText("این لینک توسط ویستا پشتیبانی نمی‌شود.")
             .assertIsDisplayed()
     }
@@ -43,13 +55,15 @@ class NavigationDeepLinkInstrumentationTest {
                 )
             }
         }
+        composeRule.waitUntil(5000) {
+            composeRule.onAllNodesWithText("این لینک توسط ویستا پشتیبانی نمی‌شود.").fetchSemanticsNodes().isNotEmpty()
+        }
         composeRule.onNodeWithText("این لینک توسط ویستا پشتیبانی نمی‌شود.")
             .assertIsDisplayed()
 
         composeRule.runOnUiThread {
             composeRule.activity.onBackPressedDispatcher.onBackPressed()
         }
-
         composeRule.onNodeWithText("این لینک توسط ویستا پشتیبانی نمی‌شود.")
             .assertDoesNotExist()
     }
@@ -73,15 +87,23 @@ class NavigationDeepLinkInstrumentationTest {
             if (restored is DeepLinkDeliveryState.PendingSession) {
                 composeRule.activity.deepLinkCoordinator.onSessionResolved(authenticated = false)
             }
+            composeRule.activity.authenticationStateOwner.accept(
+                ir.coffevista.vista_native.core.model.session.AuthenticatedContext(
+                    userId = "test", profileCompleted = true, passwordRequired = false, offline = false, displayName = "Test"
+                )
+            )
             composeRule.activity.deepLinkCoordinator.onAuthenticationChanged(authenticated = true)
         }
-        composeRule.onNodeWithText("این مقصد هنوز در نسخه Native آماده نشده است")
+        composeRule.waitUntil(5000) {
+            composeRule.onAllNodesWithText("خانه: مقصد داخلی کنترل‌شده").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithText("خانه: مقصد داخلی کنترل‌شده")
             .assertIsDisplayed()
 
         composeRule.runOnUiThread {
             composeRule.activity.onBackPressedDispatcher.onBackPressed()
         }
-        composeRule.onNodeWithText("این مقصد هنوز در نسخه Native آماده نشده است")
+        composeRule.onNodeWithText("خانه: مقصد داخلی کنترل‌شده")
             .assertDoesNotExist()
     }
 }

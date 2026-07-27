@@ -198,6 +198,15 @@ class DeepLinkCoordinator @Inject constructor(
         mutableState.value = DeepLinkDeliveryState.Idle
     }
 
+    @androidx.annotation.VisibleForTesting
+    @Synchronized
+    fun resetForTesting() {
+        mutableState.value = DeepLinkDeliveryState.Idle
+        lastConsumedKey = null
+        lastConsumedAtEpochSeconds = Long.MIN_VALUE
+        sessionResolved = false
+    }
+
     private fun isDuplicate(key: String): Boolean {
         val currentKey = when (val current = mutableState.value) {
             is DeepLinkDeliveryState.PendingSession -> current.destination.deliveryKey
@@ -224,6 +233,12 @@ class DeepLinkCoordinator @Inject constructor(
     }
 
     private companion object {
-        const val DUPLICATE_WINDOW_SECONDS = 2L
+        const val DUPLICATE_WINDOW_SECONDS = 2
     }
+}
+
+@dagger.hilt.EntryPoint
+@dagger.hilt.InstallIn(dagger.hilt.components.SingletonComponent::class)
+interface DeepLinkCoordinatorTestEntryPoint {
+    fun deepLinkCoordinator(): DeepLinkCoordinator
 }

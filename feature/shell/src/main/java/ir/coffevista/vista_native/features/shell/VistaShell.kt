@@ -21,6 +21,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.navigation.NavDestination
 import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.NavDestination.Companion.hierarchy
@@ -30,6 +31,8 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.navigation
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
+import androidx.navigation.NavType
 import ir.coffevista.vista_native.core.designsystem.component.VistaAvatar
 import ir.coffevista.vista_native.core.designsystem.component.VistaBadge
 import ir.coffevista.vista_native.core.designsystem.component.VistaBottomSheet
@@ -63,17 +66,15 @@ fun VistaShell(
     val scope = rememberCoroutineScope()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val selectedTab = backStackEntry?.destination?.toShellTab() ?: ShellTab.Feed
+    val currentRoute = backStackEntry?.destination?.route ?: "none"
     val atRoot = backStackEntry?.destination?.isTabRoot() != false
     var lastExitRequestAt by rememberSaveable { mutableStateOf(0L) }
     var lastDeepLinkId by rememberSaveable { mutableStateOf(0L) }
 
     fun selectTab(tab: ShellTab) {
-        if (tab == selectedTab) {
-            navController.popBackStack(tab.rootRoute(), inclusive = false)
-            return
-        }
+        val startDestinationId = navController.graph.findStartDestination().id
         navController.navigate(tab.graphRoute()) {
-            popUpTo(navController.graph.findStartDestination().id) {
+            popUpTo(startDestinationId) {
                 saveState = true
             }
             launchSingleTop = true
@@ -84,12 +85,23 @@ fun VistaShell(
     LaunchedEffect(deepLinkRequest?.deliveryId) {
         val request = deepLinkRequest ?: return@LaunchedEffect
         if (request.deliveryId == lastDeepLinkId) return@LaunchedEffect
-        val route: Any = when (request.kind) {
-            ShellDeferredKind.POST, ShellDeferredKind.GROUP -> FeedDetail(request.reference)
-            ShellDeferredKind.PROFILE -> ProfileDetail(request.reference)
-            ShellDeferredKind.CHAT -> ChatDetail(request.reference)
+
+
+        when (request.kind) {
+            ShellDeferredKind.POST, ShellDeferredKind.GROUP -> {
+                selectTab(ShellTab.Feed)
+                navController.navigate(ShellRoutes.feedDetail(request.reference))
+            }
+            ShellDeferredKind.PROFILE -> {
+                selectTab(ShellTab.Profile)
+                navController.navigate(ShellRoutes.profileDetail(request.reference))
+            }
+            ShellDeferredKind.CHAT -> {
+                selectTab(ShellTab.Chat)
+                navController.navigate(ShellRoutes.chatDetail(request.reference))
+            }
         }
-        navController.navigate(route) { launchSingleTop = true }
+
         lastDeepLinkId = request.deliveryId
         onDeepLinkConsumed(request.deliveryId)
     }
@@ -120,63 +132,73 @@ fun VistaShell(
         topBar = { VistaTopAppBar(selectedTab.labelFa) },
         snackbarHostState = snackbarHostState,
         bottomBar = {
-            VistaNavigationBar(
-                items = ShellTab.entries,
-                selected = selectedTab,
-                onSelect = ::selectTab,
-                label = ShellTab::labelFa,
-                icon = { tab, selected ->
-                    Text(
-                        text = tab.glyph,
-                        color = if (selected) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                        style = MaterialTheme.typography.titleLarge,
-                    )
-                },
-            )
+            Column {
+                Text(
+                    text = "CurrentRoute: $currentRoute",
+                    modifier = Modifier.padding(8.dp)
+                )
+                Text(
+                    text = "DeepLinkDebug: ${deepLinkRequest?.deliveryId ?: "none"}-${deepLinkRequest?.kind ?: "none"}-${deepLinkRequest?.reference ?: "none"}",
+                    modifier = Modifier.padding(8.dp)
+                )
+                VistaNavigationBar(
+                    items = ShellTab.entries,
+                    selected = selectedTab,
+                    onSelect = ::selectTab,
+                    label = ShellTab::labelFa,
+                    icon = { tab, selected ->
+                        Text(
+                            text = tab.glyph,
+                            color = if (selected) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                            style = MaterialTheme.typography.titleLarge,
+                        )
+                    },
+                )
+            }
         },
     ) { padding ->
         NavHost(
             navController = navController,
-            startDestination = FeedGraph,
+            startDestination = ShellRoutes.FeedGraph,
             modifier = Modifier.padding(padding),
         ) {
-            navigation<FeedGraph>(startDestination = FeedRoot) {
-                composable<FeedRoot> {
-                    FeedPlaceholderScreen(onDetails = { navController.navigate(FeedDetail()) })
+            navigation(route = ShellRoutes.FeedGraph, startDestination = ShellRoutes.FeedRoot) {
+                composable(ShellRoutes.FeedRoot) {
+                    FeedPlaceholderScreen(onDetails = { navController.navigate(ShellRoutes.feedDetail("foundation")) })
                 }
-                composable<FeedDetail> { ControlledDetailScreen(ShellTab.Feed) }
+                composable(ShellRoutes.FeedDetailRoute) { ControlledDetailScreen(ShellTab.Feed) }
             }
-            navigation<SearchGraph>(startDestination = SearchRoot) {
-                composable<SearchRoot> {
-                    SearchPlaceholderScreen(onDetails = { navController.navigate(SearchDetail()) })
+            navigation(route = ShellRoutes.SearchGraph, startDestination = ShellRoutes.SearchRoot) {
+                composable(ShellRoutes.SearchRoot) {
+                    SearchPlaceholderScreen(onDetails = { navController.navigate(ShellRoutes.searchDetail("foundation")) })
                 }
-                composable<SearchDetail> { ControlledDetailScreen(ShellTab.Search) }
+                composable(ShellRoutes.SearchDetailRoute) { ControlledDetailScreen(ShellTab.Search) }
             }
-            navigation<ServicesGraph>(startDestination = ServicesRoot) {
-                composable<ServicesRoot> {
-                    ServicesPlaceholderScreen(onDetails = { navController.navigate(ServicesDetail()) })
+            navigation(route = ShellRoutes.ServicesGraph, startDestination = ShellRoutes.ServicesRoot) {
+                composable(ShellRoutes.ServicesRoot) {
+                    ServicesPlaceholderScreen(onDetails = { navController.navigate(ShellRoutes.servicesDetail("foundation")) })
                 }
-                composable<ServicesDetail> { ControlledDetailScreen(ShellTab.Services) }
+                composable(ShellRoutes.ServicesDetailRoute) { ControlledDetailScreen(ShellTab.Services) }
             }
-            navigation<ChatGraph>(startDestination = ChatRoot) {
-                composable<ChatRoot> {
-                    ChatPlaceholderScreen(onDetails = { navController.navigate(ChatDetail()) })
+            navigation(route = ShellRoutes.ChatGraph, startDestination = ShellRoutes.ChatRoot) {
+                composable(ShellRoutes.ChatRoot) {
+                    ChatPlaceholderScreen(onDetails = { navController.navigate(ShellRoutes.chatDetail("foundation")) })
                 }
-                composable<ChatDetail> { ControlledDetailScreen(ShellTab.Chat) }
+                composable(ShellRoutes.ChatDetailRoute) { ControlledDetailScreen(ShellTab.Chat) }
             }
-            navigation<ProfileGraph>(startDestination = ProfileRoot) {
-                composable<ProfileRoot> {
+            navigation(route = ShellRoutes.ProfileGraph, startDestination = ShellRoutes.ProfileRoot) {
+                composable(ShellRoutes.ProfileRoot) {
                     ProfilePlaceholderScreen(
                         context = context,
                         onLogout = onLogout,
-                        onDetails = { navController.navigate(ProfileDetail()) },
+                        onDetails = { navController.navigate(ShellRoutes.profileDetail("foundation")) }
                     )
                 }
-                composable<ProfileDetail> { ControlledDetailScreen(ShellTab.Profile) }
+                composable(ShellRoutes.ProfileDetailRoute) { ControlledDetailScreen(ShellTab.Profile) }
             }
         }
     }
@@ -342,33 +364,33 @@ private fun ControlledDetailScreen(tab: ShellTab) {
 }
 
 private fun NavDestination.toShellTab(): ShellTab = when {
-    hierarchy.any { it.hasRoute<FeedGraph>() } -> ShellTab.Feed
-    hierarchy.any { it.hasRoute<SearchGraph>() } -> ShellTab.Search
-    hierarchy.any { it.hasRoute<ServicesGraph>() } -> ShellTab.Services
-    hierarchy.any { it.hasRoute<ChatGraph>() } -> ShellTab.Chat
-    hierarchy.any { it.hasRoute<ProfileGraph>() } -> ShellTab.Profile
+    hierarchy.any { it.route == ShellRoutes.FeedGraph } -> ShellTab.Feed
+    hierarchy.any { it.route == ShellRoutes.SearchGraph } -> ShellTab.Search
+    hierarchy.any { it.route == ShellRoutes.ServicesGraph } -> ShellTab.Services
+    hierarchy.any { it.route == ShellRoutes.ChatGraph } -> ShellTab.Chat
+    hierarchy.any { it.route == ShellRoutes.ProfileGraph } -> ShellTab.Profile
     else -> ShellTab.Feed
 }
 
 private fun NavDestination.isTabRoot(): Boolean =
-    hasRoute<FeedRoot>() ||
-        hasRoute<SearchRoot>() ||
-        hasRoute<ServicesRoot>() ||
-        hasRoute<ChatRoot>() ||
-        hasRoute<ProfileRoot>()
+    route == ShellRoutes.FeedRoot ||
+        route == ShellRoutes.SearchRoot ||
+        route == ShellRoutes.ServicesRoot ||
+        route == ShellRoutes.ChatRoot ||
+        route == ShellRoutes.ProfileRoot
 
-private fun ShellTab.graphRoute(): Any = when (this) {
-    ShellTab.Feed -> FeedGraph
-    ShellTab.Search -> SearchGraph
-    ShellTab.Services -> ServicesGraph
-    ShellTab.Chat -> ChatGraph
-    ShellTab.Profile -> ProfileGraph
+private fun ShellTab.graphRoute(): String = when (this) {
+    ShellTab.Feed -> ShellRoutes.FeedGraph
+    ShellTab.Search -> ShellRoutes.SearchGraph
+    ShellTab.Services -> ShellRoutes.ServicesGraph
+    ShellTab.Chat -> ShellRoutes.ChatGraph
+    ShellTab.Profile -> ShellRoutes.ProfileGraph
 }
 
-private fun ShellTab.rootRoute(): Any = when (this) {
-    ShellTab.Feed -> FeedRoot
-    ShellTab.Search -> SearchRoot
-    ShellTab.Services -> ServicesRoot
-    ShellTab.Chat -> ChatRoot
-    ShellTab.Profile -> ProfileRoot
+private fun ShellTab.rootRoute(): String = when (this) {
+    ShellTab.Feed -> ShellRoutes.FeedRoot
+    ShellTab.Search -> ShellRoutes.SearchRoot
+    ShellTab.Services -> ShellRoutes.ServicesRoot
+    ShellTab.Chat -> ShellRoutes.ChatRoot
+    ShellTab.Profile -> ShellRoutes.ProfileRoot
 }
