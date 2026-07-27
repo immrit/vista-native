@@ -1,6 +1,7 @@
 package ir.coffevista.vista_native.features.auth
 
 import ir.coffevista.vista_native.core.common.ErrorKind
+import ir.coffevista.vista_native.core.common.DispatcherProvider
 import ir.coffevista.vista_native.core.common.Outcome
 import ir.coffevista.vista_native.core.model.auth.AuthPayload
 import ir.coffevista.vista_native.core.model.auth.AuthSession
@@ -12,6 +13,9 @@ import ir.coffevista.vista_native.core.network.RemoteFailure
 import ir.coffevista.vista_native.features.auth.data.AuthRemoteDataSource
 import ir.coffevista.vista_native.features.auth.data.DefaultAuthRepository
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -58,6 +62,27 @@ class ArchitectureFoundationTest {
         assertEquals("تلاش‌های زیادی انجام شده است", error.messageFa)
         assertEquals(42, error.retryAfterSeconds)
     }
+
+    @Test
+    fun repositoryDispatcherIsReplaceableByDeterministicTestDispatcher() = runTest {
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        val repository = DefaultAuthRepository(
+            remote = FakeRemote(),
+            dispatchers = TestDispatcherProvider(testDispatcher),
+        )
+
+        val result = repository.login("vista", "secret")
+
+        assertTrue(result is Outcome.Success)
+    }
+}
+
+private class TestDispatcherProvider(
+    dispatcher: CoroutineDispatcher,
+) : DispatcherProvider {
+    override val default = dispatcher
+    override val io = dispatcher
+    override val main = dispatcher
 }
 
 private open class FakeRemote : AuthRemoteDataSource {

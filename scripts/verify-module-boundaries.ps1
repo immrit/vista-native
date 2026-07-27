@@ -11,9 +11,11 @@ $modules = [ordered]@{
     ":core:common"   = "core\common"
     ":core:model"    = "core\model"
     ":core:network"  = "core\network"
+    ":core:database" = "core\database"
     ":core:datastore" = "core\datastore"
     ":core:security" = "core\security"
     ":core:testing"  = "core\testing"
+    ":core:worker"   = "core\worker"
     ":feature:auth"  = "feature\auth"
 }
 
@@ -21,16 +23,19 @@ $allowedDependencies = @{
     ":core:common"    = @()
     ":core:model"     = @()
     ":core:network"   = @(":core:common")
-    ":core:datastore" = @()
-    ":core:security"  = @(":core:model")
+    ":core:database"  = @()
+    ":core:datastore" = @(":core:common")
+    ":core:security"  = @(":core:common", ":core:model")
     ":core:testing"   = @()
+    ":core:worker"    = @()
     ":feature:auth"   = @(
         ":core:common",
         ":core:datastore",
         ":core:model",
         ":core:network",
         ":core:security",
-        ":core:testing"
+        ":core:testing",
+        ":core:worker"
     )
 }
 

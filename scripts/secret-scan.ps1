@@ -3,16 +3,16 @@ param()
 
 $ErrorActionPreference = "Stop"
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
-$trackedFiles = @(git -C $repositoryRoot ls-files)
+$repositoryFiles = @(git -C $repositoryRoot ls-files --cached --others --exclude-standard)
 if ($LASTEXITCODE -ne 0) {
-    throw "Unable to enumerate tracked files."
+    throw "Unable to enumerate repository files."
 }
 
 $sensitiveNamePattern =
     '(^|/)(\.env($|\.)|[^/]+\.(jks|keystore|p12|pfx|pem|key)$|' +
     'keystore\.properties$|signing\.properties$|secrets?\.properties$|' +
     'credentials?[^/]*$)'
-$nameHits = @($trackedFiles | Where-Object { $_ -match $sensitiveNamePattern })
+$nameHits = @($repositoryFiles | Where-Object { $_ -match $sensitiveNamePattern })
 
 $rules = [ordered]@{
     "private-key" = '-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----'
@@ -24,7 +24,7 @@ $rules = [ordered]@{
 }
 
 $contentHits = New-Object System.Collections.Generic.List[string]
-foreach ($relativePath in $trackedFiles) {
+foreach ($relativePath in $repositoryFiles) {
     $absolutePath = Join-Path $repositoryRoot $relativePath
     if (-not (Test-Path -LiteralPath $absolutePath -PathType Leaf)) {
         continue
@@ -55,4 +55,4 @@ if ($nameHits.Count -gt 0 -or $contentHits.Count -gt 0) {
     exit 1
 }
 
-Write-Host "Secret scan passed: $($trackedFiles.Count) tracked files, 0 findings."
+Write-Host "Secret scan passed: $($repositoryFiles.Count) tracked/untracked files, 0 findings."

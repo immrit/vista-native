@@ -172,17 +172,53 @@ class AuthViewModelTest {
         assertTrue(owner.state.value is AuthenticationState.SignedIn)
     }
 
+    @Test
+    fun otpPasswordChallengeCompletesTwoFactorLogin() = runTest(dispatcher) {
+        val repository = RecordingAuthRepository(
+            lookupResult = Outcome.Success(
+                IdentifierLookup(true, true, "09123456789", "otp", "active"),
+            ),
+            verifyOtpResult = Outcome.Success(
+                OtpVerification.PasswordChallenge("two-factor-token"),
+            ),
+            loginResult = Outcome.Success(authPayload()),
+        )
+        val owner = AuthenticationStateOwner()
+        val viewModel = viewModel(repository = repository, owner = owner)
+
+        viewModel.onAction(AuthAction.IdentifierChanged("09123456789"))
+        viewModel.onAction(AuthAction.Submit)
+        runCurrent()
+        assertEquals(AuthStep.OTP, viewModel.state.value.step)
+
+        viewModel.onAction(AuthAction.OtpChanged("۱۲۳۴۵"))
+        viewModel.onAction(AuthAction.Submit)
+        runCurrent()
+        assertEquals(AuthStep.PASSWORD, viewModel.state.value.step)
+        assertTrue(viewModel.state.value.isTwoFactor)
+
+        viewModel.onAction(AuthAction.PasswordChanged("Vista1405"))
+        viewModel.onAction(AuthAction.Submit)
+        runCurrent()
+
+        assertEquals(1, repository.verifyTwoFactorCalls)
+        assertTrue(owner.state.value is AuthenticationState.SignedIn)
+    }
+
     private fun viewModel(
         repository: RecordingAuthRepository,
         store: AuthTestSessionStore = AuthTestSessionStore(),
         owner: AuthenticationStateOwner = AuthenticationStateOwner(),
         startInPasswordSetup: Boolean = false,
-    ) = AuthViewModel(
+    ): AuthViewModel = AuthViewModel(
         repository = repository,
         sessionStore = store,
         authStateOwner = owner,
-        startInPasswordSetup = startInPasswordSetup,
-    )
+    ).also {
+        if (startInPasswordSetup) {
+            it.requirePasswordSetup()
+        }
+    }
 }
 
 private class RecordingAuthRepository(
@@ -195,6 +231,7 @@ private class RecordingAuthRepository(
     ),
 ) : AuthRepository {
     var setPasswordCalls = 0
+    var verifyTwoFactorCalls = 0
 
     override suspend fun lookupIdentifier(identifier: String) = lookupResult
 
@@ -208,7 +245,10 @@ private class RecordingAuthRepository(
     override suspend fun verifyTwoFactor(
         token: String,
         password: String,
-    ): Outcome<AuthPayload> = loginResult
+    ): Outcome<AuthPayload> {
+        verifyTwoFactorCalls += 1
+        return loginResult
+    }
 
     override suspend fun setPassword(
         accessToken: String,

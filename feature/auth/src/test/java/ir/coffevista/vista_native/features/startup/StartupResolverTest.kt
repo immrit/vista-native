@@ -2,6 +2,7 @@ package ir.coffevista.vista_native.features.startup
 
 import ir.coffevista.vista_native.core.common.AppError
 import ir.coffevista.vista_native.core.common.ErrorKind
+import ir.coffevista.vista_native.core.common.EpochClock
 import ir.coffevista.vista_native.core.common.Outcome
 import ir.coffevista.vista_native.core.datastore.OnboardingStore
 import ir.coffevista.vista_native.core.model.auth.AuthPayload
@@ -10,10 +11,14 @@ import ir.coffevista.vista_native.core.model.auth.AuthUser
 import ir.coffevista.vista_native.core.model.auth.IdentifierLookup
 import ir.coffevista.vista_native.core.model.auth.OtpChallenge
 import ir.coffevista.vista_native.core.model.auth.OtpVerification
+import ir.coffevista.vista_native.core.network.NetworkMonitor
+import ir.coffevista.vista_native.core.network.NetworkState
 import ir.coffevista.vista_native.core.security.SessionStore
 import ir.coffevista.vista_native.core.security.StoredSession
 import ir.coffevista.vista_native.features.auth.domain.AuthRepository
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -58,7 +63,7 @@ class StartupResolverTest {
             auth,
             FakeOnboardingStore(true),
             store,
-            nowEpochSeconds = { NOW },
+            clock = EpochClock { NOW },
         ).resolve()
 
         assertTrue(destination is StartupDestination.Authenticated)
@@ -69,6 +74,7 @@ class StartupResolverTest {
     @Test
     fun terminalRefreshClearsSessionAndRoutesToAuth() = runBlocking {
         val store = FakeSessionStore(stored(expiresAt = NOW - 10))
+        val onboarding = FakeOnboardingStore(true)
         val auth = FakeAuthRepository(
             refreshResult = Outcome.Failure(
                 AppError(ErrorKind.UNAUTHORIZED, "نشست نامعتبر است"),
@@ -77,13 +83,14 @@ class StartupResolverTest {
 
         val destination = StartupResolver(
             auth,
-            FakeOnboardingStore(true),
+            onboarding,
             store,
-            nowEpochSeconds = { NOW },
+            clock = EpochClock { NOW },
         ).resolve()
 
         assertEquals(StartupDestination.Authentication, destination)
         assertEquals(1, store.clearCalls)
+        assertTrue(onboarding.isCompleted())
     }
 
     @Test
@@ -99,7 +106,7 @@ class StartupResolverTest {
             auth,
             FakeOnboardingStore(true),
             store,
-            nowEpochSeconds = { NOW },
+            clock = EpochClock { NOW },
         ).resolve()
 
         assertTrue(destination is StartupDestination.Authenticated)
@@ -122,6 +129,97 @@ class StartupResolverTest {
         assertEquals(StartupDestination.Maintenance, destination)
     }
 
+    @Test
+    fun offlineSessionSkipsNetworkAndUsesDeterministicFallback() = runBlocking {
+        val auth = FakeAuthRepository()
+        val destination = StartupResolver(
+            authRepository = auth,
+            onboardingStore = FakeOnboardingStore(true),
+            sessionStore = FakeSessionStore(stored(expiresAt = NOW - 10)),
+            clock = EpochClock { NOW },
+            networkMonitor = FakeNetworkMonitor(NetworkState.OFFLINE),
+        ).resolve()
+
+        assertTrue(destination is StartupDestination.Authenticated)
+        assertTrue((destination as StartupDestination.Authenticated).context.offline)
+        assertEquals(0, auth.refreshCalls)
+        assertEquals(0, auth.maintenanceCalls)
+    }
+
+    @Test
+    fun offlineWithoutSessionRoutesToAuthenticationWithoutNetworkCalls() = runBlocking {
+        val auth = FakeAuthRepository()
+        val destination = StartupResolver(
+            authRepository = auth,
+            onboardingStore = FakeOnboardingStore(true),
+            sessionStore = FakeSessionStore(null),
+            clock = EpochClock { NOW },
+            networkMonitor = FakeNetworkMonitor(NetworkState.OFFLINE),
+        ).resolve()
+
+        assertEquals(StartupDestination.Authentication, destination)
+        assertEquals(0, auth.refreshCalls)
+        assertEquals(0, auth.maintenanceCalls)
+    }
+
+    @Test
+    fun expiredSessionWithoutRefreshTokenClearsAndRoutesToAuthentication() = runBlocking {
+        val store = FakeSessionStore(
+            stored(expiresAt = NOW - 10).copy(refreshToken = ""),
+        )
+
+        val destination = StartupResolver(
+            authRepository = FakeAuthRepository(),
+            onboardingStore = FakeOnboardingStore(true),
+            sessionStore = store,
+            clock = EpochClock { NOW },
+        ).resolve()
+
+        assertEquals(StartupDestination.Authentication, destination)
+        assertEquals(1, store.clearCalls)
+    }
+
+    @Test
+    fun revokedAndDisabledRefreshesAreTerminal() = runBlocking {
+        listOf(ErrorKind.FORBIDDEN, ErrorKind.ACCOUNT_DISABLED).forEach { kind ->
+            val store = FakeSessionStore(stored(expiresAt = NOW - 10))
+            val destination = StartupResolver(
+                authRepository = FakeAuthRepository(
+                    refreshResult = Outcome.Failure(AppError(kind, "terminal")),
+                ),
+                onboardingStore = FakeOnboardingStore(true),
+                sessionStore = store,
+                clock = EpochClock { NOW },
+            ).resolve()
+
+            assertEquals(StartupDestination.Authentication, destination)
+            assertEquals(1, store.clearCalls)
+        }
+    }
+
+    @Test
+    fun debugFixtureShortCircuitsProductionCollaboratorsDeterministically() = runBlocking {
+        val auth = FakeAuthRepository(
+            maintenanceResult = Outcome.Success(true),
+        )
+        val fixture = object : StartupFixture {
+            override fun configure(rawScenario: String?) = Unit
+            override suspend fun destinationOrNull() = StartupDestination.Authentication
+        }
+
+        val destination = StartupResolver(
+            authRepository = auth,
+            onboardingStore = FakeOnboardingStore(false),
+            sessionStore = FakeSessionStore(stored(expiresAt = NOW + 3_600)),
+            clock = EpochClock { NOW },
+            fixtures = setOf(fixture),
+        ).resolve()
+
+        assertEquals(StartupDestination.Authentication, destination)
+        assertEquals(0, auth.maintenanceCalls)
+        assertEquals(0, auth.refreshCalls)
+    }
+
     private fun resolver(
         session: StoredSession?,
         onboardingDone: Boolean,
@@ -130,7 +228,7 @@ class StartupResolverTest {
         authRepository = auth,
         onboardingStore = FakeOnboardingStore(onboardingDone),
         sessionStore = FakeSessionStore(session),
-        nowEpochSeconds = { NOW },
+        clock = EpochClock { NOW },
     )
 
     private companion object {
@@ -141,8 +239,8 @@ class StartupResolverTest {
 private class FakeOnboardingStore(
     private val completed: Boolean,
 ) : OnboardingStore {
-    override fun isCompleted() = completed
-    override fun markCompleted() = Unit
+    override suspend fun isCompleted() = completed
+    override suspend fun markCompleted() = Unit
 }
 
 private class FakeSessionStore(
@@ -173,6 +271,7 @@ private class FakeAuthRepository(
     private val maintenanceResult: Outcome<Boolean> = Outcome.Success(false),
 ) : AuthRepository {
     var refreshCalls = 0
+    var maintenanceCalls = 0
 
     override suspend fun lookupIdentifier(identifier: String): Outcome<IdentifierLookup> =
         error("unused")
@@ -203,7 +302,18 @@ private class FakeAuthRepository(
         return refreshResult
     }
 
-    override suspend fun maintenanceMode() = maintenanceResult
+    override suspend fun maintenanceMode(): Outcome<Boolean> {
+        maintenanceCalls += 1
+        return maintenanceResult
+    }
+}
+
+private class FakeNetworkMonitor(
+    initial: NetworkState,
+) : NetworkMonitor {
+    private val mutableState = MutableStateFlow(initial)
+    override val state: StateFlow<NetworkState> = mutableState
+    override fun currentState(): NetworkState = mutableState.value
 }
 
 private fun stored(expiresAt: Long) = StoredSession(
