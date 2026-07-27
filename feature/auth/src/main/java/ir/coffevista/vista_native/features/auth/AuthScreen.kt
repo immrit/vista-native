@@ -22,16 +22,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -51,6 +45,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import ir.coffevista.vista_native.core.designsystem.component.VistaButton
+import ir.coffevista.vista_native.core.designsystem.component.VistaButtonVariant
+import ir.coffevista.vista_native.core.designsystem.component.VistaSurface
+import ir.coffevista.vista_native.core.designsystem.component.VistaTextField
+import ir.coffevista.vista_native.core.designsystem.tokens.VistaElevation
 
 data class AuthVisuals(
     val accentColor: Color,
@@ -119,22 +118,23 @@ fun AuthScreen(
                         )
                     }
                     Spacer(Modifier.weight(1f))
-                    TextButton(
+                    VistaButton(
                         onClick = { onAction(AuthAction.Back) },
                         enabled = !state.isLoading,
+                        variant = VistaButtonVariant.Text,
                     ) {
                         Text("بازگشت")
                     }
                 }
             }
 
-            Surface(
+            VistaSurface(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 34.dp),
                 shape = MaterialTheme.shapes.large,
                 color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
-                shadowElevation = 12.dp,
+                shadowElevation = VistaElevation.High,
             ) {
                 Column(Modifier.padding(24.dp)) {
                     StepIndicator(step = state.step)
@@ -172,26 +172,19 @@ fun AuthScreen(
                         )
                     }
 
-                    Button(
+                    VistaButton(
                         onClick = { onAction(AuthAction.Submit) },
                         enabled = !state.isLoading,
+                        loading = state.isLoading,
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(top = 22.dp)
                             .height(54.dp),
                     ) {
-                        if (state.isLoading) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(21.dp),
-                                color = Color.White,
-                                strokeWidth = 2.3.dp,
-                            )
-                        } else {
-                            Text(
-                                text = submitLabel(state),
-                                fontWeight = FontWeight.Bold,
-                            )
-                        }
+                        Text(
+                            text = submitLabel(state),
+                            fontWeight = FontWeight.Bold,
+                        )
                     }
                 }
             }
@@ -217,14 +210,14 @@ private fun IdentifierStep(
         title = "ورود به ویستا",
         description = "شماره موبایل، ایمیل یا نام کاربری خود را وارد کنید.",
     )
-    OutlinedTextField(
+    VistaTextField(
         value = state.identifier,
         onValueChange = { onAction(AuthAction.IdentifierChanged(it)) },
         modifier = Modifier
             .fillMaxWidth()
             .padding(top = 20.dp),
-        label = { Text("شناسه ورود") },
-        placeholder = { Text("مثلاً 09123456789") },
+        label = "شناسه ورود",
+        placeholder = "مثلاً 09123456789",
         singleLine = true,
         enabled = !state.isLoading,
         keyboardActions = KeyboardActions(onDone = { onAction(AuthAction.Submit) }),
@@ -281,13 +274,13 @@ private fun PasswordField(
     onAction: (AuthAction) -> Unit,
     visuals: AuthVisuals,
 ) {
-    OutlinedTextField(
+    VistaTextField(
         value = state.password,
         onValueChange = { onAction(AuthAction.PasswordChanged(it)) },
         modifier = Modifier
             .fillMaxWidth()
             .padding(top = 20.dp),
-        label = { Text("رمز عبور") },
+        label = "رمز عبور",
         singleLine = true,
         enabled = !state.isLoading,
         visualTransformation = if (state.passwordVisible) {
@@ -335,14 +328,14 @@ private fun OtpStep(
         description = "کد پنج‌رقمی ارسال‌شده به ${state.normalizedPhone.orEmpty()} را وارد کنید.",
     )
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-        OutlinedTextField(
+        VistaTextField(
             value = state.otp,
             onValueChange = { onAction(AuthAction.OtpChanged(it)) },
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(top = 20.dp),
-            label = { Text("کد تایید") },
-            placeholder = { Text("— — — — —") },
+            label = "کد تایید",
+            placeholder = "— — — — —",
             singleLine = true,
             enabled = !state.isLoading,
             textStyle = MaterialTheme.typography.headlineSmall.copy(
@@ -357,12 +350,13 @@ private fun OtpStep(
             ),
         )
     }
-    OutlinedButton(
+    VistaButton(
         onClick = { onAction(AuthAction.ResendOtp) },
         enabled = state.resendSeconds == 0 && !state.isLoading,
         modifier = Modifier
             .fillMaxWidth()
             .padding(top = 14.dp),
+        variant = VistaButtonVariant.Outline,
     ) {
         Text(
             if (state.resendSeconds > 0) {
@@ -428,7 +422,7 @@ private fun MessageSurface(
     message: String,
     color: Color,
 ) {
-    Surface(
+    VistaSurface(
         color = color.copy(alpha = 0.09f),
         shape = MaterialTheme.shapes.small,
     ) {

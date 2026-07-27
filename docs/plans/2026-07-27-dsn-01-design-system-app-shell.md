@@ -2,7 +2,7 @@
 
 **Type:** ui
 **Status:** in-progress
-**Progress:** `[██░░░░░░░░] 23%` — 34/151 مورد تکمیل شده
+**Progress:** `[███░░░░░░░] 29%` — 44/151 مورد تکمیل شده
 
 ## Problem / Goal
 
@@ -97,8 +97,8 @@ speculative. محتوای پنج تب فقط placeholder شفاف است.
 
 ### Phase 3 — Core Components
 
-- [ ] `DSN-CMP-01` API و consumer واقعی `VistaButton` با variant/loading/disabled ثبت و پیاده شود.
-- [ ] `DSN-CMP-02` `VistaTextField` normal/password/error/supporting/icon/RTL مصرف‌شده باشد.
+- [x] `DSN-CMP-01` API و consumer واقعی `VistaButton` با variant/loading/disabled ثبت و پیاده شود.
+- [x] `DSN-CMP-02` `VistaTextField` normal/password/error/supporting/icon/RTL مصرف‌شده باشد.
 - [ ] `DSN-CMP-03` `VistaDialog` و state واقعی آن مصرف شود.
 - [ ] `DSN-CMP-04` `VistaBottomSheet` و state واقعی آن مصرف شود.
 - [ ] `DSN-CMP-05` `VistaSnackbar` و host contract مصرف شود.
@@ -106,8 +106,8 @@ speculative. محتوای پنج تب فقط placeholder شفاف است.
 - [ ] `DSN-CMP-07` `VistaMediaCard` فقط foundation عمومی و بدون Feature model مصرف شود.
 - [ ] `DSN-CMP-08` `VistaSkeleton` reduced-motion-friendly مصرف شود.
 - [ ] `DSN-CMP-09` `VistaEmptyState` مصرف واقعی داشته باشد.
-- [ ] `DSN-CMP-10` `VistaErrorState` مصرف واقعی داشته باشد.
-- [ ] `DSN-CMP-11` `VistaLoadingState` مصرف واقعی داشته باشد.
+- [x] `DSN-CMP-10` `VistaErrorState` مصرف واقعی داشته باشد.
+- [x] `DSN-CMP-11` `VistaLoadingState` مصرف واقعی داشته باشد.
 - [ ] `DSN-CMP-12` `VistaTopAppBar` و `VistaScaffold` مصرف شوند.
 - [ ] `DSN-CMP-13` `VistaBadge`، `VistaDivider` و `VistaSurface` مصرف شوند.
 - [ ] `DSN-CMP-14` `VistaTabItem` و `VistaNavigationBar` برای Shell مصرف شوند.
@@ -117,13 +117,13 @@ speculative. محتوای پنج تب فقط placeholder شفاف است.
 
 ### Phase 4 — Existing Screen Migration
 
-- [ ] `DSN-MIG-01` Startup surface به token/theme/componentها منتقل شود.
-- [ ] `DSN-MIG-02` Maintenance surface به Design System منتقل شود.
-- [ ] `DSN-MIG-03` Onboarding surface به Design System منتقل شود.
-- [ ] `DSN-MIG-04` Auth surface به Design System منتقل شود.
+- [x] `DSN-MIG-01` Startup surface به token/theme/componentها منتقل شود.
+- [x] `DSN-MIG-02` Maintenance surface به Design System منتقل شود.
+- [x] `DSN-MIG-03` Onboarding surface به Design System منتقل شود.
+- [x] `DSN-MIG-04` Auth surface به Design System منتقل شود.
 - [ ] `DSN-MIG-05` Authenticated Boundary placeholder به Design System منتقل شود.
-- [ ] `DSN-MIG-06` state machine، ViewModel و data contracts بدون تغییر باقی بمانند.
-- [ ] `DSN-MIG-07` Navigation contract ناسازگار ایجاد نشود.
+- [x] `DSN-MIG-06` state machine، ViewModel و data contracts بدون تغییر باقی بمانند.
+- [x] `DSN-MIG-07` Navigation contract ناسازگار ایجاد نشود.
 - [ ] `DSN-MIG-08` screenshot قبل/بعد با device/theme/orientation ثبت شود.
 - [ ] `DSN-MIG-09` تمام regression testهای FND-01 پس از migration پاس شوند.
 
@@ -266,3 +266,5 @@ Production-ready ایجاد نمی‌کند.
 - screenshot یا compile بدون runtime/golden evidence به‌عنوان parity ثبت نمی‌شود.
 - Phase 1/2 checkpoint: token leakage و module boundary پاس، ۴/۴ unit test
   semantic/contrast پاس و `:app:assembleBetaDebug` در output ایزوله موفق شد.
+- Phase 3/4 checkpoint جزئی: ۳۳/۳۳ unit regression مربوط به app/auth پاس و
+  `betaDebug` پس از migration چهار screen موفق شد؛ runtime/screenshot هنوز باز است.

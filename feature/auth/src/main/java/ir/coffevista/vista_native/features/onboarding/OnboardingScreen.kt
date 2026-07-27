@@ -21,15 +21,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -45,6 +38,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import ir.coffevista.vista_native.core.designsystem.component.VistaButton
+import ir.coffevista.vista_native.core.designsystem.component.VistaButtonVariant
+import ir.coffevista.vista_native.core.designsystem.component.VistaSurface
+import ir.coffevista.vista_native.core.designsystem.tokens.VistaElevation
 
 data class OnboardingSlide(
     val kicker: String,
@@ -129,9 +126,10 @@ fun OnboardingScreen(
                 )
             }
             Spacer(Modifier.weight(1f))
-            TextButton(
+            VistaButton(
                 onClick = { onAction(OnboardingAction.Skip) },
                 enabled = !state.isCompleting,
+                variant = VistaButtonVariant.Text,
             ) {
                 Text("رد کردن")
             }
@@ -157,38 +155,32 @@ fun OnboardingScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (state.page > 0) {
-                OutlinedButton(
+                VistaButton(
                     onClick = { onAction(OnboardingAction.Previous) },
                     enabled = !state.isCompleting,
                     modifier = Modifier.padding(end = 10.dp),
+                    variant = VistaButtonVariant.Outline,
                 ) {
                     Text("قبلی")
                 }
             }
-            Button(
+            VistaButton(
                 onClick = { onAction(OnboardingAction.Next) },
                 enabled = !state.isCompleting,
-                colors = ButtonDefaults.buttonColors(containerColor = slide.accentDeep),
+                loading = state.isCompleting,
+                containerColor = slide.accentDeep,
                 modifier = Modifier
                     .weight(1f)
                     .height(52.dp),
             ) {
-                if (state.isCompleting) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        strokeWidth = 2.dp,
-                        color = Color.White,
-                    )
-                } else {
-                    Text(
-                        text = if (state.page == slides.lastIndex) {
-                            "ورود به ویستا"
-                        } else {
-                            "ادامه"
-                        },
-                        fontWeight = FontWeight.Bold,
-                    )
-                }
+                Text(
+                    text = if (state.page == slides.lastIndex) {
+                        "ورود به ویستا"
+                    } else {
+                        "ادامه"
+                    },
+                    fontWeight = FontWeight.Bold,
+                )
             }
         }
     }
@@ -236,13 +228,13 @@ private fun OnboardingPage(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Surface(
+        VistaSurface(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(0.62f),
             color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
-            shape = RoundedCornerShape(34.dp),
-            shadowElevation = 10.dp,
+            shape = MaterialTheme.shapes.extraLarge,
+            shadowElevation = VistaElevation.High,
         ) {
             OnboardingHero(slide = slide)
         }
@@ -255,7 +247,7 @@ private fun OnboardingPage(
             label = "slideCopy",
         ) { content ->
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Surface(
+                VistaSurface(
                     color = content.accent.copy(alpha = 0.1f),
                     shape = CircleShape,
                 ) {

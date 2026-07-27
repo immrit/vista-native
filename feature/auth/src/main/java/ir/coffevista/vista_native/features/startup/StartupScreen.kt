@@ -13,8 +13,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -28,6 +26,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import ir.coffevista.vista_native.core.designsystem.component.VistaErrorState
+import ir.coffevista.vista_native.core.designsystem.component.VistaLoadingState
 
 @Composable
 fun StartupScreen(
@@ -76,18 +76,12 @@ fun StartupScreen(
             Spacer(Modifier.height(34.dp))
 
             when (val destination = state.destination) {
-                StartupDestination.Loading -> CircularProgressIndicator()
-                is StartupDestination.RecoverableError -> {
-                    Text(
-                        text = destination.messageFa,
-                        textAlign = TextAlign.Center,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                    Spacer(Modifier.height(18.dp))
-                    Button(onClick = onRetry) {
-                        Text("تلاش دوباره")
-                    }
-                }
+                StartupDestination.Loading -> VistaLoadingState("در حال آماده‌سازی ویستا")
+                is StartupDestination.RecoverableError -> VistaErrorState(
+                    title = "راه‌اندازی کامل نشد",
+                    message = destination.messageFa,
+                    onRetry = onRetry,
+                )
                 else -> Unit
             }
         }
