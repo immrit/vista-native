@@ -2,7 +2,7 @@
 
 **Type:** ui
 **Status:** in-progress
-**Progress:** `[█░░░░░░░░░] 9%` — 13/151 مورد تکمیل شده
+**Progress:** `[██░░░░░░░░] 23%` — 34/151 مورد تکمیل شده
 
 ## Problem / Goal
 
@@ -66,34 +66,34 @@ speculative. محتوای پنج تب فقط placeholder شفاف است.
 
 ### Phase 1 — Design Token Foundation
 
-- [ ] `DSN-TOK-01` consumerهای واقعی token/theme/component پیش از ایجاد module ثبت شوند.
-- [ ] `DSN-TOK-02` ماژول `:core:designsystem` با ownership و dependency حداقلی ساخته شود.
-- [ ] `DSN-TOK-03` palette برند `#6366F1/#8B5CF6/#EC4899` متمرکز شود.
-- [ ] `DSN-TOK-04` semantic colorهای primary/secondary/surface/surfaceVariant/error/warning/success تعریف شوند.
-- [ ] `DSN-TOK-05` contentPrimary/contentSecondary/divider/overlay semantic شوند.
-- [ ] `DSN-TOK-06` typography tokenها screen-agnostic تعریف شوند.
-- [ ] `DSN-TOK-07` spacing scale متمرکز و directional usage مستند شود.
-- [ ] `DSN-TOK-08` radius/shape/elevation/border tokenها متمرکز شوند.
-- [ ] `DSN-TOK-09` icon size/motion duration/alpha tokenها متمرکز شوند.
-- [ ] `DSN-TOK-10` component height/touch target/layout width tokenها متمرکز شوند.
+- [x] `DSN-TOK-01` consumerهای واقعی token/theme/component پیش از ایجاد module ثبت شوند.
+- [x] `DSN-TOK-02` ماژول `:core:designsystem` با ownership و dependency حداقلی ساخته شود.
+- [x] `DSN-TOK-03` palette برند `#6366F1/#8B5CF6/#EC4899` متمرکز شود.
+- [x] `DSN-TOK-04` semantic colorهای primary/secondary/surface/surfaceVariant/error/warning/success تعریف شوند.
+- [x] `DSN-TOK-05` contentPrimary/contentSecondary/divider/overlay semantic شوند.
+- [x] `DSN-TOK-06` typography tokenها screen-agnostic تعریف شوند.
+- [x] `DSN-TOK-07` spacing scale متمرکز و directional usage مستند شود.
+- [x] `DSN-TOK-08` radius/shape/elevation/border tokenها متمرکز شوند.
+- [x] `DSN-TOK-09` icon size/motion duration/alpha tokenها متمرکز شوند.
+- [x] `DSN-TOK-10` component height/touch target/layout width tokenها متمرکز شوند.
 - [ ] `DSN-TOK-11` tokenها consumer واقعی داشته و abstraction بی‌مصرف نداشته باشند.
-- [ ] `DSN-TOK-12` check قابل‌اجرا برای color/spacing leakage اضافه شود.
-- [ ] `DSN-TOK-13` token mapping و semantic selection با unit test پاس شوند.
+- [x] `DSN-TOK-12` check قابل‌اجرا برای color/spacing leakage اضافه شود.
+- [x] `DSN-TOK-13` token mapping و semantic selection با unit test پاس شوند.
 
 ### Phase 2 — Theme، Font و Accessibility
 
-- [ ] `DSN-THM-01` Light ColorScheme کامل از semantic tokenها ساخته شود.
-- [ ] `DSN-THM-02` Dark ColorScheme کامل از semantic tokenها ساخته شود.
-- [ ] `DSN-THM-03` Vazirmatn موجود با وزن‌های واقعاً مصرف‌شده ثبت و load شود.
-- [ ] `DSN-THM-04` typography scale و English fallback بدون دانلود font تثبیت شود.
-- [ ] `DSN-THM-05` system/status/navigation bars و edge-to-edge theme-aware شوند.
-- [ ] `DSN-THM-06` disabled/focus/pressed/error stateهای theme تعریف شوند.
+- [x] `DSN-THM-01` Light ColorScheme کامل از semantic tokenها ساخته شود.
+- [x] `DSN-THM-02` Dark ColorScheme کامل از semantic tokenها ساخته شود.
+- [x] `DSN-THM-03` Vazirmatn موجود با وزن‌های واقعاً مصرف‌شده ثبت و load شود.
+- [x] `DSN-THM-04` typography scale و English fallback بدون دانلود font تثبیت شود.
+- [x] `DSN-THM-05` system/status/navigation bars و edge-to-edge theme-aware شوند.
+- [x] `DSN-THM-06` disabled/focus/pressed/error stateهای theme تعریف شوند.
 - [ ] `DSN-THM-07` RTL/LTR mirroring و layout direction بررسی شود.
-- [ ] `DSN-THM-08` contrast semantic colorها بررسی و evidence شود.
+- [x] `DSN-THM-08` contrast semantic colorها بررسی و evidence شود.
 - [ ] `DSN-THM-09` minimum touch target و TalkBack semantics foundation تعریف شود.
-- [ ] `DSN-THM-10` reduced-motion-friendly duration behavior تعریف شود.
+- [x] `DSN-THM-10` reduced-motion-friendly duration behavior تعریف شود.
 - [ ] `DSN-THM-11` font scale 200%، long Persian و truncation contract تست شود.
-- [ ] `DSN-THM-12` Startup/Auth فعلی بدون business change از VistaTheme مصرف کنند.
+- [x] `DSN-THM-12` Startup/Auth فعلی بدون business change از VistaTheme مصرف کنند.
 
 ### Phase 3 — Core Components
 
@@ -264,3 +264,5 @@ Production-ready ایجاد نمی‌کند.
 - branch اجرای DSN-01 برابر `dsn-01/design-system-app-shell` ساخته شد.
 - Flutter و Backend فقط read-only هستند.
 - screenshot یا compile بدون runtime/golden evidence به‌عنوان parity ثبت نمی‌شود.
+- Phase 1/2 checkpoint: token leakage و module boundary پاس، ۴/۴ unit test
+  semantic/contrast پاس و `:app:assembleBetaDebug` در output ایزوله موفق شد.

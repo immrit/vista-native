@@ -9,6 +9,7 @@ $settings = Get-Content -Raw -Encoding utf8 -LiteralPath $settingsPath
 
 $modules = [ordered]@{
     ":core:common"   = "core\common"
+    ":core:designsystem" = "core\designsystem"
     ":core:model"    = "core\model"
     ":core:network"  = "core\network"
     ":core:database" = "core\database"
@@ -21,6 +22,7 @@ $modules = [ordered]@{
 
 $allowedDependencies = @{
     ":core:common"    = @()
+    ":core:designsystem" = @()
     ":core:model"     = @()
     ":core:network"   = @(":core:common")
     ":core:database"  = @()
@@ -30,6 +32,7 @@ $allowedDependencies = @{
     ":core:worker"    = @()
     ":feature:auth"   = @(
         ":core:common",
+        ":core:designsystem",
         ":core:datastore",
         ":core:model",
         ":core:network",

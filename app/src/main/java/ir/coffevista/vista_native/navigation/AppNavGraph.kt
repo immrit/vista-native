@@ -28,7 +28,7 @@ import ir.coffevista.vista_native.features.startup.StartupScreen
 import ir.coffevista.vista_native.features.startup.StartupViewModel
 import ir.coffevista.vista_native.ui.components.VistaBrandAsset
 import ir.coffevista.vista_native.ui.components.VistaBrandMark
-import ir.coffevista.vista_native.ui.theme.VistaColors
+import ir.coffevista.vista_native.core.designsystem.tokens.VistaBrandColors
 
 @Composable
 fun VistaApp(
@@ -39,7 +39,7 @@ fun VistaApp(
     val authState by authenticationStateOwner.state.collectAsStateWithLifecycle()
     val deepLinkState by deepLinkCoordinator.state.collectAsStateWithLifecycle()
     val authVisuals = AuthVisuals(
-        accentColor = VistaColors.Cyan,
+        accentColor = VistaBrandColors.Indigo,
         personIcon = painterResource(R.drawable.ic_person_outline),
         lockIcon = painterResource(R.drawable.ic_lock_outline),
         visibilityIcon = painterResource(R.drawable.ic_visibility),
@@ -56,8 +56,8 @@ fun VistaApp(
             kicker = "به ویستا خوش آمدی",
             title = "آدم‌ها را نزدیک‌تر ببین",
             description = "گفت‌وگو، پست و لحظه‌های واقعی؛ همه در فضایی ساخته‌شده برای ارتباط‌های معنادار.",
-            accent = VistaColors.Cyan,
-            accentDeep = VistaColors.CyanDeep,
+            accent = VistaBrandColors.Indigo,
+            accentDeep = VistaBrandColors.IndigoDeep,
             image = painterResource(R.drawable.viu_connect),
             imageScale = 1.23f,
         ),
@@ -65,8 +65,8 @@ fun VistaApp(
             kicker = "برای هر لحظه",
             title = "لحظه‌هایت را زنده کن",
             description = "از عکس و ویدیو تا استوری و موسیقی؛ خلاقیتت را ساده و با حال‌وهوای خودت به اشتراک بگذار.",
-            accent = VistaColors.Coral,
-            accentDeep = Color(0xFFE84F5E),
+            accent = VistaBrandColors.Pink,
+            accentDeep = VistaBrandColors.PinkDeep,
             image = painterResource(R.drawable.viu_create),
             imageScale = 1.1f,
         ),
@@ -74,8 +74,8 @@ fun VistaApp(
             kicker = "با خیال راحت",
             title = "فضای تو، انتخاب تو",
             description = "حریم خصوصی و گفت‌وگوهای امن، با کنترل‌هایی که همیشه در دست خودت می‌مانند.",
-            accent = VistaColors.Navy,
-            accentDeep = Color(0xFF142E69),
+            accent = VistaBrandColors.Violet,
+            accentDeep = VistaBrandColors.VioletDeep,
             image = painterResource(R.drawable.viu_private),
             imageScale = 1.16f,
         ),
@@ -161,7 +161,7 @@ fun VistaApp(
             StartupScreen(
                 state = state,
                 onRetry = startupViewModel::retry,
-                accentColor = VistaColors.Cyan,
+                accentColor = VistaBrandColors.Indigo,
                 brand = { modifier ->
                     VistaBrandMark(
                         modifier = modifier,

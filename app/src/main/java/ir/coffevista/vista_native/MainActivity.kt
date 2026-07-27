@@ -18,7 +18,7 @@ import ir.coffevista.vista_native.features.auth.AuthenticationStateOwner
 import ir.coffevista.vista_native.features.startup.StartupFixture
 import ir.coffevista.vista_native.navigation.VistaApp
 import ir.coffevista.vista_native.navigation.DeepLinkCoordinator
-import ir.coffevista.vista_native.ui.theme.VistaTheme
+import ir.coffevista.vista_native.core.designsystem.theme.VistaTheme
 import javax.inject.Inject
 
 @AndroidEntryPoint
