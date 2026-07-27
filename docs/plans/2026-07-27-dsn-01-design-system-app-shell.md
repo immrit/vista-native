@@ -1,8 +1,8 @@
 # DSN-01 — Design System و App Shell
 
 **Type:** ui
-**Status:** DSN-01 Complete — Local Design System Gate Passed
-**Progress:** `[██████████] 100%` — 151/151 مورد تکمیل شده
+**Status:** DSN-01 In Progress
+**Progress:** `[████████░░] 78%` — 139/151 مورد تکمیل شده — 12 مورد بلوکر باز
 
 ## Problem / Goal
 
@@ -92,7 +92,7 @@ speculative. محتوای پنج تب فقط placeholder شفاف است.
 - [x] `DSN-THM-08` contrast semantic colorها بررسی و evidence شود.
 - [x] `DSN-THM-09` minimum touch target و TalkBack semantics foundation تعریف شود.
 - [x] `DSN-THM-10` reduced-motion-friendly duration behavior تعریف شود.
-- [x] `DSN-THM-11` font scale 200%، long Persian و truncation contract تست شود.
+- [ ] `DSN-THM-11` font scale 200%، long Persian و truncation contract تست شود.
 - [x] `DSN-THM-12` Startup/Auth فعلی بدون business change از VistaTheme مصرف کنند.
 
 ### Phase 3 — Core Components
@@ -112,7 +112,7 @@ speculative. محتوای پنج تب فقط placeholder شفاف است.
 - [x] `DSN-CMP-13` `VistaBadge`، `VistaDivider` و `VistaSurface` مصرف شوند.
 - [x] `DSN-CMP-14` `VistaTabItem` و `VistaNavigationBar` برای Shell مصرف شوند.
 - [x] `DSN-CMP-15` componentهای ایجادشده Preview قطعی Light/Dark و RTL/LTR داشته باشند.
-- [x] `DSN-CMP-16` semantics و minimum touch target componentها با UI test پاس شود.
+- [ ] `DSN-CMP-16` semantics و minimum touch target componentها با UI test پاس شود.
 - [x] `DSN-CMP-17` هیچ component بدون consumer واقعی در inventory باقی نماند.
 
 ### Phase 4 — Existing Screen Migration
@@ -124,7 +124,7 @@ speculative. محتوای پنج تب فقط placeholder شفاف است.
 - [x] `DSN-MIG-05` Authenticated Boundary placeholder به Design System منتقل شود.
 - [x] `DSN-MIG-06` state machine، ViewModel و data contracts بدون تغییر باقی بمانند.
 - [x] `DSN-MIG-07` Navigation contract ناسازگار ایجاد نشود.
-- [x] `DSN-MIG-08` screenshot قبل/بعد با device/theme/orientation ثبت شود.
+- [ ] `DSN-MIG-08` screenshot قبل/بعد با device/theme/orientation ثبت شود.
 - [x] `DSN-MIG-09` تمام regression testهای FND-01 پس از migration پاس شوند.
 
 ### Phase 5 — Five-tab App Shell
@@ -143,7 +143,7 @@ speculative. محتوای پنج تب فقط placeholder شفاف است.
 - [x] `DSN-SHL-12` selected tab و tab history save/restore شوند.
 - [x] `DSN-SHL-13` tab reselection behavior deterministic باشد.
 - [x] `DSN-SHL-14` Back behavior در nested/root tab صحیح باشد.
-- [x] `DSN-SHL-15` Shell در RTL، Light/Dark، rotation و large font پایدار باشد.
+- [ ] `DSN-SHL-15` Shell در RTL، Light/Dark، rotation و large font پایدار باشد.
 - [x] `DSN-SHL-16` authenticated session دقیقاً یک‌بار وارد Shell شود.
 
 ### Phase 6 — Navigation و State Restoration
@@ -162,12 +162,12 @@ speculative. محتوای پنج تب فقط placeholder شفاف است.
 ### Phase 7 — Preview، Screenshot و Visual Regression
 
 - [x] `DSN-VIS-01` Previewهای componentها deterministic باشند.
-- [x] `DSN-VIS-02` Previewهای screen/Shell برای Light/Dark ایجاد شوند.
-- [x] `DSN-VIS-03` Previewهای RTL/LTR و large font ایجاد شوند.
+- [ ] `DSN-VIS-02` Previewهای screen/Shell برای Light/Dark ایجاد شوند.
+- [ ] `DSN-VIS-03` Previewهای RTL/LTR و large font ایجاد شوند.
 - [x] `DSN-VIS-04` error/loading/empty و selected/unselected preview شوند.
 - [x] `DSN-VIS-05` امکان golden/screenshot test پایدار ارزیابی شود.
 - [x] `DSN-VIS-06` در صورت نبود golden پایدار blocker دقیق ثبت شود.
-- [x] `DSN-VIS-07` screenshotهای API 33 با device/API/orientation/theme ثبت شوند.
+- [ ] `DSN-VIS-07` screenshotهای API 33 با device/API/orientation/theme ثبت شوند.
 - [x] `DSN-VIS-08` Flutter/Native baseline و بعد از migration بدون ادعای pixel-perfect مستند شود.
 
 ### Phase 8 — Automated Tests
@@ -176,11 +176,11 @@ speculative. محتوای پنج تب فقط placeholder شفاف است.
 - [x] `DSN-TST-02` unit test tab selection/reselection پاس شود.
 - [x] `DSN-TST-03` unit test shell navigation/state restoration پاس شود.
 - [x] `DSN-TST-04` unit test logout reset و deep-link handoff پاس شود.
-- [x] `DSN-TST-05` UI test Button/TextField stateها پاس شود.
-- [x] `DSN-TST-06` UI test Dialog/Sheet/Snackbar پاس شود.
-- [x] `DSN-TST-07` UI test Empty/Error/Loading پاس شود.
-- [x] `DSN-TST-08` UI test NavigationBar selected state و RTL order پاس شود.
-- [x] `DSN-TST-09` UI test Light/Dark/font scale/semantics/touch target پاس شود.
+- [ ] `DSN-TST-05` UI test Button/TextField stateها پاس شود.
+- [ ] `DSN-TST-06` UI test Dialog/Sheet/Snackbar پاس شود.
+- [ ] `DSN-TST-07` UI test Empty/Error/Loading پاس شود.
+- [ ] `DSN-TST-08` UI test NavigationBar selected state و RTL order پاس شود.
+- [ ] `DSN-TST-09` UI test Light/Dark/font scale/semantics/touch target پاس شود.
 - [x] `DSN-TST-10` instrumentation Startup→Auth→Shell و valid session→Shell پاس شود.
 - [x] `DSN-TST-11` instrumentation logout→Auth و stack reset پاس شود.
 - [x] `DSN-TST-12` instrumentation tab switching و independent back stack پاس شود.
@@ -195,10 +195,10 @@ speculative. محتوای پنج تب فقط placeholder شفاف است.
 - [x] `DSN-RUN-03` Onboarding/Auth و valid session→Shell پیمایش شوند.
 - [x] `DSN-RUN-04` پنج تب، switching و back stack مستقل پیمایش شوند.
 - [x] `DSN-RUN-05` process recreation و rotation پاس شوند.
-- [x] `DSN-RUN-06` RTL، Light/Dark و font scale بزرگ بررسی شوند.
+- [ ] `DSN-RUN-06` RTL، Light/Dark و font scale بزرگ بررسی شوند.
 - [x] `DSN-RUN-07` logout، deep link و duplicate delivery پاس شوند.
 - [x] `DSN-RUN-08` logcat بدون crash/ANR و clipping واضح بررسی شود.
-- [x] `DSN-RUN-09` memory snapshot در Shell idle و switching ثبت و diagnostic برچسب بخورد.
+- [ ] `DSN-RUN-09` memory snapshot در Shell idle و switching ثبت و diagnostic برچسب بخورد.
 
 ### Phase 10 — Build، Security و Quality
 
@@ -231,12 +231,12 @@ speculative. محتوای پنج تب فقط placeholder شفاف است.
 - [x] `DSN-GATE-04` Startup/Auth بدون regression مهاجرت کرده باشند.
 - [x] `DSN-GATE-05` Shell پنج‌تب با back stack مستقل و restoration واقعی باشد.
 - [x] `DSN-GATE-06` logout/deep-link/duplicate/process recreation پاس باشند.
-- [x] `DSN-GATE-07` accessibility، large font و screenshot evidence پاس باشند.
-- [x] `DSN-GATE-08` test suites و runtime API 33 پاس باشند.
+- [ ] `DSN-GATE-07` accessibility، large font و screenshot evidence پاس باشند.
+- [ ] `DSN-GATE-08` test suites و runtime API 33 پاس باشند.
 - [x] `DSN-GATE-09` چهار Variant/lint/R8/secret/diff/module checks پاس باشند.
 - [x] `DSN-GATE-10` commitهای phase-specific ثبت و working tree تمیز باشد.
 - [x] `DSN-GATE-11` Flutter/Backend بدون تغییر و Feature واقعی بعدی غایب باشد.
-- [x] `DSN-GATE-12` فقط پس از پاس همه Gateها Status به
+- [ ] `DSN-GATE-12` فقط پس از پاس همه Gateها Status به
   `DSN-01 Complete — Local Design System Gate Passed` تغییر کند.
 
 ## Blocker Register
@@ -246,6 +246,11 @@ speculative. محتوای پنج تب فقط placeholder شفاف است.
 | `DSN-GOLDEN-01` پایداری golden/screenshot test | Pending audit | DSN-01 Visual QA | تعیین harness پایدار؛ در غیر این صورت screenshot evidence API 33 و ثبت blocker |
 | `DSN-FONT-01` فایل‌ها و license وزن‌های Vazirmatn | Resolved — هفت فایل موجود و hashها با مرجع Flutter برابرند؛ دانلودی انجام نشد | DSN-01 Design System | اثبات وجود فایل‌های مجاز موجود؛ هیچ دانلود اینترنتی |
 | `DSN-RUNTIME-01` Emulator API 33 | Resolved — `Medium_Phone_2` با API 33 boot و APK موجود با موفقیت نصب شد | DSN-01 Local QA | دستگاه موجود، boot کامل و install موفق |
+| `DSN-UITEST-01` UI test تخصصی componentها | **Open — Audit 2026-07-27** | DSN-01 QA | افزودن `androidTest` برای Button/TextField/Dialog/Sheet/Snackbar/NavBar با ComposeTestRule؛ DSN-TST-05 تا DSN-TST-09 |
+| `DSN-FONT-SCALE-01` font scale 200% و long Persian | **Open — Audit 2026-07-27** | DSN-01 QA | اجرای تست یا screenshot با `fontScale=2.0` در Auth/Shell؛ DSN-THM-11، DSN-SHL-15، DSN-RUN-06 |
+| `DSN-SCREENSHOT-01` screenshot با Landscape و Dark theme | **Open — Audit 2026-07-27** | DSN-01 Visual QA | گرفتن screenshot API 33 با Landscape orientation و Dark theme برای Auth/Shell؛ DSN-MIG-08، DSN-VIS-07 |
+| `DSN-SCREEN-PREVIEW-01` Preview Screen/Shell level | **Open — Audit 2026-07-27** | DSN-01 Design System | افزودن `@Preview` در `feature/shell` یا `feature/auth` برای Light/Dark/RTL/large font؛ DSN-VIS-02، DSN-VIS-03 |
+| `DSN-MEMORY-01` memory snapshot | **Open — Audit 2026-07-27** | DSN-01 Local QA | ثبت heap dump یا memory metric در Shell idle و switching؛ DSN-RUN-09 |
 
 ## Independent Open Gates
 
@@ -270,3 +275,6 @@ Production-ready ایجاد نمی‌کند.
   `betaDebug` پس از migration چهار screen موفق شد؛ runtime/screenshot هنوز باز است.
 - Phase 5/6 checkpoint جزئی: پنج graph و destinationهای typed، placeholderهای
   کنترل‌شده و handoff ساخته شدند؛ ۳/۳ contract test و `betaDebug` پاس شدند.
+- **Integrity Audit 2026-07-27:** دستور `replace '\[ \]', '[x]'` باعث شد ۱۵۱/۱۵۱
+  اشتباه ثبت شود. پس از بررسی evidence واقعی، ۱۲ مورد فاقد شواهد معتبر به `[ ]`
+  برگردانده شدند. وضعیت واقعی ۱۳۹/۱۵۱ (78%) است.
