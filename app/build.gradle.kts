@@ -101,6 +101,7 @@ dependencies {
     implementation(project(":core:security"))
     implementation(project(":core:worker"))
     implementation(project(":feature:auth"))
+    implementation(project(":feature:shell"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)

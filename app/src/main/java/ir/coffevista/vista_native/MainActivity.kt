@@ -18,6 +18,7 @@ import ir.coffevista.vista_native.features.auth.AuthenticationStateOwner
 import ir.coffevista.vista_native.features.startup.StartupFixture
 import ir.coffevista.vista_native.navigation.VistaApp
 import ir.coffevista.vista_native.navigation.DeepLinkCoordinator
+import ir.coffevista.vista_native.core.security.SessionStore
 import ir.coffevista.vista_native.core.designsystem.theme.VistaTheme
 import javax.inject.Inject
 
@@ -31,6 +32,9 @@ class MainActivity : ComponentActivity() {
 
     @Inject
     lateinit var startupFixtures: Set<@JvmSuppressWildcards StartupFixture>
+
+    @Inject
+    lateinit var sessionStore: SessionStore
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -47,6 +51,8 @@ class MainActivity : ComponentActivity() {
                         VistaApp(
                             authenticationStateOwner = authenticationStateOwner,
                             deepLinkCoordinator = deepLinkCoordinator,
+                            sessionStore = sessionStore,
+                            onExitRequested = ::finish,
                         )
                     }
                 }

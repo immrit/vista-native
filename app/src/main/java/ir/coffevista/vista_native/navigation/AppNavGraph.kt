@@ -3,7 +3,9 @@ package ir.coffevista.vista_native.navigation
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.graphics.Color
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.painterResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -18,7 +20,9 @@ import ir.coffevista.vista_native.features.auth.AuthViewModel
 import ir.coffevista.vista_native.features.auth.AuthenticationState
 import ir.coffevista.vista_native.features.auth.AuthenticationStateOwner
 import ir.coffevista.vista_native.features.auth.AuthVisuals
-import ir.coffevista.vista_native.features.authenticated.AuthenticatedBoundaryScreen
+import ir.coffevista.vista_native.features.shell.ShellDeepLinkRequest
+import ir.coffevista.vista_native.features.shell.ShellDeferredKind
+import ir.coffevista.vista_native.features.shell.VistaShell
 import ir.coffevista.vista_native.features.onboarding.OnboardingSlide
 import ir.coffevista.vista_native.features.onboarding.OnboardingScreen
 import ir.coffevista.vista_native.features.onboarding.OnboardingViewModel
@@ -29,15 +33,19 @@ import ir.coffevista.vista_native.features.startup.StartupViewModel
 import ir.coffevista.vista_native.ui.components.VistaBrandAsset
 import ir.coffevista.vista_native.ui.components.VistaBrandMark
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaBrandColors
+import ir.coffevista.vista_native.core.security.SessionStore
 
 @Composable
 fun VistaApp(
     authenticationStateOwner: AuthenticationStateOwner,
     deepLinkCoordinator: DeepLinkCoordinator,
+    sessionStore: SessionStore,
+    onExitRequested: () -> Unit,
 ) {
     val navController = rememberNavController()
     val authState by authenticationStateOwner.state.collectAsStateWithLifecycle()
     val deepLinkState by deepLinkCoordinator.state.collectAsStateWithLifecycle()
+    var shellDeepLinkRequest by remember { mutableStateOf<ShellDeepLinkRequest?>(null) }
     val authVisuals = AuthVisuals(
         accentColor = VistaBrandColors.Indigo,
         personIcon = painterResource(R.drawable.ic_person_outline),
@@ -84,15 +92,14 @@ fun VistaApp(
     LaunchedEffect(deepLinkState) {
         when (val delivery = deepLinkState) {
             is DeepLinkDeliveryState.Ready -> {
-                navController.navigate(
-                    AppRoute.DeferredFeature(
-                        kind = delivery.destination.kind,
-                        reference = delivery.destination.reference,
-                    ),
-                ) {
+                shellDeepLinkRequest = ShellDeepLinkRequest(
+                    deliveryId = delivery.id,
+                    kind = ShellDeferredKind.valueOf(delivery.destination.kind.name),
+                    reference = delivery.destination.reference,
+                )
+                navController.navigate(AppRoute.AuthenticatedBoundary) {
                     launchSingleTop = true
                 }
-                deepLinkCoordinator.consume(delivery.id)
             }
             is DeepLinkDeliveryState.Failure -> {
                 navController.navigate(AppRoute.DeepLinkFailure(delivery.reason)) {
@@ -233,8 +240,23 @@ fun VistaApp(
                     }
                 }
             } else {
-                AuthenticatedBoundaryScreen(
+                VistaShell(
                     context = signedIn.context,
+                    deepLinkRequest = shellDeepLinkRequest,
+                    onDeepLinkConsumed = { id ->
+                        deepLinkCoordinator.consume(id)
+                        shellDeepLinkRequest = null
+                    },
+                    onLogout = {
+                        sessionStore.clear()
+                        authenticationStateOwner.signOut()
+                        shellDeepLinkRequest = null
+                        navController.navigate(AppRoute.Authentication) {
+                            popUpTo<AppRoute.AuthenticatedBoundary> { inclusive = true }
+                            launchSingleTop = true
+                        }
+                    },
+                    onExitRequested = onExitRequested,
                 )
             }
         }

@@ -1,0 +1,374 @@
+package ir.coffevista.vista_native.features.shell
+
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.navigation.NavDestination
+import androidx.navigation.NavDestination.Companion.hasRoute
+import androidx.navigation.NavDestination.Companion.hierarchy
+import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
+import androidx.navigation.compose.navigation
+import androidx.navigation.compose.rememberNavController
+import ir.coffevista.vista_native.core.designsystem.component.VistaAvatar
+import ir.coffevista.vista_native.core.designsystem.component.VistaBadge
+import ir.coffevista.vista_native.core.designsystem.component.VistaBottomSheet
+import ir.coffevista.vista_native.core.designsystem.component.VistaButton
+import ir.coffevista.vista_native.core.designsystem.component.VistaButtonVariant
+import ir.coffevista.vista_native.core.designsystem.component.VistaDialog
+import ir.coffevista.vista_native.core.designsystem.component.VistaDivider
+import ir.coffevista.vista_native.core.designsystem.component.VistaEmptyState
+import ir.coffevista.vista_native.core.designsystem.component.VistaMediaCard
+import ir.coffevista.vista_native.core.designsystem.component.VistaNavigationBar
+import ir.coffevista.vista_native.core.designsystem.component.VistaScaffold
+import ir.coffevista.vista_native.core.designsystem.component.VistaSurface
+import ir.coffevista.vista_native.core.designsystem.component.VistaTextField
+import ir.coffevista.vista_native.core.designsystem.component.VistaTopAppBar
+import ir.coffevista.vista_native.core.designsystem.tokens.VistaLayout
+import ir.coffevista.vista_native.core.designsystem.tokens.VistaSpacing
+import ir.coffevista.vista_native.core.model.session.AuthenticatedContext
+import kotlinx.coroutines.launch
+
+@Composable
+fun VistaShell(
+    context: AuthenticatedContext,
+    deepLinkRequest: ShellDeepLinkRequest?,
+    onDeepLinkConsumed: (Long) -> Unit,
+    onLogout: () -> Unit,
+    onExitRequested: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val navController = rememberNavController()
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    val backStackEntry by navController.currentBackStackEntryAsState()
+    val selectedTab = backStackEntry?.destination?.toShellTab() ?: ShellTab.Feed
+    val atRoot = backStackEntry?.destination?.isTabRoot() != false
+    var lastExitRequestAt by rememberSaveable { mutableStateOf(0L) }
+    var lastDeepLinkId by rememberSaveable { mutableStateOf(0L) }
+
+    fun selectTab(tab: ShellTab) {
+        if (tab == selectedTab) {
+            navController.popBackStack(tab.rootRoute(), inclusive = false)
+            return
+        }
+        navController.navigate(tab.graphRoute()) {
+            popUpTo(navController.graph.findStartDestination().id) {
+                saveState = true
+            }
+            launchSingleTop = true
+            restoreState = true
+        }
+    }
+
+    LaunchedEffect(deepLinkRequest?.deliveryId) {
+        val request = deepLinkRequest ?: return@LaunchedEffect
+        if (request.deliveryId == lastDeepLinkId) return@LaunchedEffect
+        val route: Any = when (request.kind) {
+            ShellDeferredKind.POST, ShellDeferredKind.GROUP -> FeedDetail(request.reference)
+            ShellDeferredKind.PROFILE -> ProfileDetail(request.reference)
+            ShellDeferredKind.CHAT -> ChatDetail(request.reference)
+        }
+        navController.navigate(route) { launchSingleTop = true }
+        lastDeepLinkId = request.deliveryId
+        onDeepLinkConsumed(request.deliveryId)
+    }
+
+    BackHandler(enabled = atRoot) {
+        when (shellBackAction(selectedTab, nested = false)) {
+            ShellBackAction.SelectFeed -> selectTab(ShellTab.Feed)
+            ShellBackAction.RequestExit -> {
+                val now = android.os.SystemClock.elapsedRealtime()
+                if (now - lastExitRequestAt <= 2_000L) {
+                    onExitRequested()
+                } else {
+                    lastExitRequestAt = now
+                    scope.launch {
+                        snackbarHostState.showSnackbar(
+                            message = "برای خروج دوباره بازگشت را بزنید",
+                            duration = SnackbarDuration.Short,
+                        )
+                    }
+                }
+            }
+            ShellBackAction.PopNested -> Unit
+        }
+    }
+
+    VistaScaffold(
+        modifier = modifier.fillMaxSize(),
+        topBar = { VistaTopAppBar(selectedTab.labelFa) },
+        snackbarHostState = snackbarHostState,
+        bottomBar = {
+            VistaNavigationBar(
+                items = ShellTab.entries,
+                selected = selectedTab,
+                onSelect = ::selectTab,
+                label = ShellTab::labelFa,
+                icon = { tab, selected ->
+                    Text(
+                        text = tab.glyph,
+                        color = if (selected) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                        style = MaterialTheme.typography.titleLarge,
+                    )
+                },
+            )
+        },
+    ) { padding ->
+        NavHost(
+            navController = navController,
+            startDestination = FeedGraph,
+            modifier = Modifier.padding(padding),
+        ) {
+            navigation<FeedGraph>(startDestination = FeedRoot) {
+                composable<FeedRoot> {
+                    FeedPlaceholderScreen(onDetails = { navController.navigate(FeedDetail()) })
+                }
+                composable<FeedDetail> { ControlledDetailScreen(ShellTab.Feed) }
+            }
+            navigation<SearchGraph>(startDestination = SearchRoot) {
+                composable<SearchRoot> {
+                    SearchPlaceholderScreen(onDetails = { navController.navigate(SearchDetail()) })
+                }
+                composable<SearchDetail> { ControlledDetailScreen(ShellTab.Search) }
+            }
+            navigation<ServicesGraph>(startDestination = ServicesRoot) {
+                composable<ServicesRoot> {
+                    ServicesPlaceholderScreen(onDetails = { navController.navigate(ServicesDetail()) })
+                }
+                composable<ServicesDetail> { ControlledDetailScreen(ShellTab.Services) }
+            }
+            navigation<ChatGraph>(startDestination = ChatRoot) {
+                composable<ChatRoot> {
+                    ChatPlaceholderScreen(onDetails = { navController.navigate(ChatDetail()) })
+                }
+                composable<ChatDetail> { ControlledDetailScreen(ShellTab.Chat) }
+            }
+            navigation<ProfileGraph>(startDestination = ProfileRoot) {
+                composable<ProfileRoot> {
+                    ProfilePlaceholderScreen(
+                        context = context,
+                        onLogout = onLogout,
+                        onDetails = { navController.navigate(ProfileDetail()) },
+                    )
+                }
+                composable<ProfileDetail> { ControlledDetailScreen(ShellTab.Profile) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FeedPlaceholderScreen(onDetails: () -> Unit) {
+    PlaceholderLayout(
+        title = "زیرساخت Feed آماده است",
+        message = "محتوای واقعی Feed در فاز Feature خودش پیاده‌سازی می‌شود.",
+        onDetails = onDetails,
+    ) {
+        VistaMediaCard(
+            title = "",
+            subtitle = "",
+            loading = true,
+            modifier = Modifier.padding(top = VistaSpacing.Large),
+        )
+    }
+}
+
+@Composable
+private fun SearchPlaceholderScreen(onDetails: () -> Unit) {
+    var query by rememberSaveable { mutableStateOf("") }
+    PlaceholderLayout(
+        title = "زیرساخت جستجو آماده است",
+        message = "این صفحه داده یا نتیجه ساختگی نمایش نمی‌دهد.",
+        onDetails = onDetails,
+    ) {
+        VistaTextField(
+            value = query,
+            onValueChange = { query = it },
+            label = "جستجو",
+            supportingText = "اتصال به داده در فاز Search انجام می‌شود.",
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = VistaSpacing.Large),
+        )
+    }
+}
+
+@Composable
+private fun ServicesPlaceholderScreen(onDetails: () -> Unit) {
+    var showInfo by rememberSaveable { mutableStateOf(false) }
+    PlaceholderLayout(
+        title = "زیرساخت خدمات آماده است",
+        message = "هیچ سرویس محصولی در DSN-01 پیاده‌سازی نشده است.",
+        onDetails = onDetails,
+    ) {
+        VistaButton(
+            onClick = { showInfo = true },
+            variant = VistaButtonVariant.Outline,
+            modifier = Modifier.padding(top = VistaSpacing.Large),
+        ) { Text("درباره این placeholder") }
+    }
+    VistaBottomSheet(
+        visible = showInfo,
+        title = "محدوده DSN-01",
+        onDismiss = { showInfo = false },
+    ) {
+        Text("این تب فقط مالکیت navigation و Design System را اثبات می‌کند.")
+    }
+}
+
+@Composable
+private fun ChatPlaceholderScreen(onDetails: () -> Unit) {
+    PlaceholderLayout(
+        title = "زیرساخت گفت‌وگو آماده است",
+        message = "پیام، WebSocket و repository خارج از محدوده این فاز هستند.",
+        onDetails = onDetails,
+    )
+}
+
+@Composable
+private fun ProfilePlaceholderScreen(
+    context: AuthenticatedContext,
+    onLogout: () -> Unit,
+    onDetails: () -> Unit,
+) {
+    var confirmLogout by rememberSaveable { mutableStateOf(false) }
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(VistaLayout.ScreenHorizontal),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        VistaAvatar(context.displayName)
+        Text(
+            context.displayName,
+            modifier = Modifier.padding(top = VistaSpacing.Medium),
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+        )
+        VistaBadge("Session امن", Modifier.padding(top = VistaSpacing.Small))
+        VistaDivider(Modifier.padding(vertical = VistaSpacing.XLarge))
+        Text("Feature نمایه در فاز خودش پیاده‌سازی می‌شود.")
+        VistaButton(
+            onClick = onDetails,
+            variant = VistaButtonVariant.Outline,
+            modifier = Modifier.padding(top = VistaSpacing.Large),
+        ) { Text("جزئیات navigation") }
+        VistaButton(
+            onClick = { confirmLogout = true },
+            variant = VistaButtonVariant.Destructive,
+            modifier = Modifier.padding(top = VistaSpacing.Medium),
+        ) { Text("خروج از حساب") }
+    }
+    VistaDialog(
+        visible = confirmLogout,
+        title = "خروج از حساب",
+        message = "Session امن پاک می‌شود و به صفحه ورود برمی‌گردید.",
+        confirmLabel = "خروج",
+        onConfirm = onLogout,
+        onDismiss = { confirmLogout = false },
+    )
+}
+
+@Composable
+private fun PlaceholderLayout(
+    title: String,
+    message: String,
+    onDetails: () -> Unit,
+    content: @Composable () -> Unit = {},
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(VistaLayout.ScreenHorizontal),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        VistaEmptyState(title = title, message = message)
+        content()
+        VistaButton(
+            onClick = onDetails,
+            variant = VistaButtonVariant.Text,
+            modifier = Modifier.padding(top = VistaSpacing.Medium),
+        ) { Text("بررسی back stack کنترل‌شده") }
+    }
+}
+
+@Composable
+private fun ControlledDetailScreen(tab: ShellTab) {
+    VistaSurface(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(VistaLayout.ScreenHorizontal),
+    ) {
+        Column(
+            modifier = Modifier.padding(VistaLayout.ScreenHorizontal),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text("${tab.labelFa}: مقصد داخلی کنترل‌شده")
+            Text(
+                "این مقصد فقط برای اثبات back stack مستقل است.",
+                modifier = Modifier.padding(top = VistaSpacing.Small),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+private fun NavDestination.toShellTab(): ShellTab = when {
+    hierarchy.any { it.hasRoute<FeedGraph>() } -> ShellTab.Feed
+    hierarchy.any { it.hasRoute<SearchGraph>() } -> ShellTab.Search
+    hierarchy.any { it.hasRoute<ServicesGraph>() } -> ShellTab.Services
+    hierarchy.any { it.hasRoute<ChatGraph>() } -> ShellTab.Chat
+    hierarchy.any { it.hasRoute<ProfileGraph>() } -> ShellTab.Profile
+    else -> ShellTab.Feed
+}
+
+private fun NavDestination.isTabRoot(): Boolean =
+    hasRoute<FeedRoot>() ||
+        hasRoute<SearchRoot>() ||
+        hasRoute<ServicesRoot>() ||
+        hasRoute<ChatRoot>() ||
+        hasRoute<ProfileRoot>()
+
+private fun ShellTab.graphRoute(): Any = when (this) {
+    ShellTab.Feed -> FeedGraph
+    ShellTab.Search -> SearchGraph
+    ShellTab.Services -> ServicesGraph
+    ShellTab.Chat -> ChatGraph
+    ShellTab.Profile -> ProfileGraph
+}
+
+private fun ShellTab.rootRoute(): Any = when (this) {
+    ShellTab.Feed -> FeedRoot
+    ShellTab.Search -> SearchRoot
+    ShellTab.Services -> ServicesRoot
+    ShellTab.Chat -> ChatRoot
+    ShellTab.Profile -> ProfileRoot
+}

@@ -18,6 +18,7 @@ $modules = [ordered]@{
     ":core:testing"  = "core\testing"
     ":core:worker"   = "core\worker"
     ":feature:auth"  = "feature\auth"
+    ":feature:shell" = "feature\shell"
 }
 
 $allowedDependencies = @{
@@ -39,6 +40,10 @@ $allowedDependencies = @{
         ":core:security",
         ":core:testing",
         ":core:worker"
+    )
+    ":feature:shell"  = @(
+        ":core:designsystem",
+        ":core:model"
     )
 }
 

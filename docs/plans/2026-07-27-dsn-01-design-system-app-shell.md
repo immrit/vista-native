@@ -2,7 +2,7 @@
 
 **Type:** ui
 **Status:** in-progress
-**Progress:** `[███░░░░░░░] 29%` — 44/151 مورد تکمیل شده
+**Progress:** `[█████░░░░░] 46%` — 70/151 مورد تکمیل شده
 
 ## Problem / Goal
 
@@ -99,21 +99,21 @@ speculative. محتوای پنج تب فقط placeholder شفاف است.
 
 - [x] `DSN-CMP-01` API و consumer واقعی `VistaButton` با variant/loading/disabled ثبت و پیاده شود.
 - [x] `DSN-CMP-02` `VistaTextField` normal/password/error/supporting/icon/RTL مصرف‌شده باشد.
-- [ ] `DSN-CMP-03` `VistaDialog` و state واقعی آن مصرف شود.
-- [ ] `DSN-CMP-04` `VistaBottomSheet` و state واقعی آن مصرف شود.
-- [ ] `DSN-CMP-05` `VistaSnackbar` و host contract مصرف شود.
-- [ ] `DSN-CMP-06` `VistaAvatar` با fallback و semantics مصرف شود.
-- [ ] `DSN-CMP-07` `VistaMediaCard` فقط foundation عمومی و بدون Feature model مصرف شود.
-- [ ] `DSN-CMP-08` `VistaSkeleton` reduced-motion-friendly مصرف شود.
-- [ ] `DSN-CMP-09` `VistaEmptyState` مصرف واقعی داشته باشد.
+- [x] `DSN-CMP-03` `VistaDialog` و state واقعی آن مصرف شود.
+- [x] `DSN-CMP-04` `VistaBottomSheet` و state واقعی آن مصرف شود.
+- [x] `DSN-CMP-05` `VistaSnackbar` و host contract مصرف شود.
+- [x] `DSN-CMP-06` `VistaAvatar` با fallback و semantics مصرف شود.
+- [x] `DSN-CMP-07` `VistaMediaCard` فقط foundation عمومی و بدون Feature model مصرف شود.
+- [x] `DSN-CMP-08` `VistaSkeleton` reduced-motion-friendly مصرف شود.
+- [x] `DSN-CMP-09` `VistaEmptyState` مصرف واقعی داشته باشد.
 - [x] `DSN-CMP-10` `VistaErrorState` مصرف واقعی داشته باشد.
 - [x] `DSN-CMP-11` `VistaLoadingState` مصرف واقعی داشته باشد.
-- [ ] `DSN-CMP-12` `VistaTopAppBar` و `VistaScaffold` مصرف شوند.
-- [ ] `DSN-CMP-13` `VistaBadge`، `VistaDivider` و `VistaSurface` مصرف شوند.
-- [ ] `DSN-CMP-14` `VistaTabItem` و `VistaNavigationBar` برای Shell مصرف شوند.
+- [x] `DSN-CMP-12` `VistaTopAppBar` و `VistaScaffold` مصرف شوند.
+- [x] `DSN-CMP-13` `VistaBadge`، `VistaDivider` و `VistaSurface` مصرف شوند.
+- [x] `DSN-CMP-14` `VistaTabItem` و `VistaNavigationBar` برای Shell مصرف شوند.
 - [ ] `DSN-CMP-15` componentهای ایجادشده Preview قطعی Light/Dark و RTL/LTR داشته باشند.
 - [ ] `DSN-CMP-16` semantics و minimum touch target componentها با UI test پاس شود.
-- [ ] `DSN-CMP-17` هیچ component بدون consumer واقعی در inventory باقی نماند.
+- [x] `DSN-CMP-17` هیچ component بدون consumer واقعی در inventory باقی نماند.
 
 ### Phase 4 — Existing Screen Migration
 
@@ -121,7 +121,7 @@ speculative. محتوای پنج تب فقط placeholder شفاف است.
 - [x] `DSN-MIG-02` Maintenance surface به Design System منتقل شود.
 - [x] `DSN-MIG-03` Onboarding surface به Design System منتقل شود.
 - [x] `DSN-MIG-04` Auth surface به Design System منتقل شود.
-- [ ] `DSN-MIG-05` Authenticated Boundary placeholder به Design System منتقل شود.
+- [x] `DSN-MIG-05` Authenticated Boundary placeholder به Design System منتقل شود.
 - [x] `DSN-MIG-06` state machine، ViewModel و data contracts بدون تغییر باقی بمانند.
 - [x] `DSN-MIG-07` Navigation contract ناسازگار ایجاد نشود.
 - [ ] `DSN-MIG-08` screenshot قبل/بعد با device/theme/orientation ثبت شود.
@@ -129,16 +129,16 @@ speculative. محتوای پنج تب فقط placeholder شفاف است.
 
 ### Phase 5 — Five-tab App Shell
 
-- [ ] `DSN-SHL-01` owner/consumer `:feature:shell` پیش از ایجاد ثبت شود.
-- [ ] `DSN-SHL-02` ماژول `:feature:shell` با dependency direction مجاز ساخته شود.
-- [ ] `DSN-SHL-03` مدل typed تب‌های Feed/Search/Services/Chat/Profile تعریف شود.
-- [ ] `DSN-SHL-04` label/icon و selected/unselected state پنج تب صحیح باشد.
-- [ ] `DSN-SHL-05` `FeedPlaceholderScreen` کنترل‌شده ساخته شود.
-- [ ] `DSN-SHL-06` `SearchPlaceholderScreen` کنترل‌شده ساخته شود.
-- [ ] `DSN-SHL-07` `ServicesPlaceholderScreen` کنترل‌شده ساخته شود.
-- [ ] `DSN-SHL-08` `ChatPlaceholderScreen` کنترل‌شده ساخته شود.
-- [ ] `DSN-SHL-09` `ProfilePlaceholderScreen` کنترل‌شده ساخته شود.
-- [ ] `DSN-SHL-10` placeholderها fake data/product UI یا Feature repository نداشته باشند.
+- [x] `DSN-SHL-01` owner/consumer `:feature:shell` پیش از ایجاد ثبت شود.
+- [x] `DSN-SHL-02` ماژول `:feature:shell` با dependency direction مجاز ساخته شود.
+- [x] `DSN-SHL-03` مدل typed تب‌های Feed/Search/Services/Chat/Profile تعریف شود.
+- [x] `DSN-SHL-04` label/icon و selected/unselected state پنج تب صحیح باشد.
+- [x] `DSN-SHL-05` `FeedPlaceholderScreen` کنترل‌شده ساخته شود.
+- [x] `DSN-SHL-06` `SearchPlaceholderScreen` کنترل‌شده ساخته شود.
+- [x] `DSN-SHL-07` `ServicesPlaceholderScreen` کنترل‌شده ساخته شود.
+- [x] `DSN-SHL-08` `ChatPlaceholderScreen` کنترل‌شده ساخته شود.
+- [x] `DSN-SHL-09` `ProfilePlaceholderScreen` کنترل‌شده ساخته شود.
+- [x] `DSN-SHL-10` placeholderها fake data/product UI یا Feature repository نداشته باشند.
 - [ ] `DSN-SHL-11` هر tab back stack مستقل داشته باشد.
 - [ ] `DSN-SHL-12` selected tab و tab history save/restore شوند.
 - [ ] `DSN-SHL-13` tab reselection behavior deterministic باشد.
@@ -148,16 +148,16 @@ speculative. محتوای پنج تب فقط placeholder شفاف است.
 
 ### Phase 6 — Navigation و State Restoration
 
-- [ ] `DSN-NAV-01` typed shell route و typed tab destination به graph FND افزوده شوند.
-- [ ] `DSN-NAV-02` nested graph مستقل هر tab بدون route string پراکنده ساخته شود.
+- [x] `DSN-NAV-01` typed shell route و typed tab destination به graph FND افزوده شوند.
+- [x] `DSN-NAV-02` nested graph مستقل هر tab بدون route string پراکنده ساخته شود.
 - [ ] `DSN-NAV-03` `popUpTo` و saved-state tab switching صحیح باشد.
 - [ ] `DSN-NAV-04` process recreation selected tab/history را restore کند.
 - [ ] `DSN-NAV-05` logout authenticated shell stack را کامل پاک کند.
 - [ ] `DSN-NAV-06` login Shell را duplicate نکند.
-- [ ] `DSN-NAV-07` deep-link handoff آینده به controlled placeholder برسد.
+- [x] `DSN-NAV-07` deep-link handoff آینده به controlled placeholder برسد.
 - [ ] `DSN-NAV-08` duplicate deep-link destination ایجاد نکند.
 - [ ] `DSN-NAV-09` cold/warm behavior و back از nested placeholder تست شود.
-- [ ] `DSN-NAV-10` خروج منطقی فقط در root مناسب رخ دهد.
+- [x] `DSN-NAV-10` خروج منطقی فقط در root مناسب رخ دهد.
 
 ### Phase 7 — Preview، Screenshot و Visual Regression
 
@@ -268,3 +268,5 @@ Production-ready ایجاد نمی‌کند.
   semantic/contrast پاس و `:app:assembleBetaDebug` در output ایزوله موفق شد.
 - Phase 3/4 checkpoint جزئی: ۳۳/۳۳ unit regression مربوط به app/auth پاس و
   `betaDebug` پس از migration چهار screen موفق شد؛ runtime/screenshot هنوز باز است.
+- Phase 5/6 checkpoint جزئی: پنج graph و destinationهای typed، placeholderهای
+  کنترل‌شده و handoff ساخته شدند؛ ۳/۳ contract test و `betaDebug` پاس شدند.
