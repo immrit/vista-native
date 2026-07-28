@@ -7,6 +7,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import ir.coffevista.vista_native.core.database.feed.FeedPageStateEntity
 import ir.coffevista.vista_native.core.database.feed.FeedPostEntity
+import ir.coffevista.vista_native.core.database.profile.PublicProfileEntity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -149,6 +150,7 @@ class VistaFoundationDatabaseTest {
         )
             .addMigrations(VistaFoundationDatabase.MIGRATION_1_2, VistaFoundationDatabase.MIGRATION_2_3)
             .addMigrations(VistaFoundationDatabase.MIGRATION_3_4)
+            .addMigrations(VistaFoundationDatabase.MIGRATION_4_5)
             .build()
 
         val failure = assertThrows(RuntimeException::class.java) {
@@ -327,6 +329,73 @@ class VistaFoundationDatabaseTest {
         }
     }
 
+    @Test
+    fun migrationFromV4ToV5CreatesViewerScopedPublicProfileTable() {
+        migrationHelper.createDatabase(TEST_DATABASE, 4).apply { close() }
+
+        migrationHelper.runMigrationsAndValidate(
+            TEST_DATABASE,
+            5,
+            true,
+            VistaFoundationDatabase.MIGRATION_4_5,
+        ).use { database ->
+            database.query(
+                """
+                SELECT viewer_account_id, profile_user_id, follow_status,
+                       follower_count, last_synced_epoch_millis
+                FROM public_profile
+                """.trimIndent(),
+            ).use { cursor ->
+                assertEquals(0, cursor.count)
+            }
+        }
+    }
+
+    @Test
+    fun publicProfileDaoInsertUpdateAndReadRelationshipCounts() =
+        runBlocking(Dispatchers.IO) {
+            withDatabase { database ->
+                val dao = database.publicProfileDao()
+                dao.upsert(publicProfile("viewer-a", "user-b"))
+                dao.upsert(
+                    publicProfile("viewer-a", "user-b").copy(
+                        followStatus = "following",
+                        followerCount = 42,
+                    ),
+                )
+
+                val stored = dao.observe("viewer-a", "user-b").first()
+                assertEquals("following", stored?.followStatus)
+                assertEquals(42L, stored?.followerCount)
+            }
+        }
+
+    @Test
+    fun publicProfileDaoCompositeKeyIsolatesViewers() = runBlocking(Dispatchers.IO) {
+        withDatabase { database ->
+            val dao = database.publicProfileDao()
+            dao.upsert(publicProfile("viewer-a", "user-b").copy(followStatus = "following"))
+            dao.upsert(publicProfile("viewer-c", "user-b").copy(followStatus = "none"))
+
+            assertEquals("following", dao.get("viewer-a", "user-b")?.followStatus)
+            assertEquals("none", dao.get("viewer-c", "user-b")?.followStatus)
+        }
+    }
+
+    @Test
+    fun publicProfileDaoClearViewerKeepsOtherAccounts() = runBlocking(Dispatchers.IO) {
+        withDatabase { database ->
+            val dao = database.publicProfileDao()
+            dao.upsert(publicProfile("viewer-a", "user-b"))
+            dao.upsert(publicProfile("viewer-c", "user-b"))
+
+            dao.clearViewer("viewer-a")
+
+            assertNull(dao.get("viewer-a", "user-b"))
+            assertEquals("user-b", dao.get("viewer-c", "user-b")?.profileUserId)
+        }
+    }
+
     private fun policy(revision: Long) = VerifiedTlsPolicyEntity(
         contractVersion = 1,
         revision = revision,
@@ -381,6 +450,30 @@ class VistaFoundationDatabaseTest {
         hasMore = hasMore,
         nextCursor = nextCursor,
         lastRefreshEpochMillis = 123,
+    )
+
+    private fun publicProfile(
+        viewerAccountId: String,
+        profileUserId: String,
+    ) = PublicProfileEntity(
+        viewerAccountId = viewerAccountId,
+        profileUserId = profileUserId,
+        username = "vista",
+        fullName = "Vista User",
+        bio = null,
+        avatarUrl = null,
+        isVerified = false,
+        verificationType = null,
+        isPrivate = false,
+        isBlocked = false,
+        subscriptionPlan = null,
+        premiumDaysRemaining = null,
+        postCount = 1,
+        followerCount = 2,
+        followingCount = 3,
+        followStatus = "none",
+        updatedAt = "2026-07-28T09:30:00Z",
+        lastSyncedEpochMillis = 123,
     )
 
     private suspend fun withDatabase(

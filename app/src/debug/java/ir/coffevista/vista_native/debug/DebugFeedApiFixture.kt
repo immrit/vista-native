@@ -53,9 +53,15 @@ class DebugFeedApiFixture @Inject constructor() : FeedApiFixture {
 
     private fun post(index: Int): FeedPostDto {
         val createdSecond = (60 - index).coerceAtLeast(0).toString().padStart(2, '0')
+        val authorId = if (index == 2) {
+            "fnd-debug-user"
+        } else {
+            "fixture-author-${(index % 3) + 1}"
+        }
+        val authorNumber = (index % 3) + 1
         return FeedPostDto(
             id = "fixture-post-$index",
-            userId = "fixture-author-${(index % 3) + 1}",
+            userId = authorId,
             content = "پست آزمایشی شماره $index برای بررسی فید فقط‌خواندنی",
             imageUrl = if (index == 1 || index % 4 == 0) {
                 "android.resource://ir.coffevista.vista_native/${R.drawable.viu_create}"
@@ -75,9 +81,9 @@ class DebugFeedApiFixture @Inject constructor() : FeedApiFixture {
             hideLikeCount = false,
             hideCommentCount = false,
             author = AuthorInfoDto(
-                userId = "fixture-author-${(index % 3) + 1}",
-                username = "fixture${(index % 3) + 1}",
-                fullName = "کاربر آزمایشی ${(index % 3) + 1}",
+                userId = authorId,
+                username = if (index == 2) "fixture" else "fixture$authorNumber",
+                fullName = if (index == 2) "کاربر آزمایشی" else "کاربر آزمایشی $authorNumber",
                 avatarUrl = null,
                 isVerified = index % 3 == 0,
                 verificationType = if (index % 3 == 0) "blueTick" else null,
