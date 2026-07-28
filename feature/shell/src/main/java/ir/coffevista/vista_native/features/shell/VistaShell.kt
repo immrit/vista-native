@@ -52,6 +52,7 @@ import ir.coffevista.vista_native.core.designsystem.tokens.VistaLayout
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaSpacing
 import ir.coffevista.vista_native.core.model.session.AuthenticatedContext
 import ir.coffevista.vista_native.features.profile.ui.OwnProfileScreen
+import ir.coffevista.vista_native.features.profile.ui.OtherUserProfileScreen
 import ir.coffevista.vista_native.features.feed.ui.FeedScreen
 import ir.coffevista.vista_native.features.feed.ui.PostDetailScreen
 import kotlinx.coroutines.launch
@@ -174,13 +175,33 @@ fun VistaShell(
                 composable(ShellRoutes.FeedRoot) {
                     FeedScreen(
                         viewModel = hiltViewModel(),
-                        onPostClick = { postId -> navController.navigate(ShellRoutes.feedDetail(postId)) }
+                        onPostClick = { postId ->
+                            navController.navigate(ShellRoutes.feedDetail(postId))
+                        },
+                        onAuthorClick = { userId ->
+                            navController.navigate(ShellRoutes.otherUserProfile(userId))
+                        },
                     )
                 }
                 composable(ShellRoutes.FeedDetailRoute) {
                     PostDetailScreen(
                         onBack = { navController.popBackStack() },
                         viewModel = hiltViewModel()
+                    )
+                }
+                composable(
+                    route = ShellRoutes.OtherUserProfileRoute,
+                    arguments = listOf(
+                        navArgument("userId") { type = NavType.StringType },
+                    ),
+                ) {
+                    OtherUserProfileScreen(
+                        viewModel = hiltViewModel(),
+                        onBack = { navController.popBackStack() },
+                        onSelfProfile = {
+                            navController.popBackStack(ShellRoutes.FeedRoot, inclusive = false)
+                            selectTab(ShellTab.Profile)
+                        },
                     )
                 }
             }

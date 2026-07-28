@@ -21,7 +21,12 @@ object DatabaseModule {
         VistaFoundationDatabase::class.java,
         VistaFoundationDatabase.DATABASE_NAME,
     )
-        .addMigrations(VistaFoundationDatabase.MIGRATION_1_2, VistaFoundationDatabase.MIGRATION_2_3, VistaFoundationDatabase.MIGRATION_3_4)
+        .addMigrations(
+            VistaFoundationDatabase.MIGRATION_1_2,
+            VistaFoundationDatabase.MIGRATION_2_3,
+            VistaFoundationDatabase.MIGRATION_3_4,
+            VistaFoundationDatabase.MIGRATION_4_5,
+        )
         .build()
 
     @Provides
@@ -38,4 +43,10 @@ object DatabaseModule {
     fun provideFeedDao(
         database: VistaFoundationDatabase,
     ): ir.coffevista.vista_native.core.database.feed.FeedDao = database.feedDao()
+
+    @Provides
+    fun providePublicProfileDao(
+        database: VistaFoundationDatabase,
+    ): ir.coffevista.vista_native.core.database.profile.PublicProfileDao =
+        database.publicProfileDao()
 }

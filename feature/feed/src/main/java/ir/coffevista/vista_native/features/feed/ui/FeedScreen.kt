@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.filter
 @Composable
 fun FeedScreen(
     onPostClick: (String) -> Unit,
+    onAuthorClick: (String) -> Unit,
     viewModel: FeedViewModel,
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -32,6 +33,7 @@ fun FeedScreen(
         onRefresh = viewModel::refresh,
         onLoadMore = viewModel::loadMore,
         onPostClick = onPostClick,
+        onAuthorClick = onAuthorClick,
     )
 }
 
@@ -42,6 +44,7 @@ internal fun FeedScreenContent(
     onRefresh: () -> Unit,
     onLoadMore: () -> Unit,
     onPostClick: (String) -> Unit,
+    onAuthorClick: (String) -> Unit = {},
 ) {
     VistaScaffold(
         topBar = {
@@ -80,6 +83,7 @@ internal fun FeedScreenContent(
                             state = state,
                             onLoadMore = onLoadMore,
                             onPostClick = onPostClick,
+                            onAuthorClick = onAuthorClick,
                         )
                     }
                 }
@@ -93,6 +97,7 @@ internal fun FeedContent(
     state: FeedUiState.Content,
     onLoadMore: () -> Unit,
     onPostClick: (String) -> Unit,
+    onAuthorClick: (String) -> Unit,
 ) {
     val listState = rememberLazyListState()
 
@@ -136,7 +141,11 @@ internal fun FeedContent(
         }
 
         items(state.posts, key = { it.id }) { post ->
-            FeedPostItem(post = post, onClick = { onPostClick(post.id) })
+            FeedPostItem(
+                post = post,
+                onClick = { onPostClick(post.id) },
+                onAuthorClick = { onAuthorClick(post.userId) },
+            )
             VistaDivider()
         }
 
@@ -200,7 +209,11 @@ internal fun FeedContent(
 }
 
 @Composable
-private fun FeedPostItem(post: FeedPost, onClick: () -> Unit) {
+private fun FeedPostItem(
+    post: FeedPost,
+    onClick: () -> Unit,
+    onAuthorClick: () -> Unit,
+) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -209,7 +222,12 @@ private fun FeedPostItem(post: FeedPost, onClick: () -> Unit) {
             .padding(16.dp)
     ) {
         // Author Info Row
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            modifier = Modifier
+                .clickable(onClick = onAuthorClick)
+                .testTag(FeedTestTags.author(post.userId)),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             VistaAvatar(
                 displayName = post.authorFullName
             )
@@ -286,4 +304,5 @@ internal object FeedTestTags {
     const val EndReached = "feed-end-reached"
     fun post(id: String) = "feed-post-$id"
     fun media(id: String) = "feed-media-$id"
+    fun author(userId: String) = "feed-author-$userId"
 }

@@ -5,6 +5,8 @@ object ShellRoutes {
     const val FeedRoot = "feed_root"
     fun feedDetail(reference: String) = "feed_detail/$reference"
     const val FeedDetailRoute = "feed_detail/{reference}"
+    fun otherUserProfile(userId: String) = "other_profile/$userId"
+    const val OtherUserProfileRoute = "other_profile/{userId}"
 
     const val SearchGraph = "search_graph"
     const val SearchRoot = "search_root"

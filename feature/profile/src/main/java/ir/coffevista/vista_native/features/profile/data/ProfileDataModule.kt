@@ -23,4 +23,54 @@ object ProfileDataModule {
         api: ProfileApi,
         dao: OwnProfileDao
     ): OwnProfileRepository = OfflineFirstOwnProfileRepository(api, dao)
+
+    @Provides
+    @Singleton
+    fun providePublicProfileApi(
+        @InternalApi retrofit: Retrofit,
+        fixtures: Set<@JvmSuppressWildcards PublicProfileApiFixture>,
+    ): PublicProfileApi {
+        val remote = retrofit.create(PublicProfileApi::class.java)
+        return object : PublicProfileApi {
+            override suspend fun fetchPublicProfile(
+                userId: String,
+            ): retrofit2.Response<PublicProfileDto> {
+                fixtures.forEach { fixture ->
+                    fixture.profileOrNull(userId)?.let {
+                        return retrofit2.Response.success(it)
+                    }
+                }
+                return remote.fetchPublicProfile(userId)
+            }
+
+            override suspend fun follow(
+                request: FollowActionRequestDto,
+            ): retrofit2.Response<FollowActionResponseDto> {
+                fixtures.forEach { fixture ->
+                    fixture.followOrNull(request.targetUserId)?.let {
+                        return retrofit2.Response.success(it)
+                    }
+                }
+                return remote.follow(request)
+            }
+
+            override suspend fun unfollow(
+                request: FollowActionRequestDto,
+            ): retrofit2.Response<UnfollowResponseDto> {
+                fixtures.forEach { fixture ->
+                    fixture.unfollowOrNull(request.targetUserId)?.let {
+                        return retrofit2.Response.success(it)
+                    }
+                }
+                return remote.unfollow(request)
+            }
+        }
+    }
+
+    @Provides
+    @Singleton
+    fun provideUserProfileRepository(
+        api: PublicProfileApi,
+        dao: ir.coffevista.vista_native.core.database.profile.PublicProfileDao,
+    ): UserProfileRepository = OfflineFirstUserProfileRepository(api, dao)
 }

@@ -64,10 +64,15 @@ fun VistaScaffold(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun VistaTopAppBar(title: String, modifier: Modifier = Modifier) {
+fun VistaTopAppBar(
+    title: String,
+    modifier: Modifier = Modifier,
+    navigationIcon: @Composable () -> Unit = {},
+) {
     TopAppBar(
         title = { Text(title, style = MaterialTheme.typography.titleLarge) },
         modifier = modifier,
+        navigationIcon = navigationIcon,
     )
 }
 

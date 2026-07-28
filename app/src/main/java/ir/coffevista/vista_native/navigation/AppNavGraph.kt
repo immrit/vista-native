@@ -22,6 +22,7 @@ import ir.coffevista.vista_native.features.auth.AuthenticationState
 import ir.coffevista.vista_native.features.auth.AuthenticationStateOwner
 import ir.coffevista.vista_native.features.auth.AuthVisuals
 import ir.coffevista.vista_native.features.feed.data.FeedRepository
+import ir.coffevista.vista_native.features.profile.data.UserProfileRepository
 import ir.coffevista.vista_native.features.shell.ShellDeepLinkRequest
 import ir.coffevista.vista_native.features.shell.ShellDeferredKind
 import ir.coffevista.vista_native.features.shell.VistaShell
@@ -46,6 +47,7 @@ fun VistaApp(
     deepLinkCoordinator: DeepLinkCoordinator,
     sessionStore: SessionStore,
     feedRepository: FeedRepository,
+    userProfileRepository: UserProfileRepository,
     onExitRequested: () -> Unit,
 ) {
     val navController = rememberNavController()
@@ -264,6 +266,9 @@ fun VistaApp(
                         applicationScope.launch {
                             runCatching {
                                 feedRepository.clearAccount(signedIn.context.userId)
+                            }
+                            runCatching {
+                                userProfileRepository.clearAccount(signedIn.context.userId)
                             }
                             sessionStore.clear()
                             withContext(Dispatchers.Main.immediate) {

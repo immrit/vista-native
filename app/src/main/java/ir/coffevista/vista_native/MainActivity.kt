@@ -17,6 +17,8 @@ import ir.coffevista.vista_native.features.auth.AuthenticationState
 import ir.coffevista.vista_native.features.auth.AuthenticationStateOwner
 import ir.coffevista.vista_native.features.feed.data.FeedRepository
 import ir.coffevista.vista_native.features.feed.data.FeedApiFixture
+import ir.coffevista.vista_native.features.profile.data.PublicProfileApiFixture
+import ir.coffevista.vista_native.features.profile.data.UserProfileRepository
 import ir.coffevista.vista_native.features.startup.StartupFixture
 import ir.coffevista.vista_native.navigation.VistaApp
 import ir.coffevista.vista_native.navigation.DeepLinkCoordinator
@@ -44,6 +46,12 @@ class MainActivity : ComponentActivity() {
     @Inject
     lateinit var feedApiFixtures: Set<@JvmSuppressWildcards FeedApiFixture>
 
+    @Inject
+    lateinit var publicProfileApiFixtures: Set<@JvmSuppressWildcards PublicProfileApiFixture>
+
+    @Inject
+    lateinit var userProfileRepository: UserProfileRepository
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         configureStartupFixtures(intent)
@@ -61,6 +69,7 @@ class MainActivity : ComponentActivity() {
                             deepLinkCoordinator = deepLinkCoordinator,
                             sessionStore = sessionStore,
                             feedRepository = feedRepository,
+                            userProfileRepository = userProfileRepository,
                             onExitRequested = ::finish,
                         )
                     }
@@ -87,6 +96,7 @@ class MainActivity : ComponentActivity() {
         val scenario = intent?.getStringExtra(FOUNDATION_FIXTURE_EXTRA)
         startupFixtures.forEach { fixture -> fixture.configure(scenario) }
         feedApiFixtures.forEach { fixture -> fixture.configure(scenario) }
+        publicProfileApiFixtures.forEach { fixture -> fixture.configure(scenario) }
     }
 
     private companion object {
