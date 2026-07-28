@@ -18,6 +18,7 @@ enum class DebugStartupScenario(val wireName: String) {
     MAINTENANCE_ENABLED("maintenance-enabled"),
     MAINTENANCE_DISABLED("maintenance-disabled"),
     VALID_SESSION("valid-session"),
+    FEED_ERROR("feed-error"),
     ACCESS_EXPIRED_REFRESH_SUCCESS("access-expired-refresh-success"),
     REFRESH_EXPIRED("refresh-expired"),
     REVOKED("revoked"),
@@ -46,6 +47,7 @@ class DebugStartupFixture @Inject constructor() : StartupFixture {
         DebugStartupScenario.MAINTENANCE_ENABLED -> StartupDestination.Maintenance
         DebugStartupScenario.MAINTENANCE_DISABLED -> StartupDestination.Authentication
         DebugStartupScenario.VALID_SESSION,
+        DebugStartupScenario.FEED_ERROR,
         DebugStartupScenario.ACCESS_EXPIRED_REFRESH_SUCCESS,
         -> authenticated(offline = false)
         DebugStartupScenario.OFFLINE_VALID_SESSION -> authenticated(offline = true)

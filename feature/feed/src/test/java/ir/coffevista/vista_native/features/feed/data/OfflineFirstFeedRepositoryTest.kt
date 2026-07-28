@@ -1,0 +1,308 @@
+package ir.coffevista.vista_native.features.feed.data
+
+import ir.coffevista.vista_native.core.database.feed.FeedDao
+import ir.coffevista.vista_native.core.database.feed.FeedPageStateEntity
+import ir.coffevista.vista_native.core.database.feed.FeedPostEntity
+import java.io.IOException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.test.runTest
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Test
+
+class OfflineFirstFeedRepositoryTest {
+    private lateinit var dao: FakeFeedDao
+    private lateinit var api: FakeFeedApi
+    private lateinit var repository: OfflineFirstFeedRepository
+
+    @Before
+    fun setUp() {
+        dao = FakeFeedDao()
+        api = FakeFeedApi()
+        repository = OfflineFirstFeedRepository(dao, api)
+    }
+
+    @Test
+    fun cacheFirstEmissionReturnsStoredPostsBeforeNetworkWork() = runTest {
+        dao.insertPosts(listOf(entity(accountId = "account-a", id = "cached")))
+
+        val snapshot = repository.observeFeed("account-a").first()
+
+        assertEquals(listOf("cached"), snapshot.posts.map(FeedPost::id))
+        assertTrue(api.calls.isEmpty())
+    }
+
+    @Test
+    fun refreshSuccessAtomicallyReplacesFirstPageAndMetadata() = runTest {
+        dao.insertPosts(listOf(entity(accountId = "account-a", id = "old")))
+        api.response = response("new-1", "new-2", hasMore = true)
+
+        val result = repository.refreshFeed("account-a")
+
+        assertEquals(2, result.itemCount)
+        assertEquals(listOf("new-1", "new-2"), dao.posts("account-a").map { it.id })
+        assertEquals(2, dao.getPageState("account-a")?.nextOffset)
+        assertTrue(dao.getPageState("account-a")?.hasMore == true)
+        assertEquals(listOf(15 to 0), api.calls)
+    }
+
+    @Test
+    fun refreshFailurePreservesExistingCache() = runTest {
+        dao.insertPosts(listOf(entity(accountId = "account-a", id = "cached")))
+        api.failure = IOException("offline")
+
+        assertTrue(
+            runCatching { repository.refreshFeed("account-a") }.exceptionOrNull() is IOException,
+        )
+
+        assertEquals(listOf("cached"), dao.posts("account-a").map { it.id })
+    }
+
+    @Test
+    fun refreshFailureWithoutCacheLeavesAccountEmpty() = runTest {
+        api.failure = IOException("offline")
+
+        assertTrue(
+            runCatching { repository.refreshFeed("account-a") }.exceptionOrNull() is IOException,
+        )
+
+        assertTrue(dao.posts("account-a").isEmpty())
+        assertEquals(null, dao.getPageState("account-a"))
+    }
+
+    @Test
+    fun appendSuccessUsesPersistedOffsetAndKeepsExistingList() = runTest {
+        dao.insertPosts(listOf(entity(accountId = "account-a", id = "cached", sortOrder = 0)))
+        dao.upsertPageState(pageState("account-a", nextOffset = 7, hasMore = true))
+        api.response = response("next", hasMore = false)
+
+        val result = repository.loadMoreFeed("account-a") as FeedAppendResult.Appended
+
+        assertEquals(listOf(15 to 7), api.calls)
+        assertEquals(listOf("cached", "next"), dao.posts("account-a").map { it.id })
+        assertEquals(8, dao.getPageState("account-a")?.nextOffset)
+        assertFalse(result.hasMore)
+    }
+
+    @Test
+    fun appendFailureDoesNotMutatePostsOrMetadata() = runTest {
+        dao.insertPosts(listOf(entity(accountId = "account-a", id = "cached")))
+        val state = pageState("account-a", nextOffset = 1, hasMore = true)
+        dao.upsertPageState(state)
+        api.failure = IOException("append failed")
+
+        assertTrue(
+            runCatching { repository.loadMoreFeed("account-a") }.exceptionOrNull() is IOException,
+        )
+
+        assertEquals(listOf("cached"), dao.posts("account-a").map { it.id })
+        assertEquals(state, dao.getPageState("account-a"))
+    }
+
+    @Test
+    fun appendDeduplicatesByPostIdButAdvancesByServerItemCount() = runTest {
+        dao.insertPosts(listOf(entity(accountId = "account-a", id = "same")))
+        dao.upsertPageState(pageState("account-a", nextOffset = 1, hasMore = true))
+        api.response = response("same", "new", hasMore = true)
+
+        val result = repository.loadMoreFeed("account-a") as FeedAppendResult.Appended
+
+        assertEquals(1, result.newItemCount)
+        assertEquals(listOf("same", "new"), dao.posts("account-a").map { it.id })
+        assertEquals(3, dao.getPageState("account-a")?.nextOffset)
+    }
+
+    @Test
+    fun endReachedStopsWithoutCallingApi() = runTest {
+        dao.upsertPageState(pageState("account-a", nextOffset = 15, hasMore = false))
+
+        val result = repository.loadMoreFeed("account-a")
+
+        assertEquals(FeedAppendResult.EndReached, result)
+        assertTrue(api.calls.isEmpty())
+    }
+
+    @Test
+    fun concurrentAppendIsIgnoredInsteadOfQueued() = runTest {
+        dao.upsertPageState(pageState("account-a", nextOffset = 1, hasMore = true))
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        api.handler = { _, _ ->
+            entered.complete(Unit)
+            release.await()
+            response("new", hasMore = false)
+        }
+
+        val first = async { repository.loadMoreFeed("account-a") }
+        entered.await()
+        val second = repository.loadMoreFeed("account-a")
+        release.complete(Unit)
+
+        assertEquals(FeedAppendResult.IgnoredAlreadyLoading, second)
+        assertTrue(first.await() is FeedAppendResult.Appended)
+        assertEquals(1, api.calls.size)
+    }
+
+    @Test
+    fun accountIsolationAndClearAffectOnlyRequestedAccount() = runTest {
+        dao.insertPosts(
+            listOf(
+                entity(accountId = "account-a", id = "a"),
+                entity(accountId = "account-b", id = "b"),
+            ),
+        )
+        dao.upsertPageState(pageState("account-a", nextOffset = 1, hasMore = true))
+        dao.upsertPageState(pageState("account-b", nextOffset = 1, hasMore = true))
+
+        repository.clearAccount("account-a")
+
+        assertTrue(repository.observeFeed("account-a").first().posts.isEmpty())
+        assertEquals(
+            listOf("b"),
+            repository.observeFeed("account-b").first().posts.map(FeedPost::id),
+        )
+        assertEquals(null, dao.getPageState("account-a"))
+        assertEquals(1, dao.getPageState("account-b")?.nextOffset)
+    }
+
+    private fun response(
+        vararg ids: String,
+        hasMore: Boolean,
+    ) = FeedResponseDto(
+        posts = ids.map(::dto),
+        hasMore = hasMore,
+        nextCursor = ids.lastOrNull()?.let { "2026-07-27T17:21:${it.length}Z" },
+    )
+
+    private fun dto(id: String) = FeedPostDto(
+        id = id,
+        userId = "author",
+        content = "caption-$id",
+        imageUrl = null,
+        imageUrls = emptyList(),
+        videoUrl = null,
+        musicUrl = null,
+        aspectRatio = null,
+        musicTitle = null,
+        tags = emptyList(),
+        likeCount = 0,
+        commentCount = 0,
+        isLiked = false,
+        isSaved = false,
+        hideLikeCount = false,
+        hideCommentCount = false,
+        author = AuthorInfoDto(
+            userId = "author",
+            username = "author",
+            fullName = "Author",
+            avatarUrl = null,
+            isVerified = false,
+            verificationType = null,
+        ),
+        createdAt = "2026-07-27T17:21:49Z",
+        updatedAt = "2026-07-27T17:21:49Z",
+    )
+
+    private fun entity(
+        accountId: String,
+        id: String,
+        sortOrder: Long = 0,
+    ) = dto(id).asEntity(accountId = accountId, sortOrder = sortOrder)
+
+    private fun pageState(
+        accountId: String,
+        nextOffset: Int,
+        hasMore: Boolean,
+    ) = FeedPageStateEntity(
+        accountId = accountId,
+        nextOffset = nextOffset,
+        hasMore = hasMore,
+        nextCursor = null,
+        lastRefreshEpochMillis = 123,
+    )
+}
+
+private class FakeFeedApi : FeedApi {
+    var response = FeedResponseDto(emptyList(), hasMore = false)
+    var failure: IOException? = null
+    var handler: (suspend (Int, Int) -> FeedResponseDto)? = null
+    val calls = mutableListOf<Pair<Int, Int>>()
+
+    override suspend fun getFeed(limit: Int, offset: Int): FeedResponseDto {
+        calls += limit to offset
+        failure?.let { throw it }
+        return handler?.invoke(limit, offset) ?: response
+    }
+}
+
+private class FakeFeedDao : FeedDao {
+    private val postsByAccount = linkedMapOf<String, LinkedHashMap<String, FeedPostEntity>>()
+    private val postFlows = mutableMapOf<String, MutableStateFlow<List<FeedPostEntity>>>()
+    private val states = mutableMapOf<String, FeedPageStateEntity>()
+    private val stateFlows = mutableMapOf<String, MutableStateFlow<FeedPageStateEntity?>>()
+
+    override fun observeFeed(accountId: String): Flow<List<FeedPostEntity>> =
+        postFlows.getOrPut(accountId) { MutableStateFlow(posts(accountId)) }
+
+    override fun observePageState(accountId: String): Flow<FeedPageStateEntity?> =
+        stateFlows.getOrPut(accountId) { MutableStateFlow(states[accountId]) }
+
+    override suspend fun getPageState(accountId: String): FeedPageStateEntity? =
+        states[accountId]
+
+    override suspend fun insertPosts(posts: List<FeedPostEntity>) {
+        posts.forEach { post ->
+            postsByAccount.getOrPut(post.accountId) { linkedMapOf() }[post.id] = post
+        }
+        posts.map(FeedPostEntity::accountId).distinct().forEach(::emitPosts)
+    }
+
+    override suspend fun upsertPageState(state: FeedPageStateEntity) {
+        states[state.accountId] = state
+        stateFlows.getOrPut(state.accountId) { MutableStateFlow(null) }.value = state
+    }
+
+    override suspend fun deletePosts(accountId: String) {
+        postsByAccount.remove(accountId)
+        emitPosts(accountId)
+    }
+
+    override suspend fun deletePageState(accountId: String) {
+        states.remove(accountId)
+        stateFlows.getOrPut(accountId) { MutableStateFlow(null) }.value = null
+    }
+
+    override suspend fun getMaxSortOrder(accountId: String): Long? =
+        posts(accountId).maxOfOrNull(FeedPostEntity::sortOrder)
+
+    override suspend fun getPostCount(accountId: String): Int = posts(accountId).size
+
+    override suspend fun getExistingPostIds(
+        accountId: String,
+        postIds: List<String>,
+    ): List<String> = postsByAccount[accountId]
+        .orEmpty()
+        .keys
+        .filter { it in postIds }
+
+    override fun observePostById(
+        accountId: String,
+        postId: String,
+    ): Flow<FeedPostEntity?> = flowOf(postsByAccount[accountId]?.get(postId))
+
+    fun posts(accountId: String): List<FeedPostEntity> = postsByAccount[accountId]
+        .orEmpty()
+        .values
+        .sortedBy(FeedPostEntity::sortOrder)
+
+    private fun emitPosts(accountId: String) {
+        postFlows.getOrPut(accountId) { MutableStateFlow(emptyList()) }.value = posts(accountId)
+    }
+}

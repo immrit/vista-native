@@ -72,15 +72,19 @@ class StartupFixtureInstrumentationTest {
 
     @Test
     fun offlineValidSessionSurvivesActivityRecreation() {
+        launch("valid-session").use {
+            awaitText("پست آزمایشی شماره 1 برای بررسی فید فقط‌خواندنی")
+        }
+
         launch("offline-valid-session").use { scenario ->
-            awaitText("زیرساخت Feed آماده است")
-            composeRule.onNodeWithText("زیرساخت Feed آماده است")
+            awaitText("نمایش نسخه ذخیره‌شده")
+            composeRule.onNodeWithText("نمایش نسخه ذخیره‌شده")
                 .assertIsDisplayed()
 
             scenario.recreate()
 
-            awaitText("زیرساخت Feed آماده است")
-            composeRule.onNodeWithText("زیرساخت Feed آماده است")
+            awaitText("نمایش نسخه ذخیره‌شده")
+            composeRule.onNodeWithText("نمایش نسخه ذخیره‌شده")
                 .assertIsDisplayed()
         }
     }
@@ -88,14 +92,20 @@ class StartupFixtureInstrumentationTest {
     @Test
     fun shellRestoresIndependentTabStackAcrossSwitchAndRecreation() {
         launch("valid-session").use { scenario ->
-            awaitText("زیرساخت Feed آماده است", "step1-feed-ready")
+            awaitText(
+                "پست آزمایشی شماره 1 برای بررسی فید فقط‌خواندنی",
+                "step1-feed-ready",
+            )
             composeRule.onNodeWithText("جستجو").performClick()
             awaitText("زیرساخت جستجو آماده است", "step2-search-ready")
             composeRule.onNodeWithText("بررسی back stack کنترل‌شده").performClick()
             awaitText("جستجو: مقصد داخلی کنترل‌شده", "step3-search-detail-first")
 
             composeRule.onNodeWithText("خانه").performClick()
-            awaitText("زیرساخت Feed آماده است", "step4-feed-ready-again")
+            awaitText(
+                "پست آزمایشی شماره 1 برای بررسی فید فقط‌خواندنی",
+                "step4-feed-ready-again",
+            )
             composeRule.onNodeWithText("جستجو").performClick()
             awaitText("جستجو: مقصد داخلی کنترل‌شده", "step5-search-detail-restored")
 
@@ -168,15 +178,15 @@ class StartupFixtureInstrumentationTest {
             } catch (e: androidx.compose.ui.test.ComposeTimeoutException) {
                 // Ignore, we will fail on the next awaitText with a better message anyway
             }
-            awaitText("خانه: مقصد داخلی کنترل‌شده", "cold-deep-link-feed-detail")
-            composeRule.onNodeWithText("خانه: مقصد داخلی کنترل‌شده").assertIsDisplayed()
+            awaitText("پست در حافظه موجود نیست", "cold-deep-link-feed-detail")
+            composeRule.onNodeWithText("پست در حافظه موجود نیست").assertIsDisplayed()
         }
     }
 
     @Test
     fun warmDuplicateDeepLinkIsIgnored() {
         launch("valid-session", uri = "vista://post/test").use { scenario ->
-            awaitText("خانه: مقصد داخلی کنترل‌شده", "warm-deep-link-feed-detail-first")
+            awaitText("پست در حافظه موجود نیست", "warm-deep-link-feed-detail-first")
 
             val context = ApplicationProvider.getApplicationContext<android.content.Context>()
             val intent = Intent(context, MainActivity::class.java).apply {
@@ -189,8 +199,12 @@ class StartupFixtureInstrumentationTest {
             scenario.onActivity { activity ->
                 activity.onBackPressedDispatcher.onBackPressed()
             }
-            awaitText("زیرساخت Feed آماده است", "warm-deep-link-feed-ready-after-back")
-            composeRule.onNodeWithText("زیرساخت Feed آماده است").assertIsDisplayed()
+            awaitText(
+                "پست آزمایشی شماره 1 برای بررسی فید فقط‌خواندنی",
+                "warm-deep-link-feed-ready-after-back",
+            )
+            composeRule.onNodeWithText("پست آزمایشی شماره 1", substring = true)
+                .assertIsDisplayed()
         }
     }
 
