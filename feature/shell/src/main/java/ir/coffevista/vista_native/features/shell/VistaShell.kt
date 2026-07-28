@@ -52,6 +52,8 @@ import ir.coffevista.vista_native.core.designsystem.tokens.VistaLayout
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaSpacing
 import ir.coffevista.vista_native.core.model.session.AuthenticatedContext
 import ir.coffevista.vista_native.features.profile.ui.OwnProfileScreen
+import ir.coffevista.vista_native.features.feed.ui.FeedScreen
+import ir.coffevista.vista_native.features.feed.ui.PostDetailScreen
 import kotlinx.coroutines.launch
 
 @Composable
@@ -170,9 +172,17 @@ fun VistaShell(
         ) {
             navigation(route = ShellRoutes.FeedGraph, startDestination = ShellRoutes.FeedRoot) {
                 composable(ShellRoutes.FeedRoot) {
-                    FeedPlaceholderScreen(onDetails = { navController.navigate(ShellRoutes.feedDetail("foundation")) })
+                    FeedScreen(
+                        viewModel = hiltViewModel(),
+                        onPostClick = { postId -> navController.navigate(ShellRoutes.feedDetail(postId)) }
+                    )
                 }
-                composable(ShellRoutes.FeedDetailRoute) { ControlledDetailScreen(ShellTab.Feed) }
+                composable(ShellRoutes.FeedDetailRoute) {
+                    PostDetailScreen(
+                        onBack = { navController.popBackStack() },
+                        viewModel = hiltViewModel()
+                    )
+                }
             }
             navigation(route = ShellRoutes.SearchGraph, startDestination = ShellRoutes.SearchRoot) {
                 composable(ShellRoutes.SearchRoot) {
@@ -205,21 +215,6 @@ fun VistaShell(
     }
 }
 
-@Composable
-private fun FeedPlaceholderScreen(onDetails: () -> Unit) {
-    PlaceholderLayout(
-        title = "زیرساخت Feed آماده است",
-        message = "محتوای واقعی Feed در فاز Feature خودش پیاده‌سازی می‌شود.",
-        onDetails = onDetails,
-    ) {
-        VistaMediaCard(
-            title = "",
-            subtitle = "",
-            loading = true,
-            modifier = Modifier.padding(top = VistaSpacing.Large),
-        )
-    }
-}
 
 @Composable
 private fun SearchPlaceholderScreen(onDetails: () -> Unit) {

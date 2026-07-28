@@ -103,6 +103,7 @@ dependencies {
     implementation(project(":feature:auth"))
     implementation(project(":feature:shell"))
     implementation(project(":feature:profile"))
+    implementation(project(":feature:feed"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)

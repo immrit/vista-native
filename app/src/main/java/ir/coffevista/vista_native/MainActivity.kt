@@ -15,6 +15,8 @@ import androidx.compose.ui.unit.LayoutDirection
 import dagger.hilt.android.AndroidEntryPoint
 import ir.coffevista.vista_native.features.auth.AuthenticationState
 import ir.coffevista.vista_native.features.auth.AuthenticationStateOwner
+import ir.coffevista.vista_native.features.feed.data.FeedRepository
+import ir.coffevista.vista_native.features.feed.data.FeedApiFixture
 import ir.coffevista.vista_native.features.startup.StartupFixture
 import ir.coffevista.vista_native.navigation.VistaApp
 import ir.coffevista.vista_native.navigation.DeepLinkCoordinator
@@ -36,6 +38,12 @@ class MainActivity : ComponentActivity() {
     @Inject
     lateinit var sessionStore: SessionStore
 
+    @Inject
+    lateinit var feedRepository: FeedRepository
+
+    @Inject
+    lateinit var feedApiFixtures: Set<@JvmSuppressWildcards FeedApiFixture>
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         configureStartupFixtures(intent)
@@ -52,6 +60,7 @@ class MainActivity : ComponentActivity() {
                             authenticationStateOwner = authenticationStateOwner,
                             deepLinkCoordinator = deepLinkCoordinator,
                             sessionStore = sessionStore,
+                            feedRepository = feedRepository,
                             onExitRequested = ::finish,
                         )
                     }
@@ -77,6 +86,7 @@ class MainActivity : ComponentActivity() {
     private fun configureStartupFixtures(intent: Intent?) {
         val scenario = intent?.getStringExtra(FOUNDATION_FIXTURE_EXTRA)
         startupFixtures.forEach { fixture -> fixture.configure(scenario) }
+        feedApiFixtures.forEach { fixture -> fixture.configure(scenario) }
     }
 
     private companion object {

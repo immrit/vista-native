@@ -5,6 +5,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.painterResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -20,6 +21,7 @@ import ir.coffevista.vista_native.features.auth.AuthViewModel
 import ir.coffevista.vista_native.features.auth.AuthenticationState
 import ir.coffevista.vista_native.features.auth.AuthenticationStateOwner
 import ir.coffevista.vista_native.features.auth.AuthVisuals
+import ir.coffevista.vista_native.features.feed.data.FeedRepository
 import ir.coffevista.vista_native.features.shell.ShellDeepLinkRequest
 import ir.coffevista.vista_native.features.shell.ShellDeferredKind
 import ir.coffevista.vista_native.features.shell.VistaShell
@@ -34,18 +36,23 @@ import ir.coffevista.vista_native.ui.components.VistaBrandAsset
 import ir.coffevista.vista_native.ui.components.VistaBrandMark
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaBrandColors
 import ir.coffevista.vista_native.core.security.SessionStore
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun VistaApp(
     authenticationStateOwner: AuthenticationStateOwner,
     deepLinkCoordinator: DeepLinkCoordinator,
     sessionStore: SessionStore,
+    feedRepository: FeedRepository,
     onExitRequested: () -> Unit,
 ) {
     val navController = rememberNavController()
     val authState by authenticationStateOwner.state.collectAsStateWithLifecycle()
     val deepLinkState by deepLinkCoordinator.state.collectAsStateWithLifecycle()
     var shellDeepLinkRequest by remember { mutableStateOf<ShellDeepLinkRequest?>(null) }
+    val applicationScope = rememberCoroutineScope()
     val authVisuals = AuthVisuals(
         accentColor = VistaBrandColors.Indigo,
         personIcon = painterResource(R.drawable.ic_person_outline),
@@ -232,8 +239,14 @@ fun VistaApp(
         composable<AppRoute.AuthenticatedBoundary> {
             val signedIn = authState as? AuthenticationState.SignedIn
             if (signedIn == null) {
-                LaunchedEffect(Unit) {
-                    navController.navigate(AppRoute.Startup) {
+                val signedOut = authState == AuthenticationState.SignedOut
+                LaunchedEffect(signedOut) {
+                    val destination = if (signedOut) {
+                        AppRoute.Authentication
+                    } else {
+                        AppRoute.Startup
+                    }
+                    navController.navigate(destination) {
                         popUpTo(navController.graph.findStartDestination().id) {
                             inclusive = true
                         }
@@ -248,12 +261,15 @@ fun VistaApp(
                         shellDeepLinkRequest = null
                     },
                     onLogout = {
-                        sessionStore.clear()
-                        authenticationStateOwner.signOut()
-                        shellDeepLinkRequest = null
-                        navController.navigate(AppRoute.Authentication) {
-                            popUpTo<AppRoute.AuthenticatedBoundary> { inclusive = true }
-                            launchSingleTop = true
+                        applicationScope.launch {
+                            runCatching {
+                                feedRepository.clearAccount(signedIn.context.userId)
+                            }
+                            sessionStore.clear()
+                            withContext(Dispatchers.Main.immediate) {
+                                authenticationStateOwner.signOut()
+                                shellDeepLinkRequest = null
+                            }
                         }
                     },
                     onExitRequested = onExitRequested,

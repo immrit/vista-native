@@ -6,18 +6,27 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import ir.coffevista.vista_native.core.database.profile.OwnProfileDao
 import ir.coffevista.vista_native.core.database.profile.OwnProfileEntity
+import ir.coffevista.vista_native.core.database.feed.FeedPostEntity
+import ir.coffevista.vista_native.core.database.feed.FeedPageStateEntity
+import ir.coffevista.vista_native.core.database.feed.FeedDao
+import ir.coffevista.vista_native.core.database.feed.FeedConverters
+import androidx.room.TypeConverters
 
 @Database(
     entities = [
         VerifiedTlsPolicyEntity::class,
-        OwnProfileEntity::class
+        OwnProfileEntity::class,
+        FeedPostEntity::class,
+        FeedPageStateEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = true,
 )
+@TypeConverters(FeedConverters::class)
 abstract class VistaFoundationDatabase : RoomDatabase() {
     abstract fun verifiedTlsPolicyDao(): VerifiedTlsPolicyDao
     abstract fun ownProfileDao(): OwnProfileDao
+    abstract fun feedDao(): FeedDao
 
     companion object {
         const val DATABASE_NAME = "vista_foundation.db"
@@ -84,6 +93,56 @@ abstract class VistaFoundationDatabase : RoomDatabase() {
                         following_count INTEGER NOT NULL,
                         updated_at TEXT,
                         PRIMARY KEY(user_id)
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
+
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS feed_post (
+                        account_id TEXT NOT NULL,
+                        id TEXT NOT NULL,
+                        user_id TEXT NOT NULL,
+                        content TEXT,
+                        image_url TEXT,
+                        image_urls TEXT NOT NULL,
+                        video_url TEXT,
+                        music_url TEXT,
+                        aspect_ratio TEXT,
+                        music_title TEXT,
+                        tags TEXT NOT NULL,
+                        like_count INTEGER NOT NULL,
+                        comment_count INTEGER NOT NULL,
+                        is_liked INTEGER NOT NULL,
+                        is_saved INTEGER NOT NULL,
+                        hide_like_count INTEGER NOT NULL,
+                        hide_comment_count INTEGER NOT NULL,
+                        author_id TEXT NOT NULL,
+                        author_username TEXT,
+                        author_full_name TEXT NOT NULL,
+                        author_avatar_url TEXT,
+                        author_is_verified INTEGER NOT NULL,
+                        author_verification_type TEXT,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        sort_order INTEGER NOT NULL,
+                        PRIMARY KEY(account_id, id)
+                    )
+                    """.trimIndent()
+                )
+                database.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS feed_page_state (
+                        account_id TEXT NOT NULL,
+                        next_offset INTEGER NOT NULL,
+                        has_more INTEGER NOT NULL,
+                        next_cursor TEXT,
+                        last_refresh_epoch_millis INTEGER NOT NULL,
+                        PRIMARY KEY(account_id)
                     )
                     """.trimIndent()
                 )
