@@ -95,7 +95,7 @@ Result: no app crash/ANR match. `AndroidRuntime` entries were only the normal
 
 ```text
 scripts/secret-scan.ps1
-Secret scan passed: 407 tracked/untracked files, 0 findings.
+Secret scan passed: 408 tracked/untracked files, 0 findings.
 ```
 
 Main-source search for `AuthVisualParity`, `vista-login-parity`, screenshot

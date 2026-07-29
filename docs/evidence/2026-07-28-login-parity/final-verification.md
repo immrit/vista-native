@@ -183,7 +183,7 @@ Result: `BUILD SUCCESSFUL` (957 tasks).
   38,554,317 bytes.
 - Lint reports: Design System 0 issues; Auth 0 issues; Shell 2 non-error hints
   (`AutoboxingStateCreation`); app 36 existing warnings; all four have 0 errors.
-- Secret scan: 407 tracked repository files in the final clean snapshot,
+- Secret scan: 408 tracked repository files in the final clean snapshot,
   0 findings.
 - Visual capture control and screenshot naming exist only under `androidTest`;
   searched `main` source sets contain 0 parity-fixture hits.
