@@ -20,7 +20,10 @@ No asset was downloaded or inferred from a screenshot. Flutter was not modified.
 
 The repository contains 4,017 audited non-build asset files:
 
-- 3,967 PNG emoji sprites under `assets/emoji/modern/` (9,900,844 bytes), indexed by `lib/features/emoji/data/modern_emoji_map.json`. They are not consumed by Login and are not migrated in this slice.
+- 3,967 emoji-family files under `assets/emoji/modern/`: 3,966 PNG
+  sprites plus `metadata.bin` (8,968 bytes), indexed by
+  `lib/features/emoji/data/modern_emoji_map.json`. They are not consumed by
+  Login and are not migrated in this slice.
 - 41 image/SVG/audio assets listed below.
 - 9 font files listed in the font table.
 
@@ -65,7 +68,7 @@ migration decision, Native destination, and notes for all 4,017 files.
 | `lib/utils/images/share_icons/gmail.png` | PNG | 512×512 | `2EC48CC5556438D9C2866F187EC25DA06BC90677D6444CC2E9109F2581681493` | share | No | Out of scope |
 | `lib/utils/images/share_icons/modern.png` | PNG | 2048×2048 | `4C5944702A163FAC6E90BDC4AF9424045BB2993F3EFC0F5CD9C0FD5E5DB3B605` | share | No | Out of scope |
 | `lib/utils/images/share_icons/Rubika.png` | PNG | 1080×1080 | `3FDF57004B538F921EC7D7D58D62602CC308F396DCEF79100B4A45C246F8D19A` | share | No | Out of scope |
-| `lib/utils/images/share_icons/Social.png` | PNG/invalid metadata | unreadable by System.Drawing | `ACAECF8A707B5EEE5F408C68F8B976FD6AAC01CDA7C8194B77F471E1A43CAAE7` | share | No | Ownership/format needs separate audit |
+| `lib/utils/images/share_icons/Social.png` | PNG | 2048×2048 | `ACAECF8A707B5EEE5F408C68F8B976FD6AAC01CDA7C8194B77F471E1A43CAAE7` | share | No | Out of scope |
 | `lib/utils/images/share_icons/story.png` | PNG | 200×200 | `C733C697D739048748685ADA1B8874E095EA5F33E776A1D438727BFAC6C47F52` | story/share | No | Out of scope |
 | `lib/utils/images/share_icons/whatsapp.png` | PNG | 256×256 | `E6BF808A9EBA14DB25FD545F6081FCAEFA22A933348D0E4A42EBB89528277783` | share | No | Out of scope |
 | `lib/utils/images/wallpapers/dark_wallpaper.png` | PNG | 1696×2528 | `8AA91473441A72A4B3DF42A58A7B641852112B261E820B202F783F3A1759FE0E` | chat wallpaper | No | Out of scope |
@@ -108,7 +111,7 @@ Flutter uses Material icons, not custom image assets, for `person_outline`, `loc
 | `AppColors.textPrimary` | `#0F1117` | content primary | non-canonical black | reconciled |
 | `AppColors.textSecondary` | `#6B7280` | content secondary | non-canonical gray | reconciled |
 | auth hint | `#707787` | auth hint/icon tint | absent | exact screen value |
-| `AppColors.error` | `#EF4444` | Material error / OTP border | non-canonical | reconciled |
+| `AppColors.error` | `#EF4444` | Material/TextField error | non-canonical | reconciled; OTP uses only the primary focus border |
 | OTP inline error | `#E53935` | auth inline error | absent | exact screen value |
 | `AppColors.success` | `#10B981` | semantic success | non-canonical | reconciled |
 | `AppColors.warning` | `#F59E0B` | semantic warning | non-canonical | reconciled |

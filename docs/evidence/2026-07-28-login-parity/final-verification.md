@@ -181,15 +181,19 @@ Result: `BUILD SUCCESSFUL` (957 tasks).
 - R8 mapping:
   `.gradle/visual-parity-final-20260729-m/app/outputs/mapping/betaRelease/mapping.txt`,
   38,554,317 bytes.
-- Lint reports: Design System 0 issues; Auth 0 issues; Shell 2 non-error
-  informational issues; app 36 existing warnings; all four have 0 errors.
-- Secret scan: 409 tracked/untracked repository files, 0 findings.
+- Lint reports: Design System 0 issues; Auth 0 issues; Shell 2 non-error hints
+  (`AutoboxingStateCreation`); app 36 existing warnings; all four have 0 errors.
+- Secret scan: 407 tracked repository files in the final clean snapshot,
+  0 findings.
 - Visual capture control and screenshot naming exist only under `androidTest`;
   searched `main` source sets contain 0 parity-fixture hits.
 - Release compiled and R8-minified without a visual fixture binding.
 - No build logic, flavor, dependency, Feed, Profile, Follow, Backend, or Flutter
   source was changed.
 - `git diff --check`: pass.
+
+Persisted runtime command/result summary:
+`runtime/verification-summary.md`.
 
 ## Runtime API 33 and regressions
 
@@ -200,6 +204,10 @@ Result: `BUILD SUCCESSFUL` (957 tasks).
 - `offline-valid-session` reached Shell/Feed on the installed APK.
 - Login/OTP initial, focus, fill, validation, loading, disabled, timer, error,
   resend, keyboard, RTL, rotation, Activity recreation and relaunch passed.
+- With Android font scale set to 1.3, the large Persian title and primary
+  action remained visible; real Gboard reported `mInputShown=true`. After
+  force-stop, the process PID changed from 15693 to 15856 and the same Login
+  route remained usable. Font scale was restored to 1.0.
 - Full 23-test instrumentation regression passed Startup, Auth, Hilt, Shell,
   Feed, Feed Detail, Own Profile, Other Profile, Follow rollback, tab
   restoration, deep links, process recreation and logout.
@@ -213,5 +221,7 @@ Result: `BUILD SUCCESSFUL` (957 tasks).
 No acceptance-blocking difference remains. Residual pixels are limited to
 Flutter Skia versus Compose font shaping/antialiasing, system clock/status-icon
 capture time, snackbar shadow blur, cursor blink and spinner/gradient animation
-phase. They do not alter asset identity, exact source token colors, main
+phase. States 02/03 also include an external Gboard suggestion-strip difference
+(Native clipboard chip versus Flutter toolbar). These do not alter asset
+identity, exact source token colors, main
 geometry, state completeness, RTL/LTR behavior, clipping or usability.

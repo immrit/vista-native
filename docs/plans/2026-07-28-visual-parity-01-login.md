@@ -45,7 +45,8 @@ read-only هستند و سایر featureها فقط regression verification می
 - [x] runtime API 33 و logcat بدون crash/ANR پاس شود.
 - [x] regression Startup/Shell/Feed/Profile پاس شود.
 - [x] final verification و contact sheet ثبت شوند.
-- [x] پنج commit هدفمند ساخته و working tree پاک شود.
+- [x] commitهای هدفمند ساخته و working tree پاک شود؛ audit نهایی یک commit
+  مستنداتی افزوده برای اصلاح شمارها و ثبت Runtime evidence لازم داشت.
 
 ## Decisions & Notes
 

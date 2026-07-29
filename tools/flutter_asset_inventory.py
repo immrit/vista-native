@@ -30,19 +30,49 @@ def dimensions(path: Path) -> str:
 def consumer(relative: str) -> str:
     if relative.startswith("assets/emoji/modern/"):
         return "modern_emoji_map.json / emoji picker"
+    if relative == "assets/images/match_icon.png":
+        return "matching UI icon"
+    if relative in {
+        "assets/images/modern_bg.jpg",
+        "assets/images/vista_custom_bg.png",
+        "assets/images/vista_custom_bg_dark.png",
+    }:
+        return "emoji/chat background picker"
     if relative.startswith("assets/images/onboarding/"):
         return "onboarding"
     if relative.startswith("assets/sounds/"):
         return "chat notification"
+    if relative.endswith("default-avatar.jpg"):
+        return "profile/avatar fallback"
+    if relative.endswith("headerBack.jpg"):
+        return "shared header background"
+    if relative.endswith("support_icon.png"):
+        return "support screen"
+    if relative.endswith(("vistalogo-new.png", "vistalogo.png")):
+        return "shared/legacy Vista branding"
+    if "/bottomnavigation/" in relative:
+        return "main bottom navigation"
+    if relative.endswith("component/auth_hero.png"):
+        return "legacy auth hero; no current Login consumer"
+    if "/component/" in relative:
+        return f"{Path(relative).stem} feature UI"
+    if relative.endswith("logo/black-logo-backgrand.png"):
+        return "alternate Vista branding"
     if relative.endswith("logo/black-logo.png"):
         return "AuthWizardScreen light"
+    if relative.endswith("logo/logo-nowroz.png"):
+        return "seasonal Nowruz branding"
     if relative.endswith("logo/logo-white.png"):
         return "AuthWizardScreen dark"
+    if "/share_icons/" in relative:
+        return "share sheet"
+    if "/wallpapers/" in relative:
+        return "chat wallpaper picker"
     if relative.startswith("lib/utils/fonts/Vazirmatn"):
         return "AppTheme / Login typography"
     if relative.startswith("lib/utils/fonts/"):
         return "non-Login or legacy typography"
-    return "non-Login visual asset"
+    return "declared asset; no literal Login consumer"
 
 
 def migration(relative: str) -> tuple[str, str, str]:
