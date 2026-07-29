@@ -31,14 +31,14 @@ data class VistaSemanticColors(
 
 object VistaSemanticPalettes {
     val Light = VistaSemanticColors(
-        contentPrimary = Color(0xFF18181B),
-        contentSecondary = Color(0xFF52525B),
-        divider = Color(0xFFE4E4E7),
+        contentPrimary = Color(0xFF0F1117),
+        contentSecondary = Color(0xFF6B7280),
+        divider = Color(0xFFE5E7EB),
         overlay = Color(0x9909090F),
-        success = Color(0xFF047857),
-        onSuccess = Color.White,
-        warning = Color(0xFFB45309),
-        onWarning = Color.White,
+        success = Color(0xFF10B981),
+        onSuccess = Color(0xFF0F1117),
+        warning = Color(0xFFF59E0B),
+        onWarning = Color(0xFF0F1117),
         focus = VistaBrandColors.Indigo,
         pressedOverlay = Color(0x14000000),
         disabledContent = Color(0xFF9CA3AF),
@@ -46,18 +46,18 @@ object VistaSemanticPalettes {
     )
 
     val Dark = VistaSemanticColors(
-        contentPrimary = Color(0xFFF4F4F5),
-        contentSecondary = Color(0xFFA1A1AA),
-        divider = Color(0xFF3F3F46),
+        contentPrimary = Color(0xFFF0F0FF),
+        contentSecondary = Color(0xFF8B8BAD),
+        divider = Color(0xFF2A2A45),
         overlay = Color(0xB309090F),
         success = Color(0xFF34D399),
         onSuccess = Color(0xFF022C22),
         warning = Color(0xFFFBBF24),
         onWarning = Color(0xFF451A03),
-        focus = Color(0xFFA5B4FC),
+        focus = VistaBrandColors.Indigo,
         pressedOverlay = Color(0x1FFFFFFF),
-        disabledContent = Color(0xFF71717A),
-        disabledContainer = Color(0xFF27272A),
+        disabledContent = Color(0xFF6E6E92),
+        disabledContainer = Color(0xFF252540),
     )
 }
 
@@ -105,9 +105,9 @@ object VistaIconSize {
 
 object VistaMotionDuration {
     const val Instant = 0
-    const val Fast = 120
-    const val Standard = 240
-    const val Emphasized = 360
+    const val Fast = 150
+    const val Standard = 300
+    const val Emphasized = 600
 }
 
 object VistaAlpha {
@@ -117,8 +117,8 @@ object VistaAlpha {
 }
 
 object VistaComponentSize {
-    val Button = 52.dp
-    val TextField = 56.dp
+    val Button = 51.dp
+    val TextField = 53.dp
     val NavigationBar = 72.dp
     val TouchTarget = 48.dp
     val Avatar = 44.dp

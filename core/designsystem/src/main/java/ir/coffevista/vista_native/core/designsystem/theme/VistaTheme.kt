@@ -21,6 +21,8 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import ir.coffevista.vista_native.core.designsystem.R
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaBrandColors
@@ -30,7 +32,7 @@ import ir.coffevista.vista_native.core.designsystem.tokens.VistaSemanticColors
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaSemanticPalettes
 
 private val VistaLightColorScheme = lightColorScheme(
-    primary = VistaBrandColors.IndigoDeep,
+    primary = VistaBrandColors.Indigo,
     onPrimary = Color.White,
     primaryContainer = Color(0xFFE0E7FF),
     onPrimaryContainer = Color(0xFF312E81),
@@ -48,37 +50,37 @@ private val VistaLightColorScheme = lightColorScheme(
     onSurface = VistaSemanticPalettes.Light.contentPrimary,
     surfaceVariant = Color(0xFFF3F4FF),
     onSurfaceVariant = VistaSemanticPalettes.Light.contentSecondary,
-    outline = Color(0xFFA1A1AA),
+    outline = Color(0xFFE5E7EB),
     outlineVariant = VistaSemanticPalettes.Light.divider,
-    error = Color(0xFFB91C1C),
+    error = Color(0xFFEF4444),
     onError = Color.White,
     errorContainer = Color(0xFFFEE2E2),
     onErrorContainer = Color(0xFF7F1D1D),
 )
 
 private val VistaDarkColorScheme = darkColorScheme(
-    primary = Color(0xFFA5B4FC),
-    onPrimary = Color(0xFF1E1B4B),
-    primaryContainer = Color(0xFF3730A3),
-    onPrimaryContainer = Color(0xFFE0E7FF),
-    secondary = Color(0xFFC4B5FD),
-    onSecondary = Color(0xFF2E1065),
-    secondaryContainer = Color(0xFF5B21B6),
-    onSecondaryContainer = Color(0xFFEDE9FE),
-    tertiary = Color(0xFFF9A8D4),
-    onTertiary = Color(0xFF500724),
-    tertiaryContainer = Color(0xFF9D174D),
-    onTertiaryContainer = Color(0xFFFCE7F3),
+    primary = VistaBrandColors.Indigo,
+    onPrimary = Color.White,
+    primaryContainer = Color(0xFF2E2E6E),
+    onPrimaryContainer = Color(0xFFF0F0FF),
+    secondary = VistaBrandColors.Violet,
+    onSecondary = Color.White,
+    secondaryContainer = Color(0xFF2E2E6E),
+    onSecondaryContainer = Color(0xFFF0F0FF),
+    tertiary = VistaBrandColors.Pink,
+    onTertiary = Color.White,
+    tertiaryContainer = Color(0xFF252540),
+    onTertiaryContainer = Color(0xFFF0F0FF),
     background = Color(0xFF09090F),
     onBackground = VistaSemanticPalettes.Dark.contentPrimary,
     surface = Color(0xFF13131E),
     onSurface = VistaSemanticPalettes.Dark.contentPrimary,
     surfaceVariant = Color(0xFF1C1C2E),
     onSurfaceVariant = VistaSemanticPalettes.Dark.contentSecondary,
-    outline = Color(0xFF71717A),
+    outline = Color(0xFF2A2A45),
     outlineVariant = VistaSemanticPalettes.Dark.divider,
-    error = Color(0xFFFCA5A5),
-    onError = Color(0xFF450A0A),
+    error = Color(0xFFF87171),
+    onError = Color(0xFF09090F),
     errorContainer = Color(0xFF7F1D1D),
     onErrorContainer = Color(0xFFFEE2E2),
 )
@@ -101,25 +103,36 @@ val VistaFontFamily = FontFamily(
     Font(R.font.vazirmatn_black, FontWeight.Black),
 )
 
-private fun Typography.withVistaFont(): Typography = copy(
-    displayLarge = displayLarge.copy(fontFamily = VistaFontFamily),
-    displayMedium = displayMedium.copy(fontFamily = VistaFontFamily),
-    displaySmall = displaySmall.copy(fontFamily = VistaFontFamily),
-    headlineLarge = headlineLarge.copy(fontFamily = VistaFontFamily),
-    headlineMedium = headlineMedium.copy(fontFamily = VistaFontFamily),
-    headlineSmall = headlineSmall.copy(fontFamily = VistaFontFamily),
-    titleLarge = titleLarge.copy(fontFamily = VistaFontFamily),
-    titleMedium = titleMedium.copy(fontFamily = VistaFontFamily),
-    titleSmall = titleSmall.copy(fontFamily = VistaFontFamily),
-    bodyLarge = bodyLarge.copy(fontFamily = VistaFontFamily),
-    bodyMedium = bodyMedium.copy(fontFamily = VistaFontFamily),
-    bodySmall = bodySmall.copy(fontFamily = VistaFontFamily),
-    labelLarge = labelLarge.copy(fontFamily = VistaFontFamily),
-    labelMedium = labelMedium.copy(fontFamily = VistaFontFamily),
-    labelSmall = labelSmall.copy(fontFamily = VistaFontFamily),
+private fun vistaTextStyle(
+    size: Int,
+    weight: FontWeight,
+    lineHeight: Float,
+    letterSpacing: Float = 0f,
+) = TextStyle(
+    fontFamily = VistaFontFamily,
+    fontWeight = weight,
+    fontSize = size.sp,
+    lineHeight = (size * lineHeight).sp,
+    letterSpacing = letterSpacing.sp,
 )
 
-private val VistaTypography = Typography().withVistaFont()
+internal val VistaTypography = Typography(
+    displayLarge = vistaTextStyle(32, FontWeight.ExtraBold, 1.15f, -0.4f),
+    displayMedium = vistaTextStyle(32, FontWeight.ExtraBold, 1.15f, -0.4f),
+    displaySmall = vistaTextStyle(26, FontWeight.ExtraBold, 1.2f, -0.4f),
+    headlineLarge = vistaTextStyle(26, FontWeight.ExtraBold, 1.2f, -0.4f),
+    headlineMedium = vistaTextStyle(22, FontWeight.Bold, 1.25f, -0.2f),
+    headlineSmall = vistaTextStyle(18, FontWeight.SemiBold, 1.3f, -0.2f),
+    titleLarge = vistaTextStyle(18, FontWeight.Bold, 1.3f),
+    titleMedium = vistaTextStyle(16, FontWeight.SemiBold, 1.35f),
+    titleSmall = vistaTextStyle(14, FontWeight.SemiBold, 1.4f),
+    bodyLarge = vistaTextStyle(16, FontWeight.Normal, 1.55f),
+    bodyMedium = vistaTextStyle(14, FontWeight.Normal, 1.5f),
+    bodySmall = vistaTextStyle(13, FontWeight.Normal, 1.45f),
+    labelLarge = vistaTextStyle(14, FontWeight.SemiBold, 1.4f),
+    labelMedium = vistaTextStyle(12, FontWeight.Medium, 1.4f, 0.2f),
+    labelSmall = vistaTextStyle(11, FontWeight.Medium, 1.4f, 0.2f),
+)
 
 @Immutable
 data class VistaMotion(
