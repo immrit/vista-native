@@ -32,6 +32,15 @@ class AuthViewModelTest {
         get() = mainDispatcherRule.dispatcher
 
     @Test
+    fun blankIdentifierUsesCanonicalFlutterValidationCopy() = runTest(dispatcher) {
+        val viewModel = viewModel(RecordingAuthRepository())
+
+        viewModel.onAction(AuthAction.Submit)
+
+        assertEquals("لطفاً ورودی را کامل کنید", viewModel.state.value.errorMessage)
+    }
+
+    @Test
     fun existingPasswordAccountMovesFromIdentifierToPassword() = runTest(dispatcher) {
         val repository = RecordingAuthRepository(
             lookupResult = Outcome.Success(

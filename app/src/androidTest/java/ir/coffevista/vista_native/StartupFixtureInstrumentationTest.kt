@@ -124,7 +124,7 @@ class StartupFixtureInstrumentationTest {
             val titleBounds = composeRule.onNodeWithText("ورود به ویستا")
                 .fetchSemanticsNode()
                 .boundsInRoot
-            assertRightBiased(titleBounds, rootBounds)
+            assertHorizontallyCentered(titleBounds, rootBounds)
 
             scenario.onActivity { activity ->
                 activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
@@ -169,15 +169,6 @@ class StartupFixtureInstrumentationTest {
     @Test
     fun coldDeepLinkNavigatesToExpectedDestination() {
         launch("valid-session", uri = "vista://post/test").use {
-            try {
-                composeRule.waitUntil(timeoutMillis = 5_000) {
-                    composeRule.onAllNodesWithText("DeepLinkDebug: 1-POST-test", substring = true)
-                        .fetchSemanticsNodes()
-                        .isNotEmpty()
-                }
-            } catch (e: androidx.compose.ui.test.ComposeTimeoutException) {
-                // Ignore, we will fail on the next awaitText with a better message anyway
-            }
             awaitText("پست در حافظه موجود نیست", "cold-deep-link-feed-detail")
             composeRule.onNodeWithText("پست در حافظه موجود نیست").assertIsDisplayed()
         }
@@ -257,10 +248,11 @@ class StartupFixtureInstrumentationTest {
         }
     }
 
-    private fun assertRightBiased(element: Rect, root: Rect) {
+    private fun assertHorizontallyCentered(element: Rect, root: Rect) {
+        val delta = kotlin.math.abs(element.center.x - root.center.x)
         assertTrue(
-            "Expected RTL title center ${element.center.x} to be right of root center ${root.center.x}",
-            element.center.x > root.center.x,
+            "Expected Flutter-parity title center ${element.center.x} to match root center ${root.center.x}",
+            delta <= 1f,
         )
     }
 }
