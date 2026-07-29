@@ -22,7 +22,7 @@ import androidx.room.TypeConverters
         FeedPageStateEntity::class,
         PublicProfileEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = true,
 )
 @TypeConverters(FeedConverters::class)
@@ -179,6 +179,47 @@ abstract class VistaFoundationDatabase : RoomDatabase() {
                         PRIMARY KEY(viewer_account_id, profile_user_id)
                     )
                     """.trimIndent(),
+                )
+            }
+        }
+
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    "ALTER TABLE feed_post ADD COLUMN author_follow_status TEXT",
+                )
+                database.execSQL(
+                    "ALTER TABLE feed_post ADD COLUMN feed_source TEXT",
+                )
+                database.execSQL(
+                    "ALTER TABLE own_profile ADD COLUMN verification_type TEXT",
+                )
+                database.execSQL(
+                    "ALTER TABLE own_profile ADD COLUMN is_private INTEGER NOT NULL DEFAULT 0",
+                )
+                database.execSQL(
+                    "ALTER TABLE own_profile ADD COLUMN join_order INTEGER NOT NULL DEFAULT 0",
+                )
+                database.execSQL(
+                    "ALTER TABLE own_profile ADD COLUMN subscription_plan TEXT",
+                )
+                database.execSQL(
+                    "ALTER TABLE own_profile ADD COLUMN premium_days_remaining INTEGER",
+                )
+                database.execSQL(
+                    "ALTER TABLE own_profile ADD COLUMN message_privacy TEXT NOT NULL DEFAULT 'everyone'",
+                )
+                database.execSQL(
+                    "ALTER TABLE own_profile ADD COLUMN allow_profile_zoom INTEGER NOT NULL DEFAULT 1",
+                )
+                database.execSQL(
+                    "ALTER TABLE public_profile ADD COLUMN join_order INTEGER NOT NULL DEFAULT 0",
+                )
+                database.execSQL(
+                    "ALTER TABLE public_profile ADD COLUMN message_privacy TEXT NOT NULL DEFAULT 'everyone'",
+                )
+                database.execSQL(
+                    "ALTER TABLE public_profile ADD COLUMN allow_profile_zoom INTEGER NOT NULL DEFAULT 1",
                 )
             }
         }

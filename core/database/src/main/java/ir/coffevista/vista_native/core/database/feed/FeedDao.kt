@@ -30,6 +30,18 @@ interface FeedDao {
     @Query("DELETE FROM feed_page_state WHERE account_id = :accountId")
     suspend fun deletePageState(accountId: String)
 
+    @Query(
+        "DELETE FROM feed_post WHERE account_id = :accountId " +
+            "OR substr(account_id, 1, length(:namespacePrefix)) = :namespacePrefix",
+    )
+    suspend fun deletePostsAndNamespaces(accountId: String, namespacePrefix: String)
+
+    @Query(
+        "DELETE FROM feed_page_state WHERE account_id = :accountId " +
+            "OR substr(account_id, 1, length(:namespacePrefix)) = :namespacePrefix",
+    )
+    suspend fun deletePageStatesAndNamespaces(accountId: String, namespacePrefix: String)
+
     @Query("SELECT MAX(sort_order) FROM feed_post WHERE account_id = :accountId")
     suspend fun getMaxSortOrder(accountId: String): Long?
 
@@ -66,5 +78,11 @@ interface FeedDao {
     suspend fun clearAccount(accountId: String) {
         deletePosts(accountId)
         deletePageState(accountId)
+    }
+
+    @Transaction
+    suspend fun clearAccountNamespaces(accountId: String, namespacePrefix: String) {
+        deletePostsAndNamespaces(accountId, namespacePrefix)
+        deletePageStatesAndNamespaces(accountId, namespacePrefix)
     }
 }

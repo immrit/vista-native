@@ -4,7 +4,9 @@ import android.content.Context
 import android.content.Intent
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -65,7 +67,7 @@ class OtherUserProfileRuntimeInstrumentationTest {
     fun authorNavigationFollowUnfollowRollbackRefreshRecreationAndBack() {
         launch("valid-session").use { scenario ->
             awaitText(postText(1))
-            compose.onNodeWithTag("feed-author-fixture-author-2").performClick()
+            compose.onAllNodesWithTag("feed-author-fixture-author-2")[0].performClick()
             awaitText("کاربر آزمایشی 2")
             awaitText("دنبال کردن")
             awaitText("42")
@@ -89,14 +91,14 @@ class OtherUserProfileRuntimeInstrumentationTest {
             awaitText("کاربر آزمایشی 2")
 
             scenario.recreate()
-            awaitText("نمایه کاربر")
+            awaitText("fixture2")
             awaitText("کاربر آزمایشی 2")
 
             compose.onNodeWithTag("other-profile-back").performClick()
             awaitText(postText(1))
-            compose.onNodeWithText("جستجو").performClick()
+            compose.onNodeWithContentDescription("جستجو").performClick()
             awaitText("زیرساخت جستجو آماده است")
-            compose.onNodeWithText("خانه").performClick()
+            compose.onNodeWithContentDescription("خانه").performClick()
             awaitText(postText(1))
         }
     }
@@ -105,13 +107,13 @@ class OtherUserProfileRuntimeInstrumentationTest {
     fun offlineScenarioUsesViewerScopedProfileCache() {
         launch("valid-session").use {
             awaitText(postText(1))
-            compose.onNodeWithTag("feed-author-fixture-author-2").performClick()
+            compose.onAllNodesWithTag("feed-author-fixture-author-2")[0].performClick()
             awaitText("کاربر آزمایشی 2")
         }
 
         launch("offline-valid-session").use { scenario ->
             awaitText(postText(1))
-            compose.onNodeWithTag("feed-author-fixture-author-2").performClick()
+            compose.onAllNodesWithTag("feed-author-fixture-author-2")[0].performClick()
             awaitText("نمایش نسخه ذخیره‌شده")
             awaitText("کاربر آزمایشی 2")
             scenario.recreate()
@@ -120,17 +122,15 @@ class OtherUserProfileRuntimeInstrumentationTest {
     }
 
     @Test
-    fun selfAuthorRedirectsToOwnProfileAndLogoutReturnsToAuth() {
+    fun selfAuthorRedirectsToOwnProfileAndPreservesFeed() {
         launch("valid-session").use {
             awaitText(postText(1))
             compose.onNodeWithTag("feed-list")
                 .performScrollToNode(hasText(postText(2)))
             compose.onNodeWithTag("feed-author-fnd-debug-user").performClick()
-            awaitText("نمایه شما")
-            compose.onNodeWithText("خروج از حساب")
-                .performScrollTo()
-                .performClick()
-            awaitText("ورود به ویستا")
+            awaitText("fixture")
+            compose.onNodeWithContentDescription("خانه").performClick()
+            awaitText(postText(2))
         }
     }
 

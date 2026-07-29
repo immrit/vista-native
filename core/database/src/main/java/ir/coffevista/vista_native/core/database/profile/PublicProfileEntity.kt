@@ -40,6 +40,12 @@ data class PublicProfileEntity(
     val followingCount: Long,
     @ColumnInfo(name = "follow_status")
     val followStatus: String,
+    @ColumnInfo(name = "join_order")
+    val joinOrder: Long = 0,
+    @ColumnInfo(name = "message_privacy")
+    val messagePrivacy: String = "everyone",
+    @ColumnInfo(name = "allow_profile_zoom")
+    val allowProfileZoom: Boolean = true,
     @ColumnInfo(name = "updated_at")
     val updatedAt: String,
     @ColumnInfo(name = "last_synced_epoch_millis")

@@ -11,6 +11,18 @@ import dagger.multibindings.Multibinds
 interface FeedApiFixture {
     fun configure(rawScenario: String?)
     suspend fun responseOrNull(limit: Int, offset: Int): FeedResponseDto?
+    suspend fun followingResponseOrNull(
+        limit: Int,
+        cursor: String?,
+    ): FeedResponseDto? = null
+
+    suspend fun postResponseOrNull(postId: String): FeedPostDto? = null
+
+    suspend fun userPostsResponseOrNull(
+        userId: String,
+        limit: Int,
+        offset: Int,
+    ): FeedResponseDto? = null
 }
 
 @Module

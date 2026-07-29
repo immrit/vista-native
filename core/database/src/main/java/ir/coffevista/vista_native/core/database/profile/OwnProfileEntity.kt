@@ -24,9 +24,15 @@ data class OwnProfileEntity(
     
     @ColumnInfo(name = "is_verified")
     val isVerified: Boolean,
+
+    @ColumnInfo(name = "verification_type")
+    val verificationType: String? = null,
     
     @ColumnInfo(name = "account_type")
     val accountType: String?,
+
+    @ColumnInfo(name = "is_private")
+    val isPrivate: Boolean = false,
     
     @ColumnInfo(name = "post_count")
     val postCount: Long,
@@ -36,6 +42,21 @@ data class OwnProfileEntity(
     
     @ColumnInfo(name = "following_count")
     val followingCount: Long,
+
+    @ColumnInfo(name = "join_order")
+    val joinOrder: Long = 0,
+
+    @ColumnInfo(name = "subscription_plan")
+    val subscriptionPlan: String? = null,
+
+    @ColumnInfo(name = "premium_days_remaining")
+    val premiumDaysRemaining: Int? = null,
+
+    @ColumnInfo(name = "message_privacy")
+    val messagePrivacy: String = "everyone",
+
+    @ColumnInfo(name = "allow_profile_zoom")
+    val allowProfileZoom: Boolean = true,
     
     @ColumnInfo(name = "updated_at")
     val updatedAt: String?

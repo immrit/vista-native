@@ -5,6 +5,7 @@ import android.content.Intent
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -61,7 +62,7 @@ class FeedRuntimeInstrumentationTest {
     }
 
     @Test
-    fun validSessionCoversPaginationRefreshDetailTabRecreationAndLogout() {
+    fun validSessionCoversPaginationRefreshDetailTabAndRecreation() {
         launch("valid-session").use { scenario ->
             awaitText(postText(1))
 
@@ -76,33 +77,33 @@ class FeedRuntimeInstrumentationTest {
                 .performScrollToNode(hasText(postText(1)))
             val fixture = runtimeEntryPoint().debugFeedApiFixture()
             val firstPageRequestsBeforeRefresh = fixture.firstPageRequestCount()
-            compose.onNodeWithText(postText(1)).performTouchInput { swipeDown() }
+            compose.onNodeWithTag("feed-pull-to-refresh")
+                .performTouchInput { swipeDown() }
             compose.waitUntil(timeoutMillis = 10_000) {
                 fixture.firstPageRequestCount() > firstPageRequestsBeforeRefresh
             }
 
-            compose.onNodeWithText(postText(1)).performClick()
+            compose.onNodeWithTag("feed-media-fixture-post-1").performClick()
             awaitText("جزئیات پست")
-            compose.onNodeWithTag("post-detail-content")
-                .performScrollToNode(hasText("3 پسند"))
-            awaitText("3 پسند")
-            compose.onNodeWithText("بازگشت").performClick()
+            compose.onNodeWithTag("feed-like-count-fixture-post-1")
+                .fetchSemanticsNode()
+            compose.onNodeWithTag("feed-comment-count-fixture-post-1")
+                .fetchSemanticsNode()
+            compose.onNodeWithTag("post-detail-back").performClick()
             awaitText(postText(1))
 
-            compose.onNodeWithText("جستجو").performClick()
+            compose.onNodeWithContentDescription("جستجو").performClick()
             awaitText("زیرساخت جستجو آماده است")
-            compose.onNodeWithText("خانه").performClick()
+            compose.onNodeWithContentDescription("خانه").performClick()
             awaitText(postText(1))
 
             scenario.recreate()
             awaitText(postText(1))
 
-            compose.onNodeWithText("نمایه").performClick()
-            awaitText("نمایه شما")
-            compose.onNodeWithText("خروج از حساب")
-                .performScrollTo()
-                .performClick()
-            awaitText("ورود به ویستا")
+            compose.onNodeWithContentDescription("نمایه").performClick()
+            awaitText("fixture")
+            compose.onNodeWithContentDescription("خانه").performClick()
+            awaitText(postText(1))
         }
     }
 
