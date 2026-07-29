@@ -1,0 +1,10 @@
+state,flutter,native,width,height,threshold,mismatch_percent,difference_bbox
+01,flutter-01-login-initial.png,native-01-login-initial.png,1080,2400,16,0.9908,"(22, 12, 1017, 1763)"
+02,flutter-02-login-focused.png,native-02-login-focused.png,1080,2400,16,1.7232,"(22, 12, 1017, 2217)"
+03,flutter-03-login-filled.png,native-03-login-filled.png,1080,2400,16,1.6791,"(22, 12, 1017, 2217)"
+04,flutter-04-login-error.png,native-04-login-error.png,1080,2400,16,2.1374,"(22, 12, 1054, 2359)"
+05,flutter-05-login-loading.png,native-05-login-loading.png,1080,2400,16,1.6453,"(22, 12, 1017, 1757)"
+06,flutter-06-otp-initial.png,native-06-otp-initial.png,1080,2400,16,0.9708,"(22, 12, 1017, 1418)"
+07,flutter-07-otp-partial.png,native-07-otp-partial.png,1080,2400,16,0.9893,"(22, 12, 1017, 1418)"
+08,flutter-08-otp-error.png,native-08-otp-error.png,1080,2400,16,1.0707,"(22, 12, 1017, 1820)"
+09,flutter-09-otp-resend.png,native-09-otp-resend.png,1080,2400,16,0.9218,"(22, 12, 1017, 1854)"
