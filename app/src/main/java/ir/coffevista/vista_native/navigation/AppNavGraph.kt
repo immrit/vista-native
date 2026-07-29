@@ -56,17 +56,11 @@ fun VistaApp(
     var shellDeepLinkRequest by remember { mutableStateOf<ShellDeepLinkRequest?>(null) }
     val applicationScope = rememberCoroutineScope()
     val authVisuals = AuthVisuals(
-        accentColor = VistaBrandColors.Indigo,
+        backIcon = painterResource(R.drawable.ic_auth_arrow_back),
         personIcon = painterResource(R.drawable.ic_person_outline),
         lockIcon = painterResource(R.drawable.ic_lock_outline),
         visibilityIcon = painterResource(R.drawable.ic_visibility),
         visibilityOffIcon = painterResource(R.drawable.ic_visibility_off),
-        brand = { modifier, compact ->
-            VistaBrandMark(
-                modifier = modifier,
-                asset = if (compact) VistaBrandAsset.MARK else VistaBrandAsset.AUTH,
-            )
-        },
     )
     val onboardingSlides = listOf(
         OnboardingSlide(

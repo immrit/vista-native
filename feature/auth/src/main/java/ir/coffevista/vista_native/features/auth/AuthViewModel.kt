@@ -124,7 +124,7 @@ class AuthViewModel @Inject constructor(
     private fun submitIdentifier() {
         val input = normalizeDigits(mutableState.value.identifier).trim()
         if (input.isBlank()) {
-            showError("لطفاً شماره موبایل، ایمیل یا نام کاربری را وارد کنید")
+            showError("لطفاً ورودی را کامل کنید")
             return
         }
         val phone = normalizeIranPhone(input)

@@ -137,33 +137,23 @@ fun VistaShell(
         topBar = { VistaTopAppBar(selectedTab.labelFa) },
         snackbarHostState = snackbarHostState,
         bottomBar = {
-            Column {
-                Text(
-                    text = "CurrentRoute: $currentRoute",
-                    modifier = Modifier.padding(8.dp)
-                )
-                Text(
-                    text = "DeepLinkDebug: ${deepLinkRequest?.deliveryId ?: "none"}-${deepLinkRequest?.kind ?: "none"}-${deepLinkRequest?.reference ?: "none"}",
-                    modifier = Modifier.padding(8.dp)
-                )
-                VistaNavigationBar(
-                    items = ShellTab.entries,
-                    selected = selectedTab,
-                    onSelect = ::selectTab,
-                    label = ShellTab::labelFa,
-                    icon = { tab, selected ->
-                        Text(
-                            text = tab.glyph,
-                            color = if (selected) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            },
-                            style = MaterialTheme.typography.titleLarge,
-                        )
-                    },
-                )
-            }
+            VistaNavigationBar(
+                items = ShellTab.entries,
+                selected = selectedTab,
+                onSelect = ::selectTab,
+                label = ShellTab::labelFa,
+                icon = { tab, selected ->
+                    Text(
+                        text = tab.glyph,
+                        color = if (selected) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                        style = MaterialTheme.typography.titleLarge,
+                    )
+                },
+            )
         },
     ) { padding ->
         NavHost(

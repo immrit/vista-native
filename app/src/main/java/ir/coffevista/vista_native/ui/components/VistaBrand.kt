@@ -2,7 +2,6 @@ package ir.coffevista.vista_native.ui.components
 
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -14,7 +13,6 @@ import ir.coffevista.vista_native.R
 enum class VistaBrandAsset {
     MARK,
     SPLASH,
-    AUTH,
 }
 
 @Composable
@@ -25,11 +23,6 @@ fun VistaBrandMark(
     @DrawableRes val drawable = when (asset) {
         VistaBrandAsset.MARK -> R.drawable.vista_logo_mark
         VistaBrandAsset.SPLASH -> R.drawable.vista_logo_splash
-        VistaBrandAsset.AUTH -> if (isSystemInDarkTheme()) {
-            R.drawable.vista_logo_auth_dark
-        } else {
-            R.drawable.vista_logo_auth_light
-        }
     }
     Image(
         painter = painterResource(drawable),
