@@ -95,15 +95,15 @@ class NavigationDeepLinkInstrumentationTest {
             composeRule.activity.deepLinkCoordinator.onAuthenticationChanged(authenticated = true)
         }
         composeRule.waitUntil(5000) {
-            composeRule.onAllNodesWithText("پست در حافظه موجود نیست").fetchSemanticsNodes().isNotEmpty()
+            composeRule.onAllNodesWithText("این پست در دسترس نیست").fetchSemanticsNodes().isNotEmpty()
         }
-        composeRule.onNodeWithText("پست در حافظه موجود نیست")
+        composeRule.onNodeWithText("این پست در دسترس نیست")
             .assertIsDisplayed()
 
         composeRule.runOnUiThread {
             composeRule.activity.onBackPressedDispatcher.onBackPressed()
         }
-        composeRule.onNodeWithText("پست در حافظه موجود نیست")
+        composeRule.onNodeWithText("این پست در دسترس نیست")
             .assertDoesNotExist()
     }
 }

@@ -8,6 +8,7 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
@@ -96,17 +97,17 @@ class StartupFixtureInstrumentationTest {
                 "پست آزمایشی شماره 1 برای بررسی فید فقط‌خواندنی",
                 "step1-feed-ready",
             )
-            composeRule.onNodeWithText("جستجو").performClick()
+            composeRule.onNodeWithContentDescription("جستجو").performClick()
             awaitText("زیرساخت جستجو آماده است", "step2-search-ready")
             composeRule.onNodeWithText("بررسی back stack کنترل‌شده").performClick()
             awaitText("جستجو: مقصد داخلی کنترل‌شده", "step3-search-detail-first")
 
-            composeRule.onNodeWithText("خانه").performClick()
+            composeRule.onNodeWithContentDescription("خانه").performClick()
             awaitText(
                 "پست آزمایشی شماره 1 برای بررسی فید فقط‌خواندنی",
                 "step4-feed-ready-again",
             )
-            composeRule.onNodeWithText("جستجو").performClick()
+            composeRule.onNodeWithContentDescription("جستجو").performClick()
             awaitText("جستجو: مقصد داخلی کنترل‌شده", "step5-search-detail-restored")
 
             scenario.recreate()
@@ -178,15 +179,15 @@ class StartupFixtureInstrumentationTest {
             } catch (e: androidx.compose.ui.test.ComposeTimeoutException) {
                 // Ignore, we will fail on the next awaitText with a better message anyway
             }
-            awaitText("پست در حافظه موجود نیست", "cold-deep-link-feed-detail")
-            composeRule.onNodeWithText("پست در حافظه موجود نیست").assertIsDisplayed()
+            awaitText("این پست در دسترس نیست", "cold-deep-link-feed-detail")
+            composeRule.onNodeWithText("این پست در دسترس نیست").assertIsDisplayed()
         }
     }
 
     @Test
     fun warmDuplicateDeepLinkIsIgnored() {
         launch("valid-session", uri = "vista://post/test").use { scenario ->
-            awaitText("پست در حافظه موجود نیست", "warm-deep-link-feed-detail-first")
+            awaitText("این پست در دسترس نیست", "warm-deep-link-feed-detail-first")
 
             val context = ApplicationProvider.getApplicationContext<android.content.Context>()
             val intent = Intent(context, MainActivity::class.java).apply {
