@@ -16,6 +16,9 @@ class HiltCompositionSmokeTest {
     fun realApplicationGraphInjectsMainActivity() {
         assertNotNull(composeRule.activity.authenticationStateOwner)
         assertNotNull(composeRule.activity.deepLinkCoordinator)
+        assertNotNull(composeRule.activity.feedRepository)
+        assertNotNull(composeRule.activity.userProfileRepository)
+        assertNotNull(composeRule.activity.searchRepository)
         assertNotNull(
             (composeRule.activity.application as VistaApplication).workerFactory,
         )

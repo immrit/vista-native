@@ -3,15 +3,16 @@ package ir.coffevista.vista_native.features.shell
 object ShellRoutes {
     const val FeedGraph = "feed_graph"
     const val FeedRoot = "feed_root"
-    fun feedDetail(reference: String) = "feed_detail/$reference"
-    const val FeedDetailRoute = "feed_detail/{reference}"
-    fun otherUserProfile(userId: String) = "other_profile/$userId"
-    const val OtherUserProfileRoute = "other_profile/{userId}"
 
     const val SearchGraph = "search_graph"
     const val SearchRoot = "search_root"
-    fun searchDetail(reference: String) = "search_detail/$reference"
-    const val SearchDetailRoute = "search_detail/{reference}"
+    const val SearchWorkspace = "search_workspace"
+
+    fun postDetail(reference: String) = "post_detail/$reference"
+    const val PostDetailRoute = "post_detail/{reference}"
+    fun userProfile(userId: String) = "user_profile/$userId"
+    const val UserProfileRoute = "user_profile/{userId}"
+    const val OwnProfileOverlay = "own_profile_overlay"
 
     const val ServicesGraph = "services_graph"
     const val ServicesRoot = "services_root"

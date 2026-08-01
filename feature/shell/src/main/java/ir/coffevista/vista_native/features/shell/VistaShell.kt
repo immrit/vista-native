@@ -75,6 +75,8 @@ import ir.coffevista.vista_native.features.feed.data.FeedPost
 import ir.coffevista.vista_native.features.feed.ui.FeedScreen
 import ir.coffevista.vista_native.features.feed.ui.PostDetailScreen
 import ir.coffevista.vista_native.features.feed.ui.ProfilePostsViewModel
+import ir.coffevista.vista_native.features.search.ui.SearchLauncherScreen
+import ir.coffevista.vista_native.features.search.ui.SearchWorkspaceScreen
 import kotlinx.coroutines.launch
 
 @Composable
@@ -94,7 +96,7 @@ fun VistaShell(
     val atRoot = backStackEntry?.destination?.isTabRoot() != false
     val showBottomIsland = atRoot ||
         backStackEntry?.destination?.route in setOf(
-            ShellRoutes.SearchDetailRoute,
+            ShellRoutes.SearchWorkspace,
             ShellRoutes.ServicesDetailRoute,
             ShellRoutes.ChatDetailRoute,
         )
@@ -120,11 +122,14 @@ fun VistaShell(
         when (request.kind) {
             ShellDeferredKind.POST, ShellDeferredKind.GROUP -> {
                 selectTab(ShellTab.Feed)
-                navController.navigate(ShellRoutes.feedDetail(request.reference))
+                navController.navigate(ShellRoutes.postDetail(request.reference))
             }
             ShellDeferredKind.PROFILE -> {
-                selectTab(ShellTab.Profile)
-                navController.navigate(ShellRoutes.profileDetail(request.reference))
+                if (request.reference == context.userId) {
+                    selectTab(ShellTab.Profile)
+                } else {
+                    navController.navigate(ShellRoutes.userProfile(request.reference))
+                }
             }
             ShellDeferredKind.CHAT -> {
                 selectTab(ShellTab.Chat)
@@ -168,64 +173,44 @@ fun VistaShell(
                     FeedScreen(
                         viewModel = hiltViewModel(),
                         onPostClick = { postId ->
-                            navController.navigate(ShellRoutes.feedDetail(postId))
+                            navController.navigate(ShellRoutes.postDetail(postId))
                         },
                         onAuthorClick = { userId ->
                             if (userId == context.userId) {
                                 selectTab(ShellTab.Profile)
                             } else {
-                                navController.navigate(ShellRoutes.otherUserProfile(userId))
+                                navController.navigate(ShellRoutes.userProfile(userId))
                             }
-                        },
-                    )
-                }
-                composable(ShellRoutes.FeedDetailRoute) {
-                    PostDetailScreen(
-                        onBack = { navController.popBackStack() },
-                        onAuthorClick = { userId ->
-                            if (userId == context.userId) {
-                                navController.popBackStack(ShellRoutes.FeedRoot, inclusive = false)
-                                selectTab(ShellTab.Profile)
-                            } else {
-                                navController.navigate(ShellRoutes.otherUserProfile(userId))
-                            }
-                        },
-                        viewModel = hiltViewModel()
-                    )
-                }
-                composable(
-                    route = ShellRoutes.OtherUserProfileRoute,
-                    arguments = listOf(
-                        navArgument("userId") { type = NavType.StringType },
-                    ),
-                ) { profileEntry ->
-                    val userId = profileEntry.arguments?.getString("userId").orEmpty()
-                    val postsViewModel = hiltViewModel<ProfilePostsViewModel>()
-                    val postsState by postsViewModel.uiState.collectAsStateWithLifecycle()
-                    LaunchedEffect(userId) {
-                        if (userId.isNotBlank()) postsViewModel.bind(userId)
-                    }
-                    OtherUserProfileScreen(
-                        viewModel = hiltViewModel(),
-                        onBack = { navController.popBackStack() },
-                        onSelfProfile = {
-                            navController.popBackStack(ShellRoutes.FeedRoot, inclusive = false)
-                            selectTab(ShellTab.Profile)
-                        },
-                        postsState = postsState.toPresentationState(),
-                        onPostsRefresh = postsViewModel::refresh,
-                        onPostsLoadMore = postsViewModel::loadMore,
-                        onPostClick = { postId ->
-                            navController.navigate(ShellRoutes.feedDetail(postId))
                         },
                     )
                 }
             }
             navigation(route = ShellRoutes.SearchGraph, startDestination = ShellRoutes.SearchRoot) {
                 composable(ShellRoutes.SearchRoot) {
-                    SearchPlaceholderScreen(onDetails = { navController.navigate(ShellRoutes.searchDetail("foundation")) })
+                    SearchLauncherScreen(
+                        viewModel = hiltViewModel(),
+                        onOpenWorkspace = {
+                            navController.navigate(ShellRoutes.SearchWorkspace)
+                        },
+                    )
                 }
-                composable(ShellRoutes.SearchDetailRoute) { ControlledDetailScreen(ShellTab.Search) }
+                composable(ShellRoutes.SearchWorkspace) {
+                    SearchWorkspaceScreen(
+                        viewModel = hiltViewModel(),
+                        onUserClick = { user ->
+                            navController.navigate(
+                                if (user.id == context.userId) {
+                                    ShellRoutes.OwnProfileOverlay
+                                } else {
+                                    ShellRoutes.userProfile(user.id)
+                                },
+                            )
+                        },
+                        onPostClick = { post ->
+                            navController.navigate(ShellRoutes.postDetail(post.id))
+                        },
+                    )
+                }
             }
             navigation(route = ShellRoutes.ServicesGraph, startDestination = ShellRoutes.ServicesRoot) {
                 composable(ShellRoutes.ServicesRoot) {
@@ -253,11 +238,70 @@ fun VistaShell(
                         onPostsRefresh = postsViewModel::refresh,
                         onPostsLoadMore = postsViewModel::loadMore,
                         onPostClick = { postId ->
-                            navController.navigate(ShellRoutes.feedDetail(postId))
+                            navController.navigate(ShellRoutes.postDetail(postId))
                         },
                     )
                 }
                 composable(ShellRoutes.ProfileDetailRoute) { ControlledDetailScreen(ShellTab.Profile) }
+            }
+            composable(
+                route = ShellRoutes.PostDetailRoute,
+                arguments = listOf(navArgument("reference") { type = NavType.StringType }),
+            ) {
+                PostDetailScreen(
+                    onBack = { navController.popBackStack() },
+                    onAuthorClick = { userId ->
+                        navController.navigate(
+                            if (userId == context.userId) {
+                                ShellRoutes.OwnProfileOverlay
+                            } else {
+                                ShellRoutes.userProfile(userId)
+                            },
+                        )
+                    },
+                    viewModel = hiltViewModel(),
+                )
+            }
+            composable(
+                route = ShellRoutes.UserProfileRoute,
+                arguments = listOf(navArgument("userId") { type = NavType.StringType }),
+            ) { profileEntry ->
+                val userId = profileEntry.arguments?.getString("userId").orEmpty()
+                val postsViewModel = hiltViewModel<ProfilePostsViewModel>()
+                val postsState by postsViewModel.uiState.collectAsStateWithLifecycle()
+                LaunchedEffect(userId) {
+                    if (userId.isNotBlank()) postsViewModel.bind(userId)
+                }
+                OtherUserProfileScreen(
+                    viewModel = hiltViewModel(),
+                    onBack = { navController.popBackStack() },
+                    onSelfProfile = {
+                        navController.navigate(ShellRoutes.OwnProfileOverlay)
+                    },
+                    postsState = postsState.toPresentationState(),
+                    onPostsRefresh = postsViewModel::refresh,
+                    onPostsLoadMore = postsViewModel::loadMore,
+                    onPostClick = { postId ->
+                        navController.navigate(ShellRoutes.postDetail(postId))
+                    },
+                )
+            }
+            composable(ShellRoutes.OwnProfileOverlay) {
+                val postsViewModel = hiltViewModel<ProfilePostsViewModel>()
+                val postsState by postsViewModel.uiState.collectAsStateWithLifecycle()
+                LaunchedEffect(context.userId) {
+                    postsViewModel.bind(context.userId)
+                }
+                OwnProfileScreen(
+                    viewModel = hiltViewModel(),
+                    onLogout = onLogout,
+                    postsState = postsState.toPresentationState(),
+                    onPostsRefresh = postsViewModel::refresh,
+                    onPostsLoadMore = postsViewModel::loadMore,
+                    onPostClick = { postId ->
+                        navController.navigate(ShellRoutes.postDetail(postId))
+                    },
+                )
             }
         }
         SnackbarHost(
@@ -377,26 +421,6 @@ private fun VistaBottomIsland(
     }
 }
 
-
-@Composable
-private fun SearchPlaceholderScreen(onDetails: () -> Unit) {
-    var query by rememberSaveable { mutableStateOf("") }
-    PlaceholderLayout(
-        title = "زیرساخت جستجو آماده است",
-        message = "این صفحه داده یا نتیجه ساختگی نمایش نمی‌دهد.",
-        onDetails = onDetails,
-    ) {
-        VistaTextField(
-            value = query,
-            onValueChange = { query = it },
-            label = "جستجو",
-            supportingText = "اتصال به داده در فاز Search انجام می‌شود.",
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = VistaSpacing.Large),
-        )
-    }
-}
 
 @Composable
 private fun ServicesPlaceholderScreen(onDetails: () -> Unit) {

@@ -13,6 +13,8 @@ import ir.coffevista.vista_native.core.database.feed.FeedPageStateEntity
 import ir.coffevista.vista_native.core.database.feed.FeedDao
 import ir.coffevista.vista_native.core.database.feed.FeedConverters
 import androidx.room.TypeConverters
+import ir.coffevista.vista_native.core.database.search.SearchHistoryDao
+import ir.coffevista.vista_native.core.database.search.SearchHistoryEntity
 
 @Database(
     entities = [
@@ -21,8 +23,9 @@ import androidx.room.TypeConverters
         FeedPostEntity::class,
         FeedPageStateEntity::class,
         PublicProfileEntity::class,
+        SearchHistoryEntity::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = true,
 )
 @TypeConverters(FeedConverters::class)
@@ -31,6 +34,7 @@ abstract class VistaFoundationDatabase : RoomDatabase() {
     abstract fun ownProfileDao(): OwnProfileDao
     abstract fun feedDao(): FeedDao
     abstract fun publicProfileDao(): PublicProfileDao
+    abstract fun searchHistoryDao(): SearchHistoryDao
 
     companion object {
         const val DATABASE_NAME = "vista_foundation.db"
@@ -185,43 +189,98 @@ abstract class VistaFoundationDatabase : RoomDatabase() {
 
         val MIGRATION_5_6 = object : Migration(5, 6) {
             override fun migrate(database: SupportSQLiteDatabase) {
-                database.execSQL(
-                    "ALTER TABLE feed_post ADD COLUMN author_follow_status TEXT",
-                )
-                database.execSQL(
-                    "ALTER TABLE feed_post ADD COLUMN feed_source TEXT",
-                )
-                database.execSQL(
-                    "ALTER TABLE own_profile ADD COLUMN verification_type TEXT",
-                )
-                database.execSQL(
-                    "ALTER TABLE own_profile ADD COLUMN is_private INTEGER NOT NULL DEFAULT 0",
-                )
-                database.execSQL(
-                    "ALTER TABLE own_profile ADD COLUMN join_order INTEGER NOT NULL DEFAULT 0",
-                )
-                database.execSQL(
-                    "ALTER TABLE own_profile ADD COLUMN subscription_plan TEXT",
-                )
-                database.execSQL(
-                    "ALTER TABLE own_profile ADD COLUMN premium_days_remaining INTEGER",
-                )
-                database.execSQL(
-                    "ALTER TABLE own_profile ADD COLUMN message_privacy TEXT NOT NULL DEFAULT 'everyone'",
-                )
-                database.execSQL(
-                    "ALTER TABLE own_profile ADD COLUMN allow_profile_zoom INTEGER NOT NULL DEFAULT 1",
-                )
-                database.execSQL(
-                    "ALTER TABLE public_profile ADD COLUMN join_order INTEGER NOT NULL DEFAULT 0",
-                )
-                database.execSQL(
-                    "ALTER TABLE public_profile ADD COLUMN message_privacy TEXT NOT NULL DEFAULT 'everyone'",
-                )
-                database.execSQL(
-                    "ALTER TABLE public_profile ADD COLUMN allow_profile_zoom INTEGER NOT NULL DEFAULT 1",
-                )
+                addFeedProfileParityColumns(database)
+                createSearchHistoryTable(database)
             }
         }
+
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                // Both feature branches shipped an independent schema v6.
+                // Complete whichever shape is installed, while remaining safe
+                // for a database that already contains both feature sets.
+                addFeedProfileParityColumns(database)
+                createSearchHistoryTable(database)
+            }
+        }
+
+        private fun addFeedProfileParityColumns(database: SupportSQLiteDatabase) {
+            database.addColumnIfMissing("feed_post", "author_follow_status", "TEXT")
+            database.addColumnIfMissing("feed_post", "feed_source", "TEXT")
+            database.addColumnIfMissing("own_profile", "verification_type", "TEXT")
+            database.addColumnIfMissing(
+                "own_profile",
+                "is_private",
+                "INTEGER NOT NULL DEFAULT 0",
+            )
+            database.addColumnIfMissing(
+                "own_profile",
+                "join_order",
+                "INTEGER NOT NULL DEFAULT 0",
+            )
+            database.addColumnIfMissing("own_profile", "subscription_plan", "TEXT")
+            database.addColumnIfMissing(
+                "own_profile",
+                "premium_days_remaining",
+                "INTEGER",
+            )
+            database.addColumnIfMissing(
+                "own_profile",
+                "message_privacy",
+                "TEXT NOT NULL DEFAULT 'everyone'",
+            )
+            database.addColumnIfMissing(
+                "own_profile",
+                "allow_profile_zoom",
+                "INTEGER NOT NULL DEFAULT 1",
+            )
+            database.addColumnIfMissing(
+                "public_profile",
+                "join_order",
+                "INTEGER NOT NULL DEFAULT 0",
+            )
+            database.addColumnIfMissing(
+                "public_profile",
+                "message_privacy",
+                "TEXT NOT NULL DEFAULT 'everyone'",
+            )
+            database.addColumnIfMissing(
+                "public_profile",
+                "allow_profile_zoom",
+                "INTEGER NOT NULL DEFAULT 1",
+            )
+        }
+
+        private fun createSearchHistoryTable(database: SupportSQLiteDatabase) {
+            database.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS search_history (
+                    account_id TEXT NOT NULL,
+                    query TEXT NOT NULL,
+                    search_type TEXT NOT NULL,
+                    timestamp_epoch_millis INTEGER NOT NULL,
+                    PRIMARY KEY(account_id, query)
+                )
+                """.trimIndent(),
+            )
+        }
+
+        private fun SupportSQLiteDatabase.addColumnIfMissing(
+            table: String,
+            column: String,
+            definition: String,
+        ) {
+            if (hasColumn(table, column)) return
+            execSQL("ALTER TABLE `$table` ADD COLUMN `$column` $definition")
+        }
+
+        private fun SupportSQLiteDatabase.hasColumn(table: String, column: String): Boolean =
+            query("PRAGMA table_info(`$table`)").use { cursor ->
+                val nameIndex = cursor.getColumnIndex("name")
+                while (cursor.moveToNext()) {
+                    if (cursor.getString(nameIndex) == column) return@use true
+                }
+                false
+            }
     }
 }

@@ -8,6 +8,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import ir.coffevista.vista_native.core.database.feed.FeedPageStateEntity
 import ir.coffevista.vista_native.core.database.feed.FeedPostEntity
 import ir.coffevista.vista_native.core.database.profile.PublicProfileEntity
+import ir.coffevista.vista_native.core.database.search.SearchHistoryEntity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -152,6 +153,7 @@ class VistaFoundationDatabaseTest {
             .addMigrations(VistaFoundationDatabase.MIGRATION_3_4)
             .addMigrations(VistaFoundationDatabase.MIGRATION_4_5)
             .addMigrations(VistaFoundationDatabase.MIGRATION_5_6)
+            .addMigrations(VistaFoundationDatabase.MIGRATION_6_7)
             .build()
 
         val failure = assertThrows(RuntimeException::class.java) {
@@ -388,7 +390,7 @@ class VistaFoundationDatabaseTest {
     }
 
     @Test
-    fun migrationFromV5ToV6AddsFeedAndProfileParityFieldsWithSafeDefaults() {
+    fun migrationFromV5ToV7BuildsCombinedFeatureSchemaWithSafeDefaults() {
         migrationHelper.createDatabase(TEST_DATABASE, 5).apply {
             execSQL(
                 """
@@ -403,9 +405,10 @@ class VistaFoundationDatabaseTest {
 
         migrationHelper.runMigrationsAndValidate(
             TEST_DATABASE,
-            6,
+            7,
             true,
             VistaFoundationDatabase.MIGRATION_5_6,
+            VistaFoundationDatabase.MIGRATION_6_7,
         ).use { database ->
             database.query(
                 """
@@ -424,8 +427,122 @@ class VistaFoundationDatabaseTest {
             ).use { cursor ->
                 assertEquals(0, cursor.count)
             }
+            database.query("SELECT account_id, query FROM search_history").use { cursor ->
+                assertEquals(0, cursor.count)
+            }
         }
     }
+
+    @Test
+    fun migrationFromFeedProfileV6ToV7AddsSearchWithoutLosingParityData() {
+        migrationHelper.createDatabase(TEST_DATABASE, 5).apply {
+            applyLegacyFeedProfileV6()
+            execSQL(
+                """
+                INSERT INTO own_profile (
+                    user_id, username, full_name, bio, avatar_url, is_verified,
+                    account_type, post_count, follower_count, following_count, updated_at,
+                    verification_type, is_private, join_order, subscription_plan,
+                    premium_days_remaining, message_privacy, allow_profile_zoom
+                ) VALUES (
+                    'self', 'vista', 'Vista', NULL, NULL, 1,
+                    NULL, 1, 2, 3, NULL,
+                    'blue', 1, 77, 'plus', 9, 'followers', 0
+                )
+                """.trimIndent(),
+            )
+            version = 6
+            close()
+        }
+
+        migrationHelper.runMigrationsAndValidate(
+            TEST_DATABASE,
+            7,
+            true,
+            VistaFoundationDatabase.MIGRATION_6_7,
+        ).use { database ->
+            database.query(
+                """
+                SELECT verification_type, is_private, join_order, subscription_plan,
+                       premium_days_remaining, message_privacy, allow_profile_zoom
+                FROM own_profile WHERE user_id = 'self'
+                """.trimIndent(),
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("blue", cursor.getString(0))
+                assertEquals(1, cursor.getInt(1))
+                assertEquals(77L, cursor.getLong(2))
+                assertEquals("plus", cursor.getString(3))
+                assertEquals(9L, cursor.getLong(4))
+                assertEquals("followers", cursor.getString(5))
+                assertEquals(0, cursor.getInt(6))
+            }
+            database.query("SELECT COUNT(*) FROM search_history").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(0, cursor.getInt(0))
+            }
+        }
+    }
+
+    @Test
+    fun migrationFromSearchV6ToV7AddsFeedProfileParityWithoutLosingHistory() {
+        migrationHelper.createDatabase(TEST_DATABASE, 5).apply {
+            applyLegacySearchV6()
+            execSQL(
+                """
+                INSERT INTO search_history (
+                    account_id, query, search_type, timestamp_epoch_millis
+                ) VALUES ('account-a', 'آزمون', 'all', 123)
+                """.trimIndent(),
+            )
+            version = 6
+            close()
+        }
+
+        migrationHelper.runMigrationsAndValidate(
+            TEST_DATABASE,
+            7,
+            true,
+            VistaFoundationDatabase.MIGRATION_6_7,
+        ).use { database ->
+            database.query(
+                "SELECT query, search_type, timestamp_epoch_millis FROM search_history",
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("آزمون", cursor.getString(0))
+                assertEquals("all", cursor.getString(1))
+                assertEquals(123L, cursor.getLong(2))
+            }
+            database.query(
+                "SELECT author_follow_status, feed_source FROM feed_post",
+            ).use { cursor ->
+                assertEquals(0, cursor.count)
+            }
+            database.query(
+                "SELECT is_private, message_privacy, allow_profile_zoom FROM own_profile",
+            ).use { cursor ->
+                assertEquals(0, cursor.count)
+            }
+        }
+    }
+
+    @Test
+    fun searchHistoryDaoKeepsAccountsIsolatedDuringLogoutCleanup() =
+        runBlocking(Dispatchers.IO) {
+            withDatabase { database ->
+                val dao = database.searchHistoryDao()
+                dao.upsert(searchHistory("account-a", "vista", 2))
+                dao.upsert(searchHistory("account-b", "vista", 1))
+
+                dao.clearAccount("account-a")
+
+                assertTrue(dao.observeRecent("account-a").first().isEmpty())
+                assertEquals(
+                    listOf("vista"),
+                    dao.observeRecent("account-b").first().map { it.query },
+                )
+            }
+        }
 
     @Test
     fun publicProfileDaoInsertUpdateAndReadRelationshipCounts() =
@@ -551,6 +668,56 @@ class VistaFoundationDatabaseTest {
         updatedAt = "2026-07-28T09:30:00Z",
         lastSyncedEpochMillis = 123,
     )
+
+    private fun searchHistory(
+        accountId: String,
+        query: String,
+        timestamp: Long,
+    ) = SearchHistoryEntity(
+        accountId = accountId,
+        query = query,
+        searchType = "all",
+        timestampEpochMillis = timestamp,
+    )
+
+    private fun androidx.sqlite.db.SupportSQLiteDatabase.applyLegacyFeedProfileV6() {
+        execSQL("ALTER TABLE feed_post ADD COLUMN author_follow_status TEXT")
+        execSQL("ALTER TABLE feed_post ADD COLUMN feed_source TEXT")
+        execSQL("ALTER TABLE own_profile ADD COLUMN verification_type TEXT")
+        execSQL("ALTER TABLE own_profile ADD COLUMN is_private INTEGER NOT NULL DEFAULT 0")
+        execSQL("ALTER TABLE own_profile ADD COLUMN join_order INTEGER NOT NULL DEFAULT 0")
+        execSQL("ALTER TABLE own_profile ADD COLUMN subscription_plan TEXT")
+        execSQL("ALTER TABLE own_profile ADD COLUMN premium_days_remaining INTEGER")
+        execSQL(
+            "ALTER TABLE own_profile ADD COLUMN message_privacy " +
+                "TEXT NOT NULL DEFAULT 'everyone'",
+        )
+        execSQL(
+            "ALTER TABLE own_profile ADD COLUMN allow_profile_zoom INTEGER NOT NULL DEFAULT 1",
+        )
+        execSQL("ALTER TABLE public_profile ADD COLUMN join_order INTEGER NOT NULL DEFAULT 0")
+        execSQL(
+            "ALTER TABLE public_profile ADD COLUMN message_privacy " +
+                "TEXT NOT NULL DEFAULT 'everyone'",
+        )
+        execSQL(
+            "ALTER TABLE public_profile ADD COLUMN allow_profile_zoom INTEGER NOT NULL DEFAULT 1",
+        )
+    }
+
+    private fun androidx.sqlite.db.SupportSQLiteDatabase.applyLegacySearchV6() {
+        execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS search_history (
+                account_id TEXT NOT NULL,
+                query TEXT NOT NULL,
+                search_type TEXT NOT NULL,
+                timestamp_epoch_millis INTEGER NOT NULL,
+                PRIMARY KEY(account_id, query)
+            )
+            """.trimIndent(),
+        )
+    }
 
     private suspend fun withDatabase(
         block: suspend (VistaFoundationDatabase) -> Unit,

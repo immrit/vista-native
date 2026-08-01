@@ -93,7 +93,7 @@ class FeedRuntimeInstrumentationTest {
             awaitText(postText(1))
 
             compose.onNodeWithContentDescription("جستجو").performClick()
-            awaitText("زیرساخت جستجو آماده است")
+            awaitText("جستجوی کاربران")
             compose.onNodeWithContentDescription("خانه").performClick()
             awaitText(postText(1))
 

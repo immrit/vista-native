@@ -20,6 +20,7 @@ import ir.coffevista.vista_native.features.feed.data.FeedApiFixture
 import ir.coffevista.vista_native.features.profile.data.PublicProfileApiFixture
 import ir.coffevista.vista_native.features.profile.data.OwnProfileApiFixture
 import ir.coffevista.vista_native.features.profile.data.UserProfileRepository
+import ir.coffevista.vista_native.features.search.data.SearchRepository
 import ir.coffevista.vista_native.features.startup.StartupFixture
 import ir.coffevista.vista_native.navigation.VistaApp
 import ir.coffevista.vista_native.navigation.DeepLinkCoordinator
@@ -56,6 +57,9 @@ class MainActivity : ComponentActivity() {
     @Inject
     lateinit var userProfileRepository: UserProfileRepository
 
+    @Inject
+    lateinit var searchRepository: SearchRepository
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         configureStartupFixtures(intent)
@@ -74,6 +78,7 @@ class MainActivity : ComponentActivity() {
                             sessionStore = sessionStore,
                             feedRepository = feedRepository,
                             userProfileRepository = userProfileRepository,
+                            searchRepository = searchRepository,
                             onExitRequested = ::finish,
                         )
                     }

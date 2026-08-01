@@ -6,12 +6,14 @@ import android.content.res.Configuration
 import android.content.Intent
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextInput
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -98,9 +100,12 @@ class StartupFixtureInstrumentationTest {
                 "step1-feed-ready",
             )
             composeRule.onNodeWithTag("shell-tab-search").performClick()
-            awaitText("زیرساخت جستجو آماده است", "step2-search-ready")
-            composeRule.onNodeWithText("بررسی back stack کنترل‌شده").performClick()
-            awaitText("جستجو: مقصد داخلی کنترل‌شده", "step3-search-detail-first")
+            awaitTag("search-launcher", "step2-search-ready")
+            composeRule.onNodeWithTag("search-launcher-field").performClick()
+            awaitTag("search-workspace", "step3-search-workspace")
+            composeRule.onNodeWithTag("search-field").performTextInput("vista-int-state")
+            composeRule.onNodeWithTag("search-field")
+                .assertTextContains("vista-int-state")
 
             composeRule.onNodeWithTag("shell-tab-feed").performClick()
             awaitText(
@@ -108,12 +113,14 @@ class StartupFixtureInstrumentationTest {
                 "step4-feed-ready-again",
             )
             composeRule.onNodeWithTag("shell-tab-search").performClick()
-            awaitText("جستجو: مقصد داخلی کنترل‌شده", "step5-search-detail-restored")
+            awaitTag("search-workspace", "step5-search-workspace-restored")
+            composeRule.onNodeWithTag("search-field")
+                .assertTextContains("vista-int-state")
 
             scenario.recreate()
-            awaitText("جستجو: مقصد داخلی کنترل‌شده", "step6-search-detail-after-recreate")
-            composeRule.onNodeWithText("جستجو: مقصد داخلی کنترل‌شده")
-                .assertIsDisplayed()
+            awaitTag("search-workspace", "step6-search-workspace-after-recreate")
+            composeRule.onNodeWithTag("search-field")
+                .assertTextContains("vista-int-state")
         }
     }
 
@@ -240,6 +247,18 @@ class StartupFixtureInstrumentationTest {
                 allText = nodes.joinToString("\n") { it.config.joinToString { c -> c.value.toString() } }
             } catch (ignore: Exception) {}
             throw AssertionError("Timeout waiting for text: '$msg'. Current UI says:\n$allText", e)
+        }
+    }
+
+    private fun awaitTag(tag: String, msg: String = tag) {
+        try {
+            composeRule.waitUntil(timeoutMillis = 5_000) {
+                composeRule.onAllNodes(androidx.compose.ui.test.hasTestTag(tag))
+                    .fetchSemanticsNodes()
+                    .isNotEmpty()
+            }
+        } catch (e: androidx.compose.ui.test.ComposeTimeoutException) {
+            throw AssertionError("Timeout waiting for tag: '$msg'", e)
         }
     }
 
