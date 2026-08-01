@@ -17,6 +17,7 @@ dependencies {
     implementation(project(":feature:auth"))
     implementation(project(":feature:profile"))
     implementation(project(":feature:feed"))
+    implementation(project(":feature:search"))
 
     implementation(libs.androidx.activity.compose)
     implementation(platform(libs.androidx.compose.bom))

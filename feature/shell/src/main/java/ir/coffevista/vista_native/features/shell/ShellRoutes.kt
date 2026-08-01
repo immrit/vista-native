@@ -10,8 +10,12 @@ object ShellRoutes {
 
     const val SearchGraph = "search_graph"
     const val SearchRoot = "search_root"
-    fun searchDetail(reference: String) = "search_detail/$reference"
-    const val SearchDetailRoute = "search_detail/{reference}"
+    const val SearchWorkspace = "search_workspace"
+    fun searchUserProfile(userId: String) = "search_profile/$userId"
+    const val SearchUserProfileRoute = "search_profile/{userId}"
+    const val SearchOwnProfile = "search_own_profile"
+    fun searchPostDetail(reference: String) = "search_post/$reference"
+    const val SearchPostDetailRoute = "search_post/{reference}"
 
     const val ServicesGraph = "services_graph"
     const val ServicesRoot = "services_root"

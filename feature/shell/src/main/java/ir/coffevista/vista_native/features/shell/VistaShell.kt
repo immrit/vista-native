@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.Image
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
@@ -20,6 +22,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavDestination
@@ -55,6 +59,8 @@ import ir.coffevista.vista_native.features.profile.ui.OwnProfileScreen
 import ir.coffevista.vista_native.features.profile.ui.OtherUserProfileScreen
 import ir.coffevista.vista_native.features.feed.ui.FeedScreen
 import ir.coffevista.vista_native.features.feed.ui.PostDetailScreen
+import ir.coffevista.vista_native.features.search.ui.SearchLauncherScreen
+import ir.coffevista.vista_native.features.search.ui.SearchWorkspaceScreen
 import kotlinx.coroutines.launch
 
 @Composable
@@ -72,6 +78,10 @@ fun VistaShell(
     val backStackEntry by navController.currentBackStackEntryAsState()
     val selectedTab = backStackEntry?.destination?.toShellTab() ?: ShellTab.Feed
     val currentRoute = backStackEntry?.destination?.route ?: "none"
+    val inSearchGraph = backStackEntry?.destination?.hierarchy?.any {
+        it.route == ShellRoutes.SearchGraph
+    } == true
+    val showSearchBottomBar = currentRoute == ShellRoutes.SearchRoot
     val atRoot = backStackEntry?.destination?.isTabRoot() != false
     var lastExitRequestAt by rememberSaveable { mutableStateOf(0L) }
     var lastDeepLinkId by rememberSaveable { mutableStateOf(0L) }
@@ -134,24 +144,38 @@ fun VistaShell(
 
     VistaScaffold(
         modifier = modifier.fillMaxSize(),
-        topBar = { VistaTopAppBar(selectedTab.labelFa) },
+        topBar = {
+            if (!inSearchGraph) {
+                VistaTopAppBar(selectedTab.labelFa)
+            }
+        },
         snackbarHostState = snackbarHostState,
         bottomBar = {
-            VistaNavigationBar(
+            if (!inSearchGraph || showSearchBottomBar) VistaNavigationBar(
                 items = ShellTab.entries,
                 selected = selectedTab,
                 onSelect = ::selectTab,
                 label = ShellTab::labelFa,
                 icon = { tab, selected ->
-                    Text(
-                        text = tab.glyph,
-                        color = if (selected) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                        style = MaterialTheme.typography.titleLarge,
-                    )
+                    val tint = if (selected) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                    if (tab == ShellTab.Search) {
+                        Image(
+                            painter = painterResource(R.drawable.ic_search_flutter),
+                            contentDescription = null,
+                            modifier = Modifier.size(30.dp),
+                            colorFilter = ColorFilter.tint(tint),
+                        )
+                    } else {
+                        Text(
+                            text = tab.glyph,
+                            color = tint,
+                            style = MaterialTheme.typography.titleLarge,
+                        )
+                    }
                 },
             )
         },
@@ -197,9 +221,59 @@ fun VistaShell(
             }
             navigation(route = ShellRoutes.SearchGraph, startDestination = ShellRoutes.SearchRoot) {
                 composable(ShellRoutes.SearchRoot) {
-                    SearchPlaceholderScreen(onDetails = { navController.navigate(ShellRoutes.searchDetail("foundation")) })
+                    SearchLauncherScreen(
+                        viewModel = hiltViewModel(),
+                        onOpenWorkspace = {
+                            navController.navigate(ShellRoutes.SearchWorkspace)
+                        },
+                    )
                 }
-                composable(ShellRoutes.SearchDetailRoute) { ControlledDetailScreen(ShellTab.Search) }
+                composable(ShellRoutes.SearchWorkspace) {
+                    SearchWorkspaceScreen(
+                        viewModel = hiltViewModel(),
+                        onUserClick = { user ->
+                            navController.navigate(
+                                if (user.id == context.userId) {
+                                    ShellRoutes.SearchOwnProfile
+                                } else {
+                                    ShellRoutes.searchUserProfile(user.id)
+                                },
+                            )
+                        },
+                        onPostClick = { post ->
+                            navController.navigate(ShellRoutes.searchPostDetail(post.id))
+                        },
+                    )
+                }
+                composable(
+                    route = ShellRoutes.SearchUserProfileRoute,
+                    arguments = listOf(navArgument("userId") { type = NavType.StringType }),
+                ) {
+                    OtherUserProfileScreen(
+                        viewModel = hiltViewModel(),
+                        onBack = { navController.popBackStack() },
+                        onSelfProfile = {
+                            navController.navigate(ShellRoutes.SearchOwnProfile) {
+                                popUpTo(ShellRoutes.SearchWorkspace)
+                            }
+                        },
+                    )
+                }
+                composable(ShellRoutes.SearchOwnProfile) {
+                    OwnProfileScreen(
+                        viewModel = hiltViewModel(),
+                        onLogout = onLogout,
+                    )
+                }
+                composable(
+                    route = ShellRoutes.SearchPostDetailRoute,
+                    arguments = listOf(navArgument("reference") { type = NavType.StringType }),
+                ) {
+                    PostDetailScreen(
+                        onBack = { navController.popBackStack() },
+                        viewModel = hiltViewModel(),
+                    )
+                }
             }
             navigation(route = ShellRoutes.ServicesGraph, startDestination = ShellRoutes.ServicesRoot) {
                 composable(ShellRoutes.ServicesRoot) {
@@ -226,26 +300,6 @@ fun VistaShell(
     }
 }
 
-
-@Composable
-private fun SearchPlaceholderScreen(onDetails: () -> Unit) {
-    var query by rememberSaveable { mutableStateOf("") }
-    PlaceholderLayout(
-        title = "زیرساخت جستجو آماده است",
-        message = "این صفحه داده یا نتیجه ساختگی نمایش نمی‌دهد.",
-        onDetails = onDetails,
-    ) {
-        VistaTextField(
-            value = query,
-            onValueChange = { query = it },
-            label = "جستجو",
-            supportingText = "اتصال به داده در فاز Search انجام می‌شود.",
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = VistaSpacing.Large),
-        )
-    }
-}
 
 @Composable
 private fun ServicesPlaceholderScreen(onDetails: () -> Unit) {
