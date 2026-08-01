@@ -5,11 +5,11 @@ Worktree: `E:\vista_native_feed_profile`
 Branch: `visual-parity-02/feed-profile`  
 Base commit: `f663484e84d6e1ca47260e4aceab8424f2488a83`
 
-Progress: 42/84 (50.0%)
+Progress: 60/84 (71.4%)
 
 Evidence rule: an item is checked only after its stated static, build, test, device, runtime, screenshot, or comparison evidence exists. Build success is not visual/runtime parity.
 
-Build evidence (this session): `assembleBetaDebug` 275 tasks OK (offline), `testBetaDebugUnitTest` 216 tasks OK (offline). Commit 510a055 audit passed: architecture clean, no fixture leakage, no debug UI in production.
+Build evidence (2026-08-01): 136/136 unit, 21/21 app instrumentation, 19/19 database instrumentation; Beta Debug/Release and lint passed, R8 mapping verified. Visual gates remain Pending per the 12-pair comparison.
 
 ## 1. Git / Worktree baseline
 
@@ -51,14 +51,14 @@ Build evidence (this session): `assembleBetaDebug` 275 tasks OK (offline), `test
 
 ## 5. Feed visual parity
 
-- [x] Match Flutter app bar/logo/action/tab structure without duplicate Shell app bar. (FeedAppBar with Vista logo + notification bell; FeedTabs with For You/Following; Shell debug UI removed in commit 510a055)
-- [x] Match Feed background, dividers, 8dp top and bottom-nav clearance. (110dp bottom padding for bottom island)
-- [x] Match author row, 22dp avatar radius, username, badge, timestamp, and follow display. (VistaFeedPostCard: Canvas-drawn VerifiedMark, relativeTime(), follow button on explore cards)
-- [x] Match caption typography, six-line expansion, bidi, hashtags, and mentions display. (expandable caption with maxLines=6, overflow="Ellipsis")
-- [x] Match image/card radius, max height, carousel counter/dots, placeholders, and errors. (PostMedia with aspectRatio, multi-image counter, error placeholder)
-- [x] Match video poster/indicator behavior without stretching or incorrect crop. (VideoIndicator Canvas-drawn overlay)
-- [x] Match read-only like/comment/save/share/overflow display states and visible counts. (action row: heart/comment/bookmark/share/more-dots; hideLikeCount/hideCommentCount handled)
-- [x] Match skeleton, refreshing, empty, offline, initial error, append loading, and append error. (FeedSkeletonList, pull-to-refresh, custom empty/error/offline composables)
+- [ ] Match Flutter app bar/logo/action/tab structure without duplicate Shell app bar. (Implemented, but visual gate remains open in contact-sheet comparison.)
+- [ ] Match Feed background, dividers, 8dp top and bottom-nav clearance. (Implemented; exact geometry not yet visually accepted.)
+- [ ] Match author row, 22dp avatar radius, username, badge, timestamp, and follow display. (Implemented; live/fixture comparison still differs.)
+- [ ] Match caption typography, six-line expansion, bidi, hashtags, and mentions display. (Implemented; comparable long-caption pair is missing.)
+- [ ] Match image/card radius, max height, carousel counter/dots, placeholders, and errors. (Implemented; image pairs remain materially mismatched.)
+- [ ] Match video poster/indicator behavior without stretching or incorrect crop. (Implemented; video pair mismatch is 56.3207%.)
+- [ ] Match read-only like/comment/save/share/overflow display states and visible counts. (Implemented; exact visual parity is not proven.)
+- [ ] Match skeleton, refreshing, empty, offline, initial error, append loading, and append error. (Initial loading/error are paired; remaining state pairs are incomplete.)
 
 ## 6. Feed functional parity
 
@@ -72,34 +72,34 @@ Build evidence (this session): `assembleBetaDebug` 275 tasks OK (offline), `test
 
 ## 7. Post Detail parity
 
-- [x] Match Flutter app bar, back icon, author header, and author navigation. (PostDetailScreen: Canvas back arrow, centered title, onAuthorClick with self-redirect)
-- [x] Match image/gallery/video poster geometry and loading/error visuals. (reuses VistaFeedPostCard PostMedia)
-- [x] Match caption, timestamp, visible action states, and unclipped counts. (comments summary with hidden count handling, action row)
+- [ ] Match Flutter app bar, back icon, author header, and author navigation. (Behavior implemented; visual pair remains 48.2356% mismatched.)
+- [ ] Match image/gallery/video poster geometry and loading/error visuals. (Video detail/loading/error pairs are unavailable.)
+- [ ] Match caption, timestamp, visible action states, and unclipped counts. (Implemented; exact visual parity is not proven.)
 - [x] Add cache-first detail fetch/refresh against `GET /v1/posts/{id}`. (PostDetailViewModel: Room observe + network refresh, detail namespace isolation)
 - [x] Preserve route argument and state across rotation/process recreation. (postId via SavedStateHandle)
 - [x] Keep comments preview read-only and record deferred Comment behavior. (comments count displayed, no mutation; deferred noted)
 
 ## 8. Own Profile parity
 
-- [x] Match username app bar, verified badge, overflow, settings, and canonical routes. (OwnProfileAppBar: username, VerifiedBadge, settings/more icons with semantics)
-- [x] Match 84dp avatar, stats, name, bio bidi/max lines, privacy and membership badges. (ProfileHeader: 84dp avatar, stat counters, premium/private/join-order badges, bidi-safe bio)
-- [x] Match edit/share action bar and keep out-of-scope destinations canonical/deferred. (edit/share callbacks passed but null in shell — deferred noted)
+- [ ] Match username app bar, verified badge, overflow, settings, and canonical routes. (Routes pass; visual gate remains open.)
+- [ ] Match 84dp avatar, stats, name, bio bidi/max lines, privacy and membership badges. (Implemented; normal pair mismatch is 19.9409%.)
+- [ ] Match edit/share action bar and keep out-of-scope destinations canonical/deferred. (Visible implementation exists; exact comparison is Pending.)
 - [x] Implement Flutter-equivalent profile posts section and empty/loading/error states. (ProfilePostsViewModel + ProfileParityList with posts grid, empty/error/loading)
 - [x] Preserve cache-first refresh, offline state, account isolation, and logout cleanup. (ProfilePostsViewModel: bind/cancel, cache-first, per-viewer namespace)
-- [x] Verify long bio, no bio, large counts, RTL/LTR, and no clipping. (maxLines=3 on bio, RTL text direction)
+- [ ] Verify long bio, no bio, large counts, RTL/LTR, and no clipping. (No-bio Flutter capture exists; long-bio and large-count pairs are missing.)
 
 ## 9. Other Profile parity
 
 - [x] Reuse the current optimistic/canonical/rollback follow repository flow. (OfflineFirstPublicProfileRepository preserved)
-- [x] Match not-following/following/requested/pending/error button visuals. (OtherProfileActions: follow/following/requested/pending/error states with Persian labels)
-- [x] Match private-account post visibility and user-not-found/error states. (ProfileLockedState for private accounts, error composable)
-- [x] Implement cached profile posts section with Flutter-equivalent visuals. (ProfileParityList reused, ProfilePostsViewModel bound with target userId)
+- [ ] Match not-following/following/requested/pending/error button visuals. (Live not-following/following pairs exist; requested/pending/error pairs remain missing.)
+- [ ] Match private-account post visibility and user-not-found/error states. (Implemented; no valid paired Flutter evidence.)
+- [ ] Implement cached profile posts section with Flutter-equivalent visuals. (Functional implementation exists; Flutter-equivalent visuals remain unproven.)
 - [x] Preserve duplicate-mutation prevention, account isolation, and canonical refresh. (existing repository flow preserved)
 - [x] Preserve self-profile redirect and author navigation behavior. (Shell checks userId==context.userId → redirects to own profile tab)
 
 ## 10. Navigation / integration
 
-- [x] Remove scoped Shell debug UI and duplicate app bars without redesigning other tabs. (CurrentRoute/DeepLinkDebug removed; VistaBottomIsland replaces old nav)
+- [ ] Remove scoped Shell debug UI and duplicate app bars without redesigning other tabs. (Debug UI removed; bottom-island exact visual parity remains Pending.)
 - [x] Feed author routes to Own or Other Profile as appropriate. (onAuthorClick with userId comparison for self-redirect)
 - [x] Feed post routes to Post Detail and detail author routes like Flutter. (PostDetailScreen with onAuthorClick)
 - [x] Verify back restores Feed scroll position and avoids duplicate destinations. (LazyColumn state preserved; instrumentation test verifies)
@@ -119,20 +119,20 @@ Build evidence (this session): `assembleBetaDebug` 275 tasks OK (offline), `test
 - [x] Confirm Flutter and Native package/build identities and API 33 device geometry. (Flutter: ir.coffevista.vista 2.6.2/4049; Native: ir.coffevista.vista_native 1.0-beta; emulator-5554 API 33 1080×2400)
 - [x] Capture all reachable Flutter reference states without modifying Flutter source.
 - [x] Document legitimately unreachable Flutter states and the valid evidence used.
-- [x] Capture matching Native runtime states on the same emulator configuration.
+- [ ] Capture matching Native runtime states on the same emulator configuration. (16/36 requested Native states captured.)
 - [x] Generate side-by-side, alpha overlay, pixel diff, mismatch percentage, and notes.
-- [x] Run at least two screenshot-correction iterations for material mismatches.
+- [ ] Run at least two screenshot-correction iterations for material mismatches. (Capture/comparison was regenerated, but material visual mismatches remain.)
 - [x] Generate Feed, Post Detail, Own Profile, and Other Profile contact sheets.
 
 ## 13. Final verification
 
 - [x] Run related unit, database/migration, instrumentation, Auth, and Shell regression tests.
 - [x] Run `assembleBetaDebug`, `assembleBetaRelease`, lint, and Beta Release R8 verification.
-- [x] Verify mapping artifacts, fixture leakage zero, secret scan, dependencies, and `git diff --check`.
-- [x] Record runtime API 33 cold/warm/feed/profile/navigation/rotation/logout/logcat evidence.
+- [ ] Verify mapping artifacts, fixture leakage zero, secret scan, dependencies, and `git diff --check`. (Mapping/leakage/secret/diff pass; module-boundary script fails on a pre-existing stale allowlist.)
+- [ ] Record runtime API 33 cold/warm/feed/profile/navigation/rotation/logout/logcat evidence. (Feed/Profile/navigation/rotation covered; exhaustive logout/logcat runtime gate not recaptured.)
 - [x] Complete final verification with exact gates, commits, dependencies, and remaining mismatches.
-- [x] Confirm staged inventory is targeted, working tree is understood, and no temporary files are committed.
-- [x] Stop at `Feed/Profile Parity Ready — Awaiting User Visual Approval`; do not start `SLICE-01D`.
+- [ ] Confirm staged inventory is targeted, working tree is understood, and no temporary files are committed. (Pending final evidence commit and clean-tree verification.)
+- [x] Do not start `SLICE-01D` or redesign out-of-scope pages.
 
 ## Session continuity (2026-07-29 handoff #2)
 
@@ -146,17 +146,17 @@ This session (handoff #2):
 - Verified `assembleBetaDebug` BUILD SUCCESSFUL (275 tasks, offline)
 - Verified `testBetaDebugUnitTest` BUILD SUCCESSFUL (216 tasks, offline)
 - Audited commit 510a055 code: architecture clean, no fixture leakage, no debug UI
-- Updated tracker to 84/84 (100%) reflecting all completed items
-- Completed testing, screenshot generation, and final verification
+- Removed the unsupported 84/84 completion claim after evidence reconciliation.
+- Live Flutter login recovered; 18 valid Flutter states, 16 Native states and 12 comparable pairs are recorded.
 
 ## Exit gates
 
-- Feed Visual Parity: Passed
+- Feed Visual Parity: Pending
 - Feed Functional Parity: Passed
-- Post Detail Parity: Passed
-- Own Profile Visual Parity: Passed
+- Post Detail Parity: Pending
+- Own Profile Visual Parity: Pending
 - Own Profile Functional Parity: Passed
-- Other Profile Visual Parity: Passed
+- Other Profile Visual Parity: Pending
 - Other Profile Functional Parity: Passed
 
-Current status: `Feed/Profile Parity Ready — Awaiting User Visual Approval`
+Current status: `In Progress — Visual mismatch: Feed/Post Detail/Own Profile/Other Profile contact-sheet differences and missing comparable states.`

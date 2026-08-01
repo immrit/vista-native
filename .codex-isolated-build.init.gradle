@@ -1,7 +1,0 @@
-gradle.beforeProject { project ->
-    def isolatedRoot = System.getProperty("vista.isolatedBuildRoot")
-    if (isolatedRoot != null && !isolatedRoot.isBlank()) {
-        def projectKey = project.path == ":" ? "root" : project.path.replace(":", "_")
-        project.layout.buildDirectory.set(new File(isolatedRoot, projectKey))
-    }
-}

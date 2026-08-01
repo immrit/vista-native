@@ -1,0 +1,8 @@
+{
+  "width": 1080,
+  "height": 2400,
+  "threshold": 16,
+  "mismatch_pixels": 919083,
+  "mismatch_percentage": 35.4584,
+  "mean_absolute_error": 31.5504
+}
