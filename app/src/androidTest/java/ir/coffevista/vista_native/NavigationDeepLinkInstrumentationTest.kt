@@ -71,6 +71,9 @@ class NavigationDeepLinkInstrumentationTest {
     @Test
     fun pendingColdDestinationSurvivesRecreationAndReplaysOnceAfterLogin() {
         composeRule.runOnUiThread {
+            composeRule.activity.feedApiFixtures.forEach {
+                it.configure("valid-session")
+            }
             composeRule.activity.deepLinkCoordinator.submit(
                 rawUri = "vista://post/post_42",
                 authenticated = false,
@@ -84,6 +87,9 @@ class NavigationDeepLinkInstrumentationTest {
         org.junit.Assert.assertEquals(pendingId, restored.pendingId())
 
         composeRule.runOnUiThread {
+            composeRule.activity.feedApiFixtures.forEach {
+                it.configure("valid-session")
+            }
             if (restored is DeepLinkDeliveryState.PendingSession) {
                 composeRule.activity.deepLinkCoordinator.onSessionResolved(authenticated = false)
             }
@@ -95,15 +101,17 @@ class NavigationDeepLinkInstrumentationTest {
             composeRule.activity.deepLinkCoordinator.onAuthenticationChanged(authenticated = true)
         }
         composeRule.waitUntil(5000) {
-            composeRule.onAllNodesWithText("پست در حافظه موجود نیست").fetchSemanticsNodes().isNotEmpty()
+            composeRule.onAllNodesWithText(
+                "پست آزمایشی شماره 1 برای بررسی فید فقط‌خواندنی",
+            ).fetchSemanticsNodes().isNotEmpty()
         }
-        composeRule.onNodeWithText("پست در حافظه موجود نیست")
+        composeRule.onNodeWithText("پست آزمایشی شماره 1 برای بررسی فید فقط‌خواندنی")
             .assertIsDisplayed()
 
         composeRule.runOnUiThread {
             composeRule.activity.onBackPressedDispatcher.onBackPressed()
         }
-        composeRule.onNodeWithText("پست در حافظه موجود نیست")
+        composeRule.onNodeWithText("جزئیات پست")
             .assertDoesNotExist()
     }
 }

@@ -77,6 +77,12 @@ data class FeedPostEntity(
     @ColumnInfo(name = "author_verification_type")
     val authorVerificationType: String?,
 
+    @ColumnInfo(name = "author_follow_status")
+    val authorFollowStatus: String? = null,
+
+    @ColumnInfo(name = "feed_source")
+    val feedSource: String? = null,
+
     @ColumnInfo(name = "created_at")
     val createdAt: String,
 

@@ -54,8 +54,6 @@ class OwnProfileViewModel @Inject constructor(
                         val isRefreshing = (currentState as? OwnProfileUiState.Content)?.isRefreshing ?: false
                         OwnProfileUiState.Content(profile = entity, isRefreshing = isRefreshing)
                     }
-                } else if (_uiState.value !is OwnProfileUiState.Content) {
-                    _uiState.value = OwnProfileUiState.Loading
                 }
             }
         }

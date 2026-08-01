@@ -18,6 +18,7 @@ import ir.coffevista.vista_native.features.auth.AuthenticationStateOwner
 import ir.coffevista.vista_native.features.feed.data.FeedRepository
 import ir.coffevista.vista_native.features.feed.data.FeedApiFixture
 import ir.coffevista.vista_native.features.profile.data.PublicProfileApiFixture
+import ir.coffevista.vista_native.features.profile.data.OwnProfileApiFixture
 import ir.coffevista.vista_native.features.profile.data.UserProfileRepository
 import ir.coffevista.vista_native.features.startup.StartupFixture
 import ir.coffevista.vista_native.navigation.VistaApp
@@ -48,6 +49,9 @@ class MainActivity : ComponentActivity() {
 
     @Inject
     lateinit var publicProfileApiFixtures: Set<@JvmSuppressWildcards PublicProfileApiFixture>
+
+    @Inject
+    lateinit var ownProfileApiFixtures: Set<@JvmSuppressWildcards OwnProfileApiFixture>
 
     @Inject
     lateinit var userProfileRepository: UserProfileRepository
@@ -97,6 +101,7 @@ class MainActivity : ComponentActivity() {
         startupFixtures.forEach { fixture -> fixture.configure(scenario) }
         feedApiFixtures.forEach { fixture -> fixture.configure(scenario) }
         publicProfileApiFixtures.forEach { fixture -> fixture.configure(scenario) }
+        ownProfileApiFixtures.forEach { fixture -> fixture.configure(scenario) }
     }
 
     private companion object {

@@ -32,10 +32,17 @@ class OfflineFirstOwnProfileRepository @Inject constructor(
                         bio = dto.bio,
                         avatarUrl = dto.avatarUrl,
                         isVerified = dto.isVerified,
+                        verificationType = dto.verificationType,
                         accountType = dto.accountType,
+                        isPrivate = dto.isPrivate,
                         postCount = dto.postCount,
                         followerCount = dto.followerCount,
                         followingCount = dto.followingCount,
+                        joinOrder = dto.joinOrder,
+                        subscriptionPlan = dto.subscriptionPlan,
+                        premiumDaysRemaining = dto.premiumDaysRemaining,
+                        messagePrivacy = dto.messagePrivacy,
+                        allowProfileZoom = dto.allowProfileZoom,
                         updatedAt = dto.updatedAt
                     )
                     dao.insertOrUpdate(entity)

@@ -25,6 +25,8 @@ data class FeedPost(
     val authorIsVerified: Boolean,
     val authorVerificationType: String?,
     val createdAt: String,
+    val authorFollowStatus: String? = null,
+    val feedSource: String? = null,
 ) {
     val primaryImageUrl: String?
         get() = imageUrls.firstOrNull() ?: imageUrl
@@ -55,5 +57,7 @@ fun FeedPostEntity.asExternalModel() = FeedPost(
     authorAvatarUrl = authorAvatarUrl,
     authorIsVerified = authorIsVerified,
     authorVerificationType = authorVerificationType,
+    authorFollowStatus = authorFollowStatus,
+    feedSource = feedSource,
     createdAt = createdAt,
 )

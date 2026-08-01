@@ -14,8 +14,22 @@ import javax.inject.Singleton
 object ProfileDataModule {
     @Provides
     @Singleton
-    fun provideProfileApi(@InternalApi retrofit: Retrofit): ProfileApi =
-        retrofit.create(ProfileApi::class.java)
+    fun provideProfileApi(
+        @InternalApi retrofit: Retrofit,
+        fixtures: Set<@JvmSuppressWildcards OwnProfileApiFixture>,
+    ): ProfileApi {
+        val remote = retrofit.create(ProfileApi::class.java)
+        return object : ProfileApi {
+            override suspend fun fetchOwnProfile(): retrofit2.Response<ProfileDto> {
+                fixtures.forEach { fixture ->
+                    fixture.profileOrNull()?.let {
+                        return retrofit2.Response.success(it)
+                    }
+                }
+                return remote.fetchOwnProfile()
+            }
+        }
+    }
 
     @Provides
     @Singleton

@@ -3,10 +3,26 @@ package ir.coffevista.vista_native.features.shell
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -18,8 +34,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavDestination
@@ -43,18 +62,19 @@ import ir.coffevista.vista_native.core.designsystem.component.VistaDialog
 import ir.coffevista.vista_native.core.designsystem.component.VistaDivider
 import ir.coffevista.vista_native.core.designsystem.component.VistaEmptyState
 import ir.coffevista.vista_native.core.designsystem.component.VistaMediaCard
-import ir.coffevista.vista_native.core.designsystem.component.VistaNavigationBar
-import ir.coffevista.vista_native.core.designsystem.component.VistaScaffold
 import ir.coffevista.vista_native.core.designsystem.component.VistaSurface
 import ir.coffevista.vista_native.core.designsystem.component.VistaTextField
-import ir.coffevista.vista_native.core.designsystem.component.VistaTopAppBar
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaLayout
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaSpacing
 import ir.coffevista.vista_native.core.model.session.AuthenticatedContext
 import ir.coffevista.vista_native.features.profile.ui.OwnProfileScreen
 import ir.coffevista.vista_native.features.profile.ui.OtherUserProfileScreen
+import ir.coffevista.vista_native.features.profile.ui.ProfilePostUiModel
+import ir.coffevista.vista_native.features.profile.ui.ProfilePostsPresentationState
+import ir.coffevista.vista_native.features.feed.data.FeedPost
 import ir.coffevista.vista_native.features.feed.ui.FeedScreen
 import ir.coffevista.vista_native.features.feed.ui.PostDetailScreen
+import ir.coffevista.vista_native.features.feed.ui.ProfilePostsViewModel
 import kotlinx.coroutines.launch
 
 @Composable
@@ -71,8 +91,13 @@ fun VistaShell(
     val scope = rememberCoroutineScope()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val selectedTab = backStackEntry?.destination?.toShellTab() ?: ShellTab.Feed
-    val currentRoute = backStackEntry?.destination?.route ?: "none"
     val atRoot = backStackEntry?.destination?.isTabRoot() != false
+    val showBottomIsland = atRoot ||
+        backStackEntry?.destination?.route in setOf(
+            ShellRoutes.SearchDetailRoute,
+            ShellRoutes.ServicesDetailRoute,
+            ShellRoutes.ChatDetailRoute,
+        )
     var lastExitRequestAt by rememberSaveable { mutableStateOf(0L) }
     var lastDeepLinkId by rememberSaveable { mutableStateOf(0L) }
 
@@ -132,34 +157,11 @@ fun VistaShell(
         }
     }
 
-    VistaScaffold(
-        modifier = modifier.fillMaxSize(),
-        topBar = { VistaTopAppBar(selectedTab.labelFa) },
-        snackbarHostState = snackbarHostState,
-        bottomBar = {
-            VistaNavigationBar(
-                items = ShellTab.entries,
-                selected = selectedTab,
-                onSelect = ::selectTab,
-                label = ShellTab::labelFa,
-                icon = { tab, selected ->
-                    Text(
-                        text = tab.glyph,
-                        color = if (selected) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                        style = MaterialTheme.typography.titleLarge,
-                    )
-                },
-            )
-        },
-    ) { padding ->
+    Box(modifier = modifier.fillMaxSize()) {
         NavHost(
             navController = navController,
             startDestination = ShellRoutes.FeedGraph,
-            modifier = Modifier.padding(padding),
+            modifier = Modifier.fillMaxSize(),
         ) {
             navigation(route = ShellRoutes.FeedGraph, startDestination = ShellRoutes.FeedRoot) {
                 composable(ShellRoutes.FeedRoot) {
@@ -169,13 +171,25 @@ fun VistaShell(
                             navController.navigate(ShellRoutes.feedDetail(postId))
                         },
                         onAuthorClick = { userId ->
-                            navController.navigate(ShellRoutes.otherUserProfile(userId))
+                            if (userId == context.userId) {
+                                selectTab(ShellTab.Profile)
+                            } else {
+                                navController.navigate(ShellRoutes.otherUserProfile(userId))
+                            }
                         },
                     )
                 }
                 composable(ShellRoutes.FeedDetailRoute) {
                     PostDetailScreen(
                         onBack = { navController.popBackStack() },
+                        onAuthorClick = { userId ->
+                            if (userId == context.userId) {
+                                navController.popBackStack(ShellRoutes.FeedRoot, inclusive = false)
+                                selectTab(ShellTab.Profile)
+                            } else {
+                                navController.navigate(ShellRoutes.otherUserProfile(userId))
+                            }
+                        },
                         viewModel = hiltViewModel()
                     )
                 }
@@ -184,13 +198,25 @@ fun VistaShell(
                     arguments = listOf(
                         navArgument("userId") { type = NavType.StringType },
                     ),
-                ) {
+                ) { profileEntry ->
+                    val userId = profileEntry.arguments?.getString("userId").orEmpty()
+                    val postsViewModel = hiltViewModel<ProfilePostsViewModel>()
+                    val postsState by postsViewModel.uiState.collectAsStateWithLifecycle()
+                    LaunchedEffect(userId) {
+                        if (userId.isNotBlank()) postsViewModel.bind(userId)
+                    }
                     OtherUserProfileScreen(
                         viewModel = hiltViewModel(),
                         onBack = { navController.popBackStack() },
                         onSelfProfile = {
                             navController.popBackStack(ShellRoutes.FeedRoot, inclusive = false)
                             selectTab(ShellTab.Profile)
+                        },
+                        postsState = postsState.toPresentationState(),
+                        onPostsRefresh = postsViewModel::refresh,
+                        onPostsLoadMore = postsViewModel::loadMore,
+                        onPostClick = { postId ->
+                            navController.navigate(ShellRoutes.feedDetail(postId))
                         },
                     )
                 }
@@ -215,12 +241,137 @@ fun VistaShell(
             }
             navigation(route = ShellRoutes.ProfileGraph, startDestination = ShellRoutes.ProfileRoot) {
                 composable(ShellRoutes.ProfileRoot) {
+                    val postsViewModel = hiltViewModel<ProfilePostsViewModel>()
+                    val postsState by postsViewModel.uiState.collectAsStateWithLifecycle()
+                    LaunchedEffect(context.userId) {
+                        postsViewModel.bind(context.userId)
+                    }
                     OwnProfileScreen(
                         viewModel = hiltViewModel(),
                         onLogout = onLogout,
+                        postsState = postsState.toPresentationState(),
+                        onPostsRefresh = postsViewModel::refresh,
+                        onPostsLoadMore = postsViewModel::loadMore,
+                        onPostClick = { postId ->
+                            navController.navigate(ShellRoutes.feedDetail(postId))
+                        },
                     )
                 }
                 composable(ShellRoutes.ProfileDetailRoute) { ControlledDetailScreen(ShellTab.Profile) }
+            }
+        }
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = if (showBottomIsland) 126.dp else 20.dp),
+        )
+        if (showBottomIsland) {
+            VistaBottomIsland(
+                selectedTab = selectedTab,
+                onSelect = ::selectTab,
+                modifier = Modifier.align(Alignment.BottomCenter),
+            )
+        }
+    }
+}
+
+@Composable
+private fun VistaBottomIsland(
+    selectedTab: ShellTab,
+    onSelect: (ShellTab) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val density = LocalDensity.current
+    val bottomInset = with(density) {
+        WindowInsets.navigationBars.getBottom(density).toDp()
+    }
+    val background = MaterialTheme.colorScheme.background
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(110.dp + bottomInset)
+            .background(
+                Brush.verticalGradient(
+                    0f to Color.Transparent,
+                    .35f to background.copy(alpha = .55f),
+                    .65f to background.copy(alpha = .88f),
+                    1f to background,
+                ),
+            ),
+        contentAlignment = Alignment.BottomCenter,
+    ) {
+        Surface(
+            modifier = Modifier
+                .padding(start = 16.dp, end = 16.dp, bottom = 28.dp + bottomInset)
+                .fillMaxWidth()
+                .height(62.dp)
+                .shadow(10.dp, RoundedCornerShape(30.dp)),
+            shape = RoundedCornerShape(30.dp),
+            color = MaterialTheme.colorScheme.surface.copy(alpha = .94f),
+            border = BorderStroke(
+                .5.dp,
+                MaterialTheme.colorScheme.outlineVariant.copy(alpha = .7f),
+            ),
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceAround,
+            ) {
+                ShellTab.entries.forEach { tab ->
+                    val selected = tab == selectedTab
+                    val activeColor = MaterialTheme.colorScheme.primary
+                    val inactiveColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    if (tab == ShellTab.Services) {
+                        Surface(
+                            onClick = { onSelect(tab) },
+                            modifier = Modifier
+                                .testTag("shell-tab-${tab.name.lowercase()}")
+                                .width(64.dp)
+                                .height(48.dp),
+                            shape = RoundedCornerShape(14.dp),
+                            color = if (selected) activeColor else {
+                                MaterialTheme.colorScheme.surfaceVariant
+                            },
+                            contentColor = if (selected) {
+                                MaterialTheme.colorScheme.onPrimary
+                            } else {
+                                inactiveColor
+                            },
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                VistaNavigationIcon(
+                                    tab = tab,
+                                    selected = selected,
+                                    color = if (selected) {
+                                        MaterialTheme.colorScheme.onPrimary
+                                    } else {
+                                        inactiveColor
+                                    },
+                                    modifier = Modifier.size(28.dp),
+                                )
+                            }
+                        }
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .testTag("shell-tab-${tab.name.lowercase()}")
+                                .size(54.dp)
+                                .clickable { onSelect(tab) },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            VistaNavigationIcon(
+                                tab = tab,
+                                selected = selected,
+                                color = if (selected) activeColor else inactiveColor,
+                                modifier = Modifier.size(30.dp),
+                            )
+                        }
+                    }
+                }
             }
         }
     }
@@ -356,3 +507,35 @@ private fun ShellTab.rootRoute(): String = when (this) {
     ShellTab.Chat -> ShellRoutes.ChatRoot
     ShellTab.Profile -> ShellRoutes.ProfileRoot
 }
+
+private fun ir.coffevista.vista_native.features.feed.ui.ProfilePostsUiState
+    .toPresentationState() = ProfilePostsPresentationState(
+    posts = posts.map(FeedPost::toProfilePostUiModel),
+    isInitialLoading = isInitialLoading,
+    isRefreshing = isRefreshing,
+    isAppending = isAppending,
+    isOffline = isOffline,
+    hasMore = hasMore,
+    error = error,
+    appendError = appendError,
+)
+
+private fun FeedPost.toProfilePostUiModel() = ProfilePostUiModel(
+    id = id,
+    userId = userId,
+    authorFullName = authorFullName,
+    authorUsername = authorUsername,
+    authorAvatarUrl = authorAvatarUrl,
+    authorIsVerified = authorIsVerified,
+    content = content,
+    imageUrl = videoThumbnailUrl ?: primaryImageUrl,
+    videoUrl = videoUrl,
+    aspectRatio = aspectRatio?.toFloatOrNull(),
+    likeCount = likeCount,
+    commentCount = commentCount,
+    hideLikeCount = hideLikeCount,
+    hideCommentCount = hideCommentCount,
+    isLiked = isLiked,
+    isSaved = isSaved,
+    createdAt = createdAt,
+)

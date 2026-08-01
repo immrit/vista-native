@@ -8,6 +8,7 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
@@ -96,17 +97,17 @@ class StartupFixtureInstrumentationTest {
                 "پست آزمایشی شماره 1 برای بررسی فید فقط‌خواندنی",
                 "step1-feed-ready",
             )
-            composeRule.onNodeWithText("جستجو").performClick()
+            composeRule.onNodeWithTag("shell-tab-search").performClick()
             awaitText("زیرساخت جستجو آماده است", "step2-search-ready")
             composeRule.onNodeWithText("بررسی back stack کنترل‌شده").performClick()
             awaitText("جستجو: مقصد داخلی کنترل‌شده", "step3-search-detail-first")
 
-            composeRule.onNodeWithText("خانه").performClick()
+            composeRule.onNodeWithTag("shell-tab-feed").performClick()
             awaitText(
                 "پست آزمایشی شماره 1 برای بررسی فید فقط‌خواندنی",
                 "step4-feed-ready-again",
             )
-            composeRule.onNodeWithText("جستجو").performClick()
+            composeRule.onNodeWithTag("shell-tab-search").performClick()
             awaitText("جستجو: مقصد داخلی کنترل‌شده", "step5-search-detail-restored")
 
             scenario.recreate()
@@ -169,15 +170,22 @@ class StartupFixtureInstrumentationTest {
     @Test
     fun coldDeepLinkNavigatesToExpectedDestination() {
         launch("valid-session", uri = "vista://post/test").use {
-            awaitText("پست در حافظه موجود نیست", "cold-deep-link-feed-detail")
-            composeRule.onNodeWithText("پست در حافظه موجود نیست").assertIsDisplayed()
+            awaitText(
+                "پست آزمایشی شماره 1 برای بررسی فید فقط‌خواندنی",
+                "cold-deep-link-feed-detail",
+            )
+            composeRule.onNodeWithText("پست آزمایشی شماره 1 برای بررسی فید فقط‌خواندنی")
+                .assertIsDisplayed()
         }
     }
 
     @Test
     fun warmDuplicateDeepLinkIsIgnored() {
         launch("valid-session", uri = "vista://post/test").use { scenario ->
-            awaitText("پست در حافظه موجود نیست", "warm-deep-link-feed-detail-first")
+            awaitText(
+                "پست آزمایشی شماره 1 برای بررسی فید فقط‌خواندنی",
+                "warm-deep-link-feed-detail-first",
+            )
 
             val context = ApplicationProvider.getApplicationContext<android.content.Context>()
             val intent = Intent(context, MainActivity::class.java).apply {

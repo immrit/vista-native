@@ -151,6 +151,7 @@ class VistaFoundationDatabaseTest {
             .addMigrations(VistaFoundationDatabase.MIGRATION_1_2, VistaFoundationDatabase.MIGRATION_2_3)
             .addMigrations(VistaFoundationDatabase.MIGRATION_3_4)
             .addMigrations(VistaFoundationDatabase.MIGRATION_4_5)
+            .addMigrations(VistaFoundationDatabase.MIGRATION_5_6)
             .build()
 
         val failure = assertThrows(RuntimeException::class.java) {
@@ -309,6 +310,41 @@ class VistaFoundationDatabaseTest {
         }
 
     @Test
+    fun feedDaoClearNamespacesRemovesDerivedCachesOnlyForRequestedAccount() =
+        runBlocking(Dispatchers.IO) {
+            withDatabase { database ->
+                val dao = database.feedDao()
+                val separator = "\u001F"
+                dao.insertPosts(
+                    listOf(
+                        feedPost("account-a", "explore"),
+                        feedPost("account-a${separator}following", "following"),
+                        feedPost("account-a${separator}profile-posts${separator}user", "profile"),
+                        feedPost("account-b${separator}following", "other"),
+                    ),
+                )
+
+                dao.clearAccountNamespaces("account-a", "account-a$separator")
+
+                assertTrue(dao.observeFeed("account-a").first().isEmpty())
+                assertTrue(
+                    dao.observeFeed("account-a${separator}following").first().isEmpty(),
+                )
+                assertTrue(
+                    dao.observeFeed(
+                        "account-a${separator}profile-posts${separator}user",
+                    ).first().isEmpty(),
+                )
+                assertEquals(
+                    listOf("other"),
+                    dao.observeFeed("account-b${separator}following")
+                        .first()
+                        .map { it.id },
+                )
+            }
+        }
+
+    @Test
     fun migrationFromV3ToV4CreatesFeedTablesAndMetadata() {
         migrationHelper.createDatabase(TEST_DATABASE, 3).apply { close() }
 
@@ -345,6 +381,46 @@ class VistaFoundationDatabaseTest {
                        follower_count, last_synced_epoch_millis
                 FROM public_profile
                 """.trimIndent(),
+            ).use { cursor ->
+                assertEquals(0, cursor.count)
+            }
+        }
+    }
+
+    @Test
+    fun migrationFromV5ToV6AddsFeedAndProfileParityFieldsWithSafeDefaults() {
+        migrationHelper.createDatabase(TEST_DATABASE, 5).apply {
+            execSQL(
+                """
+                INSERT INTO own_profile (
+                    user_id, username, full_name, bio, avatar_url, is_verified,
+                    account_type, post_count, follower_count, following_count, updated_at
+                ) VALUES ('self', 'vista', 'Vista', NULL, NULL, 0, NULL, 1, 2, 3, NULL)
+                """.trimIndent(),
+            )
+            close()
+        }
+
+        migrationHelper.runMigrationsAndValidate(
+            TEST_DATABASE,
+            6,
+            true,
+            VistaFoundationDatabase.MIGRATION_5_6,
+        ).use { database ->
+            database.query(
+                """
+                SELECT is_private, join_order, message_privacy, allow_profile_zoom
+                FROM own_profile WHERE user_id = 'self'
+                """.trimIndent(),
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(0, cursor.getInt(0))
+                assertEquals(0L, cursor.getLong(1))
+                assertEquals("everyone", cursor.getString(2))
+                assertEquals(1, cursor.getInt(3))
+            }
+            database.query(
+                "SELECT author_follow_status, feed_source FROM feed_post",
             ).use { cursor ->
                 assertEquals(0, cursor.count)
             }

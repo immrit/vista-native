@@ -4,6 +4,7 @@ import ir.coffevista.vista_native.core.model.session.AuthenticatedContext
 import ir.coffevista.vista_native.features.auth.AuthenticationState
 import ir.coffevista.vista_native.features.auth.AuthenticationStateProvider
 import ir.coffevista.vista_native.features.feed.data.FeedAppendResult
+import ir.coffevista.vista_native.features.feed.data.FeedKind
 import ir.coffevista.vista_native.features.feed.data.FeedPost
 import ir.coffevista.vista_native.features.feed.data.FeedRefreshResult
 import ir.coffevista.vista_native.features.feed.data.FeedRepository
@@ -234,7 +235,7 @@ private class FakeFeedRepository : FeedRepository {
     }
     var appendCalls = 0
 
-    override fun observeFeed(accountId: String): Flow<FeedSnapshot> =
+    override fun observeFeed(accountId: String, kind: FeedKind): Flow<FeedSnapshot> =
         snapshots.getOrPut(accountId) {
             MutableStateFlow(FeedSnapshot(emptyList(), hasMore = true, nextOffset = 0))
         }
@@ -242,13 +243,36 @@ private class FakeFeedRepository : FeedRepository {
     override fun getPostById(accountId: String, postId: String): Flow<FeedPost?> =
         flowOf(snapshots[accountId]?.value?.posts?.firstOrNull { it.id == postId })
 
-    override suspend fun refreshFeed(accountId: String): FeedRefreshResult =
+    override fun observeUserPosts(accountId: String, userId: String): Flow<FeedSnapshot> =
+        observeFeed(accountId, FeedKind.Explore)
+
+    override suspend fun refreshFeed(
+        accountId: String,
+        kind: FeedKind,
+    ): FeedRefreshResult =
         onRefresh(accountId)
 
-    override suspend fun loadMoreFeed(accountId: String): FeedAppendResult {
+    override suspend fun loadMoreFeed(
+        accountId: String,
+        kind: FeedKind,
+    ): FeedAppendResult {
         appendCalls += 1
         return onAppend(accountId)
     }
+
+    override suspend fun refreshPost(accountId: String, postId: String): FeedPost =
+        snapshots[accountId]?.value?.posts?.first { it.id == postId }
+            ?: error("missing")
+
+    override suspend fun refreshUserPosts(
+        accountId: String,
+        userId: String,
+    ): FeedRefreshResult = onRefresh(accountId)
+
+    override suspend fun loadMoreUserPosts(
+        accountId: String,
+        userId: String,
+    ): FeedAppendResult = onAppend(accountId)
 
     override suspend fun clearAccount(accountId: String) {
         snapshots.remove(accountId)

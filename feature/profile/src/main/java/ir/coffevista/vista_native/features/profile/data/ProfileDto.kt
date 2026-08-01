@@ -13,9 +13,16 @@ data class ProfileDto(
     @SerialName("bio") val bio: String? = null,
     @SerialName("avatar_url") val avatarUrl: String? = null,
     @SerialName("is_verified") val isVerified: Boolean = false,
+    @SerialName("verification_type") val verificationType: String? = null,
     @SerialName("account_type") val accountType: String? = null,
+    @SerialName("is_private") val isPrivate: Boolean = false,
     @SerialName("post_count") val postCount: Long = 0,
     @SerialName("follower_count") val followerCount: Long = 0,
     @SerialName("following_count") val followingCount: Long = 0,
+    @SerialName("join_order") val joinOrder: Long = 0,
+    @SerialName("subscription_plan") val subscriptionPlan: String? = null,
+    @SerialName("premium_days_remaining") val premiumDaysRemaining: Int? = null,
+    @SerialName("message_privacy") val messagePrivacy: String = "everyone",
+    @SerialName("allow_profile_zoom") val allowProfileZoom: Boolean = true,
     @SerialName("updated_at") val updatedAt: String? = null
 )

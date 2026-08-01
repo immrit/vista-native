@@ -25,7 +25,7 @@ data class FeedPostDto(
     @SerialName("image_url")
     val imageUrl: String? = null,
     @SerialName("image_urls")
-    val imageUrls: List<String>,
+    val imageUrls: List<String> = emptyList(),
     @SerialName("video_url")
     val videoUrl: String? = null,
     @SerialName("music_url")
@@ -35,15 +35,15 @@ data class FeedPostDto(
     @SerialName("music_title")
     val musicTitle: String? = null,
     @SerialName("tags")
-    val tags: List<String>,
+    val tags: List<String> = emptyList(),
     @SerialName("like_count")
-    val likeCount: Long,
+    val likeCount: Long = 0,
     @SerialName("comment_count")
-    val commentCount: Long,
+    val commentCount: Long = 0,
     @SerialName("is_liked")
-    val isLiked: Boolean,
+    val isLiked: Boolean = false,
     @SerialName("is_saved")
-    val isSaved: Boolean,
+    val isSaved: Boolean = false,
     @SerialName("feed_source")
     val feedSource: String? = null,
     @SerialName("feed_score")
@@ -61,9 +61,9 @@ data class FeedPostDto(
     @SerialName("edited_by_vista")
     val editedByVista: Boolean = false,
     @SerialName("hide_like_count")
-    val hideLikeCount: Boolean,
+    val hideLikeCount: Boolean = false,
     @SerialName("hide_comment_count")
-    val hideCommentCount: Boolean,
+    val hideCommentCount: Boolean = false,
     @SerialName("author")
     val author: AuthorInfoDto,
     @SerialName("created_at")
@@ -83,7 +83,7 @@ data class AuthorInfoDto(
     @SerialName("avatar_url")
     val avatarUrl: String? = null,
     @SerialName("is_verified")
-    val isVerified: Boolean,
+    val isVerified: Boolean = false,
     @SerialName("verification_type")
     val verificationType: String? = null,
 )
@@ -115,6 +115,8 @@ internal fun FeedPostDto.asEntity(
     authorAvatarUrl = author.avatarUrl,
     authorIsVerified = author.isVerified,
     authorVerificationType = author.verificationType,
+    authorFollowStatus = authorFollowStatus,
+    feedSource = feedSource,
     createdAt = createdAt,
     updatedAt = updatedAt,
     sortOrder = sortOrder,

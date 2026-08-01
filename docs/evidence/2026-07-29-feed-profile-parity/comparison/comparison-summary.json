@@ -1,0 +1,129 @@
+{
+  "valid_pairs": 12,
+  "requested_states": 36,
+  "pairs": {
+    "01-feed-initial-loading.png": {
+      "width": 1080,
+      "height": 2400,
+      "threshold": 16,
+      "mismatch_pixels": 1354765,
+      "mismatch_percentage": 52.2672,
+      "mean_absolute_error": 33.1051
+    },
+    "02-feed-first-content.png": {
+      "width": 1080,
+      "height": 2400,
+      "threshold": 16,
+      "mismatch_pixels": 1246652,
+      "mismatch_percentage": 48.0961,
+      "mean_absolute_error": 38.9342
+    },
+    "03-feed-card-image.png": {
+      "width": 1080,
+      "height": 2400,
+      "threshold": 16,
+      "mismatch_pixels": 1246652,
+      "mismatch_percentage": 48.0961,
+      "mean_absolute_error": 38.9342
+    },
+    "04-feed-card-video.png": {
+      "width": 1080,
+      "height": 2400,
+      "threshold": 16,
+      "mismatch_pixels": 1459833,
+      "mismatch_percentage": 56.3207,
+      "mean_absolute_error": 93.2533
+    },
+    "05-feed-caption-short.png": {
+      "width": 1080,
+      "height": 2400,
+      "threshold": 16,
+      "mismatch_pixels": 1246652,
+      "mismatch_percentage": 48.0961,
+      "mean_absolute_error": 38.9342
+    },
+    "12-feed-initial-error.png": {
+      "width": 1080,
+      "height": 2400,
+      "threshold": 16,
+      "mismatch_pixels": 232430,
+      "mismatch_percentage": 8.9672,
+      "mean_absolute_error": 10.1437
+    },
+    "13-post-detail-image.png": {
+      "width": 1080,
+      "height": 2400,
+      "threshold": 16,
+      "mismatch_pixels": 1250267,
+      "mismatch_percentage": 48.2356,
+      "mean_absolute_error": 41.1048
+    },
+    "16-post-detail-counts-actions.png": {
+      "width": 1080,
+      "height": 2400,
+      "threshold": 16,
+      "mismatch_pixels": 1250267,
+      "mismatch_percentage": 48.2356,
+      "mean_absolute_error": 41.1048
+    },
+    "19-own-profile-normal.png": {
+      "width": 1080,
+      "height": 2400,
+      "threshold": 16,
+      "mismatch_pixels": 516867,
+      "mismatch_percentage": 19.9409,
+      "mean_absolute_error": 25.4083
+    },
+    "24-own-profile-offline.png": {
+      "width": 1080,
+      "height": 2400,
+      "threshold": 16,
+      "mismatch_pixels": 512449,
+      "mismatch_percentage": 19.7704,
+      "mean_absolute_error": 32.2508
+    },
+    "27-other-profile-not-following.png": {
+      "width": 1080,
+      "height": 2400,
+      "threshold": 16,
+      "mismatch_pixels": 981063,
+      "mismatch_percentage": 37.8497,
+      "mean_absolute_error": 36.7712
+    },
+    "29-other-profile-following.png": {
+      "width": 1080,
+      "height": 2400,
+      "threshold": 16,
+      "mismatch_pixels": 919083,
+      "mismatch_percentage": 35.4584,
+      "mean_absolute_error": 31.5504
+    }
+  },
+  "unavailable_pairs": [
+    "06-feed-caption-long.png",
+    "07-feed-refreshing.png",
+    "08-feed-pagination-loading.png",
+    "09-feed-append-error.png",
+    "10-feed-offline-cached.png",
+    "11-feed-empty.png",
+    "14-post-detail-video-thumbnail.png",
+    "15-post-detail-long-caption.png",
+    "17-post-detail-loading.png",
+    "18-post-detail-error.png",
+    "20-own-profile-long-bio.png",
+    "21-own-profile-no-bio.png",
+    "22-own-profile-posts-content.png",
+    "23-own-profile-empty-posts.png",
+    "25-own-profile-refreshing.png",
+    "26-own-profile-error.png",
+    "28-other-profile-pending-follow.png",
+    "30-other-profile-requested-private.png",
+    "31-other-profile-pending-unfollow.png",
+    "32-other-profile-follow-error-rollback.png",
+    "33-other-profile-long-bio.png",
+    "34-other-profile-empty-posts.png",
+    "35-other-profile-offline-cached.png",
+    "36-other-profile-not-found-error.png"
+  ],
+  "invalid_flutter_captures": {}
+}

@@ -38,6 +38,55 @@ class DebugFeedApiFixture @Inject constructor() : FeedApiFixture {
         }
     }
 
+    override suspend fun followingResponseOrNull(
+        limit: Int,
+        cursor: String?,
+    ): FeedResponseDto? = when (scenario) {
+        "valid-session" -> {
+            val offset = cursor
+                ?.removePrefix(CURSOR_PREFIX)
+                ?.toIntOrNull()
+                ?: 0
+            page(limit = limit, offset = offset)
+        }
+        "offline-valid-session", "feed-error" -> throw IOException("debug feed offline")
+        else -> null
+    }
+
+    override suspend fun postResponseOrNull(postId: String): FeedPostDto? =
+        when (scenario) {
+            "valid-session" -> {
+                val index = postId
+                    .removePrefix("fixture-post-")
+                    .toIntOrNull()
+                    ?.takeIf { it in 1..22 }
+                    ?: 1
+                post(index).copy(id = postId)
+            }
+            "offline-valid-session", "feed-error" -> {
+                throw IOException("debug feed offline")
+            }
+            else -> null
+        }
+
+    override suspend fun userPostsResponseOrNull(
+        userId: String,
+        limit: Int,
+        offset: Int,
+    ): FeedResponseDto? = when (scenario) {
+        "valid-session" -> {
+            val matching = (1..22).map(::post).filter { it.userId == userId }
+            val posts = matching.drop(offset).take(limit)
+            FeedResponseDto(
+                posts = posts,
+                hasMore = offset + posts.size < matching.size,
+                nextCursor = posts.lastOrNull()?.createdAt,
+            )
+        }
+        "offline-valid-session", "feed-error" -> throw IOException("debug feed offline")
+        else -> null
+    }
+
     fun firstPageRequestCount(): Int = firstPageRequests.get()
 
     private fun page(limit: Int, offset: Int): FeedResponseDto {
@@ -47,7 +96,11 @@ class DebugFeedApiFixture @Inject constructor() : FeedApiFixture {
         return FeedResponseDto(
             posts = posts,
             hasMore = nextOffset < allPosts.size,
-            nextCursor = posts.lastOrNull()?.createdAt,
+            nextCursor = if (nextOffset < allPosts.size) {
+                "$CURSOR_PREFIX$nextOffset"
+            } else {
+                null
+            },
         )
     }
 
@@ -91,6 +144,10 @@ class DebugFeedApiFixture @Inject constructor() : FeedApiFixture {
             createdAt = "2026-07-27T17:21:${createdSecond}Z",
             updatedAt = "2026-07-27T17:21:${createdSecond}Z",
         )
+    }
+
+    private companion object {
+        const val CURSOR_PREFIX = "fixture-offset-"
     }
 }
 

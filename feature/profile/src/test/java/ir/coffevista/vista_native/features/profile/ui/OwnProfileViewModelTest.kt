@@ -1,6 +1,7 @@
 package ir.coffevista.vista_native.features.profile.ui
 
 import ir.coffevista.vista_native.core.common.AppError
+import ir.coffevista.vista_native.core.common.ErrorKind
 import ir.coffevista.vista_native.core.common.Outcome
 import ir.coffevista.vista_native.core.database.profile.OwnProfileEntity
 import ir.coffevista.vista_native.core.model.session.AuthenticatedContext
@@ -91,6 +92,24 @@ class OwnProfileViewModelTest {
         
         assertEquals(true, fakeRepository.cleared)
     }
+
+    @Test
+    fun fetchFailureWithoutCache_remainsErrorAfterEmptyRoomEmission() = runTest {
+        val viewModel = OwnProfileViewModel(fakeRepository, authStateProvider)
+        fakeRepository.fetchResult = Outcome.Failure(
+            AppError(
+                kind = ErrorKind.NETWORK,
+                messageFa = "خطای شبکه",
+            ),
+        )
+
+        authStateProvider.setSignedIn("test_user_id")
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertTrue(state is OwnProfileUiState.Error)
+        assertEquals("خطای شبکه", (state as OwnProfileUiState.Error).error.messageFa)
+    }
 }
 
 class FakeAuthenticationStateProvider : AuthenticationStateProvider {
@@ -112,6 +131,7 @@ class FakeOwnProfileRepository : OwnProfileRepository {
     private val _profileFlow = MutableStateFlow<OwnProfileEntity?>(null)
     var fetchCount = 0
     var cleared = false
+    var fetchResult: Outcome<Unit> = Outcome.Success(Unit)
     
     fun setCachedProfile(entity: OwnProfileEntity?) {
         _profileFlow.value = entity
@@ -121,7 +141,7 @@ class FakeOwnProfileRepository : OwnProfileRepository {
 
     override suspend fun fetchAndCacheOwnProfile(userId: String): Outcome<Unit> {
         fetchCount++
-        return Outcome.Success(Unit)
+        return fetchResult
     }
     
     override suspend fun clearProfileData() {

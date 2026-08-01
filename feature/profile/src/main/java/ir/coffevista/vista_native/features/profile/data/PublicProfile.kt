@@ -36,6 +36,9 @@ data class PublicProfile(
     val followersCount: Long,
     val followingCount: Long,
     val followState: FollowState,
+    val joinOrder: Long = 0,
+    val messagePrivacy: String = "everyone",
+    val allowProfileZoom: Boolean = true,
     val updatedAt: String,
     val lastSyncedEpochMillis: Long,
 )
@@ -67,6 +70,9 @@ internal fun PublicProfileDto.toEntity(
         followerCount = followerCount,
         followingCount = followingCount,
         followStatus = FollowState.fromWireName(followStatus).wireName,
+        joinOrder = joinOrder,
+        messagePrivacy = messagePrivacy,
+        allowProfileZoom = allowProfileZoom,
         updatedAt = updatedAt,
         lastSyncedEpochMillis = syncedAtEpochMillis,
     )
@@ -90,6 +96,9 @@ internal fun PublicProfileEntity.toDomain(): PublicProfile = PublicProfile(
     followersCount = followerCount,
     followingCount = followingCount,
     followState = if (isBlocked) FollowState.Unavailable else FollowState.fromWireName(followStatus),
+    joinOrder = joinOrder,
+    messagePrivacy = messagePrivacy,
+    allowProfileZoom = allowProfileZoom,
     updatedAt = updatedAt,
     lastSyncedEpochMillis = lastSyncedEpochMillis,
 )

@@ -2,6 +2,11 @@ package ir.coffevista.vista_native.features.feed.data
 
 import kotlinx.coroutines.flow.Flow
 
+enum class FeedKind {
+    Explore,
+    Following,
+}
+
 data class FeedSnapshot(
     val posts: List<FeedPost>,
     val hasMore: Boolean,
@@ -24,9 +29,22 @@ sealed interface FeedAppendResult {
 }
 
 interface FeedRepository {
-    fun observeFeed(accountId: String): Flow<FeedSnapshot>
+    fun observeFeed(
+        accountId: String,
+        kind: FeedKind = FeedKind.Explore,
+    ): Flow<FeedSnapshot>
     fun getPostById(accountId: String, postId: String): Flow<FeedPost?>
-    suspend fun refreshFeed(accountId: String): FeedRefreshResult
-    suspend fun loadMoreFeed(accountId: String): FeedAppendResult
+    fun observeUserPosts(accountId: String, userId: String): Flow<FeedSnapshot>
+    suspend fun refreshFeed(
+        accountId: String,
+        kind: FeedKind = FeedKind.Explore,
+    ): FeedRefreshResult
+    suspend fun loadMoreFeed(
+        accountId: String,
+        kind: FeedKind = FeedKind.Explore,
+    ): FeedAppendResult
+    suspend fun refreshPost(accountId: String, postId: String): FeedPost
+    suspend fun refreshUserPosts(accountId: String, userId: String): FeedRefreshResult
+    suspend fun loadMoreUserPosts(accountId: String, userId: String): FeedAppendResult
     suspend fun clearAccount(accountId: String)
 }

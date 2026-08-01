@@ -22,6 +22,9 @@ data class PublicProfileDto(
     @SerialName("follower_count") val followerCount: Long,
     @SerialName("following_count") val followingCount: Long,
     @SerialName("follow_status") val followStatus: String? = null,
+    @SerialName("join_order") val joinOrder: Long = 0,
+    @SerialName("message_privacy") val messagePrivacy: String = "everyone",
+    @SerialName("allow_profile_zoom") val allowProfileZoom: Boolean = true,
     @SerialName("updated_at") val updatedAt: String,
 )
 

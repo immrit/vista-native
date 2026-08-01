@@ -172,6 +172,86 @@ class OfflineFirstFeedRepositoryTest {
         assertEquals(1, dao.getPageState("account-b")?.nextOffset)
     }
 
+    @Test
+    fun exploreAndFollowingCachesRemainIndependent() = runTest {
+        api.response = response("explore", hasMore = false)
+        repository.refreshFeed("account-a", FeedKind.Explore)
+        api.response = response("following", hasMore = false)
+        repository.refreshFeed("account-a", FeedKind.Following)
+
+        assertEquals(
+            listOf("explore"),
+            repository.observeFeed("account-a", FeedKind.Explore)
+                .first()
+                .posts
+                .map(FeedPost::id),
+        )
+        assertEquals(
+            listOf("following"),
+            repository.observeFeed("account-a", FeedKind.Following)
+                .first()
+                .posts
+                .map(FeedPost::id),
+        )
+    }
+
+    @Test
+    fun followingAppendUsesServerCursor() = runTest {
+        api.response = response("first", hasMore = true)
+        repository.refreshFeed("account-a", FeedKind.Following)
+        api.response = response("second", hasMore = false)
+
+        repository.loadMoreFeed("account-a", FeedKind.Following)
+
+        assertEquals(
+            listOf(null, "2026-07-27T17:21:5Z"),
+            api.followingCursors,
+        )
+    }
+
+    @Test
+    fun postDetailRefreshPersistsWithoutPollutingExploreFeed() = runTest {
+        api.response = response("detail", hasMore = false)
+
+        val refreshed = repository.refreshPost("account-a", "detail")
+
+        assertEquals("detail", refreshed.id)
+        assertEquals(
+            "detail",
+            repository.getPostById("account-a", "detail").first()?.id,
+        )
+        assertTrue(repository.observeFeed("account-a").first().posts.isEmpty())
+    }
+
+    @Test
+    fun profilePostsAreCachedPerViewerAndTargetAndClearedOnLogout() = runTest {
+        api.response = response("profile-post", hasMore = false)
+        repository.refreshUserPosts("account-a", "target")
+
+        assertEquals(
+            listOf("profile-post"),
+            repository.observeUserPosts("account-a", "target")
+                .first()
+                .posts
+                .map(FeedPost::id),
+        )
+        assertTrue(
+            repository.observeUserPosts("account-b", "target")
+                .first()
+                .posts
+                .isEmpty(),
+        )
+
+        repository.clearAccount("account-a")
+
+        assertTrue(
+            repository.observeUserPosts("account-a", "target")
+                .first()
+                .posts
+                .isEmpty(),
+        )
+    }
+
     private fun response(
         vararg ids: String,
         hasMore: Boolean,
@@ -234,11 +314,34 @@ private class FakeFeedApi : FeedApi {
     var failure: IOException? = null
     var handler: (suspend (Int, Int) -> FeedResponseDto)? = null
     val calls = mutableListOf<Pair<Int, Int>>()
+    val followingCursors = mutableListOf<String?>()
 
-    override suspend fun getFeed(limit: Int, offset: Int): FeedResponseDto {
+    override suspend fun getExploreFeed(limit: Int, offset: Int): FeedResponseDto {
         calls += limit to offset
         failure?.let { throw it }
         return handler?.invoke(limit, offset) ?: response
+    }
+
+    override suspend fun getFollowingFeed(
+        limit: Int,
+        cursor: String?,
+    ): FeedResponseDto {
+        followingCursors += cursor
+        failure?.let { throw it }
+        return response
+    }
+
+    override suspend fun getPost(postId: String): FeedPostDto =
+        response.posts.firstOrNull { it.id == postId } ?: throw IOException("missing")
+
+    override suspend fun getUserPosts(
+        userId: String,
+        limit: Int,
+        offset: Int,
+    ): FeedResponseDto {
+        calls += limit to offset
+        failure?.let { throw it }
+        return response
     }
 }
 
@@ -277,6 +380,32 @@ private class FakeFeedDao : FeedDao {
     override suspend fun deletePageState(accountId: String) {
         states.remove(accountId)
         stateFlows.getOrPut(accountId) { MutableStateFlow(null) }.value = null
+    }
+
+    override suspend fun deletePostsAndNamespaces(
+        accountId: String,
+        namespacePrefix: String,
+    ) {
+        postsByAccount.keys
+            .filter { it == accountId || it.startsWith(namespacePrefix) }
+            .toList()
+            .forEach {
+                postsByAccount.remove(it)
+                emitPosts(it)
+            }
+    }
+
+    override suspend fun deletePageStatesAndNamespaces(
+        accountId: String,
+        namespacePrefix: String,
+    ) {
+        states.keys
+            .filter { it == accountId || it.startsWith(namespacePrefix) }
+            .toList()
+            .forEach {
+                states.remove(it)
+                stateFlows.getOrPut(it) { MutableStateFlow(null) }.value = null
+            }
     }
 
     override suspend fun getMaxSortOrder(accountId: String): Long? =
