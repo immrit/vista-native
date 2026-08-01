@@ -13,6 +13,8 @@ import ir.coffevista.vista_native.core.database.feed.FeedPageStateEntity
 import ir.coffevista.vista_native.core.database.feed.FeedDao
 import ir.coffevista.vista_native.core.database.feed.FeedConverters
 import androidx.room.TypeConverters
+import ir.coffevista.vista_native.core.database.search.SearchHistoryDao
+import ir.coffevista.vista_native.core.database.search.SearchHistoryEntity
 
 @Database(
     entities = [
@@ -21,8 +23,9 @@ import androidx.room.TypeConverters
         FeedPostEntity::class,
         FeedPageStateEntity::class,
         PublicProfileEntity::class,
+        SearchHistoryEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = true,
 )
 @TypeConverters(FeedConverters::class)
@@ -31,6 +34,7 @@ abstract class VistaFoundationDatabase : RoomDatabase() {
     abstract fun ownProfileDao(): OwnProfileDao
     abstract fun feedDao(): FeedDao
     abstract fun publicProfileDao(): PublicProfileDao
+    abstract fun searchHistoryDao(): SearchHistoryDao
 
     companion object {
         const val DATABASE_NAME = "vista_foundation.db"
@@ -177,6 +181,22 @@ abstract class VistaFoundationDatabase : RoomDatabase() {
                         updated_at TEXT NOT NULL,
                         last_synced_epoch_millis INTEGER NOT NULL,
                         PRIMARY KEY(viewer_account_id, profile_user_id)
+                    )
+                    """.trimIndent(),
+                )
+            }
+        }
+
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS search_history (
+                        account_id TEXT NOT NULL,
+                        query TEXT NOT NULL,
+                        search_type TEXT NOT NULL,
+                        timestamp_epoch_millis INTEGER NOT NULL,
+                        PRIMARY KEY(account_id, query)
                     )
                     """.trimIndent(),
                 )

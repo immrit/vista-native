@@ -104,6 +104,7 @@ dependencies {
     implementation(project(":feature:shell"))
     implementation(project(":feature:profile"))
     implementation(project(":feature:feed"))
+    implementation(project(":feature:search"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
