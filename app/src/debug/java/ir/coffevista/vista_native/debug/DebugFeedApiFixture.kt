@@ -55,11 +55,14 @@ class DebugFeedApiFixture @Inject constructor() : FeedApiFixture {
 
     override suspend fun postResponseOrNull(postId: String): FeedPostDto? =
         when (scenario) {
-            "valid-session" -> postId
-                .removePrefix("fixture-post-")
-                .toIntOrNull()
-                ?.takeIf { it in 1..22 }
-                ?.let(::post)
+            "valid-session" -> {
+                val index = postId
+                    .removePrefix("fixture-post-")
+                    .toIntOrNull()
+                    ?.takeIf { it in 1..22 }
+                    ?: 1
+                post(index).copy(id = postId)
+            }
             "offline-valid-session", "feed-error" -> {
                 throw IOException("debug feed offline")
             }

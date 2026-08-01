@@ -38,6 +38,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavDestination
@@ -93,6 +94,12 @@ fun VistaShell(
     val backStackEntry by navController.currentBackStackEntryAsState()
     val selectedTab = backStackEntry?.destination?.toShellTab() ?: ShellTab.Feed
     val atRoot = backStackEntry?.destination?.isTabRoot() != false
+    val showBottomIsland = atRoot ||
+        backStackEntry?.destination?.route in setOf(
+            ShellRoutes.SearchDetailRoute,
+            ShellRoutes.ServicesDetailRoute,
+            ShellRoutes.ChatDetailRoute,
+        )
     var lastExitRequestAt by rememberSaveable { mutableStateOf(0L) }
     var lastDeepLinkId by rememberSaveable { mutableStateOf(0L) }
 
@@ -259,9 +266,9 @@ fun VistaShell(
             hostState = snackbarHostState,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(bottom = if (atRoot) 126.dp else 20.dp),
+                .padding(bottom = if (showBottomIsland) 126.dp else 20.dp),
         )
-        if (atRoot) {
+        if (showBottomIsland) {
             VistaBottomIsland(
                 selectedTab = selectedTab,
                 onSelect = ::selectTab,
@@ -324,6 +331,7 @@ private fun VistaBottomIsland(
                         Surface(
                             onClick = { onSelect(tab) },
                             modifier = Modifier
+                                .testTag("shell-tab-${tab.name.lowercase()}")
                                 .width(64.dp)
                                 .height(48.dp),
                             shape = RoundedCornerShape(14.dp),
@@ -352,6 +360,7 @@ private fun VistaBottomIsland(
                     } else {
                         Box(
                             modifier = Modifier
+                                .testTag("shell-tab-${tab.name.lowercase()}")
                                 .size(54.dp)
                                 .clickable { onSelect(tab) },
                             contentAlignment = Alignment.Center,
