@@ -1,0 +1,86 @@
+{
+  "pair": "01-initial",
+  "reference": "docs\\evidence\\2026-07-29-search-parity\\flutter\\01-initial.png",
+  "candidate": "docs\\evidence\\2026-07-29-search-parity\\native\\01-initial.png",
+  "width": 1080,
+  "height": 2400,
+  "threshold": 24,
+  "mismatched_pixels": 28390,
+  "total_pixels": 2592000,
+  "mismatch_percentage": 1.0953,
+  "mean_absolute_error": 3.5777,
+  "bounding_boxes": [
+    [
+      280,
+      2140,
+      372,
+      2220
+    ],
+    [
+      908,
+      296,
+      980,
+      348
+    ],
+    [
+      508,
+      2160,
+      568,
+      2220
+    ],
+    [
+      728,
+      2168,
+      788,
+      2228
+    ],
+    [
+      132,
+      2156,
+      184,
+      2220
+    ],
+    [
+      704,
+      2156,
+      756,
+      2212
+    ],
+    [
+      896,
+      2160,
+      948,
+      2212
+    ],
+    [
+      752,
+      156,
+      832,
+      188
+    ],
+    [
+      688,
+      148,
+      740,
+      184
+    ],
+    [
+      844,
+      308,
+      900,
+      340
+    ],
+    [
+      84,
+      148,
+      120,
+      184
+    ],
+    [
+      940,
+      152,
+      980,
+      184
+    ]
+  ]
+}
