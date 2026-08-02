@@ -1,0 +1,178 @@
+{
+  "threshold": 16,
+  "pairCount": 9,
+  "missingEvidenceCount": 0,
+  "pairs": [
+    {
+      "state": "01 login initial",
+      "slug": "01-login-initial",
+      "flutter": "E:\\vista_native_integration\\docs\\evidence\\2026-08-01-int-01-native-ui-parity\\flutter\\login\\flutter-01-login-initial.png",
+      "native": "E:\\vista_native_integration\\docs\\evidence\\2026-08-01-int-01-native-ui-parity\\native\\login\\native-01-login-initial.png",
+      "width": 1080,
+      "height": 2400,
+      "threshold": 16,
+      "mismatch_percent": 0.8916,
+      "mae": 2.0931,
+      "difference_bbox": [
+        22,
+        15,
+        1017,
+        1763
+      ],
+      "product_mismatch_notes": "",
+      "renderer_residual_notes": ""
+    },
+    {
+      "state": "02 login focused",
+      "slug": "02-login-focused",
+      "flutter": "E:\\vista_native_integration\\docs\\evidence\\2026-08-01-int-01-native-ui-parity\\flutter\\login\\flutter-02-login-focused.png",
+      "native": "E:\\vista_native_integration\\docs\\evidence\\2026-08-01-int-01-native-ui-parity\\native\\login\\native-02-login-focused.png",
+      "width": 1080,
+      "height": 2400,
+      "threshold": 16,
+      "mismatch_percent": 5.0762,
+      "mae": 4.1656,
+      "difference_bbox": [
+        12,
+        15,
+        1068,
+        2243
+      ],
+      "product_mismatch_notes": "",
+      "renderer_residual_notes": ""
+    },
+    {
+      "state": "03 login filled",
+      "slug": "03-login-filled",
+      "flutter": "E:\\vista_native_integration\\docs\\evidence\\2026-08-01-int-01-native-ui-parity\\flutter\\login\\flutter-03-login-filled.png",
+      "native": "E:\\vista_native_integration\\docs\\evidence\\2026-08-01-int-01-native-ui-parity\\native\\login\\native-03-login-filled.png",
+      "width": 1080,
+      "height": 2400,
+      "threshold": 16,
+      "mismatch_percent": 5.034,
+      "mae": 4.2091,
+      "difference_bbox": [
+        12,
+        15,
+        1068,
+        2243
+      ],
+      "product_mismatch_notes": "",
+      "renderer_residual_notes": ""
+    },
+    {
+      "state": "04 login error",
+      "slug": "04-login-error",
+      "flutter": "E:\\vista_native_integration\\docs\\evidence\\2026-08-01-int-01-native-ui-parity\\flutter\\login\\flutter-04-login-error.png",
+      "native": "E:\\vista_native_integration\\docs\\evidence\\2026-08-01-int-01-native-ui-parity\\native\\login\\native-04-login-error.png",
+      "width": 1080,
+      "height": 2400,
+      "threshold": 16,
+      "mismatch_percent": 2.0368,
+      "mae": 2.9214,
+      "difference_bbox": [
+        22,
+        15,
+        1059,
+        2359
+      ],
+      "product_mismatch_notes": "",
+      "renderer_residual_notes": ""
+    },
+    {
+      "state": "05 login loading",
+      "slug": "05-login-loading",
+      "flutter": "E:\\vista_native_integration\\docs\\evidence\\2026-08-01-int-01-native-ui-parity\\flutter\\login\\flutter-05-login-loading.png",
+      "native": "E:\\vista_native_integration\\docs\\evidence\\2026-08-01-int-01-native-ui-parity\\native\\login\\native-05-login-loading.png",
+      "width": 1080,
+      "height": 2400,
+      "threshold": 16,
+      "mismatch_percent": 1.5481,
+      "mae": 2.8145,
+      "difference_bbox": [
+        22,
+        15,
+        1017,
+        1757
+      ],
+      "product_mismatch_notes": "",
+      "renderer_residual_notes": ""
+    },
+    {
+      "state": "06 otp initial",
+      "slug": "06-otp-initial",
+      "flutter": "E:\\vista_native_integration\\docs\\evidence\\2026-08-01-int-01-native-ui-parity\\flutter\\login\\flutter-06-otp-initial.png",
+      "native": "E:\\vista_native_integration\\docs\\evidence\\2026-08-01-int-01-native-ui-parity\\native\\login\\native-06-otp-initial.png",
+      "width": 1080,
+      "height": 2400,
+      "threshold": 16,
+      "mismatch_percent": 9.4231,
+      "mae": 9.1111,
+      "difference_bbox": [
+        0,
+        15,
+        1069,
+        2259
+      ],
+      "product_mismatch_notes": "",
+      "renderer_residual_notes": ""
+    },
+    {
+      "state": "07 otp partial",
+      "slug": "07-otp-partial",
+      "flutter": "E:\\vista_native_integration\\docs\\evidence\\2026-08-01-int-01-native-ui-parity\\flutter\\login\\flutter-07-otp-partial.png",
+      "native": "E:\\vista_native_integration\\docs\\evidence\\2026-08-01-int-01-native-ui-parity\\native\\login\\native-07-otp-partial.png",
+      "width": 1080,
+      "height": 2400,
+      "threshold": 16,
+      "mismatch_percent": 9.5051,
+      "mae": 9.2837,
+      "difference_bbox": [
+        0,
+        15,
+        1069,
+        2259
+      ],
+      "product_mismatch_notes": "",
+      "renderer_residual_notes": ""
+    },
+    {
+      "state": "08 otp error",
+      "slug": "08-otp-error",
+      "flutter": "E:\\vista_native_integration\\docs\\evidence\\2026-08-01-int-01-native-ui-parity\\flutter\\login\\flutter-08-otp-error.png",
+      "native": "E:\\vista_native_integration\\docs\\evidence\\2026-08-01-int-01-native-ui-parity\\native\\login\\native-08-otp-error.png",
+      "width": 1080,
+      "height": 2400,
+      "threshold": 16,
+      "mismatch_percent": 0.9767,
+      "mae": 2.3725,
+      "difference_bbox": [
+        22,
+        15,
+        1017,
+        1820
+      ],
+      "product_mismatch_notes": "",
+      "renderer_residual_notes": ""
+    },
+    {
+      "state": "09 otp resend",
+      "slug": "09-otp-resend",
+      "flutter": "E:\\vista_native_integration\\docs\\evidence\\2026-08-01-int-01-native-ui-parity\\flutter\\login\\flutter-09-otp-resend.png",
+      "native": "E:\\vista_native_integration\\docs\\evidence\\2026-08-01-int-01-native-ui-parity\\native\\login\\native-09-otp-resend.png",
+      "width": 1080,
+      "height": 2400,
+      "threshold": 16,
+      "mismatch_percent": 0.8152,
+      "mae": 2.3169,
+      "difference_bbox": [
+        22,
+        15,
+        1017,
+        1854
+      ],
+      "product_mismatch_notes": "",
+      "renderer_residual_notes": ""
+    }
+  ]
+}

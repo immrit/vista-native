@@ -1,0 +1,28 @@
+﻿{
+    "capturedAtUtc":  "2026-08-01T10:01:17.3975821Z",
+    "serial":  "emulator-5554",
+    "avd":  "Medium_Phone_2",
+    "api":  33,
+    "physicalSize":  "Physical size: 1080x2400",
+    "orientation":  "portrait",
+    "theme":  "light",
+    "fontScale":  1,
+    "package":  "ir.coffevista.vista_native",
+    "activity":  "ir.coffevista.vista_native.MainActivity",
+    "resumedActivity":  "topResumedActivity=ActivityRecord{7b05206 u0 ir.coffevista.vista_native/.MainActivity} t824}",
+    "installedSource":  "package:/data/app/~~cpWwxfFWpwGfo5-G4sk5Tw==/ir.coffevista.vista_native-UQolV0bezqIrMvGPoZfddw==/base.apk",
+    "installedVersionCode":  "1",
+    "installedVersionName":  "1.0-beta",
+    "installedLastUpdateTime":  "2026-08-01 13:30:27",
+    "apkPath":  "E:\\vista_native_integration\\app\\build\\outputs\\apk\\beta\\debug\\app-beta-debug.apk",
+    "apkSha256":  "C419BFDC179D5269E0AADEB75D774B6C86B5F83412AE5ABF1F6ACDE11975DC74",
+    "fixture":  "maintenance-disabled",
+    "expectedUiText":  "ورود به ویستا",
+    "capture":  {
+                    "width":  1080,
+                    "height":  2400,
+                    "sampledMeanChannel":  238.601,
+                    "path":  "E:\\vista_native_integration\\docs\\evidence\\2026-08-01-int-01-native-ui-parity\\native\\login-guard.png",
+                    "sha256":  "3428CD743F01C90BD3E942FF0820567E620F1DE0460AF3A80E31979C80933A61"
+                }
+}

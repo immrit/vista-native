@@ -1,0 +1,8 @@
+{
+    "native_sha256":  "8c18b4f9cab97e7e7043e40ac8a17573e917fedd2e2bdf5ebb38a20770d25deb",
+    "mismatch_pct":  97.92,
+    "flutter_sha256":  "1238fb78675f30e9b00f00c6dc97a0b18ffd6ae903b33cd22cdfedb0e2ec54fb",
+    "mae":  116.61,
+    "state":  "login_initial",
+    "captured_at_utc":  "2026-08-02T14:53:58Z"
+}

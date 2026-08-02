@@ -1,0 +1,28 @@
+﻿{
+    "capturedAtUtc":  "2026-08-02T14:46:22.4606828Z",
+    "serial":  "emulator-5554",
+    "avd":  "Medium_Phone_2",
+    "api":  33,
+    "physicalSize":  "Physical size: 1080x2400",
+    "orientation":  "portrait",
+    "theme":  "light",
+    "fontScale":  1,
+    "package":  "ir.coffevista.vista_native",
+    "activity":  "ir.coffevista.vista_native.MainActivity",
+    "resumedActivity":  "topResumedActivity=ActivityRecord{521de89 u0 ir.coffevista.vista_native/.MainActivity} t63}",
+    "installedSource":  "package:/data/app/~~veKOdKfIsGgKBZ4coUXz9g==/ir.coffevista.vista_native-oJfedDkkLXFrS1H3X38n1A==/base.apk",
+    "installedVersionCode":  "1",
+    "installedVersionName":  "1.0-beta",
+    "installedLastUpdateTime":  "2026-08-02 18:16:14",
+    "apkPath":  "E:\\vista_native_integration\\app\\build\\outputs\\apk\\beta\\debug\\app-beta-debug.apk",
+    "apkSha256":  "C419BFDC179D5269E0AADEB75D774B6C86B5F83412AE5ABF1F6ACDE11975DC74",
+    "fixture":  "",
+    "expectedUiText":  "",
+    "capture":  {
+                    "width":  1080,
+                    "height":  2400,
+                    "sampledMeanChannel":  227.985,
+                    "path":  "E:\\vista_native_integration\\docs\\evidence\\2026-08-01-int-01-native-ui-parity\\native\\login_initial.png",
+                    "sha256":  "B52C54C0E1AE754404712959216F9D44D7662D5AAC8700C6EEB2FCEA1CBCF952"
+                }
+}

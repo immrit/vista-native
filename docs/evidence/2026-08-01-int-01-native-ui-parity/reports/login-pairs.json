@@ -1,0 +1,13 @@
+{
+  "pairs": [
+    {"state":"01 login initial","slug":"01-login-initial","flutter":"../flutter/login/flutter-01-login-initial.png","native":"../native/login/native-01-login-initial.png"},
+    {"state":"02 login focused","slug":"02-login-focused","flutter":"../flutter/login/flutter-02-login-focused.png","native":"../native/login/native-02-login-focused.png"},
+    {"state":"03 login filled","slug":"03-login-filled","flutter":"../flutter/login/flutter-03-login-filled.png","native":"../native/login/native-03-login-filled.png"},
+    {"state":"04 login error","slug":"04-login-error","flutter":"../flutter/login/flutter-04-login-error.png","native":"../native/login/native-04-login-error.png"},
+    {"state":"05 login loading","slug":"05-login-loading","flutter":"../flutter/login/flutter-05-login-loading.png","native":"../native/login/native-05-login-loading.png"},
+    {"state":"06 otp initial","slug":"06-otp-initial","flutter":"../flutter/login/flutter-06-otp-initial.png","native":"../native/login/native-06-otp-initial.png"},
+    {"state":"07 otp partial","slug":"07-otp-partial","flutter":"../flutter/login/flutter-07-otp-partial.png","native":"../native/login/native-07-otp-partial.png"},
+    {"state":"08 otp error","slug":"08-otp-error","flutter":"../flutter/login/flutter-08-otp-error.png","native":"../native/login/native-08-otp-error.png"},
+    {"state":"09 otp resend","slug":"09-otp-resend","flutter":"../flutter/login/flutter-09-otp-resend.png","native":"../native/login/native-09-otp-resend.png"}
+  ]
+}
