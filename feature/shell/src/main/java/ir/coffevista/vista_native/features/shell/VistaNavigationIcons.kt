@@ -16,8 +16,6 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.vector.PathParser
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 
 @Composable
 internal fun VistaNavigationIcon(
@@ -43,9 +41,7 @@ internal fun VistaNavigationIcon(
     val path = remember(pathData) {
         pathData?.let { PathParser().parsePathString(it).toPath() }
     }
-    Canvas(
-        modifier = modifier.semantics { contentDescription = tab.labelFa },
-    ) {
+    Canvas(modifier = modifier) {
         val unit = size.minDimension / 24f
         val iconScale = unit * scale
         val offset = Offset(

@@ -1,6 +1,7 @@
 package ir.coffevista.vista_native.core.designsystem.theme
 
 import android.app.Activity
+import android.os.Build
 import android.provider.Settings
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -16,6 +17,7 @@ import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.Font
@@ -150,6 +152,9 @@ private val LocalVistaMotion = staticCompositionLocalOf {
     )
 }
 
+/** Persisted Flutter-compatible mode for newly presented chat messages. */
+val LocalChatEntryMode = staticCompositionLocalOf { "adaptive" }
+
 val MaterialTheme.vistaColors: VistaSemanticColors
     @Composable
     @ReadOnlyComposable
@@ -163,6 +168,8 @@ val MaterialTheme.vistaMotion: VistaMotion
 @Composable
 fun VistaTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
+    reduceMotion: Boolean = false,
+    chatEntryMode: String = "adaptive",
     content: @Composable () -> Unit,
 ) {
     val context = LocalContext.current
@@ -173,7 +180,7 @@ fun VistaTheme(
             1f,
         ) > 0f
     }.getOrDefault(true)
-    val motion = if (animationsEnabled) {
+    val motion = if (animationsEnabled && !reduceMotion) {
         VistaMotion(
             fast = VistaMotionDuration.Fast,
             standard = VistaMotionDuration.Standard,
@@ -195,6 +202,7 @@ fun VistaTheme(
             VistaSemanticPalettes.Light
         },
         LocalVistaMotion provides motion,
+        LocalChatEntryMode provides chatEntryMode,
     ) {
         MaterialTheme(
             colorScheme = if (darkTheme) VistaDarkColorScheme else VistaLightColorScheme,
@@ -208,9 +216,24 @@ fun VistaTheme(
 @Composable
 private fun VistaSystemBars(darkTheme: Boolean) {
     val view = LocalView.current
+    val statusBarColor = if (darkTheme) Color(0xFF13131E) else Color.White
+    val navigationBarColor = if (darkTheme) Color(0xFF09090F) else Color.White
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as? Activity)?.window ?: return@SideEffect
+            WindowCompat.setDecorFitsSystemWindows(window, false)
+            @Suppress("DEPRECATION")
+            run {
+                window.statusBarColor = statusBarColor.toArgb()
+                window.navigationBarColor = navigationBarColor.toArgb()
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    window.navigationBarDividerColor = Color.Transparent.toArgb()
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    window.isStatusBarContrastEnforced = false
+                    window.isNavigationBarContrastEnforced = false
+                }
+            }
             WindowCompat.getInsetsController(window, view).apply {
                 isAppearanceLightStatusBars = !darkTheme
                 isAppearanceLightNavigationBars = !darkTheme

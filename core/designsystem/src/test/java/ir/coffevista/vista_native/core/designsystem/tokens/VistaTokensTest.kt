@@ -47,7 +47,8 @@ class VistaTokensTest {
         assertEquals(51f, VistaComponentSize.Button.value)
         assertEquals(53f, VistaComponentSize.TextField.value)
         assertEquals(150, VistaMotionDuration.Fast)
-        assertEquals(600, VistaMotionDuration.Emphasized)
+        assertEquals(250, VistaMotionDuration.Standard)
+        assertEquals(400, VistaMotionDuration.Emphasized)
     }
 
     @Test
@@ -58,6 +59,9 @@ class VistaTokensTest {
         assertEquals(16f, VistaTypography.bodyLarge.fontSize.value)
         assertEquals(24.8f, VistaTypography.bodyLarge.lineHeight.value)
         assertEquals(13f, VistaTypography.bodySmall.fontSize.value)
+        assertEquals(14f, VistaTypography.labelLarge.fontSize.value)
+        assertEquals(19.6f, VistaTypography.labelLarge.lineHeight.value)
+        assertEquals(0.2f, VistaTypography.labelMedium.letterSpacing.value)
     }
 
     @Test

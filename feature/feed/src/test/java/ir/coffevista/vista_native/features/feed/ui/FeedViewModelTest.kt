@@ -1,8 +1,8 @@
 package ir.coffevista.vista_native.features.feed.ui
 
 import ir.coffevista.vista_native.core.model.session.AuthenticatedContext
-import ir.coffevista.vista_native.features.auth.AuthenticationState
-import ir.coffevista.vista_native.features.auth.AuthenticationStateProvider
+import ir.coffevista.vista_native.core.model.session.AuthenticationState
+import ir.coffevista.vista_native.core.model.session.AuthenticationStateProvider
 import ir.coffevista.vista_native.features.feed.data.FeedAppendResult
 import ir.coffevista.vista_native.features.feed.data.FeedKind
 import ir.coffevista.vista_native.features.feed.data.FeedPost
@@ -33,12 +33,28 @@ import org.junit.Test
 class FeedViewModelTest {
     private val dispatcher = StandardTestDispatcher()
     private lateinit var repository: FakeFeedRepository
+    private lateinit var storyRepository: ir.coffevista.vista_native.features.stories.data.StoryRepository
     private lateinit var auth: FakeAuthenticationStateProvider
 
     @Before
     fun setUp() {
         Dispatchers.setMain(dispatcher)
         repository = FakeFeedRepository()
+        storyRepository = ir.coffevista.vista_native.features.stories.data.StoryRepository(
+            object : ir.coffevista.vista_native.features.stories.data.StoryApi {
+                override suspend fun getActiveStories() = ir.coffevista.vista_native.features.stories.domain.ActiveStoriesResponseDto()
+                override suspend fun getUserStories(userId: String) = ir.coffevista.vista_native.features.stories.domain.UserStoriesResponseDto()
+                override suspend fun getStoryById(storyId: String) = error("unused")
+                override suspend fun createStory(request: ir.coffevista.vista_native.features.stories.domain.CreateStoryRequestDto) = error("unused")
+                override suspend fun deleteStory(storyId: String) = Unit
+                override suspend fun trackView(storyId: String) = Unit
+                override suspend fun getStoryViews(storyId: String, limit: Int, offset: Int) = ir.coffevista.vista_native.features.stories.domain.StoryViewsResponseDto()
+                override suspend fun reactToStory(storyId: String, request: ir.coffevista.vista_native.features.stories.domain.StoryReactRequestDto) = Unit
+                override suspend fun replyToStory(storyId: String, request: ir.coffevista.vista_native.features.stories.domain.StoryReplyRequestDto) = Unit
+                override suspend fun votePoll(storyId: String, request: ir.coffevista.vista_native.features.stories.domain.StoryVoteRequestDto) = Unit
+            },
+            dispatcher,
+        )
         auth = FakeAuthenticationStateProvider(signedIn())
     }
 
@@ -54,7 +70,7 @@ class FeedViewModelTest {
             FeedRefreshResult(itemCount = 1, hasMore = true)
         }
 
-        val viewModel = FeedViewModel(repository, auth)
+        val viewModel = FeedViewModel(repository, storyRepository, auth)
         assertEquals(FeedUiState.Loading, viewModel.uiState.value)
         advanceUntilIdle()
 
@@ -67,16 +83,16 @@ class FeedViewModelTest {
     fun initialLoadingTransitionsToErrorWhenNoCache() = runTest(dispatcher) {
         repository.onRefresh = { throw IOException("offline") }
 
-        val viewModel = FeedViewModel(repository, auth)
+        val viewModel = FeedViewModel(repository, storyRepository, auth)
         advanceUntilIdle()
 
-        assertEquals(FeedUiState.Error("offline"), viewModel.uiState.value)
+        assertEquals(FeedUiState.Error("به‌روزرسانی فید ناموفق بود"), viewModel.uiState.value)
     }
 
     @Test
     fun refreshUpdatesContentAndClearsStaleFlags() = runTest(dispatcher) {
         repository.emit("account-a", listOf(post("cached")), hasMore = true)
-        val viewModel = FeedViewModel(repository, auth)
+        val viewModel = FeedViewModel(repository, storyRepository, auth)
         advanceUntilIdle()
         repository.onRefresh = { accountId ->
             repository.emit(accountId, listOf(post("fresh")), hasMore = false)
@@ -96,7 +112,7 @@ class FeedViewModelTest {
     @Test
     fun appendSuccessKeepsOldPostsAndAddsNextPage() = runTest(dispatcher) {
         repository.emit("account-a", listOf(post("one")), hasMore = true)
-        val viewModel = FeedViewModel(repository, auth)
+        val viewModel = FeedViewModel(repository, storyRepository, auth)
         advanceUntilIdle()
         repository.onAppend = { accountId ->
             repository.emit(accountId, listOf(post("one"), post("two")), hasMore = true)
@@ -115,7 +131,7 @@ class FeedViewModelTest {
     @Test
     fun appendErrorPreservesListAndExposesRetryState() = runTest(dispatcher) {
         repository.emit("account-a", listOf(post("one")), hasMore = true)
-        val viewModel = FeedViewModel(repository, auth)
+        val viewModel = FeedViewModel(repository, storyRepository, auth)
         advanceUntilIdle()
         repository.onAppend = { throw IOException("append offline") }
 
@@ -133,21 +149,21 @@ class FeedViewModelTest {
         repository.emit("account-a", listOf(post("cached")), hasMore = true)
         repository.onRefresh = { throw IOException("offline") }
 
-        val viewModel = FeedViewModel(repository, auth)
+        val viewModel = FeedViewModel(repository, storyRepository, auth)
         advanceUntilIdle()
 
         val content = viewModel.uiState.value as FeedUiState.Content
         assertEquals(listOf("cached"), content.posts.map(FeedPost::id))
         assertTrue(content.isOffline)
         assertTrue(content.isStale)
-        assertEquals("offline", content.refreshError)
+        assertEquals("به‌روزرسانی فید ناموفق بود", content.refreshError)
     }
 
     @Test
     fun endReachedPreventsPaginationTrigger() = runTest(dispatcher) {
         repository.emit("account-a", listOf(post("last")), hasMore = false)
         repository.onRefresh = { FeedRefreshResult(itemCount = 1, hasMore = false) }
-        val viewModel = FeedViewModel(repository, auth)
+        val viewModel = FeedViewModel(repository, storyRepository, auth)
         advanceUntilIdle()
 
         viewModel.loadMore()
@@ -160,7 +176,7 @@ class FeedViewModelTest {
     @Test
     fun duplicatePaginationTriggerIsIgnoredWhileAppendRuns() = runTest(dispatcher) {
         repository.emit("account-a", listOf(post("one")), hasMore = true)
-        val viewModel = FeedViewModel(repository, auth)
+        val viewModel = FeedViewModel(repository, storyRepository, auth)
         advanceUntilIdle()
         val entered = CompletableDeferred<Unit>()
         val release = CompletableDeferred<Unit>()
@@ -249,8 +265,7 @@ private class FakeFeedRepository : FeedRepository {
     override suspend fun refreshFeed(
         accountId: String,
         kind: FeedKind,
-    ): FeedRefreshResult =
-        onRefresh(accountId)
+    ): FeedRefreshResult = onRefresh(accountId)
 
     override suspend fun loadMoreFeed(
         accountId: String,
@@ -277,6 +292,13 @@ private class FakeFeedRepository : FeedRepository {
     override suspend fun clearAccount(accountId: String) {
         snapshots.remove(accountId)
     }
+
+    override suspend fun toggleLike(accountId: String, postId: String, ownerId: String, isLiked: Boolean, newLikeCount: Long) {}
+    override suspend fun toggleSave(accountId: String, postId: String, isSaved: Boolean) {}
+    override suspend fun updatePost(accountId: String, postId: String, content: String?, hideLikeCount: Boolean?, hideCommentCount: Boolean?) = error("unused")
+    override suspend fun deletePost(accountId: String, postId: String) = Unit
+    override suspend fun reportPost(postId: String, reportedUserId: String, reason: String, additionalDetails: String?) = Unit
+    override suspend fun trackFeedEvent(postId: String, eventType: String) = Unit
 
     fun emit(accountId: String, posts: List<FeedPost>, hasMore: Boolean) {
         snapshots.getOrPut(accountId) {

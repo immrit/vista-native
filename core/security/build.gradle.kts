@@ -12,6 +12,7 @@ dependencies {
     implementation(project(":core:common"))
     implementation(project(":core:model"))
     implementation(libs.hilt.android)
+    api(libs.androidx.biometric)
     ksp(libs.hilt.compiler)
     testImplementation(libs.junit)
     testImplementation(libs.json.jvm)

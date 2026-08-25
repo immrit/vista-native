@@ -24,17 +24,22 @@ import ir.coffevista.vista_native.core.database.search.SearchHistoryEntity
         FeedPageStateEntity::class,
         PublicProfileEntity::class,
         SearchHistoryEntity::class,
+        ir.coffevista.vista_native.core.database.chat.ConversationEntity::class,
     ],
-    version = 7,
+    version = 9,
     exportSchema = true,
 )
-@TypeConverters(FeedConverters::class)
+@TypeConverters(
+    FeedConverters::class,
+    ir.coffevista.vista_native.core.database.util.InstantConverter::class
+)
 abstract class VistaFoundationDatabase : RoomDatabase() {
     abstract fun verifiedTlsPolicyDao(): VerifiedTlsPolicyDao
     abstract fun ownProfileDao(): OwnProfileDao
     abstract fun feedDao(): FeedDao
     abstract fun publicProfileDao(): PublicProfileDao
     abstract fun searchHistoryDao(): SearchHistoryDao
+    abstract fun conversationDao(): ir.coffevista.vista_native.core.database.chat.ConversationDao
 
     companion object {
         const val DATABASE_NAME = "vista_foundation.db"
@@ -263,6 +268,47 @@ abstract class VistaFoundationDatabase : RoomDatabase() {
                 )
                 """.trimIndent(),
             )
+        }
+
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `conversations` (
+                        `id` TEXT NOT NULL, 
+                        `created_at` INTEGER NOT NULL, 
+                        `updated_at` INTEGER NOT NULL, 
+                        `last_message` TEXT, 
+                        `last_message_time` INTEGER, 
+                        `unread_count` INTEGER NOT NULL, 
+                        `has_unread_messages` INTEGER NOT NULL, 
+                        `is_pinned` INTEGER NOT NULL, 
+                        `is_muted` INTEGER NOT NULL, 
+                        `is_archived` INTEGER NOT NULL, 
+                        `type` TEXT NOT NULL, 
+                        `other_user_name` TEXT, 
+                        `other_user_avatar` TEXT, 
+                        `other_user_id` TEXT, 
+                        PRIMARY KEY(`id`)
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
+
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.addColumnIfMissing("own_profile", "email", "TEXT")
+                database.addColumnIfMissing("own_profile", "phone_number", "TEXT")
+                database.addColumnIfMissing("own_profile", "website_url", "TEXT")
+                database.addColumnIfMissing("own_profile", "birth_date", "TEXT")
+                database.addColumnIfMissing("own_profile", "gender", "TEXT")
+                database.addColumnIfMissing("own_profile", "marital_status", "TEXT")
+                database.addColumnIfMissing("own_profile", "show_email", "INTEGER NOT NULL DEFAULT 0")
+                database.addColumnIfMissing("own_profile", "show_birth_date", "INTEGER NOT NULL DEFAULT 0")
+                database.addColumnIfMissing("own_profile", "show_gender", "INTEGER NOT NULL DEFAULT 0")
+                database.addColumnIfMissing("own_profile", "show_marital_status", "INTEGER NOT NULL DEFAULT 0")
+            }
         }
 
         private fun SupportSQLiteDatabase.addColumnIfMissing(

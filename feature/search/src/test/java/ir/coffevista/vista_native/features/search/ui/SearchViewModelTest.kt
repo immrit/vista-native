@@ -2,8 +2,8 @@ package ir.coffevista.vista_native.features.search.ui
 
 import androidx.lifecycle.SavedStateHandle
 import ir.coffevista.vista_native.core.model.session.AuthenticatedContext
-import ir.coffevista.vista_native.features.auth.AuthenticationState
-import ir.coffevista.vista_native.features.auth.AuthenticationStateProvider
+import ir.coffevista.vista_native.core.model.session.AuthenticationState
+import ir.coffevista.vista_native.core.model.session.AuthenticationStateProvider
 import ir.coffevista.vista_native.features.search.data.HashtagSuggestion
 import ir.coffevista.vista_native.features.search.data.PostSearchPage
 import ir.coffevista.vista_native.features.search.data.SearchHistoryItem

@@ -4,6 +4,8 @@ import android.app.UiModeManager
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.content.Intent
+import android.os.Build
+import android.os.ParcelFileDescriptor
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextContains
@@ -17,6 +19,7 @@ import androidx.compose.ui.test.performTextInput
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -142,19 +145,15 @@ class StartupFixtureInstrumentationTest {
             }
             composeRule.onNodeWithText("ورود به ویستا").assertIsDisplayed()
 
-            scenario.onActivity { activity ->
-                activity.getSystemService(UiModeManager::class.java)
-                    .setApplicationNightMode(UiModeManager.MODE_NIGHT_YES)
-            }
+            setNightMode(scenario, UiModeManager.MODE_NIGHT_YES)
             awaitConfiguration(scenario) {
                 (it.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
                     Configuration.UI_MODE_NIGHT_YES
             }
             composeRule.onNodeWithText("ورود به ویستا").assertIsDisplayed()
 
+            setNightMode(scenario, UiModeManager.MODE_NIGHT_NO)
             scenario.onActivity { activity ->
-                activity.getSystemService(UiModeManager::class.java)
-                    .setApplicationNightMode(UiModeManager.MODE_NIGHT_NO)
                 activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
             }
             awaitConfiguration(scenario) {
@@ -164,6 +163,24 @@ class StartupFixtureInstrumentationTest {
             }
             composeRule.onNodeWithText("ورود به ویستا").assertIsDisplayed()
         }
+    }
+
+    private fun setNightMode(
+        scenario: ActivityScenario<MainActivity>,
+        mode: Int,
+    ) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            scenario.onActivity { activity ->
+                activity.getSystemService(UiModeManager::class.java)
+                    .setApplicationNightMode(mode)
+            }
+            return
+        }
+
+        val shellValue = if (mode == UiModeManager.MODE_NIGHT_YES) "yes" else "no"
+        val descriptor = InstrumentationRegistry.getInstrumentation().uiAutomation
+            .executeShellCommand("cmd uimode night $shellValue")
+        ParcelFileDescriptor.AutoCloseInputStream(descriptor).use { it.readBytes() }
     }
 
     @Test

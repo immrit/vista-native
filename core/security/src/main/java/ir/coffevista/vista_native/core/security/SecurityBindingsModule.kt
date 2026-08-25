@@ -13,6 +13,12 @@ import javax.inject.Singleton
 abstract class SecurityBindingsModule {
     @Binds
     @Singleton
+    abstract fun bindBiometricAuthenticator(
+        implementation: AndroidBiometricAuthenticator,
+    ): BiometricAuthenticator
+
+    @Binds
+    @Singleton
     abstract fun bindSessionStore(
         implementation: EncryptedSessionStore,
     ): SessionStore

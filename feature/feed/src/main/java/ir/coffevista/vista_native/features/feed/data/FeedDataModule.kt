@@ -14,9 +14,21 @@ import javax.inject.Singleton
 abstract class FeedDataModule {
     @Binds
     @Singleton
+    abstract fun bindPostMediaUploadGateway(
+        impl: PostMediaUploader,
+    ): PostMediaUploadGateway
+
+    @Binds
+    @Singleton
     abstract fun bindFeedRepository(
         impl: OfflineFirstFeedRepository
     ): FeedRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindCommentRepository(
+        impl: DefaultCommentRepository
+    ): CommentRepository
 }
 
 @Module
@@ -65,6 +77,78 @@ object FeedApiModule {
                 }
                 return remote.getUserPosts(userId, limit, offset)
             }
+
+            override suspend fun toggleLike(postId: String, body: LikeRequestDto): LikeResponseDto {
+                return remote.toggleLike(postId, body)
+            }
+
+            override suspend fun toggleSave(postId: String): SaveResponseDto {
+                return remote.toggleSave(postId)
+            }
+
+            override suspend fun updatePost(postId: String, body: UpdatePostRequestDto): FeedPostDto =
+                remote.updatePost(postId, body)
+
+            override suspend fun deletePost(postId: String) = remote.deletePost(postId)
+
+            override suspend fun reportPost(body: ReportPostRequestDto) = remote.reportPost(body)
+
+            override suspend fun trackFeedEvent(body: FeedEventRequestDto) = remote.trackFeedEvent(body)
+
+            override suspend fun presignUpload(request: PostPresignRequestDto): PostPresignResponseDto =
+                remote.presignUpload(request)
+
+            override suspend fun createPost(request: CreatePostRequestDto): CreatePostResponseDto =
+                remote.createPost(request)
         }
+    }
+
+    @Provides
+    @Singleton
+    fun provideCommentApi(
+        @InternalApi retrofit: Retrofit,
+        fixtures: Set<@JvmSuppressWildcards CommentApiFixture>,
+    ): CommentApi {
+        val remote = retrofit.create(CommentApi::class.java)
+        return object : CommentApi {
+            override suspend fun getComments(
+                postId: String,
+                limit: Int,
+                offset: Int,
+            ): CommentListResponseDto {
+                fixtures.forEach { fixture ->
+                    fixture.responseOrNull(postId, limit, offset)?.let { return it }
+                }
+                return remote.getComments(postId, limit, offset)
+            }
+
+            override suspend fun createComment(request: CreateCommentRequestDto): CommentResponseDto =
+                remote.createComment(request)
+
+            override suspend fun deleteComment(commentId: String) = remote.deleteComment(commentId)
+
+            override suspend fun updateComment(
+                commentId: String,
+                request: UpdateCommentRequestDto,
+            ): CommentResponseDto = remote.updateComment(commentId, request)
+
+            override suspend fun reportComment(
+                commentId: String,
+                request: ReportCommentRequestDto,
+            ) = remote.reportComment(commentId, request)
+
+            override suspend fun addMentions(
+                commentId: String,
+                request: CommentMentionsRequestDto,
+            ) = remote.addMentions(commentId, request)
+        }
+    }
+
+    @Provides
+    @Singleton
+    fun provideStoryApi(
+        @InternalApi retrofit: Retrofit,
+    ): ir.coffevista.vista_native.features.stories.data.StoryApi {
+        return retrofit.create(ir.coffevista.vista_native.features.stories.data.StoryApi::class.java)
     }
 }

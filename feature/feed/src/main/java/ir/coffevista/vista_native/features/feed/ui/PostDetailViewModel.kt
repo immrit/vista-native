@@ -4,8 +4,8 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
-import ir.coffevista.vista_native.features.auth.AuthenticationState
-import ir.coffevista.vista_native.features.auth.AuthenticationStateProvider
+import ir.coffevista.vista_native.core.model.session.AuthenticationState
+import ir.coffevista.vista_native.core.model.session.AuthenticationStateProvider
 import ir.coffevista.vista_native.features.feed.data.FeedPost
 import ir.coffevista.vista_native.features.feed.data.FeedRepository
 import kotlinx.coroutines.coroutineScope
@@ -22,6 +22,7 @@ sealed interface PostDetailUiState {
     data object Loading : PostDetailUiState
     data class Content(
         val post: FeedPost,
+        val viewerUserId: String? = null,
         val isRefreshing: Boolean = false,
         val isStale: Boolean = false,
         val refreshError: String? = null,
@@ -73,6 +74,7 @@ class PostDetailViewModel @Inject constructor(
                         val current = _uiState.value as? PostDetailUiState.Content
                         _uiState.value = PostDetailUiState.Content(
                             post = post,
+                            viewerUserId = accountId,
                             isRefreshing = current?.isRefreshing ?: true,
                             isStale = current?.isStale ?: false,
                             refreshError = current?.refreshError,
@@ -89,16 +91,17 @@ class PostDetailViewModel @Inject constructor(
     private suspend fun refresh(accountId: String) {
         val cached = (_uiState.value as? PostDetailUiState.Content)?.post
         if (cached != null) {
-            _uiState.value = PostDetailUiState.Content(cached, isRefreshing = true)
+            _uiState.value = PostDetailUiState.Content(cached, viewerUserId = accountId, isRefreshing = true)
         }
         try {
             val refreshed = repository.refreshPost(accountId, postId)
-            _uiState.value = PostDetailUiState.Content(refreshed)
+            _uiState.value = PostDetailUiState.Content(refreshed, viewerUserId = accountId)
         } catch (error: Exception) {
             val current = (_uiState.value as? PostDetailUiState.Content)?.post ?: cached
             if (current != null) {
                 _uiState.value = PostDetailUiState.Content(
                     post = current,
+                    viewerUserId = accountId,
                     isStale = true,
                     refreshError = error.message ?: "به‌روزرسانی پست ناموفق بود",
                 )
@@ -109,4 +112,72 @@ class PostDetailViewModel @Inject constructor(
             }
         }
     }
+
+    fun toggleLike(isLiked: Boolean, currentLikeCount: Long) {
+        viewModelScope.launch {
+            val authState = authStateProvider.state.value
+            val accountId = (authState as? AuthenticationState.SignedIn)?.context?.userId ?: return@launch
+            try {
+                val newCount = if (isLiked) currentLikeCount - 1 else currentLikeCount + 1
+                val ownerId = (_uiState.value as? PostDetailUiState.Content)?.post?.userId ?: return@launch
+                repository.toggleLike(accountId, postId, ownerId, !isLiked, maxOf(0L, newCount))
+            } catch (e: Exception) {
+                // Ignored, repository handles rollback
+            }
+        }
+    }
+
+    fun toggleSave(isSaved: Boolean) {
+        viewModelScope.launch {
+            val authState = authStateProvider.state.value
+            val accountId = (authState as? AuthenticationState.SignedIn)?.context?.userId ?: return@launch
+            try {
+                repository.toggleSave(accountId, postId, !isSaved)
+            } catch (e: Exception) {
+                // Ignored, repository handles rollback
+            }
+        }
+    }
+
+    fun deletePost() {
+        viewModelScope.launch {
+            val accountId = signedInAccountId() ?: return@launch
+            runCatching { repository.deletePost(accountId, postId) }
+                .onSuccess { _uiState.value = PostDetailUiState.Error("این پست حذف شد") }
+        }
+    }
+
+    fun reportPost(reason: String) {
+        viewModelScope.launch {
+            val post = (_uiState.value as? PostDetailUiState.Content)?.post ?: return@launch
+            runCatching { repository.reportPost(post.id, post.userId, reason) }
+        }
+    }
+
+    fun markNotInterested() {
+        viewModelScope.launch {
+            runCatching { repository.trackFeedEvent(postId, "not_interested") }
+        }
+    }
+
+    fun updateEngagementVisibility(hideLikeCount: Boolean?, hideCommentCount: Boolean?) {
+        viewModelScope.launch {
+            val accountId = signedInAccountId() ?: return@launch
+            runCatching {
+                repository.updatePost(
+                    accountId = accountId,
+                    postId = postId,
+                    hideLikeCount = hideLikeCount,
+                    hideCommentCount = hideCommentCount,
+                )
+            }
+        }
+    }
+
+    fun trackShare() {
+        viewModelScope.launch { runCatching { repository.trackFeedEvent(postId, "share") } }
+    }
+
+    private fun signedInAccountId(): String? =
+        (authStateProvider.state.value as? AuthenticationState.SignedIn)?.context?.userId
 }

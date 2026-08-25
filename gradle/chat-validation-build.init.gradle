@@ -1,0 +1,9 @@
+// Validation-only Gradle init script.
+//
+// Some historical module build directories in this checkout are owned by a
+// different Windows SID.  Keep the normal source tree untouched while a fresh
+// APK is assembled for the chat runtime verification.
+gradle.beforeProject { project ->
+    def projectSuffix = project.path == ':' ? 'root' : project.path.substring(1).replace(':', '/')
+    project.buildDir = new File(gradle.rootProject.projectDir, ".chat-validation-build/${projectSuffix}")
+}

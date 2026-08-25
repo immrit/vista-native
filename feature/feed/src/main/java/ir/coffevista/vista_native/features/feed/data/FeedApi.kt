@@ -28,4 +28,36 @@ interface FeedApi {
         @Query("limit") limit: Int,
         @Query("offset") offset: Int,
     ): FeedResponseDto
+
+    @retrofit2.http.POST("v1/posts/like/{postId}")
+    suspend fun toggleLike(
+        @Path("postId") postId: String,
+        @retrofit2.http.Body body: LikeRequestDto,
+    ): LikeResponseDto
+
+    @retrofit2.http.POST("v1/posts/save/{postId}")
+    suspend fun toggleSave(
+        @Path("postId") postId: String,
+    ): SaveResponseDto
+
+    @retrofit2.http.PATCH("v1/posts/{postId}")
+    suspend fun updatePost(
+        @Path("postId") postId: String,
+        @retrofit2.http.Body body: UpdatePostRequestDto,
+    ): FeedPostDto
+
+    @retrofit2.http.DELETE("v1/posts/{postId}")
+    suspend fun deletePost(@Path("postId") postId: String)
+
+    @retrofit2.http.POST("v1/posts/report")
+    suspend fun reportPost(@retrofit2.http.Body body: ReportPostRequestDto)
+
+    @retrofit2.http.POST("v1/feed/event")
+    suspend fun trackFeedEvent(@retrofit2.http.Body body: FeedEventRequestDto)
+
+    @retrofit2.http.POST("v1/uploads/presign")
+    suspend fun presignUpload(@retrofit2.http.Body request: PostPresignRequestDto): PostPresignResponseDto
+
+    @retrofit2.http.POST("v1/posts")
+    suspend fun createPost(@retrofit2.http.Body request: CreatePostRequestDto): CreatePostResponseDto
 }

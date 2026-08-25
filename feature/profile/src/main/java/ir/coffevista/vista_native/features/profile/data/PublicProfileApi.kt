@@ -21,4 +21,18 @@ interface PublicProfileApi {
     suspend fun unfollow(
         @Body request: FollowActionRequestDto,
     ): Response<UnfollowResponseDto>
+
+    @GET("v1/users/{userId}/followers")
+    suspend fun getFollowers(
+        @Path("userId") userId: String,
+        @retrofit2.http.Query("limit") limit: Int = 30,
+        @retrofit2.http.Query("offset") offset: Int = 0,
+    ): Response<FollowListResponseDto>
+
+    @GET("v1/users/{userId}/following")
+    suspend fun getFollowing(
+        @Path("userId") userId: String,
+        @retrofit2.http.Query("limit") limit: Int = 30,
+        @retrofit2.http.Query("offset") offset: Int = 0,
+    ): Response<FollowListResponseDto>
 }

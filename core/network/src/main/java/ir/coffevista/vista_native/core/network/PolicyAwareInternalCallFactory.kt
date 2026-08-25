@@ -4,7 +4,10 @@ import okhttp3.Call
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.WebSocket
+import okhttp3.WebSocketListener
 import java.security.KeyStore
+import java.net.Proxy
 import java.util.concurrent.TimeUnit
 import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManagerFactory
@@ -25,7 +28,15 @@ class PolicyAwareInternalCallFactory(
 
     override fun newCall(request: Request): Call = currentClient().newCall(request)
 
+    /** Keeps realtime traffic on the same rotating TLS-policy client as REST. */
+    fun newWebSocket(request: Request, listener: WebSocketListener): WebSocket =
+        currentClient().newWebSocket(request, listener)
+
     internal fun currentGeneration(): Long = currentClient().let { holder.generation }
+
+    internal fun currentPingIntervalMillis(): Long = currentClient().pingIntervalMillis.toLong()
+
+    internal fun currentProxy(): Proxy? = currentClient().proxy
 
     private fun currentClient(): OkHttpClient {
         val revision = policyStore.current().revision
@@ -58,10 +69,14 @@ class PolicyAwareInternalCallFactory(
         val sslContext = SSLContext.getInstance("TLS")
         sslContext.init(null, arrayOf(policyTrustManager), null)
         val client = OkHttpClient.Builder()
+            // Internal REST/realtime must not inherit a stale debugging proxy.
+            // TLS policy is evaluated against the canonical Vista host directly.
+            .proxy(Proxy.NO_PROXY)
             .connectTimeout(12, TimeUnit.SECONDS)
             .readTimeout(15, TimeUnit.SECONDS)
             .writeTimeout(15, TimeUnit.SECONDS)
             .callTimeout(25, TimeUnit.SECONDS)
+            .pingInterval(20, TimeUnit.SECONDS)
             .retryOnConnectionFailure(false)
             .addInterceptor(BoundedRetryInterceptor())
             .addInterceptor(authorizationInterceptor)

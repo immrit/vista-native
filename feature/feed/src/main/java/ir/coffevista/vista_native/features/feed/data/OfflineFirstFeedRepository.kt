@@ -188,6 +188,69 @@ class OfflineFirstFeedRepository @Inject constructor(
         }
     }
 
+    override suspend fun toggleLike(accountId: String, postId: String, ownerId: String, isLiked: Boolean, newLikeCount: Long) {
+        feedDao.updateLikeState(postId, isLiked, newLikeCount)
+        try {
+            val response = feedApi.toggleLike(postId, LikeRequestDto(ownerId = ownerId))
+            feedDao.updateLikeState(postId, response.isLiked, response.likeCount)
+        } catch (e: Exception) {
+            val rollbackCount = if (isLiked) newLikeCount - 1 else newLikeCount + 1
+            feedDao.updateLikeState(postId, !isLiked, maxOf(0L, rollbackCount))
+            throw e
+        }
+    }
+
+    override suspend fun toggleSave(accountId: String, postId: String, isSaved: Boolean) {
+        feedDao.updateSaveState(postId, isSaved)
+        try {
+            val response = feedApi.toggleSave(postId)
+            feedDao.updateSaveState(postId, response.isSaved)
+        } catch (e: Exception) {
+            feedDao.updateSaveState(postId, !isSaved)
+            throw e
+        }
+    }
+
+    override suspend fun updatePost(
+        accountId: String,
+        postId: String,
+        content: String?,
+        hideLikeCount: Boolean?,
+        hideCommentCount: Boolean?,
+    ): FeedPost {
+        require(content != null || hideLikeCount != null || hideCommentCount != null) {
+            "حداقل یک تغییر برای پست لازم است"
+        }
+        val response = feedApi.updatePost(
+            postId,
+            UpdatePostRequestDto(content, hideLikeCount, hideCommentCount),
+        )
+        feedDao.updatePostFields(postId, content, hideLikeCount, hideCommentCount)
+        return response.asEntity(accountId, sortOrder = 0).asExternalModel()
+    }
+
+    override suspend fun deletePost(accountId: String, postId: String) {
+        feedApi.deletePost(postId)
+        feedDao.deletePostEverywhere(postId)
+    }
+
+    override suspend fun reportPost(
+        postId: String,
+        reportedUserId: String,
+        reason: String,
+        additionalDetails: String?,
+    ) {
+        require(reason.isNotBlank()) { "دلیل گزارش را انتخاب کنید" }
+        feedApi.reportPost(
+            ReportPostRequestDto(postId, reportedUserId, reason.trim(), additionalDetails?.trim()),
+        )
+    }
+
+    override suspend fun trackFeedEvent(postId: String, eventType: String) {
+        if (postId.isBlank() || eventType !in ALLOWED_FEED_EVENTS) return
+        runCatching { feedApi.trackFeedEvent(FeedEventRequestDto(postId, eventType)) }
+    }
+
     private fun storageKey(accountId: String, kind: FeedKind): String = when (kind) {
         FeedKind.Explore -> accountId
         FeedKind.Following -> "$accountId${NAMESPACE_SEPARATOR}following"
@@ -201,5 +264,8 @@ class OfflineFirstFeedRepository @Inject constructor(
 
     private companion object {
         const val NAMESPACE_SEPARATOR = "\u001F"
+        val ALLOWED_FEED_EVENTS = setOf(
+            "view", "dwell", "open", "like", "comment", "save", "share", "skip", "not_interested",
+        )
     }
 }

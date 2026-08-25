@@ -5,8 +5,8 @@ import ir.coffevista.vista_native.core.common.ErrorKind
 import ir.coffevista.vista_native.core.common.Outcome
 import ir.coffevista.vista_native.core.database.profile.OwnProfileEntity
 import ir.coffevista.vista_native.core.model.session.AuthenticatedContext
-import ir.coffevista.vista_native.features.auth.AuthenticationState
-import ir.coffevista.vista_native.features.auth.AuthenticationStateProvider
+import ir.coffevista.vista_native.core.model.session.AuthenticationState
+import ir.coffevista.vista_native.core.model.session.AuthenticationStateProvider
 import ir.coffevista.vista_native.features.profile.data.OwnProfileRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi

@@ -25,6 +25,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.height
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.QrCodeScanner
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -87,6 +91,7 @@ private val SearchFieldShape = RoundedCornerShape(18.dp)
 fun SearchLauncherScreen(
     viewModel: SearchViewModel,
     onOpenWorkspace: () -> Unit,
+    onOpenQrScanner: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -125,6 +130,17 @@ fun SearchLauncherScreen(
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                Spacer(Modifier.weight(1f))
+                IconButton(
+                    onClick = onOpenQrScanner,
+                    modifier = Modifier.testTag(SearchTestTags.LauncherQrScanner),
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.QrCodeScanner,
+                        contentDescription = "اسکن کد QR",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
         LauncherContent(
@@ -228,9 +244,9 @@ internal fun SearchWorkspaceContent(
             },
             label = "search-body",
             modifier = Modifier.fillMaxSize(),
-        ) {
+        ) { (phase, selectedTab) ->
             SearchBody(
-                state = state,
+                state = state.copy(phase = phase, selectedTab = selectedTab),
                 onHistory = onHistory,
                 onDeleteHistory = onDeleteHistory,
                 onClearHistory = onClearHistory,

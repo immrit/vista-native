@@ -1,27 +1,61 @@
 package ir.coffevista.vista_native.features.feed.ui
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDirection
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -30,44 +64,72 @@ import ir.coffevista.vista_native.core.designsystem.R as DesignSystemR
 import ir.coffevista.vista_native.features.feed.data.Comment
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
+import java.time.Duration
+import java.time.Instant
+
+/** Flutter's CommentItem stack anchors the rail at `right: 35`, below `top: 52`. */
+internal const val CommentTimelineRailOffsetDp = 35f
+internal const val CommentTimelineLowerSegmentStartDp = 52f
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CommentsBottomSheet(
     postId: String,
     onDismissRequest: () -> Unit,
-    viewModel: CommentsViewModel
+    viewModel: CommentsViewModel,
+    onAuthorClick: (String) -> Unit = {},
 ) {
     LaunchedEffect(postId) {
         viewModel.loadComments(postId)
     }
     
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     
     ModalBottomSheet(
         onDismissRequest = onDismissRequest,
+        sheetState = sheetState,
         shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
-        containerColor = MaterialTheme.colorScheme.background,
-        dragHandle = { BottomSheetDefaults.DragHandle() }
+        containerColor = MaterialTheme.colorScheme.surface,
+        dragHandle = null,
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .fillMaxHeight(0.85f)
-                .padding(bottom = WindowInsets.ime.asPaddingValues().calculateBottomPadding())
+                .imePadding()
         ) {
-            Box(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), contentAlignment = Alignment.Center) {
-                Box(modifier = Modifier.width(40.dp).height(4.dp).clip(CircleShape).background(MaterialTheme.colorScheme.outlineVariant))
+            // Drag handle
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .width(40.dp)
+                        .height(4.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+                )
             }
             Spacer(Modifier.height(16.dp))
+
+            // Header
             Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Image(
-                    painter = painterResource(DesignSystemR.drawable.vista_post_comment),
+                    painter = painterResource(DesignSystemR.drawable.vista_comment_sheet),
                     contentDescription = null,
                     modifier = Modifier.size(24.dp),
+                    colorFilter = ColorFilter.tint(
+                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                    ),
                 )
                 Spacer(Modifier.width(12.dp))
                 Text(
@@ -77,35 +139,55 @@ fun CommentsBottomSheet(
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                 )
             }
+            Spacer(Modifier.height(8.dp))
             
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            HorizontalDivider(
+                thickness = 1.dp,
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.1f)
+            )
             
-            Box(modifier = Modifier.weight(1f, fill = false)) {
+            Box(modifier = Modifier.weight(1f)) {
                 if (uiState.isLoading) {
                     CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
                 } else if (uiState.error != null && uiState.comments.isEmpty()) {
                     Column(
-                        modifier = Modifier.align(Alignment.Center).padding(24.dp),
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .padding(24.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
-                        Text(uiState.error.orEmpty(), color = MaterialTheme.colorScheme.error)
-                        TextButton(onClick = viewModel::retry) { Text("تلاش دوباره") }
+                        Text(
+                            text = uiState.error.orEmpty(),
+                            color = MaterialTheme.colorScheme.error,
+                            textAlign = TextAlign.Center,
+                        )
+                        Spacer(Modifier.height(16.dp))
+                        Button(onClick = viewModel::retry) {
+                            Text("تلاش مجدد")
+                        }
                     }
                 } else if (uiState.comments.isEmpty()) {
                     Column(
-                        modifier = Modifier.align(Alignment.Center),
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .padding(24.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
                         Image(
                             painter = painterResource(DesignSystemR.drawable.vista_post_comment),
                             contentDescription = null,
                             modifier = Modifier.size(64.dp),
+                            colorFilter = ColorFilter.tint(
+                                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f)
+                            ),
                         )
                         Spacer(Modifier.height(16.dp))
                         Text(
                             text = "هنوز نظری ثبت نشده\nاولین نفری باشید که نظر می‌دهد!",
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            fontSize = 16.sp,
+                            textAlign = TextAlign.Center,
+                            lineHeight = 24.sp,
                         )
                     }
                 } else {
@@ -113,12 +195,20 @@ fun CommentsBottomSheet(
                         comments = uiState.comments,
                         hasMore = uiState.hasMore,
                         isAppending = uiState.isAppending,
+                        isRefreshing = uiState.isLoading && uiState.comments.isNotEmpty(),
+                        loadingReplyIds = uiState.loadingReplyIds,
+                        onRefresh = viewModel::retry,
                         onLoadMore = viewModel::loadMore,
+                        onLoadReplies = viewModel::loadReplies,
                         onReply = viewModel::setReplyingTo,
-                        onEdit = viewModel::setEditingComment,
+                        onEdit = { comment, newContent -> viewModel.updateComment(comment.id, newContent) },
                         onDelete = viewModel::deleteComment,
-                        onReport = { viewModel.reportComment(it, "spam") },
-                        isCurrentUser = viewModel::isCurrentUser,
+                        onReport = { commentId -> viewModel.reportComment(commentId, "گزارش تخلف") },
+                        canEdit = viewModel::canEdit,
+                        canDelete = { viewModel.canDelete(it) },
+                        canReport = viewModel::canReport,
+                        isCommentAuthor = { viewModel.isCurrentUser(it.authorUserId) },
+                        onAuthorClick = onAuthorClick,
                     )
                 }
             }
@@ -133,22 +223,32 @@ fun CommentsBottomSheet(
                 },
                 isSubmitting = uiState.isSubmitting,
                 error = uiState.error.takeIf { uiState.comments.isNotEmpty() },
+                currentUserAvatarUrl = uiState.currentUserAvatarUrl,
             )
         }
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun CommentsList(
     comments: List<Comment>,
     hasMore: Boolean,
     isAppending: Boolean,
+    isRefreshing: Boolean,
+    loadingReplyIds: Set<String>,
+    onRefresh: () -> Unit,
     onLoadMore: () -> Unit,
+    onLoadReplies: (String) -> Unit,
     onReply: (Comment) -> Unit,
-    onEdit: (Comment) -> Unit,
+    onEdit: (Comment, String) -> Unit,
     onDelete: (String) -> Unit,
     onReport: (String) -> Unit,
-    isCurrentUser: (String) -> Boolean,
+    canEdit: (Comment) -> Boolean,
+    canDelete: (Comment) -> Boolean,
+    canReport: (Comment) -> Boolean,
+    isCommentAuthor: (Comment) -> Boolean,
+    onAuthorClick: (String) -> Unit = {},
 ) {
     val listState = rememberLazyListState()
     
@@ -164,30 +264,43 @@ internal fun CommentsList(
             .collect { onLoadMore() }
     }
     
-    LazyColumn(
-        state = listState,
-        contentPadding = PaddingValues(16.dp),
-        modifier = Modifier.fillMaxSize()
+    PullToRefreshBox(
+        isRefreshing = isRefreshing,
+        onRefresh = onRefresh,
+        modifier = Modifier.fillMaxSize(),
     ) {
+        LazyColumn(
+            state = listState,
+            contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp),
+            modifier = Modifier.fillMaxSize(),
+        ) {
         items(comments, key = { it.id }) { comment ->
             CommentThread(
                 comment = comment,
                 onReply = onReply,
+                onLoadReplies = onLoadReplies,
+                isLoadingReplies = comment.id in loadingReplyIds,
                 onEdit = onEdit,
                 onDelete = onDelete,
                 onReport = onReport,
-                isCurrentUser = isCurrentUser,
+                canEdit = canEdit,
+                canDelete = canDelete,
+                canReport = canReport,
+                isCommentAuthor = isCommentAuthor,
+                onAuthorClick = onAuthorClick,
                 depth = 0,
-                isLastItem = comments.indexOf(comment) == comments.size - 1
             )
         }
-        if (isAppending) {
-            item {
-                Box(
-                    modifier = Modifier.fillMaxWidth().padding(16.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator(modifier = Modifier.size(24.dp))
+            if (isAppending) {
+                item {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                    }
                 }
             }
         }
@@ -198,190 +311,562 @@ internal fun CommentsList(
 internal fun CommentThread(
     comment: Comment,
     onReply: (Comment) -> Unit,
-    onEdit: (Comment) -> Unit,
+    onLoadReplies: (String) -> Unit,
+    isLoadingReplies: Boolean,
+    onEdit: (Comment, String) -> Unit,
     onDelete: (String) -> Unit,
     onReport: (String) -> Unit,
-    isCurrentUser: (String) -> Boolean,
-    depth: Int,
-    isLastItem: Boolean = true
+    canEdit: (Comment) -> Boolean,
+    canDelete: (Comment) -> Boolean,
+    canReport: (Comment) -> Boolean,
+    isCommentAuthor: (Comment) -> Boolean,
+    onAuthorClick: (String) -> Unit = {},
+    depth: Int = 0,
 ) {
-    val hasReplies = comment.replies.isNotEmpty()
+    val flattenedReplies = remember(comment.replies) { flattenReplies(comment.replies) }
+    var visibleReplyCount by remember(comment.id) { mutableIntStateOf(1) }
+    val shownReplies = flattenedReplies.take(visibleReplyCount)
+    val hasReplies = flattenedReplies.isNotEmpty()
+
     CommentItem(
         comment = comment,
         onReply = { onReply(comment) },
-        onEdit = { onEdit(comment) },
+        onEdit = { newContent -> onEdit(comment, newContent) },
         onDelete = { onDelete(comment.id) },
         onReport = { onReport(comment.id) },
-        isCurrentUser = isCurrentUser(comment.authorUserId),
-        modifier = Modifier.padding(start = (depth * 24).dp),
-        hasLineBelow = hasReplies || (!isLastItem && depth > 0)
+        canEdit = canEdit(comment),
+        canDelete = canDelete(comment),
+        canReport = canReport(comment),
+        isCommentAuthor = isCommentAuthor(comment),
+        onAuthorClick = onAuthorClick,
+        isReply = depth > 0,
+        hasLineAbove = depth > 0,
+        hasLineBelow = (depth == 0 && hasReplies && visibleReplyCount > 0) || depth > 0,
     )
-    
-    comment.replies.forEach { reply ->
-        CommentThread(
-            comment = reply,
-            onReply = onReply,
-            onEdit = onEdit,
-            onDelete = onDelete,
-            onReport = onReport,
-            isCurrentUser = isCurrentUser,
-            depth = depth + 1,
-            isLastItem = comment.replies.indexOf(reply) == comment.replies.size - 1
+
+    if (depth > 0) return
+
+    // Flutter renders this explicit empty-reply state under each root comment.
+    // It is intentionally not shown for reply rows: those are leaves in the flattened thread.
+    if (!hasReplies) {
+        Text(
+            text = "هنوز پاسخی وجود ندارد",
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+            fontSize = 14.sp,
+            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+            textAlign = TextAlign.Center,
         )
+    }
+
+    shownReplies.forEachIndexed { index, reply ->
+        val isLastReply = index == shownReplies.lastIndex
+        CommentItem(
+            comment = reply,
+            onReply = { onReply(reply) },
+            onEdit = { newContent -> onEdit(reply, newContent) },
+            onDelete = { onDelete(reply.id) },
+            onReport = { onReport(reply.id) },
+            canEdit = canEdit(reply),
+            canDelete = canDelete(reply),
+            canReport = canReport(reply),
+            isCommentAuthor = isCommentAuthor(reply),
+            onAuthorClick = onAuthorClick,
+            isReply = true,
+            hasLineAbove = true,
+            hasLineBelow = !isLastReply && !isLoadingReplies,
+        )
+    }
+
+    if (hasReplies) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(end = 64.dp, top = 4.dp, bottom = 8.dp)
+                .clickable(enabled = !isLoadingReplies) {
+                    if (visibleReplyCount <= 1) onLoadReplies(comment.id)
+                    visibleReplyCount = nextVisibleReplyCount(
+                        currentCount = visibleReplyCount,
+                        loadedReplyCount = flattenedReplies.size,
+                    )
+                },
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                Modifier
+                    .width(24.dp)
+                    .height(1.dp)
+                    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+            )
+            Spacer(Modifier.width(8.dp))
+            if (isLoadingReplies) {
+                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+            } else Text(
+                text = when {
+                    visibleReplyCount == 0 -> "مشاهده ${flattenedReplies.size} پاسخ"
+                    visibleReplyCount < flattenedReplies.size ->
+                        "مشاهده ${flattenedReplies.size - visibleReplyCount} پاسخ دیگر"
+                    else -> "پنهان کردن پاسخ‌ها"
+                },
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+            )
+        }
     }
 }
 
+private fun flattenReplies(replies: List<Comment>): List<Comment> = buildList {
+    fun append(items: List<Comment>) {
+        items.forEach { reply ->
+            add(reply)
+            append(reply.replies)
+        }
+    }
+    append(replies)
+}
+
+/** Mirrors Flutter's `_loadMoreReplies`: promote 0/1 to 10 before async data returns. */
+internal fun nextVisibleReplyCount(currentCount: Int, loadedReplyCount: Int): Int = when {
+    currentCount <= 1 -> 10
+    currentCount < loadedReplyCount -> minOf(currentCount + 10, loadedReplyCount)
+    else -> 0
+}
 
 @Composable
 private fun CommentItem(
     comment: Comment,
     onReply: () -> Unit,
-    onEdit: () -> Unit,
+    onEdit: (String) -> Unit,
     onDelete: () -> Unit,
     onReport: () -> Unit,
-    isCurrentUser: Boolean,
+    canEdit: Boolean,
+    canDelete: Boolean,
+    canReport: Boolean,
+    isCommentAuthor: Boolean,
+    onAuthorClick: (String) -> Unit = {},
     modifier: Modifier = Modifier,
-    hasLineBelow: Boolean = false
+    isReply: Boolean = false,
+    hasLineAbove: Boolean = false,
+    hasLineBelow: Boolean = false,
 ) {
+    // Flutter creates every CommentItem at 0.8 scale with a 300ms fade/elastic entrance.
+    // Scope it to the stable item ID so normal scrolling/recomposition does not replay it.
+    val entrance = remember(comment.id) { Animatable(0f) }
+    LaunchedEffect(comment.id) {
+        entrance.animateTo(
+            targetValue = 1f,
+            animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
+        )
+    }
+    val opacity = entrance.value.coerceIn(0f, 1f)
+    val scale = 0.8f + (0.2f * entrance.value)
     var confirmDelete by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
-    val dividerColor = MaterialTheme.colorScheme.outlineVariant
+    var isEditingInline by remember { mutableStateOf(false) }
+    var editContent by remember(comment.content) { mutableStateOf(comment.content) }
 
+    val isDark = isSystemInDarkTheme()
+    val dividerColor = if (isDark) Color(0xFF424242) else Color(0xFFE0E0E0)
     Row(
         modifier = modifier
+            .graphicsLayer {
+                alpha = opacity
+                scaleX = scale
+                scaleY = scale
+            }
             .fillMaxWidth()
-            .padding(vertical = 8.dp)
             .drawBehind {
-                if (hasLineBelow) {
-                    val strokeWidth = 1.dp.toPx()
-                    val startX = 18.dp.toPx() // center of 36dp avatar
-                    val startY = 40.dp.toPx() // below avatar
+                // Draw before Row padding. Flutter positions the rail in the outer Stack
+                // (`right: 35`, `top: 52`); drawing after padding incorrectly shifts it
+                // 16dp away from the avatar center and moves each segment vertically.
+                val lineX = size.width - CommentTimelineRailOffsetDp.dp.toPx()
+                if (hasLineAbove) {
                     drawLine(
                         color = dividerColor,
-                        start = Offset(startX, startY),
-                        end = Offset(startX, size.height + 8.dp.toPx()),
-                        strokeWidth = strokeWidth
+                        start = Offset(lineX, 0f),
+                        end = Offset(lineX, 12.dp.toPx()),
+                        strokeWidth = 2.dp.toPx(),
+                    )
+                }
+                if (hasLineBelow) {
+                    drawLine(
+                        color = dividerColor,
+                        start = Offset(lineX, CommentTimelineLowerSegmentStartDp.dp.toPx()),
+                        end = Offset(lineX, size.height),
+                        strokeWidth = 2.dp.toPx(),
                     )
                 }
             }
+            .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 8.dp)
     ) {
+        val avatarSize = if (isReply) 32.dp else 40.dp
         val avatarModifier = Modifier
-            .size(36.dp)
+            .padding(horizontal = if (isReply) 4.dp else 0.dp)
+            .size(avatarSize)
             .clip(CircleShape)
             .background(MaterialTheme.colorScheme.surfaceVariant)
+            .clickable { onAuthorClick(comment.authorUserId) }
 
-        if (comment.authorAvatarUrl != null) {
+        if (!comment.authorAvatarUrl.isNullOrBlank()) {
             AsyncImage(
                 model = comment.authorAvatarUrl,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = avatarModifier,
+                placeholder = painterResource(DesignSystemR.drawable.vista_default_avatar),
+                error = painterResource(DesignSystemR.drawable.vista_default_avatar),
             )
         } else {
-            Box(modifier = avatarModifier)
+            Image(
+                painter = painterResource(DesignSystemR.drawable.vista_default_avatar),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = avatarModifier,
+            )
         }
         
         Spacer(Modifier.width(12.dp))
         
         Column(modifier = Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = comment.authorFullName,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp
-                )
-                if (comment.authorIsVerified) {
-                    Box(
-                        modifier = Modifier
-                            .padding(start = 4.dp)
-                            .size(12.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFF2196F3)),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text("✓", color = Color.White, fontSize = 7.sp, fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
-            Spacer(Modifier.height(2.dp))
-            Text(
-                text = comment.content,
-                fontSize = 14.sp,
-                color = MaterialTheme.colorScheme.onBackground
-            )
-            
+            // Author header
             Row(
-                modifier = Modifier.padding(top = 4.dp).fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.clickable { onAuthorClick(comment.authorUserId) }
             ) {
                 Text(
-                    text = "مدتی پیش", // Mock time ago since not available in Comment model
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                )
-                Spacer(Modifier.width(16.dp))
-                Text(
-                    text = "پاسخ",
-                    fontSize = 12.sp,
+                    text = comment.authorUsername?.takeIf { it.isNotBlank() } ?: comment.authorFullName,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                    modifier = Modifier.clickable { onReply() }
+                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
-                if (isCurrentUser) {
+                if (comment.authorIsVerified) {
+                    Spacer(Modifier.width(4.dp))
+                    CommentVerificationBadge(
+                        isVerified = comment.authorIsVerified,
+                        verificationType = comment.authorVerificationType,
+                        role = comment.authorRole,
+                        size = 14.dp,
+                    )
+                }
+                if (isCommentAuthor) {
+                    Spacer(Modifier.width(8.dp))
+                    Icon(
+                        imageVector = Icons.Default.Person,
+                        contentDescription = "نویسنده",
+                        modifier = Modifier.size(14.dp),
+                        tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                    )
+                }
+            }
+            Spacer(Modifier.height(4.dp))
+
+            if (isEditingInline) {
+                // Inline editing field matching Flutter
+                Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                    val focusRequester = remember { FocusRequester() }
+                    LaunchedEffect(Unit) { focusRequester.requestFocus() }
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(
+                                width = 1.5.dp,
+                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
+                                shape = RoundedCornerShape(12.dp),
+                            )
+                            .background(
+                                MaterialTheme.colorScheme.surface,
+                                shape = RoundedCornerShape(12.dp),
+                            )
+                            .padding(12.dp)
+                    ) {
+                        BasicTextField(
+                            value = editContent,
+                            onValueChange = { editContent = it },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .focusRequester(focusRequester),
+                            textStyle = TextStyle(
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontSize = 14.sp,
+                                lineHeight = 19.6.sp,
+                                textDirection = if (isRtlText(editContent)) TextDirection.Rtl else TextDirection.Ltr,
+                            ),
+                            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                            decorationBox = { innerTextField ->
+                                if (editContent.isEmpty()) {
+                                    Text(
+                                        text = "ویرایش نظر خود...",
+                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                                        fontSize = 14.sp,
+                                    )
+                                }
+                                innerTextField()
+                            }
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        TextButton(
+                            onClick = {
+                                editContent = comment.content
+                                isEditingInline = false
+                            },
+                        ) {
+                            Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("انصراف")
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        Button(
+                            onClick = {
+                                if (editContent.isNotBlank()) {
+                                    onEdit(editContent.trim())
+                                    isEditingInline = false
+                                }
+                            },
+                            enabled = editContent.isNotBlank(),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
+                        ) {
+                            Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("ثبت تغییرات")
+                        }
+                    }
+                }
+            } else {
+                // Normal comment text
+                Text(
+                    text = comment.content,
+                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    lineHeight = 19.6.sp,
+                    style = TextStyle(
+                        textDirection = if (isRtlText(comment.content)) TextDirection.Rtl else TextDirection.Ltr,
+                    ),
+                )
+                
+                Spacer(Modifier.height(8.dp))
+
+                // Actions row
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = commentRelativeTime(comment.createdAt),
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                    )
                     Spacer(Modifier.width(16.dp))
                     Text(
-                        text = "ویرایش",
+                        text = "پاسخ",
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                        modifier = Modifier.clickable { onEdit() }
-                    )
-                }
-                
-                Spacer(Modifier.weight(1f))
-                
-                Box {
-                    Icon(
-                        imageVector = Icons.Default.MoreVert,
-                        contentDescription = "بیشتر",
-                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
                         modifier = Modifier
-                            .size(18.dp)
-                            .clickable { showMenu = true }
+                            .clip(RoundedCornerShape(16.dp))
+                            .clickable { onReply() }
+                            .padding(horizontal = 4.dp, vertical = 2.dp),
                     )
-                    DropdownMenu(
-                        expanded = showMenu,
-                        onDismissRequest = { showMenu = false }
-                    ) {
-                        if (isCurrentUser) {
-                            DropdownMenuItem(
-                                text = { Text("ویرایش") },
-                                onClick = { showMenu = false; onEdit() }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("حذف", color = MaterialTheme.colorScheme.error) },
-                                onClick = { showMenu = false; confirmDelete = true }
-                            )
-                        } else {
-                            DropdownMenuItem(
-                                text = { Text("گزارش") },
-                                onClick = { showMenu = false; onReport() }
-                            )
+                    if (canEdit) {
+                        Spacer(Modifier.width(16.dp))
+                        Text(
+                            text = "ویرایش",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(16.dp))
+                                .clickable {
+                                    editContent = comment.content
+                                    isEditingInline = true
+                                }
+                                .padding(horizontal = 4.dp, vertical = 2.dp),
+                        )
+                    }
+                    
+                    Spacer(Modifier.weight(1f))
+                     
+                    Box {
+                        Text(
+                            text = "•••",
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                            fontSize = 14.sp,
+                            modifier = Modifier
+                                .clip(CircleShape)
+                                .clickable { showMenu = true }
+                                .padding(horizontal = 6.dp, vertical = 2.dp),
+                        )
+                        DropdownMenu(
+                            expanded = showMenu,
+                            onDismissRequest = { showMenu = false },
+                        ) {
+                            if (canEdit) {
+                                DropdownMenuItem(
+                                    text = { Text("ویرایش") },
+                                    leadingIcon = {
+                                        Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    },
+                                    onClick = {
+                                        showMenu = false
+                                        editContent = comment.content
+                                        isEditingInline = true
+                                    },
+                                )
+                            }
+                            if (canDelete) {
+                                DropdownMenuItem(
+                                    text = { Text("حذف", color = Color.Red) },
+                                    leadingIcon = {
+                                        Icon(Icons.Default.Delete, contentDescription = null, tint = Color.Red, modifier = Modifier.size(18.dp))
+                                    },
+                                    onClick = {
+                                        showMenu = false
+                                        confirmDelete = true
+                                    },
+                                )
+                            }
+                            if (canReport) {
+                                DropdownMenuItem(
+                                    text = { Text("گزارش") },
+                                    leadingIcon = {
+                                        CustomFlagIcon(modifier = Modifier.size(18.dp))
+                                    },
+                                    onClick = {
+                                        showMenu = false
+                                        onReport()
+                                    },
+                                )
+                            }
                         }
                     }
                 }
             }
         }
     }
-    if (confirmDelete) AlertDialog(
-        onDismissRequest = { confirmDelete = false },
-        title = { Text("حذف دیدگاه") },
-        text = { Text("آیا از حذف این دیدگاه اطمینان دارید؟") },
-        confirmButton = { TextButton(onClick = { confirmDelete = false; onDelete() }) { Text("حذف") } },
-        dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("انصراف") } }
-    )
+
+    if (confirmDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text("حذف دیدگاه") },
+            text = { Text("آیا از حذف این دیدگاه اطمینان دارید؟") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmDelete = false
+                        onDelete()
+                    },
+                ) {
+                    Text("حذف", color = Color.Red)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDelete = false }) {
+                    Text("انصراف")
+                }
+            },
+        )
+    }
 }
 
+@Composable
+internal fun CommentVerificationBadge(
+    isVerified: Boolean,
+    verificationType: String?,
+    role: String? = null,
+    size: Dp = 14.dp,
+) {
+    if (!isVerified) return
+    val isDark = isSystemInDarkTheme()
+    val normType = verificationType?.lowercase()?.replace("[^a-z]".toRegex(), "") ?: ""
+    val badgeColor = when {
+        normType.contains("gold") -> Color(0xFFFFA000)
+        normType.contains("black") -> if (isDark) Color.White else Color.Black
+        else -> Color(0xFF2196F3)
+    }
+    Box(
+        modifier = Modifier
+            .size(size)
+            .clip(CircleShape)
+            .background(badgeColor),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = "✓",
+            color = if (badgeColor == Color.White) Color.Black else Color.White,
+            fontSize = (size.value * 0.55f).sp,
+            fontWeight = FontWeight.Bold,
+        )
+    }
+}
+
+@Composable
+private fun CustomReplyIcon(modifier: Modifier = Modifier, tint: Color = Color.Unspecified) {
+    Canvas(modifier = modifier) {
+        val stroke = size.width * 0.12f
+        val path = Path().apply {
+            moveTo(size.width * 0.4f, size.height * 0.2f)
+            lineTo(size.width * 0.15f, size.height * 0.45f)
+            lineTo(size.width * 0.4f, size.height * 0.7f)
+        }
+        drawPath(path, color = tint, style = Stroke(width = stroke, cap = StrokeCap.Round))
+        drawLine(
+            color = tint,
+            start = Offset(size.width * 0.18f, size.height * 0.45f),
+            end = Offset(size.width * 0.7f, size.height * 0.45f),
+            strokeWidth = stroke,
+            cap = StrokeCap.Round,
+        )
+    }
+}
+
+@Composable
+private fun CustomFlagIcon(modifier: Modifier = Modifier, tint: Color = MaterialTheme.colorScheme.onSurface) {
+    Canvas(modifier = modifier) {
+        val stroke = size.width * 0.1f
+        // Flag pole
+        drawLine(
+            color = tint,
+            start = Offset(size.width * 0.25f, size.height * 0.15f),
+            end = Offset(size.width * 0.25f, size.height * 0.85f),
+            strokeWidth = stroke,
+            cap = StrokeCap.Round,
+        )
+        // Flag banner
+        val flagPath = Path().apply {
+            moveTo(size.width * 0.25f, size.height * 0.2f)
+            lineTo(size.width * 0.8f, size.height * 0.35f)
+            lineTo(size.width * 0.25f, size.height * 0.5f)
+            close()
+        }
+        drawPath(flagPath, color = tint)
+    }
+}
+
+private fun isRtlText(text: String): Boolean {
+    val rtlRegex = Regex("[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]")
+    return rtlRegex.containsMatchIn(text)
+}
+
+private fun commentRelativeTime(raw: String): String = runCatching {
+    val duration = Duration.between(Instant.parse(raw), Instant.now())
+    when {
+        duration.toMinutes() < 1 -> "همین الان"
+        duration.toHours() < 1 -> "${duration.toMinutes()} دقیقه پیش"
+        duration.toDays() < 1 -> "${duration.toHours()} ساعت پیش"
+        else -> "${duration.toDays()} روز پیش"
+    }
+}.getOrDefault(raw.take(10))
 
 @Composable
 internal fun CommentComposer(
@@ -391,82 +876,216 @@ internal fun CommentComposer(
     onCancelReplyOrEdit: () -> Unit,
     isSubmitting: Boolean = false,
     error: String? = null,
+    currentUserAvatarUrl: String? = null,
 ) {
-    var text by remember(replyingTo, editingComment) { 
+    var text by rememberSaveable(replyingTo?.id, editingComment?.id) { 
         mutableStateOf(editingComment?.content ?: "") 
     }
+    val isDark = isSystemInDarkTheme()
+    val canSend = text.trim().isNotEmpty() && text.trim().codePointCount(0, text.trim().length) <= 2200 && !isSubmitting
     
     Surface(
-        color = MaterialTheme.colorScheme.background,
-        shadowElevation = 8.dp
+        color = if (isDark) MaterialTheme.colorScheme.surface else Color.White,
+        shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+        shadowElevation = 10.dp,
     ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                // Flutter's CommentInputField is wrapped in SafeArea. Keep the composer
+                // above both gesture navigation and the IME in the native surface too.
+                .navigationBarsPadding()
+                .padding(16.dp)
+        ) {
             error?.let {
                 Text(
                     text = it,
                     color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                    fontSize = 12.sp
+                    modifier = Modifier.padding(bottom = 8.dp),
+                    fontSize = 12.sp,
                 )
             }
-            if (replyingTo != null || editingComment != null) {
+
+            // Reply banner matching Flutter CommentInputField
+            if (replyingTo != null) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(if (isDark) Color(0xFF303030) else Color(0xFFF5F5F5))
+                        .border(
+                            width = 1.dp,
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
+                            shape = RoundedCornerShape(12.dp),
+                        )
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        CustomReplyIcon(
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(16.dp),
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = "در حال پاسخ به ${replyingTo.authorUsername ?: replyingTo.authorFullName}",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = if (isDark) Color(0xFFE0E0E0) else Color(0xFF424242),
+                            modifier = Modifier.weight(1f),
+                        )
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "لغو پاسخ",
+                            tint = if (isDark) Color(0xFFBDBDBD) else Color(0xFF757575),
+                            modifier = Modifier
+                                .size(18.dp)
+                                .clip(CircleShape)
+                                .clickable { onCancelReplyOrEdit() },
+                        )
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+            } else if (editingComment != null) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(if (isDark) Color(0xFF303030) else Color(0xFFF5F5F5))
+                        .border(
+                            width = 1.dp,
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
+                            shape = RoundedCornerShape(12.dp),
+                        )
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = if (editingComment != null) "ویرایش نظر" else "پاسخ به ${replyingTo?.authorFullName}",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        text = "ویرایش نظر",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = if (isDark) Color(0xFFE0E0E0) else Color(0xFF424242),
                     )
-                    Text(
-                        text = "لغو",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.clickable { onCancelReplyOrEdit() }
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "انصراف",
+                        tint = if (isDark) Color(0xFFBDBDBD) else Color(0xFF757575),
+                        modifier = Modifier
+                            .size(18.dp)
+                            .clip(CircleShape)
+                            .clickable { onCancelReplyOrEdit() },
                     )
                 }
+                Spacer(Modifier.height(12.dp))
             }
+
+            // Input row
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.Bottom
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                OutlinedTextField(
-                    value = text,
-                    onValueChange = { text = it },
-                    placeholder = { Text("نظر خود را بنویسید...") },
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(24.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        unfocusedBorderColor = Color.Transparent,
-                        focusedBorderColor = Color.Transparent,
-                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                        focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                    ),
-                    maxLines = 4
-                )
-                Spacer(Modifier.width(8.dp))
-                IconButton(
-                    onClick = { if (text.isNotBlank()) onSubmit(text) },
-                    enabled = text.isNotBlank() && !isSubmitting,
+                val composerAvatarModifier = Modifier
+                    .size(36.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+
+                if (currentUserAvatarUrl.isNullOrBlank()) {
+                    Image(
+                        painter = painterResource(DesignSystemR.drawable.vista_default_avatar),
+                        contentDescription = "تصویر نمایه شما",
+                        contentScale = ContentScale.Crop,
+                        modifier = composerAvatarModifier,
+                    )
+                } else {
+                    AsyncImage(
+                        model = currentUserAvatarUrl,
+                        contentDescription = "تصویر نمایه شما",
+                        contentScale = ContentScale.Crop,
+                        modifier = composerAvatarModifier,
+                        placeholder = painterResource(DesignSystemR.drawable.vista_default_avatar),
+                        error = painterResource(DesignSystemR.drawable.vista_default_avatar),
+                    )
+                }
+                
+                Spacer(Modifier.width(12.dp))
+
+                Box(
                     modifier = Modifier
-                        .size(48.dp)
-                        .background(
-                            if (text.isNotBlank()) MaterialTheme.colorScheme.primary 
-                            else MaterialTheme.colorScheme.surfaceVariant,
-                            CircleShape
+                        .weight(1f)
+                        .heightIn(min = 40.dp, max = 120.dp)
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                        .border(
+                            width = 1.dp,
+                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
+                            shape = RoundedCornerShape(20.dp),
                         )
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                    contentAlignment = Alignment.CenterStart,
+                ) {
+                    BasicTextField(
+                        value = text,
+                        onValueChange = { text = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        textStyle = TextStyle(
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontSize = 14.sp,
+                            textDirection = if (isRtlText(text)) TextDirection.Rtl else TextDirection.Ltr,
+                        ),
+                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                        maxLines = 4,
+                        decorationBox = { innerTextField ->
+                            if (text.isEmpty()) {
+                                Text(
+                                    text = if (replyingTo != null) "پاسخ خود را بنویسید..." else "نظر خود را بنویسید...",
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                                    fontSize = 14.sp,
+                                )
+                            }
+                            innerTextField()
+                        }
+                    )
+                }
+
+                Spacer(Modifier.width(8.dp))
+
+                // Send button matching Flutter #007AFF
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(
+                            if (canSend) Color(0xFF007AFF)
+                            else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+                        )
+                        .clickable(enabled = canSend) {
+                            val submitText = text.trim()
+                            if (submitText.isNotEmpty()) {
+                                onSubmit(submitText)
+                                text = ""
+                            }
+                        },
+                    contentAlignment = Alignment.Center,
                 ) {
                     if (isSubmitting) {
-                        CircularProgressIndicator(modifier = Modifier.size(24.dp), color = MaterialTheme.colorScheme.onPrimary)
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp,
+                            color = Color.White,
+                        )
                     } else {
-                        Text("↑", color = if (text.isNotBlank()) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant)
+                        Image(
+                            painter = painterResource(DesignSystemR.drawable.vista_post_send),
+                            contentDescription = "ارسال نظر",
+                            modifier = Modifier.size(20.dp),
+                            colorFilter = ColorFilter.tint(
+                                if (canSend) Color.White
+                                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                            ),
+                        )
                     }
                 }
             }

@@ -21,6 +21,7 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -48,7 +49,10 @@ fun OtherUserProfileScreen(
     onPostsRefresh: () -> Unit = {},
     onPostsLoadMore: () -> Unit = {},
     onPostClick: (String) -> Unit = {},
+    onLikeClick: (String, Boolean, Long) -> Unit = { _, _, _ -> },
+    onSaveClick: (String, Boolean) -> Unit = { _, _ -> },
     onMessage: (() -> Unit)? = null,
+    onOpenFollowers: ((userId: String, initialTab: Int) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -72,7 +76,10 @@ fun OtherUserProfileScreen(
         onPostsRefresh = onPostsRefresh,
         onPostsLoadMore = onPostsLoadMore,
         onPostClick = onPostClick,
+        onLikeClick = onLikeClick,
+        onSaveClick = onSaveClick,
         onMessage = onMessage,
+        onOpenFollowers = onOpenFollowers,
         onAction = viewModel::onAction,
         modifier = modifier,
     )
@@ -89,7 +96,10 @@ internal fun OtherUserProfileContent(
     onPostsRefresh: () -> Unit = {},
     onPostsLoadMore: () -> Unit = {},
     onPostClick: (String) -> Unit = {},
+    onLikeClick: (String, Boolean, Long) -> Unit = { _, _, _ -> },
+    onSaveClick: (String, Boolean) -> Unit = { _, _ -> },
     onMessage: (() -> Unit)? = null,
+    onOpenFollowers: ((userId: String, initialTab: Int) -> Unit)? = null,
 ) {
     Column(
         modifier = modifier
@@ -99,6 +109,7 @@ internal fun OtherUserProfileContent(
         OtherProfileAppBar(
             username = state.profile?.username,
             verified = state.profile?.isVerified == true,
+            verificationType = state.profile?.verificationType,
             onBack = { onAction(OtherUserProfileAction.BackClicked) },
         )
         Box(Modifier.fillMaxSize()) {
@@ -119,47 +130,75 @@ internal fun OtherUserProfileContent(
                         .testTag(OtherProfileTestTags.Error),
                 )
                 state.profile == null && state.isInitialLoading -> OtherProfileLoading()
-                state.profile != null -> PullToRefreshBox(
-                    isRefreshing = state.isRefreshing || postsState.isRefreshing,
-                    onRefresh = {
-                        onAction(OtherUserProfileAction.Refresh)
-                        onPostsRefresh()
-                    },
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .testTag(OtherProfileTestTags.PullToRefresh),
-                ) {
-                    val profile = state.profile
-                    ProfileParityList(
-                        header = profile.headerModel(),
-                        postsState = postsState.copy(
-                            isOffline = postsState.isOffline || state.isStale,
-                        ),
-                        privatePosts = profile.isPrivate &&
-                            profile.followState != FollowState.Following,
-                        onPostClick = onPostClick,
-                        onLoadMore = onPostsLoadMore,
-                        modifier = Modifier.testTag(OtherProfileTestTags.Content),
-                        actionContent = {
-                            OtherProfileActions(
-                                profile = profile,
-                                pending = state.followMutationPending,
-                                onAction = onAction,
-                                onMessage = onMessage,
-                            )
-                        },
-                    )
-                    if (state.isStale) {
-                        Text(
-                            text = "نمایش نسخه ذخیره‌شده",
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(androidx.compose.ui.graphics.Color(0xFFEF6C00))
-                                .padding(horizontal = 16.dp, vertical = 10.dp)
-                                .testTag(OtherProfileTestTags.Stale),
-                            color = androidx.compose.ui.graphics.Color.White,
-                            fontSize = 13.sp,
+                state.profile != null -> {
+                    var selectedTab by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableIntStateOf(0) }
+                    var showAccountDetails by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
+
+                    if (showAccountDetails) {
+                        val profile = state.profile
+                        AccountDetailsScreen(
+                            profile = profile.headerModel(),
+                            userId = profile.userId,
+                            onBack = { showAccountDetails = false },
+                            modifier = Modifier.fillMaxSize(),
                         )
+                    } else {
+                        PullToRefreshBox(
+                            isRefreshing = state.isRefreshing || postsState.isRefreshing,
+                            onRefresh = {
+                                onAction(OtherUserProfileAction.Refresh)
+                                onPostsRefresh()
+                            },
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .testTag(OtherProfileTestTags.PullToRefresh),
+                        ) {
+                            val profile = state.profile
+                            ProfileParityList(
+                                header = profile.headerModel(),
+                                postsState = postsState.copy(
+                                    isOffline = postsState.isOffline || state.isStale,
+                                ),
+                                privatePosts = profile.isPrivate &&
+                                    profile.followState != FollowState.Following,
+                                selectedTab = selectedTab,
+                                onTabSelected = { selectedTab = it },
+                                onPostClick = onPostClick,
+                                onLikeClick = onLikeClick,
+                                onSaveClick = onSaveClick,
+                                onLoadMore = onPostsLoadMore,
+                                onMemberBadgeClick = {
+                                    showAccountDetails = true
+                                },
+                                onFollowersClick = {
+                                    onOpenFollowers?.invoke(profile.userId, 0)
+                                },
+                                onFollowingClick = {
+                                    onOpenFollowers?.invoke(profile.userId, 1)
+                                },
+                                modifier = Modifier.testTag(OtherProfileTestTags.Content),
+                                actionContent = {
+                                    OtherProfileActions(
+                                        profile = profile,
+                                        pending = state.followMutationPending,
+                                        onAction = onAction,
+                                        onMessage = onMessage,
+                                    )
+                                },
+                            )
+                            if (state.isStale) {
+                                Text(
+                                    text = "نمایش نسخه ذخیره‌شده",
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(androidx.compose.ui.graphics.Color(0xFFEF6C00))
+                                        .padding(horizontal = 16.dp, vertical = 10.dp)
+                                        .testTag(OtherProfileTestTags.Stale),
+                                    color = androidx.compose.ui.graphics.Color.White,
+                                    fontSize = 13.sp,
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -177,6 +216,8 @@ internal fun OtherUserProfileContent(
 private fun OtherProfileAppBar(
     username: String?,
     verified: Boolean,
+    verificationType: String? = null,
+    role: String? = null,
     onBack: () -> Unit,
 ) {
     Box(
@@ -198,13 +239,12 @@ private fun OtherProfileAppBar(
                 fontWeight = FontWeight.Bold,
             )
             if (verified) {
-                androidx.compose.foundation.layout.Spacer(
-                    Modifier.padding(horizontal = 2.dp),
-                )
-                Icon(
-                    imageVector = ImageVector.vectorResource(R.drawable.ic_profile_verified),
-                    contentDescription = "تأیید شده",
-                    tint = MaterialTheme.colorScheme.onBackground,
+                VerificationBadgeIcon(
+                    isVerified = true,
+                    verificationType = verificationType,
+                    role = role,
+                    size = 18.dp,
+                    modifier = Modifier.padding(start = 4.dp),
                 )
             }
         }
@@ -318,6 +358,7 @@ private fun PublicProfile.headerModel() = ProfileHeaderModel(
     bio = bio,
     avatarUrl = avatarUrl,
     isVerified = isVerified,
+    verificationType = verificationType,
     isPremium = isPremium,
     isPrivate = isPrivate,
     postCount = postsCount,

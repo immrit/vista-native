@@ -25,13 +25,31 @@ val configuredSigningValues = signingValues.values.count { it != null }
 check(configuredSigningValues == 0 || configuredSigningValues == signingValues.size) {
     "Release signing is partially configured. Inject all four VISTA_SIGNING_* values or none."
 }
+val vistaVersionCode = injectedValue("vista.versionCode", "VISTA_VERSION_CODE")
+    ?.toIntOrNull()
+    ?: 4050
+val vistaVersionName = injectedValue("vista.versionName", "VISTA_VERSION_NAME") ?: "2.6.3"
+val flutterReferenceApplicationId = "ir.coffevista.vista"
+val nativeBetaApplicationId = injectedValue("vista.applicationId.beta", "VISTA_BETA_APPLICATION_ID")
+    ?: "ir.coffevista.vista_native"
+val nativeProductionApplicationId = "ir.coffevista.vista_native.production"
+check(vistaVersionCode > 4049) {
+    "Native versionCode must remain above the published Flutter baseline (4049)."
+}
+check(nativeProductionApplicationId != flutterReferenceApplicationId) {
+    "Native builds must never use the Flutter reference applicationId."
+}
 
 android {
     namespace = "ir.coffevista.vista_native"
 
+    compileOptions {
+        isCoreLibraryDesugaringEnabled = true
+    }
+
     defaultConfig {
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = vistaVersionCode
+        versionName = vistaVersionName
     }
 
     signingConfigs {
@@ -52,8 +70,9 @@ android {
     productFlavors {
         create("beta") {
             dimension = "environment"
-            applicationId = "ir.coffevista.vista_native"
+            applicationId = nativeBetaApplicationId
             versionNameSuffix = "-beta"
+            buildConfigField("String", "APP_ENVIRONMENT", "\"beta\"")
             buildConfigField(
                 "String",
                 "API_BASE_URL",
@@ -62,7 +81,8 @@ android {
         }
         create("production") {
             dimension = "environment"
-            applicationId = "ir.coffevista.vista"
+            applicationId = nativeProductionApplicationId
+            buildConfigField("String", "APP_ENVIRONMENT", "\"production\"")
             buildConfigField(
                 "String",
                 "API_BASE_URL",
@@ -91,7 +111,27 @@ android {
     }
 }
 
+val verifyNativeApplicationIds by tasks.registering {
+    group = "verification"
+    description = "Rejects Native variants that collide with the Flutter runtime package."
+    doLast {
+        val nativeApplicationIds = android.productFlavors.mapNotNull { it.applicationId }
+        check(nativeApplicationIds.none { it == flutterReferenceApplicationId }) {
+            "Native variants must not use Flutter application ID $flutterReferenceApplicationId: $nativeApplicationIds"
+        }
+        check(nativeApplicationIds.all { it.startsWith("ir.coffevista.vista_native") }) {
+            "Native variants must use an explicit Native package suffix: $nativeApplicationIds"
+        }
+    }
+}
+
+tasks.named("preBuild") {
+    dependsOn(verifyNativeApplicationIds)
+}
+
 dependencies {
+    coreLibraryDesugaring(libs.desugar.jdk.libs)
+
     implementation(project(":core:common"))
     implementation(project(":core:designsystem"))
     implementation(project(":core:model"))
@@ -105,6 +145,8 @@ dependencies {
     implementation(project(":feature:profile"))
     implementation(project(":feature:feed"))
     implementation(project(":feature:search"))
+    implementation(project(":feature:chat"))
+    implementation(project(":feature:services"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
@@ -120,8 +162,10 @@ dependencies {
     implementation(libs.androidx.work.runtime)
     implementation(libs.hilt.android)
     implementation(libs.okhttp)
+    implementation(libs.coil.compose)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)
+    implementation(libs.firebase.messaging)
 
     testImplementation(libs.junit)
     testImplementation(project(":core:testing"))

@@ -4,8 +4,8 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
-import ir.coffevista.vista_native.features.auth.AuthenticationState
-import ir.coffevista.vista_native.features.auth.AuthenticationStateProvider
+import ir.coffevista.vista_native.core.model.session.AuthenticationState
+import ir.coffevista.vista_native.core.model.session.AuthenticationStateProvider
 import ir.coffevista.vista_native.features.profile.data.FollowMutationResult
 import ir.coffevista.vista_native.features.profile.data.ProfileRefreshResult
 import ir.coffevista.vista_native.features.profile.data.UserProfileRepository

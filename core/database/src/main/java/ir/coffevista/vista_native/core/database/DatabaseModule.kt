@@ -28,6 +28,8 @@ object DatabaseModule {
             VistaFoundationDatabase.MIGRATION_4_5,
             VistaFoundationDatabase.MIGRATION_5_6,
             VistaFoundationDatabase.MIGRATION_6_7,
+            VistaFoundationDatabase.MIGRATION_7_8,
+            VistaFoundationDatabase.MIGRATION_8_9,
         )
         .build()
 
@@ -57,4 +59,10 @@ object DatabaseModule {
         database: VistaFoundationDatabase,
     ): ir.coffevista.vista_native.core.database.search.SearchHistoryDao =
         database.searchHistoryDao()
+
+    @Provides
+    fun provideConversationDao(
+        database: VistaFoundationDatabase,
+    ): ir.coffevista.vista_native.core.database.chat.ConversationDao =
+        database.conversationDao()
 }

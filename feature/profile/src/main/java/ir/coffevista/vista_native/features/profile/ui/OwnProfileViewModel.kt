@@ -1,12 +1,18 @@
 package ir.coffevista.vista_native.features.profile.ui
 
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import ir.coffevista.vista_native.core.common.AppError
+import ir.coffevista.vista_native.core.common.ErrorKind
 import ir.coffevista.vista_native.core.common.Outcome
-import ir.coffevista.vista_native.features.auth.AuthenticationState
-import ir.coffevista.vista_native.features.auth.AuthenticationStateProvider
+import ir.coffevista.vista_native.core.network.ErrorClassifier
+import ir.coffevista.vista_native.core.model.session.AuthenticationState
+import ir.coffevista.vista_native.core.model.session.AuthenticationStateProvider
 import ir.coffevista.vista_native.features.profile.data.OwnProfileRepository
+import ir.coffevista.vista_native.features.profile.data.ProfileAvatarUploader
+import ir.coffevista.vista_native.features.profile.data.ProfileUpdateRequestDto
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -18,8 +24,50 @@ import javax.inject.Inject
 @HiltViewModel
 class OwnProfileViewModel @Inject constructor(
     private val repository: OwnProfileRepository,
-    private val authStateProvider: AuthenticationStateProvider
+    private val authStateProvider: AuthenticationStateProvider,
+    private val avatarUploader: ProfileAvatarUploader,
 ) : ViewModel() {
+
+    suspend fun updateProfile(request: ProfileUpdateRequestDto): Outcome<Unit> =
+        repository.updateOwnProfile(request)
+
+    suspend fun updateAvatar(uri: Uri): Outcome<Unit> {
+        val userId = currentUserId ?: return Outcome.Failure(
+            AppError(ErrorKind.UNAUTHORIZED, "برای تغییر تصویر ابتدا وارد حساب شوید"),
+        )
+        val previousUrl = (uiState.value as? OwnProfileUiState.Content)?.profile?.avatarUrl
+        return try {
+            val uploaded = avatarUploader.upload(userId, uri)
+            when (val result = repository.updateAvatar(uploaded.url)) {
+                is Outcome.Success -> {
+                    previousUrl?.takeIf { it.isNotBlank() && it != uploaded.url }?.let { oldUrl ->
+                        runCatching { avatarUploader.deleteByUrl(oldUrl) }
+                    }
+                    result
+                }
+                is Outcome.Failure -> {
+                    runCatching { avatarUploader.deleteByUrl(uploaded.url) }
+                    result
+                }
+            }
+        } catch (error: Exception) {
+            Outcome.Failure(ErrorClassifier.classify(error, "آپلود تصویر نمایه"))
+        }
+    }
+
+    suspend fun removeAvatar(): Outcome<Unit> {
+        val previousUrl = (uiState.value as? OwnProfileUiState.Content)?.profile?.avatarUrl
+            ?.takeIf { it.isNotBlank() }
+            ?: return Outcome.Success(Unit)
+        return when (val result = repository.updateAvatar("")) {
+            is Outcome.Success -> {
+                // The profile is already correct even if object-storage cleanup is unavailable.
+                runCatching { avatarUploader.deleteByUrl(previousUrl) }
+                result
+            }
+            is Outcome.Failure -> result
+        }
+    }
 
     private val _uiState = MutableStateFlow<OwnProfileUiState>(OwnProfileUiState.Loading)
     val uiState: StateFlow<OwnProfileUiState> = _uiState.asStateFlow()

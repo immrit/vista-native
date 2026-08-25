@@ -10,6 +10,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import retrofit2.Retrofit
 import retrofit2.converter.kotlinx.serialization.asConverterFactory
 import java.util.concurrent.TimeUnit
+import java.net.Proxy
 import javax.inject.Singleton
 
 @Module
@@ -23,7 +24,9 @@ object InternalNetworkModule {
     @Provides
     @Singleton
     @ExternalMedia
-    fun provideExternalMediaClient(): OkHttpClient = baseClientBuilder().build()
+    fun provideExternalMediaClient(): OkHttpClient = baseClientBuilder()
+        .proxy(Proxy.NO_PROXY)
+        .build()
 
     @Provides
     @Singleton

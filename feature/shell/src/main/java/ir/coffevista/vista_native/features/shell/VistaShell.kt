@@ -1,18 +1,24 @@
 package ir.coffevista.vista_native.features.shell
 
+import android.app.Activity
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -32,13 +38,20 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavDestination
@@ -52,7 +65,6 @@ import androidx.navigation.compose.navigation
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import androidx.navigation.NavType
-import androidx.hilt.navigation.compose.hiltViewModel
 import ir.coffevista.vista_native.core.designsystem.component.VistaAvatar
 import ir.coffevista.vista_native.core.designsystem.component.VistaBadge
 import ir.coffevista.vista_native.core.designsystem.component.VistaBottomSheet
@@ -67,16 +79,6 @@ import ir.coffevista.vista_native.core.designsystem.component.VistaTextField
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaLayout
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaSpacing
 import ir.coffevista.vista_native.core.model.session.AuthenticatedContext
-import ir.coffevista.vista_native.features.profile.ui.OwnProfileScreen
-import ir.coffevista.vista_native.features.profile.ui.OtherUserProfileScreen
-import ir.coffevista.vista_native.features.profile.ui.ProfilePostUiModel
-import ir.coffevista.vista_native.features.profile.ui.ProfilePostsPresentationState
-import ir.coffevista.vista_native.features.feed.data.FeedPost
-import ir.coffevista.vista_native.features.feed.ui.FeedScreen
-import ir.coffevista.vista_native.features.feed.ui.PostDetailScreen
-import ir.coffevista.vista_native.features.feed.ui.ProfilePostsViewModel
-import ir.coffevista.vista_native.features.search.ui.SearchLauncherScreen
-import ir.coffevista.vista_native.features.search.ui.SearchWorkspaceScreen
 import kotlinx.coroutines.launch
 
 @Composable
@@ -86,8 +88,10 @@ fun VistaShell(
     onDeepLinkConsumed: (Long) -> Unit,
     onLogout: () -> Unit,
     onExitRequested: () -> Unit,
+    content: ShellFeatureContent,
     modifier: Modifier = Modifier,
 ) {
+    VistaShellSystemBars()
     val navController = rememberNavController()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -98,10 +102,10 @@ fun VistaShell(
         backStackEntry?.destination?.route in setOf(
             ShellRoutes.SearchWorkspace,
             ShellRoutes.ServicesDetailRoute,
-            ShellRoutes.ChatDetailRoute,
         )
     var lastExitRequestAt by rememberSaveable { mutableStateOf(0L) }
     var lastDeepLinkId by rememberSaveable { mutableStateOf(0L) }
+    var activeChatTitle by rememberSaveable { mutableStateOf("پیام‌ها") }
 
     fun selectTab(tab: ShellTab) {
         val startDestinationId = navController.graph.findStartDestination().id
@@ -133,7 +137,7 @@ fun VistaShell(
             }
             ShellDeferredKind.CHAT -> {
                 selectTab(ShellTab.Chat)
-                navController.navigate(ShellRoutes.chatDetail(request.reference))
+                navController.navigate(ShellRoutes.chatDetail(request.reference, request.secondaryReference))
             }
         }
 
@@ -166,91 +170,399 @@ fun VistaShell(
         NavHost(
             navController = navController,
             startDestination = ShellRoutes.FeedGraph,
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .windowInsetsPadding(WindowInsets.statusBars.only(WindowInsetsSides.Top)),
         ) {
             navigation(route = ShellRoutes.FeedGraph, startDestination = ShellRoutes.FeedRoot) {
                 composable(ShellRoutes.FeedRoot) {
-                    FeedScreen(
-                        viewModel = hiltViewModel(),
-                        onPostClick = { postId ->
+                    content.feedRoot(
+                        { postId ->
                             navController.navigate(ShellRoutes.postDetail(postId))
                         },
-                        onAuthorClick = { userId ->
+                        { userId ->
                             if (userId == context.userId) {
                                 selectTab(ShellTab.Profile)
                             } else {
                                 navController.navigate(ShellRoutes.userProfile(userId))
                             }
                         },
+                        {
+                            navController.navigate(ShellRoutes.AddPost)
+                        },
+                        { userIndex ->
+                            navController.navigate(ShellRoutes.storyPlayer(userIndex))
+                        },
+                        {
+                            navController.navigate(ShellRoutes.StoryCreate)
+                        },
                     )
+                }
+                composable(
+                    route = ShellRoutes.StoryPlayerRoute,
+                    arguments = listOf(
+                        androidx.navigation.navArgument("userIndex") { type = androidx.navigation.NavType.IntType }
+                    ),
+                ) { backStackEntry ->
+                    val userIndex = backStackEntry.arguments?.getInt("userIndex") ?: 0
+                    val storyPlayer = content.storyPlayer
+                    if (storyPlayer != null) {
+                        storyPlayer(
+                            userIndex,
+                            { navController.popBackStack() },
+                            { userId -> navController.navigate(ShellRoutes.userProfile(userId)) },
+                            { url -> navController.navigate(ShellRoutes.servicesWeb(url, "پیوند استوری")) },
+                        )
+                    }
+                }
+                composable(ShellRoutes.StoryCreate) {
+                    val storyCreate = content.storyCreate
+                    if (storyCreate != null) {
+                        storyCreate(
+                            { navController.popBackStack() },
+                            { navController.popBackStack() },
+                        )
+                    }
+                }
+                composable(ShellRoutes.AddPost) {
+                    val addPost = content.addPost
+                    if (addPost != null) {
+                        addPost(
+                            { navController.popBackStack() },
+                            { uri -> navController.navigate(ShellRoutes.videoTrimmer(uri.toString())) },
+                            { navController.popBackStack() },
+                        )
+                    }
+                }
+                composable(
+                    route = ShellRoutes.VideoTrimmerRoute,
+                    arguments = listOf(
+                        androidx.navigation.navArgument("uri") { type = androidx.navigation.NavType.StringType }
+                    ),
+                ) { backStackEntry ->
+                    val rawUri = backStackEntry.arguments?.getString("uri").orEmpty()
+                    val decodedUri = java.net.URLDecoder.decode(rawUri, "UTF-8")
+                    val videoTrimmer = content.videoTrimmer
+                    if (videoTrimmer != null && decodedUri.isNotBlank()) {
+                        videoTrimmer(
+                            android.net.Uri.parse(decodedUri),
+                            { navController.popBackStack() },
+                            { trimmedFile ->
+                                navController.previousBackStackEntry
+                                    ?.savedStateHandle
+                                    ?.set("trimmed_video_path", trimmedFile.absolutePath)
+                                navController.popBackStack()
+                            },
+                        )
+                    }
                 }
             }
             navigation(route = ShellRoutes.SearchGraph, startDestination = ShellRoutes.SearchRoot) {
                 composable(ShellRoutes.SearchRoot) {
-                    SearchLauncherScreen(
-                        viewModel = hiltViewModel(),
-                        onOpenWorkspace = {
+                    content.searchRoot(
+                        {
                             navController.navigate(ShellRoutes.SearchWorkspace)
+                        },
+                        {
+                            navController.navigate(ShellRoutes.QrScanner)
                         },
                     )
                 }
                 composable(ShellRoutes.SearchWorkspace) {
-                    SearchWorkspaceScreen(
-                        viewModel = hiltViewModel(),
-                        onUserClick = { user ->
+                    content.searchWorkspace(
+                        { userId ->
                             navController.navigate(
-                                if (user.id == context.userId) {
+                                if (userId == context.userId) {
                                     ShellRoutes.OwnProfileOverlay
                                 } else {
-                                    ShellRoutes.userProfile(user.id)
+                                    ShellRoutes.userProfile(userId)
                                 },
                             )
                         },
-                        onPostClick = { post ->
-                            navController.navigate(ShellRoutes.postDetail(post.id))
+                        { postId ->
+                            navController.navigate(ShellRoutes.postDetail(postId))
                         },
                     )
                 }
             }
             navigation(route = ShellRoutes.ServicesGraph, startDestination = ShellRoutes.ServicesRoot) {
                 composable(ShellRoutes.ServicesRoot) {
-                    ServicesPlaceholderScreen(onDetails = { navController.navigate(ShellRoutes.servicesDetail("foundation")) })
+                    val servicesRoot = content.servicesRoot
+                    if (servicesRoot != null) {
+                        servicesRoot(
+                            { navController.navigate(ShellRoutes.ServicesNearby) },
+                            { navController.navigate(ShellRoutes.ServicesGameLaunch) },
+                            { navController.navigate(ShellRoutes.ServicesTopGroups) },
+                            { navController.navigate(ShellRoutes.ServicesContacts) },
+                            { userId -> navController.navigate(ShellRoutes.userProfile(userId)) },
+                            { url, title -> navController.navigate(ShellRoutes.servicesWeb(url, title)) },
+                            { route ->
+                                when (route.lowercase()) {
+                                    "vista://nearby" -> navController.navigate(ShellRoutes.ServicesNearby)
+                                    "vista://game", "vista://games" -> navController.navigate(ShellRoutes.ServicesGameLaunch)
+                                    "vista://group", "vista://groups" -> navController.navigate(ShellRoutes.ServicesTopGroups)
+                                    "vista://contact", "vista://contacts" -> navController.navigate(ShellRoutes.ServicesContacts)
+                                    else -> navController.navigate(ShellRoutes.servicesDetail(route))
+                                }
+                            },
+                        )
+                    } else {
+                        ServicesPlaceholderScreen(
+                            onDetails = {
+                                navController.navigate(ShellRoutes.servicesDetail("foundation"))
+                            },
+                        )
+                    }
+                }
+                composable(ShellRoutes.ServicesNearby) {
+                    val nearby = content.servicesNearby
+                    if (nearby != null) {
+                        nearby(
+                            { navController.popBackStack() },
+                            { navController.navigate(ShellRoutes.ServicesNearbyLikes) },
+                            { userId, _ -> navController.navigate(ShellRoutes.userProfile(userId)) },
+                            { _, otherUserId, username, avatarUrl ->
+                                navController.navigate(ShellRoutes.chatDetail(otherUserId))
+                            },
+                        )
+                    } else {
+                        ControlledDetailScreen(ShellTab.Services)
+                    }
+                }
+                composable(ShellRoutes.ServicesNearbyLikes) {
+                    val nearbyLikes = content.servicesNearbyLikes
+                    if (nearbyLikes != null) {
+                        nearbyLikes(
+                            { navController.popBackStack() },
+                            { _, otherUserId, username, avatarUrl ->
+                                navController.navigate(ShellRoutes.chatDetail(otherUserId))
+                            },
+                        )
+                    } else {
+                        ControlledDetailScreen(ShellTab.Services)
+                    }
+                }
+                composable(ShellRoutes.ServicesContacts) {
+                    val contacts = content.servicesContacts
+                    if (contacts != null) {
+                        contacts(
+                            { navController.popBackStack() },
+                            { userId -> navController.navigate(ShellRoutes.userProfile(userId)) },
+                        )
+                    } else {
+                        ControlledDetailScreen(ShellTab.Services)
+                    }
+                }
+                composable(ShellRoutes.ServicesTopGroups) {
+                    val topGroups = content.servicesTopGroups
+                    if (topGroups != null) {
+                        topGroups(
+                            { navController.popBackStack() },
+                            { groupId -> navController.navigate(ShellRoutes.servicesDetail("group/$groupId")) },
+                        )
+                    } else {
+                        ControlledDetailScreen(ShellTab.Services)
+                    }
+                }
+                composable(ShellRoutes.ServicesGameLaunch) {
+                    val gameLaunch = content.servicesGameLaunch
+                    if (gameLaunch != null) {
+                        gameLaunch(
+                            { navController.popBackStack() },
+                            { url, title ->
+                                navController.navigate(ShellRoutes.servicesWeb(url, title)) {
+                                    popUpTo(ShellRoutes.ServicesGameLaunch) { inclusive = true }
+                                }
+                            },
+                        )
+                    } else {
+                        ControlledDetailScreen(ShellTab.Services)
+                    }
+                }
+                composable(
+                    route = ShellRoutes.ServicesWebRoute,
+                    arguments = listOf(
+                        navArgument("url") { type = NavType.StringType },
+                        navArgument("title") { type = NavType.StringType },
+                    ),
+                ) { entry ->
+                    val url = entry.arguments?.getString("url").orEmpty()
+                    val title = entry.arguments?.getString("title").orEmpty()
+                    content.servicesWeb?.invoke(url, title) {
+                        navController.popBackStack()
+                    } ?: ControlledDetailScreen(ShellTab.Services)
                 }
                 composable(ShellRoutes.ServicesDetailRoute) { ControlledDetailScreen(ShellTab.Services) }
             }
             navigation(route = ShellRoutes.ChatGraph, startDestination = ShellRoutes.ChatRoot) {
                 composable(ShellRoutes.ChatRoot) {
-                    ChatPlaceholderScreen(onDetails = { navController.navigate(ShellRoutes.chatDetail("foundation")) })
+                    val chatRoot = content.chatRoot
+                    if (chatRoot != null) {
+                        chatRoot(
+                            { reference, title ->
+                                activeChatTitle = title.ifBlank { "پیام‌ها" }
+                                navController.navigate(ShellRoutes.chatDetail(reference))
+                            },
+                            { navController.navigate(ShellRoutes.ChatNewMessage) },
+                        )
+                    } else {
+                        ChatPlaceholderScreen(
+                            onDetails = {
+                                navController.navigate(ShellRoutes.chatDetail("foundation"))
+                            },
+                        )
+                    }
                 }
-                composable(ShellRoutes.ChatDetailRoute) { ControlledDetailScreen(ShellTab.Chat) }
+                composable(ShellRoutes.ChatNewMessage) {
+                    val chatNewMessage = content.chatNewMessage
+                    if (chatNewMessage != null) {
+                        chatNewMessage(navController::popBackStack) { reference, title ->
+                            activeChatTitle = title.ifBlank { "پیام‌ها" }
+                            navController.navigate(ShellRoutes.chatDetail(reference)) {
+                                popUpTo(ShellRoutes.ChatNewMessage) { inclusive = true }
+                            }
+                        }
+                    } else {
+                        ControlledDetailScreen(ShellTab.Chat)
+                    }
+                }
+                composable(
+                    route = ShellRoutes.ChatDetailRoute,
+                    arguments = listOf(
+                        navArgument("reference") { type = NavType.StringType },
+                        navArgument("messageId") {
+                            type = NavType.StringType
+                            nullable = true
+                            defaultValue = null
+                        },
+                    ),
+                ) { entry ->
+                    content.chatDetail?.invoke(
+                        entry.arguments?.getString("reference").orEmpty(),
+                        entry.arguments?.getString("messageId"),
+                        activeChatTitle,
+                        navController::popBackStack,
+                    ) { userId -> navController.navigate(ShellRoutes.userProfile(userId)) }
+                        ?: ControlledDetailScreen(ShellTab.Chat)
+                }
             }
             navigation(route = ShellRoutes.ProfileGraph, startDestination = ShellRoutes.ProfileRoot) {
                 composable(ShellRoutes.ProfileRoot) {
-                    val postsViewModel = hiltViewModel<ProfilePostsViewModel>()
-                    val postsState by postsViewModel.uiState.collectAsStateWithLifecycle()
-                    LaunchedEffect(context.userId) {
-                        postsViewModel.bind(context.userId)
-                    }
-                    OwnProfileScreen(
-                        viewModel = hiltViewModel(),
-                        onLogout = onLogout,
-                        postsState = postsState.toPresentationState(),
-                        onPostsRefresh = postsViewModel::refresh,
-                        onPostsLoadMore = postsViewModel::loadMore,
-                        onPostClick = { postId ->
+                    content.ownProfile(
+                        { postId ->
                             navController.navigate(ShellRoutes.postDetail(postId))
+                        },
+                        {
+                            navController.navigate(ShellRoutes.SettingsRoot)
+                        },
+                        onLogout,
+                        { userId, initialTab ->
+                            navController.navigate(ShellRoutes.userFollow(userId, initialTab))
+                        },
+                        {
+                            navController.navigate(ShellRoutes.QrScanner)
                         },
                     )
                 }
                 composable(ShellRoutes.ProfileDetailRoute) { ControlledDetailScreen(ShellTab.Profile) }
+                composable(ShellRoutes.SettingsRoot) {
+                    content.settingsRoot?.invoke(
+                        { navController.popBackStack() },
+                        { navController.navigate(ShellRoutes.EditProfile) },
+                        { navController.navigate(ShellRoutes.PricingPage) },
+                        { navController.navigate(ShellRoutes.userProfile(context.userId)) },
+                        { navController.navigate(ShellRoutes.PrivacySecurity) },
+                        { navController.navigate(ShellRoutes.NotificationSettings) },
+                        { navController.navigate(ShellRoutes.ThemeSettings) },
+                        { navController.navigate(ShellRoutes.DataStorage) },
+                        { navController.navigate(ShellRoutes.SavedPosts) },
+                        { navController.navigate(ShellRoutes.ChangePassword) },
+                        { navController.navigate(ShellRoutes.VerificationRequest) },
+                        { navController.navigate(ShellRoutes.TermsConditions) },
+                        { navController.navigate(ShellRoutes.AboutSettings) },
+                        onLogout,
+                    ) ?: ControlledDetailScreen(ShellTab.Profile)
+                }
+                composable(ShellRoutes.EditProfile) {
+                    content.editProfile?.invoke { navController.popBackStack() } ?: ControlledDetailScreen(ShellTab.Profile)
+                }
+                composable(ShellRoutes.PricingPage) {
+                    content.pricingPage?.invoke { navController.popBackStack() } ?: ControlledDetailScreen(ShellTab.Profile)
+                }
+                composable(ShellRoutes.PrivacySecurity) {
+                    content.privacySecurity?.invoke(
+                        { navController.popBackStack() },
+                        { navController.navigate(ShellRoutes.BlockedUsers) },
+                        { navController.navigate(ShellRoutes.ActiveSessions) },
+                    ) ?: ControlledDetailScreen(ShellTab.Profile)
+                }
+                composable(ShellRoutes.ActiveSessions) {
+                    content.activeSessions?.invoke { navController.popBackStack() } ?: ControlledDetailScreen(ShellTab.Profile)
+                }
+                composable(ShellRoutes.BlockedUsers) {
+                    content.blockedUsers?.invoke { navController.popBackStack() } ?: ControlledDetailScreen(ShellTab.Profile)
+                }
+                composable(ShellRoutes.NotificationSettings) {
+                    content.notificationSettings?.invoke { navController.popBackStack() } ?: ControlledDetailScreen(ShellTab.Profile)
+                }
+                composable(ShellRoutes.ThemeSettings) {
+                    content.themeSettings?.invoke { navController.popBackStack() } ?: ControlledDetailScreen(ShellTab.Profile)
+                }
+                composable(ShellRoutes.DataStorage) {
+                    content.dataStorage?.invoke { navController.popBackStack() } ?: ControlledDetailScreen(ShellTab.Profile)
+                }
+                composable(ShellRoutes.SavedPosts) {
+                    content.savedPosts?.invoke(
+                        { navController.popBackStack() },
+                        { postId -> navController.navigate(ShellRoutes.postDetail(postId)) },
+                    ) ?: ControlledDetailScreen(ShellTab.Profile)
+                }
+                composable(ShellRoutes.ChangePassword) {
+                    content.changePassword?.invoke { navController.popBackStack() } ?: ControlledDetailScreen(ShellTab.Profile)
+                }
+                composable(ShellRoutes.VerificationRequest) {
+                    content.verificationRequest?.invoke { navController.popBackStack() } ?: ControlledDetailScreen(ShellTab.Profile)
+                }
+                composable(ShellRoutes.TermsConditions) {
+                    content.termsConditions?.invoke { navController.popBackStack() } ?: ControlledDetailScreen(ShellTab.Profile)
+                }
+                composable(ShellRoutes.AboutSettings) {
+                    content.aboutSettings?.invoke(
+                        { navController.popBackStack() },
+                        { navController.navigate(ShellRoutes.AboutSlideshow) },
+                        { navController.navigate(ShellRoutes.TermsConditions) },
+                        { navController.navigate(ShellRoutes.ContactUs) },
+                        { navController.navigate(ShellRoutes.PrivacyPolicy) },
+                        { navController.navigate(ShellRoutes.FAQPage) },
+                    ) ?: ControlledDetailScreen(ShellTab.Profile)
+                }
+                composable(ShellRoutes.AboutSlideshow) {
+                    content.aboutSlideshow?.invoke { navController.popBackStack() } ?: ControlledDetailScreen(ShellTab.Profile)
+                }
+                composable(ShellRoutes.ContactUs) {
+                    content.contactUs?.invoke(
+                        { navController.popBackStack() },
+                        { conversationId, title ->
+                            activeChatTitle = title.ifBlank { "پشتیبانی ویستا" }
+                            selectTab(ShellTab.Chat)
+                            navController.navigate(ShellRoutes.chatDetail(conversationId))
+                        },
+                    ) ?: ControlledDetailScreen(ShellTab.Profile)
+                }
+                composable(ShellRoutes.PrivacyPolicy) {
+                    content.privacyPolicy?.invoke { navController.popBackStack() } ?: ControlledDetailScreen(ShellTab.Profile)
+                }
+                composable(ShellRoutes.FAQPage) {
+                    content.faqPage?.invoke { navController.popBackStack() } ?: ControlledDetailScreen(ShellTab.Profile)
+                }
             }
             composable(
                 route = ShellRoutes.PostDetailRoute,
                 arguments = listOf(navArgument("reference") { type = NavType.StringType }),
             ) {
-                PostDetailScreen(
-                    onBack = { navController.popBackStack() },
-                    onAuthorClick = { userId ->
+                content.postDetail(
+                    { navController.popBackStack() },
+                    { userId ->
                         navController.navigate(
                             if (userId == context.userId) {
                                 ShellRoutes.OwnProfileOverlay
@@ -259,7 +571,6 @@ fun VistaShell(
                             },
                         )
                     },
-                    viewModel = hiltViewModel(),
                 )
             }
             composable(
@@ -267,41 +578,70 @@ fun VistaShell(
                 arguments = listOf(navArgument("userId") { type = NavType.StringType }),
             ) { profileEntry ->
                 val userId = profileEntry.arguments?.getString("userId").orEmpty()
-                val postsViewModel = hiltViewModel<ProfilePostsViewModel>()
-                val postsState by postsViewModel.uiState.collectAsStateWithLifecycle()
-                LaunchedEffect(userId) {
-                    if (userId.isNotBlank()) postsViewModel.bind(userId)
-                }
-                OtherUserProfileScreen(
-                    viewModel = hiltViewModel(),
-                    onBack = { navController.popBackStack() },
-                    onSelfProfile = {
+                content.userProfile(
+                    userId,
+                    { navController.popBackStack() },
+                    {
                         navController.navigate(ShellRoutes.OwnProfileOverlay)
                     },
-                    postsState = postsState.toPresentationState(),
-                    onPostsRefresh = postsViewModel::refresh,
-                    onPostsLoadMore = postsViewModel::loadMore,
-                    onPostClick = { postId ->
+                    { postId ->
                         navController.navigate(ShellRoutes.postDetail(postId))
+                    },
+                    { targetUserId, initialTab ->
+                        navController.navigate(ShellRoutes.userFollow(targetUserId, initialTab))
                     },
                 )
             }
             composable(ShellRoutes.OwnProfileOverlay) {
-                val postsViewModel = hiltViewModel<ProfilePostsViewModel>()
-                val postsState by postsViewModel.uiState.collectAsStateWithLifecycle()
-                LaunchedEffect(context.userId) {
-                    postsViewModel.bind(context.userId)
-                }
-                OwnProfileScreen(
-                    viewModel = hiltViewModel(),
-                    onLogout = onLogout,
-                    postsState = postsState.toPresentationState(),
-                    onPostsRefresh = postsViewModel::refresh,
-                    onPostsLoadMore = postsViewModel::loadMore,
-                    onPostClick = { postId ->
+                content.ownProfile(
+                    { postId ->
                         navController.navigate(ShellRoutes.postDetail(postId))
                     },
+                    {
+                        navController.navigate(ShellRoutes.SettingsRoot)
+                    },
+                    onLogout,
+                    { userId, initialTab ->
+                        navController.navigate(ShellRoutes.userFollow(userId, initialTab))
+                    },
+                    {
+                        navController.navigate(ShellRoutes.QrScanner)
+                    },
                 )
+            }
+            composable(
+                route = ShellRoutes.UserFollowRoute,
+                arguments = listOf(
+                    navArgument("userId") { type = NavType.StringType },
+                    navArgument("initialTab") {
+                        type = NavType.IntType
+                        defaultValue = 0
+                    },
+                ),
+            ) { entry ->
+                val targetUserId = entry.arguments?.getString("userId").orEmpty()
+                val initialTab = entry.arguments?.getInt("initialTab") ?: 0
+                content.followersFollowing?.invoke(
+                    targetUserId,
+                    initialTab,
+                    { navController.popBackStack() },
+                    { clickedUserId ->
+                        if (clickedUserId == context.userId) {
+                            selectTab(ShellTab.Profile)
+                        } else {
+                            navController.navigate(ShellRoutes.userProfile(clickedUserId))
+                        }
+                    },
+                ) ?: ControlledDetailScreen(ShellTab.Profile)
+            }
+            composable(ShellRoutes.QrScanner) {
+                content.qrScanner?.invoke(
+                    { navController.popBackStack() },
+                    { userFound ->
+                        navController.popBackStack()
+                        navController.navigate(ShellRoutes.userProfile(userFound))
+                    },
+                ) ?: ControlledDetailScreen(ShellTab.Profile)
             }
         }
         SnackbarHost(
@@ -313,6 +653,7 @@ fun VistaShell(
         if (showBottomIsland) {
             VistaBottomIsland(
                 selectedTab = selectedTab,
+                chatBadgeCount = content.chatBadgeCount,
                 onSelect = ::selectTab,
                 modifier = Modifier.align(Alignment.BottomCenter),
             )
@@ -321,14 +662,30 @@ fun VistaShell(
 }
 
 @Composable
+private fun VistaShellSystemBars() {
+    val view = LocalView.current
+    val shellBackground = MaterialTheme.colorScheme.background
+    if (!view.isInEditMode) {
+        SideEffect {
+            @Suppress("DEPRECATION")
+            (view.context as? Activity)?.window?.statusBarColor = shellBackground.toArgb()
+        }
+    }
+}
+
+@Composable
 private fun VistaBottomIsland(
     selectedTab: ShellTab,
+    chatBadgeCount: Int,
     onSelect: (ShellTab) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val density = LocalDensity.current
     val bottomInset = with(density) {
-        WindowInsets.navigationBars.getBottom(density).toDp()
+        maxOf(
+            WindowInsets.navigationBars.getBottom(density),
+            WindowInsets.ime.getBottom(density),
+        ).toDp()
     }
     val background = MaterialTheme.colorScheme.background
     Box(
@@ -375,7 +732,12 @@ private fun VistaBottomIsland(
                             modifier = Modifier
                                 .testTag("shell-tab-${tab.name.lowercase()}")
                                 .width(64.dp)
-                                .height(48.dp),
+                                .height(48.dp)
+                                .semantics {
+                                    contentDescription = tab.labelFa
+                                    role = Role.Tab
+                                    this.selected = selected
+                                },
                             shape = RoundedCornerShape(14.dp),
                             color = if (selected) activeColor else {
                                 MaterialTheme.colorScheme.surfaceVariant
@@ -404,15 +766,30 @@ private fun VistaBottomIsland(
                             modifier = Modifier
                                 .testTag("shell-tab-${tab.name.lowercase()}")
                                 .size(54.dp)
-                                .clickable { onSelect(tab) },
+                                .clickable { onSelect(tab) }
+                                .semantics {
+                                    contentDescription = tab.labelFa
+                                    role = Role.Tab
+                                    this.selected = selected
+                                },
                             contentAlignment = Alignment.Center,
                         ) {
-                            VistaNavigationIcon(
-                                tab = tab,
-                                selected = selected,
-                                color = if (selected) activeColor else inactiveColor,
-                                modifier = Modifier.size(30.dp),
-                            )
+                            Box {
+                                VistaNavigationIcon(
+                                    tab = tab,
+                                    selected = selected,
+                                    color = if (selected) activeColor else inactiveColor,
+                                    modifier = Modifier.size(30.dp),
+                                )
+                                if (tab == ShellTab.Chat && chatBadgeCount > 0) {
+                                    VistaBadge(
+                                        label = if (chatBadgeCount > 9) "۹+" else chatBadgeCount.toString(),
+                                        modifier = Modifier
+                                            .align(Alignment.TopEnd)
+                                            .testTag("shell-chat-badge"),
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -531,35 +908,3 @@ private fun ShellTab.rootRoute(): String = when (this) {
     ShellTab.Chat -> ShellRoutes.ChatRoot
     ShellTab.Profile -> ShellRoutes.ProfileRoot
 }
-
-private fun ir.coffevista.vista_native.features.feed.ui.ProfilePostsUiState
-    .toPresentationState() = ProfilePostsPresentationState(
-    posts = posts.map(FeedPost::toProfilePostUiModel),
-    isInitialLoading = isInitialLoading,
-    isRefreshing = isRefreshing,
-    isAppending = isAppending,
-    isOffline = isOffline,
-    hasMore = hasMore,
-    error = error,
-    appendError = appendError,
-)
-
-private fun FeedPost.toProfilePostUiModel() = ProfilePostUiModel(
-    id = id,
-    userId = userId,
-    authorFullName = authorFullName,
-    authorUsername = authorUsername,
-    authorAvatarUrl = authorAvatarUrl,
-    authorIsVerified = authorIsVerified,
-    content = content,
-    imageUrl = videoThumbnailUrl ?: primaryImageUrl,
-    videoUrl = videoUrl,
-    aspectRatio = aspectRatio?.toFloatOrNull(),
-    likeCount = likeCount,
-    commentCount = commentCount,
-    hideLikeCount = hideLikeCount,
-    hideCommentCount = hideCommentCount,
-    isLiked = isLiked,
-    isSaved = isSaved,
-    createdAt = createdAt,
-)

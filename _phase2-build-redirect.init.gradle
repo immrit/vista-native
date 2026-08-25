@@ -1,0 +1,20 @@
+def buildRoot = System.getProperty("vista.phase2.build.root")
+if (buildRoot == null || buildRoot.trim().isEmpty()) {
+    throw new GradleException("vista.phase2.build.root is required")
+}
+
+gradle.beforeProject { project ->
+    def directory = project.path == ':' ? 'root' : project.path.substring(1).replace(':', '_')
+    project.buildDir = new File(buildRoot, directory)
+}
+
+// Some legacy modules assign a custom buildDir during their own configuration.
+// Reapply the isolated location after every project is evaluated, before task execution.
+gradle.projectsEvaluated {
+    gradle.rootProject.allprojects { project ->
+        def directory = project.path == ':' ? 'root' : project.path.substring(1).replace(':', '_')
+        def isolatedDirectory = new File(buildRoot, directory)
+        project.buildDir = isolatedDirectory
+        project.layout.buildDirectory.set(isolatedDirectory)
+    }
+}

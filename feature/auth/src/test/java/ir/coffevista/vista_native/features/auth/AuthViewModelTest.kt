@@ -1,5 +1,7 @@
 package ir.coffevista.vista_native.features.auth
 
+import ir.coffevista.vista_native.core.model.session.AuthenticationState
+
 import ir.coffevista.vista_native.core.common.AppError
 import ir.coffevista.vista_native.core.common.ErrorKind
 import ir.coffevista.vista_native.core.common.Outcome

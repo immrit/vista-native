@@ -4,8 +4,8 @@ import androidx.lifecycle.SavedStateHandle
 import ir.coffevista.vista_native.core.common.AppError
 import ir.coffevista.vista_native.core.common.ErrorKind
 import ir.coffevista.vista_native.core.model.session.AuthenticatedContext
-import ir.coffevista.vista_native.features.auth.AuthenticationState
-import ir.coffevista.vista_native.features.auth.AuthenticationStateProvider
+import ir.coffevista.vista_native.core.model.session.AuthenticationState
+import ir.coffevista.vista_native.core.model.session.AuthenticationStateProvider
 import ir.coffevista.vista_native.features.profile.data.FollowMutationResult
 import ir.coffevista.vista_native.features.profile.data.FollowState
 import ir.coffevista.vista_native.features.profile.data.ProfileRefreshResult

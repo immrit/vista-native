@@ -17,8 +17,11 @@ import ir.coffevista.vista_native.core.common.RedactingLogger
 import ir.coffevista.vista_native.core.common.SecureLogger
 import ir.coffevista.vista_native.core.database.VerifiedTlsPolicyDao
 import ir.coffevista.vista_native.core.database.VerifiedTlsPolicyEntity
+import ir.coffevista.vista_native.core.datastore.AppPreferenceStores
 import ir.coffevista.vista_native.core.datastore.OnboardingStore
 import ir.coffevista.vista_native.core.datastore.OnboardingStoreFactory
+import ir.coffevista.vista_native.core.datastore.SettingsPreferenceStore
+import ir.coffevista.vista_native.core.datastore.PrivacySettingsCache
 import ir.coffevista.vista_native.core.logging.AndroidLogSink
 import ir.coffevista.vista_native.core.network.AppEnvironment
 import ir.coffevista.vista_native.core.network.EnvironmentName
@@ -38,7 +41,7 @@ object FoundationModule {
     @Provides
     @InternalEnvironment
     fun provideInternalEnvironment(): AppEnvironment = AppEnvironment(
-        name = if (BuildConfig.APPLICATION_ID == "ir.coffevista.vista") {
+        name = if (BuildConfig.APP_ENVIRONMENT == "production") {
             EnvironmentName.PRODUCTION
         } else {
             EnvironmentName.BETA
@@ -65,15 +68,30 @@ object FoundationModule {
 
     @Provides
     @Singleton
-    fun provideOnboardingStore(
+    fun provideAppPreferenceStores(
         @ApplicationContext context: Context,
         @ApplicationScope applicationScope: CoroutineScope,
         dispatchers: DispatcherProvider,
-    ): OnboardingStore = OnboardingStoreFactory.create(
+    ): AppPreferenceStores = OnboardingStoreFactory.createAppPreferenceStores(
         context = context,
         applicationScope = applicationScope,
         dispatchers = dispatchers,
     )
+
+    @Provides
+    @Singleton
+    fun provideOnboardingStore(stores: AppPreferenceStores): OnboardingStore =
+        stores.onboardingStore
+
+    @Provides
+    @Singleton
+    fun provideSettingsPreferenceStore(stores: AppPreferenceStores): SettingsPreferenceStore =
+        stores.settingsPreferenceStore
+
+    @Provides
+    @Singleton
+    fun providePrivacySettingsCache(stores: AppPreferenceStores): PrivacySettingsCache =
+        stores.privacySettingsCache
 
     @Provides
     @Singleton

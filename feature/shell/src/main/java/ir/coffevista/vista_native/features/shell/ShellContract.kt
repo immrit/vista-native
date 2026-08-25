@@ -21,6 +21,7 @@ data class ShellDeepLinkRequest(
     val deliveryId: Long,
     val kind: ShellDeferredKind,
     val reference: String,
+    val secondaryReference: String? = null,
 )
 
 fun ShellDeferredKind.targetTab(): ShellTab = when (this) {

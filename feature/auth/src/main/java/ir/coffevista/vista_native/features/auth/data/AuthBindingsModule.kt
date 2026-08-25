@@ -8,7 +8,7 @@ import ir.coffevista.vista_native.features.auth.domain.AuthRepository
 import ir.coffevista.vista_native.features.auth.SessionRefreshCoordinator
 import ir.coffevista.vista_native.features.auth.SingleFlightSessionRefreshCoordinator
 import ir.coffevista.vista_native.features.auth.AuthenticationStateOwner
-import ir.coffevista.vista_native.features.auth.AuthenticationStateProvider
+import ir.coffevista.vista_native.core.model.session.AuthenticationStateProvider
 import javax.inject.Singleton
 
 @Module

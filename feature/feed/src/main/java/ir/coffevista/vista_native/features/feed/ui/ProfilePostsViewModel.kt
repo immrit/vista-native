@@ -3,8 +3,8 @@ package ir.coffevista.vista_native.features.feed.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
-import ir.coffevista.vista_native.features.auth.AuthenticationState
-import ir.coffevista.vista_native.features.auth.AuthenticationStateProvider
+import ir.coffevista.vista_native.core.model.session.AuthenticationState
+import ir.coffevista.vista_native.core.model.session.AuthenticationStateProvider
 import ir.coffevista.vista_native.features.feed.data.FeedAppendResult
 import ir.coffevista.vista_native.features.feed.data.FeedPost
 import ir.coffevista.vista_native.features.feed.data.FeedRepository
@@ -144,6 +144,31 @@ class ProfilePostsViewModel @Inject constructor(
                         appendError = error.message ?: "بارگذاری پست‌های بیشتر ناموفق بود",
                     )
                 }
+            }
+        }
+    }
+
+    fun toggleLike(postId: String, isLiked: Boolean, currentLikeCount: Long) {
+        val accountId = accountId ?: return
+        viewModelScope.launch {
+            try {
+                val newCount = if (isLiked) currentLikeCount - 1 else currentLikeCount + 1
+                val ownerId = _uiState.value.posts
+                    .firstOrNull { it.id == postId }?.userId ?: return@launch
+                repository.toggleLike(accountId, postId, ownerId, !isLiked, maxOf(0L, newCount))
+            } catch (e: Exception) {
+                // Ignored, repository handles rollback
+            }
+        }
+    }
+
+    fun toggleSave(postId: String, isSaved: Boolean) {
+        val accountId = accountId ?: return
+        viewModelScope.launch {
+            try {
+                repository.toggleSave(accountId, postId, !isSaved)
+            } catch (e: Exception) {
+                // Ignored, repository handles rollback
             }
         }
     }

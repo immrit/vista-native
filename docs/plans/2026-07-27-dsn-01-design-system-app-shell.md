@@ -292,6 +292,102 @@ speculative. محتوای پنج تب فقط placeholder شفاف است.
 
 ## Decisions & Notes
 
+## P04 controlled start — 2026-08-06
+
+**Status:** Partial — foundation verified; runtime/visual blockers recorded
+**Progress:** `[████░░░░░░] 38%` — 3/8 evidence gates
+
+- [x] Flutter reference anchors ثبت شد: theme/tokens=`E:\vista\lib\core\theme\app_theme.dart:9-318`، motion=`E:\vista\lib\utils\vista_motion.dart:3-16`، Vazirmatn=`E:\vista\pubspec.yaml:170-185` و Shell=`E:\vista\lib\features\home\screens\homeScreen.dart`؛ Flutter read-only است.
+- [x] dependencyهای مستقیم feature-to-feature صفر شد؛ session contract در `core:model` و composable Shell contract در `feature:shell` مالک مشخص دارند. boundary script و affected unit/compile gate پاس شد.
+- [x] ماتریس کوتاه Flutter↔Native token با Match/Mismatch/Missing و بدون حدس ثبت شد؛ motion 150/250/400 به مرجع جاری reconcile و test شد.
+- [ ] typography/Vazirmatn با unit test و runtime font-scale 100%/200% بررسی شود.
+- [ ] RTL، bidi، semantics، touch target و system bars روی device بررسی شوند.
+- [ ] Shell پنج‌تب، reselection، back stack و relaunch/process state روی API 24 و API 33 بررسی شود.
+- [ ] Flutter/Native برای `Authenticated Shell + Bottom Navigation + stable Feed` با fixture همسان capture و side-by-side/overlay/diff معتبر مقایسه شود.
+- [ ] فقط mismatchهای ثبت‌شده اصلاح و affected test/lint/build/device gates اجرا شوند.
+
+قفل scope: Services/Chat placeholder می‌مانند؛ Onboarding Flutter WIP و Feed engagement dirty WIP بازطراحی یا overwrite نمی‌شوند. پیش از تکمیل boundary هیچ patch ظاهری مجاز نیست.
+
+شواهد جاری:
+
+- `:core:designsystem:testDebugUnitTest` و gate نهایی repository-wide `lint test :app:assembleBetaDebug` در build directory ایزوله پاس شدند: ۵۹ suite، ۳۵۴ test و failure/error/skipped=`0`.
+- instrumentation تازه `betaDebug` روی OnePlus N100، API 30/arm64 نتیجه `23/23` دارد. یک ناسازگاری خود تست (`UiModeManager.setApplicationNightMode` روی API<31) با shell-compatible path اصلاح و suite کامل دوباره پاس شد.
+- runtime font scale 100% سالم است؛ capture API 33 در 200% overlap/truncation آشکار در Feed header و follow controls نشان داد. به‌دلیل Feed dirty WIP کاربر، این mismatch در این iteration overwrite نشد و gate typography/a11y باز است.
+- fixture نزدیک `docs/evidence/2026-07-29-feed-profile-parity/flutter/02-feed-first-content.png` با Native candidate جاری API 33 روی همان ابعاد محتوایی مقایسه شد. تنها dynamic mask اعمال‌شده crop نوار سیستم ۱۲۰px Flutter بود؛ timestamp/count/avatarهای پویا unmasked ماندند، پس changed-pixel=`58.08%` و MAE=`37.24` صرفاً diagnostic است و Pass بصری نیست.
+- mismatchهای ثبت‌شده: story row در Native غایب، header/branding متفاوت، card/media geometry و vertical rhythm ناهماهنگ، mixed Persian/Latin typography متفاوت، و bottom-island width/transparency/icon badging هم‌ارز نیست. contact sheet/diff/overlay فقط در Temp خارج Git نگهداری شد.
+- AVD رسمی API 24 x86_64 به ADB متصل شد، اما در سه launch تمیز shell/package manager پس از bootstrap غیرپاسخگو شد؛ fallback x86 به‌علت download صفر بایت تکمیل نشد. device متصل فعلی API 30 است، بنابراین API 24 و Shell gate وابسته به آن باز می‌مانند.
+
+### P04-FND-02 — Font scale, system bars and Shell fixture closure
+
+**Status:** Partial — responsive typography, API 33 system bars and Shell slots verified; canonical paired fixture، API 24، IME و global Git gate باز است
+**Progress:** `[█████░░░░░] 50%` — 5/10 evidence gates
+
+- [x] Git/dirty baseline هر دو checkout ثبت و Flutter read-only تأیید شد.
+- [x] failure matrix با Flutter/Native source anchor و root cause واقعی ثبت شد.
+- [x] app bar/tab/card/button در 100/130/150/200% بدون overlap یا clipping باشد؛ API 33 instrumentation و بازبینی captureهای 100/150/200% پاس شد.
+- [x] light/dark status/navigation bar contract و icon mode با Flutter منطبق باشد؛ API 33 exact-color instrumentation پاس شد.
+- [ ] top/bottom/IME inset و edge-to-edge بدون double consumption تست شود.
+- [x] Shell slots برای Feed/Search/Services/Chat/Profile بدون feature dependency تثبیت شود؛ Services/Chat به‌صورت optional composable contract باقی ماندند و implementation آن‌ها تغییر نکرد.
+- [ ] canonical Shell chrome fixture با شرایط همسان و dynamic mask صریح ساخته شود.
+- [ ] paired screenshots و metrics شامل mismatch/MAE/SSIM/bounding boxes ثبت شود.
+- [ ] API 24 فقط با shell و package-manager آماده Pass شود؛ در غیر این صورت blocker بماند.
+- [ ] full unit/lint/build/instrumentation و Git/safety gate پاس شود.
+
+| Component | Profile / scale | Failure | Flutter behavior | Native root cause | Outcome |
+|---|---|---|---|---|---|
+| Feed app bar logo | API 33، 200% | fallback text از 56dp بیرون می‌زند و tabها را overlap می‌کند | تصویر logo با height=35 و بدون text scaling؛ `ExploreFeedScreen.dart:180-194` | drawable lookup نام‌های ناموجود `vista_logo_auth_*` داشت؛ `FeedScreen.kt:177-179` | drawable واقعی `vista_auth_logo_*` مصرف شد؛ overlap در چهار scale صفر |
+| Feed follow CTA | API 33، 200% | متن در 112×28dp clip می‌شود | Flutter همان 112×28 را با `FittedBox(scaleDown)` نگه می‌دارد؛ `ExploreFeedScreen.dart:875-995` | Text مستقیم بدون fit داخل fixed height بود | `ScaleDownSingleLineText` در `FeedScreen.kt:441,487` فقط زیر constraint scale-down می‌کند؛ clipping صفر |
+| Author/time row | API 33، 200% | نام/زمان و CTA overlap می‌کنند | username در `Flexible` با ellipsis و time ثابت است؛ `ExploreFeedScreen.dart:850-878` | نام Native constraint انعطاف‌پذیر نداشت | flexible containment و runtime overlap assertion در `FeedRuntimeInstrumentationTest.kt:148-187` پاس شد |
+| Feed tabs | API 33، 200% | baseline بزرگ؛ clipping قطعی هنوز اثبات نشده | TabBar، 15sp، indicator label و ارتفاع framework-managed؛ `ExploreFeedScreen.dart:207-231` | Native height=46dp و 15sp | چهار scale بدون clipping پاس شد؛ geometry در 100% تغییر نکرد |
+| Bottom navigation | API 30/33، 100–200% | label بصری ندارد؛ badge/fixture اختلاف دارد | Flutter عمداً icon-only است و فقط semantics دارد؛ `homeScreen.dart:548-704` | Native نیز icon-only؛ font scaling موضوعیت ندارد | touch/semantics/selected bounds test؛ label جدید اضافه نشود |
+| System bars/top inset | API 30/33، 100% | status/nav color صریح نبود و Shell top inset مرکزی نداشت | status=surface، nav=white(light)/background(dark)، contrast=false؛ `app_runner.dart:596-613` و `homeScreen.dart:420-455` | Native فقط icon appearance داشت | `VistaTheme.kt:211-233` و `VistaShell.kt:312-332` رنگ/icon/inset را صریح کردند؛ API 33 light/dark پاس شد؛ IME هنوز باز است |
+
+Baseline `58.08%` invalid برای closure است، چون system-navigation mode، timestamp/count/avatar و Feed vertical state همسان نبودند. از اینجا فقط به‌عنوان historical diagnostic نگه داشته می‌شود؛ baseline جدید باید Shell chrome را با central Feed dynamic mask و شرایط دستگاه یکسان بسنجد.
+
+Evidence اجرای 2026-08-08:
+
+- API 33 AVD: `FeedRuntimeInstrumentationTest` برابر 5/5 پاس؛ شامل font scaleهای 100/130/150/200، light/dark system bars، tab/back/relaunch و offline/process recreation. API 36 device: تست font-scale/inset برابر 1/1 پاس.
+- captureهای Native در 1080×2400 برای light/dark، 100/150/200، پنج selected tab و gesture/three-button خارج Git در `%TEMP%\vista-p04-fnd02` نگهداری شدند. Flutter runtime به fixture احراز‌شدهٔ همسان نرسید و متغیرهای credential محیطی نیز موجود نبودند؛ بنابراین paired visual gate بدون ذخیره یا چاپ credential باز ماند.
+- تنها pair تشخیصی جاری با Flutter evidence تاریخی: full mismatch=`52.0987%`، MAE=`37.0785`، SSIM=`0.189722`؛ Shell-chrome mask mismatch=`38.6386%` و SSIM=`0.935797`. این اعداد به‌دلیل تفاوت checkout/data fixture قابل مقایسهٔ canonical با `58.08%` نیستند و Pass محسوب نمی‌شوند.
+- lint + 354/354 unit test + `:app:assembleBetaDebug` پاس شد. scoped `git diff --check` فایل‌های این iteration پاس است؛ global check به‌دلیل ۱۵ trailing-space در dirty WIP هم‌زمان Database/Profile خارج scope باز ماند و آن فایل‌ها دست‌کاری نشدند.
+- API 24 AVD پس از cold boot/wipe روی AVD تستی در ADB حالت `unauthorized` ماند و package manager آماده نشد: `Blocked — infrastructure/runtime instability`.
+
+| Token | Flutter source/value | Native source/value | Status | Action |
+|---|---|---|---|---|
+| Brand + semantic colors | `app_theme.dart:68-140` | `VistaTokens.kt:7-61` و `VistaTheme.kt:34-86` | Match | بدون تغییر |
+| Typography | `app_theme.dart:181-268` | `VistaTheme.kt:96-135` | Match / runtime verified | API 33 در 100/130/150/200% و API 36 در 100/200% پاس |
+| Vazirmatn weights | `pubspec.yaml:170-185`؛ 300/400/500/600/700/800/900 | `VistaTheme.kt:96-104`؛ همان هفت فایل/weight | Match / runtime verified | hashها برابر و geometry محدودهٔ Shell در device test پاس |
+| Spacing/radius | `app_theme.dart:9-33` | `VistaTokens.kt:64-85` | Match | Shell hardcodeها پس از visual gate به token مصرفی منتقل شوند |
+| Motion | `vista_motion.dart:10-12`؛ 150/250/400ms | `VistaTokens.kt:106-111`؛ پیش‌تر 150/300/600ms | Mismatch fixed | Native به 150/250/400 و unit test اصلاح شد |
+| Elevation | `app_theme.dart:38-52`؛ shadow blur/offset | `VistaTokens.kt:88-93`؛ 2/6/12dp | Mismatch / framework-specific | بدون visual evidence تبدیل نشود |
+| Shell geometry/icons | `homeScreen.dart:490-710`؛ island 62، bottom 28، icon 30، services 28 | `VistaShell.kt:285-374`؛ همان geometry | Match values / token usage partial | visual و touch-target gate باز |
+| System bars | `homeScreen.dart:412-455`؛ رنگ + icon brightness | `VistaTheme.kt:211-233` و `VistaShell.kt:312-332` | Match on API 33 | light/dark exact-color و icon mode پاس؛ API 24 و IME gate باز |
+
+### P04-FND-03 — Canonical authenticated fixture, IME/insets and visual closure
+
+**Status:** Partial — IME/insets و dark action tint بسته شد؛ authenticated canonical pair، Stories، TalkBack کامل و API 24 باز است
+**Progress:** `[█████░░░░░] 50%` — 5/10 evidence gates
+
+- [x] Git/dirty baseline و credential-presence بدون چاپ مقدار ثبت شد؛ Flutter read-only ماند.
+- [ ] Login احراز‌شدهٔ Flutter با credential محیطی انجام شود؛ هر دو متغیر محیطی این اجرا absent بودند و runtime روی Login متوقف شد.
+- [ ] fixture synthetic هم‌شرط و paired capture معتبر Flutter↔Native ساخته و diff/MAE/SSIM محاسبه شود؛ canonical paired state فعلی صفر است.
+- [ ] Stories با geometry و state واقعی Flutter در Native پیاده و visual/runtime verified شود؛ Source Native هنوز contract/data مربوط را ندارد و fake production fixture اضافه نشد.
+- [x] tint اکشن‌های Feed در dark/light مطابق anchor Flutter اصلاح و روی API 33 runtime بازبینی شد.
+- [x] IME open/close و inset تک‌مصرف در gesture و three-button روی API 33 پاس شد؛ bottom island به‌اندازهٔ IME جابه‌جا و پس از close در tolerance 8dp restore می‌شود.
+- [ ] TalkBack manual closure کامل شود؛ label/selected/focus پنج tab پاس شد، اما Stories semantics به‌علت نبود Stories قابل تأیید نیست.
+- [ ] API 24 آمادهٔ runtime شود؛ AVD اختصاصی پیش از ثبت در ADB خارج شد و blocker زیرساختی باقی ماند.
+- [x] Shell slot/back/relaunch contract regression پاس شد؛ instrumentation نهایی 17/17 و dependency مستقیم feature-to-feature برابر صفر است.
+- [x] lint، 354/354 unit، assembleBetaDebug، AndroidTest assemble و scoped `git diff --check` پاس شد؛ global check فقط روی 15 trailing-space هم‌زمان Database/Profile خارج scope باز است.
+
+Evidence اجرای 2026-08-08:
+
+- API 33 `emulator-5554`: instrumentation نهایی `FeedRuntimeInstrumentationTest + StartupFixtureInstrumentationTest` برابر 17/17؛ تست مستقل IME در gesture و three-button هرکدام 1/1 و light/dark system bars مستقل 1/1 پاس شد.
+- build ایزوله: repository-wide `lint test :app:assembleBetaDebug` برابر 1086 task و unit=`354/354` پاس؛ build نهایی app+AndroidTest برابر 355 task و AndroidTest-only برابر 335 task پاس شد.
+- Flutter runtime فقط Login را نشان داد چون `VISTA_TEST_USERNAME` و `VISTA_TEST_PASSWORD` موجود نبودند؛ هیچ credential/token/private payload ثبت نشد. screenshotهای synthetic Native خارج Git ماندند و هیچ metric نامعتبر به progress اضافه نشد.
+- baselineهای mismatch=`58.08%` و diagnostic full/chrome=`52.0987%/38.6386%` همچنان invalid/noncanonical هستند؛ canonical SSIM/MAE/mismatch=`N/A`.
+- اجرای boundary سراسری به dependency هم‌زمان `:core:database -> :core:common` در dirty WIP برخورد کرد؛ بررسی مستقیم Gradle featureها dependency مستقیم feature-to-feature=`0` نشان داد و فایل Database/Profile دست‌کاری نشد.
+- raw Flutter capture در صفحهٔ Login بود و دادهٔ خصوصی نداشت؛ حذف آن به‌علت handle/ACL ویندوزی ممکن نشد، اما مسیر evidence توسط Git ignore می‌شود و هیچ artifactی commit نشده است.
+
 - Baseline: `fnd-01/architecture-foundation@1adaafa`، working tree و staged
   تمیز، `.git/index.lock` غایب و `1adaafa` ancestor مستقیم branch جدید است.
 - branch اجرای DSN-01 برابر `dsn-01/design-system-app-shell` ساخته شد.

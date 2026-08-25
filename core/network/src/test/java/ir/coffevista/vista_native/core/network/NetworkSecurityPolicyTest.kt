@@ -13,9 +13,15 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.IOException
+import java.net.Proxy
 import javax.net.ssl.SSLHandshakeException
 
 class NetworkSecurityPolicyTest {
+    @Test
+    fun externalMediaClientDoesNotInheritStaleSystemProxy() {
+        assertEquals(Proxy.NO_PROXY, InternalNetworkModule.provideExternalMediaClient().proxy)
+    }
+
     @Test
     fun retryIsBoundedAndOnlyForIdempotentTransportFailures() {
         val policy = BoundedRetryPolicy(maxRetries = 1)
@@ -188,6 +194,8 @@ class NetworkSecurityPolicyTest {
         )
 
         assertEquals(1, factory.currentGeneration())
+        assertEquals(20_000L, factory.currentPingIntervalMillis())
+        assertEquals(Proxy.NO_PROXY, factory.currentProxy())
         store.update(
             policy(
                 mode = TlsMode.MONITOR,

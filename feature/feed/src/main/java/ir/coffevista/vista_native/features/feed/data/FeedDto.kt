@@ -121,3 +121,82 @@ internal fun FeedPostDto.asEntity(
     updatedAt = updatedAt,
     sortOrder = sortOrder,
 )
+
+@Serializable
+data class LikeRequestDto(
+    @SerialName("owner_id")
+    val ownerId: String,
+)
+
+@Serializable
+data class LikeResponseDto(
+    @SerialName("is_liked")
+    val isLiked: Boolean,
+    @SerialName("like_count")
+    val likeCount: Long,
+)
+
+@Serializable
+data class SaveResponseDto(
+    @SerialName("is_saved")
+    val isSaved: Boolean,
+)
+
+@Serializable
+data class UpdatePostRequestDto(
+    @SerialName("content") val content: String? = null,
+    @SerialName("hide_like_count") val hideLikeCount: Boolean? = null,
+    @SerialName("hide_comment_count") val hideCommentCount: Boolean? = null,
+)
+
+@Serializable
+data class ReportPostRequestDto(
+    @SerialName("post_id") val postId: String,
+    @SerialName("reported_user_id") val reportedUserId: String,
+    @SerialName("reason") val reason: String,
+    @SerialName("additional_details") val additionalDetails: String? = null,
+)
+
+@Serializable
+data class FeedEventRequestDto(
+    @SerialName("post_id") val postId: String,
+    @SerialName("event_type") val eventType: String,
+)
+
+@Serializable
+data class PostPresignRequestDto(
+    @SerialName("object_key") val objectKey: String,
+    @SerialName("content_type") val contentType: String,
+    @SerialName("file_size") val fileSize: Long,
+)
+
+@Serializable
+data class PostPresignResponseDto(
+    val url: String,
+    val method: String = "PUT",
+    val headers: Map<String, String> = emptyMap(),
+    @SerialName("object_key") val objectKey: String,
+    @SerialName("object_url") val objectUrl: String,
+)
+
+@Serializable
+data class CreatePostRequestDto(
+    @SerialName("content") val content: String? = null,
+    @SerialName("image_url") val imageUrl: String? = null,
+    @SerialName("image_urls") val imageUrls: List<String> = emptyList(),
+    @SerialName("video_url") val videoUrl: String? = null,
+    @SerialName("music_url") val musicUrl: String? = null,
+    @SerialName("music_title") val musicTitle: String? = null,
+    @SerialName("aspect_ratio") val aspectRatio: String? = null,
+    @SerialName("tags") val tags: List<String> = emptyList(),
+    @SerialName("hide_like_count") val hideLikeCount: Boolean = false,
+    @SerialName("hide_comment_count") val hideCommentCount: Boolean = false,
+    @SerialName("comments_disabled") val commentsDisabled: Boolean = false,
+)
+
+@Serializable
+data class CreatePostResponseDto(
+    @SerialName("post") val post: FeedPostDto? = null,
+    @SerialName("success") val success: Boolean = true,
+    @SerialName("message") val message: String? = null,
+)

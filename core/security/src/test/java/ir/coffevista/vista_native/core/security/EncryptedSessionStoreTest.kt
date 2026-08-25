@@ -113,6 +113,19 @@ class EncryptedSessionStoreTest {
         assertNull(storage.encoded)
         assertEquals(0, keys.resetCalls)
     }
+
+    @Test
+    fun biometricPolicyIsEncryptedAccountStateAndSurvivesSessionRefresh() {
+        val storage = MemorySessionPayloadStorage()
+        val store = EncryptedSessionStore(storage, MutableKeyProvider())
+        store.save(payload())
+
+        store.setBiometricEnabled(true)
+        store.save(payload())
+
+        assertTrue(store.isBiometricEnabled())
+        assertFalse(requireNotNull(storage.encoded).contains("biometric_enabled"))
+    }
 }
 
 private class MemorySessionPayloadStorage(

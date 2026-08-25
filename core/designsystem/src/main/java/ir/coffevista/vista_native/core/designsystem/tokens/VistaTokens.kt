@@ -106,8 +106,8 @@ object VistaIconSize {
 object VistaMotionDuration {
     const val Instant = 0
     const val Fast = 150
-    const val Standard = 300
-    const val Emphasized = 600
+    const val Standard = 250
+    const val Emphasized = 400
 }
 
 object VistaAlpha {

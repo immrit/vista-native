@@ -25,27 +25,7 @@ class OfflineFirstOwnProfileRepository @Inject constructor(
             val response = api.fetchOwnProfile()
             if (response.isSuccessful) {
                 response.body()?.let { dto ->
-                    val entity = OwnProfileEntity(
-                        userId = dto.userId, // use dto.userId to be safe, should match userId
-                        username = dto.username,
-                        fullName = dto.fullName,
-                        bio = dto.bio,
-                        avatarUrl = dto.avatarUrl,
-                        isVerified = dto.isVerified,
-                        verificationType = dto.verificationType,
-                        accountType = dto.accountType,
-                        isPrivate = dto.isPrivate,
-                        postCount = dto.postCount,
-                        followerCount = dto.followerCount,
-                        followingCount = dto.followingCount,
-                        joinOrder = dto.joinOrder,
-                        subscriptionPlan = dto.subscriptionPlan,
-                        premiumDaysRemaining = dto.premiumDaysRemaining,
-                        messagePrivacy = dto.messagePrivacy,
-                        allowProfileZoom = dto.allowProfileZoom,
-                        updatedAt = dto.updatedAt
-                    )
-                    dao.insertOrUpdate(entity)
+                    dao.insertOrUpdate(dto.toEntity())
                 } ?: return Outcome.Failure(
                     ErrorClassifier.classify(
                         IllegalStateException("Empty profile response"),
@@ -58,6 +38,46 @@ class OfflineFirstOwnProfileRepository @Inject constructor(
             }
         } catch (e: Exception) {
             Outcome.Failure(ErrorClassifier.classify(e, "دریافت اطلاعات نمایه"))
+        }
+    }
+
+    override suspend fun updateOwnProfile(request: ProfileUpdateRequestDto): Outcome<Unit> {
+        return try {
+            val response = api.updateOwnProfile(request)
+            if (response.isSuccessful) {
+                response.body()?.let { dao.insertOrUpdate(it.toEntity()) }
+                    ?: return Outcome.Failure(
+                        ErrorClassifier.classify(
+                            IllegalStateException("Empty profile update response"),
+                            "ویرایش نمایه",
+                        ),
+                    )
+                Outcome.Success(Unit)
+            } else {
+                Outcome.Failure(ErrorClassifier.classify(response.toRemoteFailure(), "ویرایش نمایه"))
+            }
+        } catch (e: Exception) {
+            Outcome.Failure(ErrorClassifier.classify(e, "ویرایش نمایه"))
+        }
+    }
+
+    override suspend fun updateAvatar(avatarUrl: String): Outcome<Unit> {
+        return try {
+            val response = api.updateAvatar(ProfileAvatarUpdateRequestDto(avatarUrl))
+            if (response.isSuccessful) {
+                response.body()?.let { dao.insertOrUpdate(it.toEntity()) }
+                    ?: return Outcome.Failure(
+                        ErrorClassifier.classify(
+                            IllegalStateException("Empty avatar update response"),
+                            "ویرایش تصویر نمایه",
+                        ),
+                    )
+                Outcome.Success(Unit)
+            } else {
+                Outcome.Failure(ErrorClassifier.classify(response.toRemoteFailure(), "ویرایش تصویر نمایه"))
+            }
+        } catch (e: Exception) {
+            Outcome.Failure(ErrorClassifier.classify(e, "ویرایش تصویر نمایه"))
         }
     }
 
@@ -77,4 +97,35 @@ class OfflineFirstOwnProfileRepository @Inject constructor(
             retryAfterSeconds = error.retryAfterSeconds,
         )
     }
+
+    private fun ProfileDto.toEntity() = OwnProfileEntity(
+        userId = userId,
+        username = username,
+        fullName = fullName,
+        bio = bio,
+        email = email,
+        phoneNumber = phoneNumber,
+        websiteUrl = websiteUrl,
+        birthDate = birthDate,
+        gender = gender,
+        maritalStatus = maritalStatus,
+        showEmail = showEmail,
+        showBirthDate = showBirthDate,
+        showGender = showGender,
+        showMaritalStatus = showMaritalStatus,
+        avatarUrl = avatarUrl,
+        isVerified = isVerified,
+        verificationType = verificationType,
+        accountType = accountType,
+        isPrivate = isPrivate,
+        postCount = postCount,
+        followerCount = followerCount,
+        followingCount = followingCount,
+        joinOrder = joinOrder,
+        subscriptionPlan = subscriptionPlan,
+        premiumDaysRemaining = premiumDaysRemaining,
+        messagePrivacy = messagePrivacy,
+        allowProfileZoom = allowProfileZoom,
+        updatedAt = updatedAt,
+    )
 }

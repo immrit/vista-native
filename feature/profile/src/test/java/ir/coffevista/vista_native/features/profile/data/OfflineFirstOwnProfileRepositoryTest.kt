@@ -100,6 +100,61 @@ class OfflineFirstOwnProfileRepositoryTest {
         val cachedEntity = fakeDao.getOwnProfile("test-user-id").first()
         assertEquals(null, cachedEntity)
     }
+
+    @Test
+    fun updateOwnProfile_success_cachesServerResponse() = runTest {
+        fakeApi.updateResponse = Response.success(
+            ProfileDto(
+                userId = "test-user-id",
+                fullName = "نام تازه",
+                email = "test@example.com",
+                birthDate = "2002-07-15",
+                gender = "male",
+            ),
+        )
+
+        val result = repository.updateOwnProfile(
+            ProfileUpdateRequestDto(
+                username = "test_user",
+                fullName = "نام تازه",
+                bio = "",
+                email = "test@example.com",
+                phoneNumber = "09120000000",
+                websiteUrl = "",
+                birthDate = "2002-07-15",
+                gender = "male",
+                maritalStatus = "single",
+                showEmail = false,
+                showBirthDate = false,
+                showGender = false,
+                showMaritalStatus = false,
+            ),
+        )
+
+        assertTrue(result is Outcome.Success)
+        val cachedEntity = fakeDao.getOwnProfile("test-user-id").first()
+        assertEquals("نام تازه", cachedEntity?.fullName)
+        assertEquals("test@example.com", cachedEntity?.email)
+    }
+
+    @Test
+    fun updateAvatar_success_cachesServerAvatarUrl() = runTest {
+        fakeApi.avatarResponse = Response.success(
+            ProfileDto(
+                userId = "test-user-id",
+                fullName = "کاربر تستی",
+                avatarUrl = "https://storage.example/avatars/test-user-id/avatar.jpg",
+            ),
+        )
+
+        val result = repository.updateAvatar("https://storage.example/avatars/test-user-id/avatar.jpg")
+
+        assertTrue(result is Outcome.Success)
+        assertEquals(
+            "https://storage.example/avatars/test-user-id/avatar.jpg",
+            fakeDao.getOwnProfile("test-user-id").first()?.avatarUrl,
+        )
+    }
 }
 
 class FakeOwnProfileDao : OwnProfileDao {
@@ -124,10 +179,28 @@ class FakeOwnProfileDao : OwnProfileDao {
 
 class FakeProfileApi : ProfileApi {
     var response: Response<ProfileDto>? = null
+    var updateResponse: Response<ProfileDto>? = null
+    var avatarResponse: Response<ProfileDto>? = null
     var shouldThrow: Exception? = null
 
     override suspend fun fetchOwnProfile(): Response<ProfileDto> {
         if (shouldThrow != null) throw shouldThrow!!
         return response ?: error("Response not setup")
     }
+
+    override suspend fun updateOwnProfile(
+        request: ProfileUpdateRequestDto,
+    ): Response<ProfileDto> = updateResponse ?: error("Update response not setup")
+
+    override suspend fun updateAvatar(
+        request: ProfileAvatarUpdateRequestDto,
+    ): Response<ProfileDto> = avatarResponse ?: error("Avatar response not setup")
+
+    override suspend fun presignUpload(
+        request: ProfileMediaPresignRequestDto,
+    ): ProfileMediaPresignResponseDto = error("Not used by repository tests")
+
+    override suspend fun deleteUpload(
+        request: ProfileMediaDeleteRequestDto,
+    ): ProfileMediaDeleteResponseDto = error("Not used by repository tests")
 }

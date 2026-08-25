@@ -343,6 +343,23 @@ private class FakeFeedApi : FeedApi {
         failure?.let { throw it }
         return response
     }
+
+    override suspend fun toggleLike(postId: String, body: LikeRequestDto): LikeResponseDto {
+        failure?.let { throw it }
+        return LikeResponseDto(isLiked = true, likeCount = 1)
+    }
+
+    override suspend fun toggleSave(postId: String): SaveResponseDto {
+        failure?.let { throw it }
+        return SaveResponseDto(isSaved = true)
+    }
+
+    override suspend fun updatePost(postId: String, body: UpdatePostRequestDto): FeedPostDto = error("unused")
+    override suspend fun deletePost(postId: String) = Unit
+    override suspend fun reportPost(body: ReportPostRequestDto) = Unit
+    override suspend fun trackFeedEvent(body: FeedEventRequestDto) = Unit
+    override suspend fun presignUpload(request: PostPresignRequestDto): PostPresignResponseDto = error("unused")
+    override suspend fun createPost(request: CreatePostRequestDto): CreatePostResponseDto = error("unused")
 }
 
 private class FakeFeedDao : FeedDao {
@@ -425,6 +442,39 @@ private class FakeFeedDao : FeedDao {
         accountId: String,
         postId: String,
     ): Flow<FeedPostEntity?> = flowOf(postsByAccount[accountId]?.get(postId))
+
+    override suspend fun updateLikeState(postId: String, isLiked: Boolean, likeCount: Long) {
+        postsByAccount.values.forEach { map ->
+            map[postId]?.let { post ->
+                map[postId] = post.copy(isLiked = isLiked, likeCount = likeCount)
+            }
+        }
+        postsByAccount.keys.forEach(::emitPosts)
+    }
+
+    override suspend fun updateSaveState(postId: String, isSaved: Boolean) {
+        postsByAccount.values.forEach { map ->
+            map[postId]?.let { post ->
+                map[postId] = post.copy(isSaved = isSaved)
+            }
+        }
+        postsByAccount.keys.forEach(::emitPosts)
+    }
+
+    override suspend fun updateCommentCount(postId: String, commentCount: Long) {
+        postsByAccount.values.forEach { map ->
+            map[postId]?.let { post ->
+                map[postId] = post.copy(commentCount = commentCount)
+            }
+        }
+        postsByAccount.keys.forEach(::emitPosts)
+    }
+
+    override suspend fun updatePostFields(postId: String, content: String?, hideLikeCount: Boolean?, hideCommentCount: Boolean?) = Unit
+    override suspend fun deletePostEverywhere(postId: String) {
+        postsByAccount.values.forEach { it.remove(postId) }
+        postsByAccount.keys.forEach(::emitPosts)
+    }
 
     fun posts(accountId: String): List<FeedPostEntity> = postsByAccount[accountId]
         .orEmpty()

@@ -18,6 +18,9 @@ dependencies {
     implementation(libs.androidx.room.ktx)
     implementation(libs.androidx.room.runtime)
     implementation(libs.hilt.android)
+    implementation(project(":core:model"))
+    implementation(project(":core:common"))
+    implementation(libs.kotlinx.datetime)
     ksp(libs.androidx.room.compiler)
     ksp(libs.hilt.compiler)
 

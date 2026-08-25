@@ -18,7 +18,7 @@ data class OwnProfileEntity(
     
     @ColumnInfo(name = "bio")
     val bio: String?,
-    
+
     @ColumnInfo(name = "avatar_url")
     val avatarUrl: String?,
     
@@ -59,5 +59,35 @@ data class OwnProfileEntity(
     val allowProfileZoom: Boolean = true,
     
     @ColumnInfo(name = "updated_at")
-    val updatedAt: String?
+    val updatedAt: String?,
+
+    @ColumnInfo(name = "email")
+    val email: String? = null,
+
+    @ColumnInfo(name = "phone_number")
+    val phoneNumber: String? = null,
+
+    @ColumnInfo(name = "website_url")
+    val websiteUrl: String? = null,
+
+    @ColumnInfo(name = "birth_date")
+    val birthDate: String? = null,
+
+    @ColumnInfo(name = "gender")
+    val gender: String? = null,
+
+    @ColumnInfo(name = "marital_status")
+    val maritalStatus: String? = null,
+
+    @ColumnInfo(name = "show_email")
+    val showEmail: Boolean = false,
+
+    @ColumnInfo(name = "show_birth_date")
+    val showBirthDate: Boolean = false,
+
+    @ColumnInfo(name = "show_gender")
+    val showGender: Boolean = false,
+
+    @ColumnInfo(name = "show_marital_status")
+    val showMaritalStatus: Boolean = false,
 )

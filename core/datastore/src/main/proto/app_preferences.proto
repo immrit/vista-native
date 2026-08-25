@@ -7,4 +7,19 @@ message AppPreferences {
   uint32 schema_version = 1;
   bool onboarding_completed = 2;
   string onboarding_version = 3;
+  string app_locale = 4;
+  string theme_mode = 5;
+  bool reduce_motion = 6;
+  bool autoplay_media = 7;
+  string media_quality = 8;
+  bool video_data_saver = 9;
+  string privacy_cache_owner_id = 10;
+  bool privacy_cache_is_private = 11;
+  string privacy_cache_last_seen_visibility = 12;
+  string privacy_cache_message_privacy = 13;
+  string privacy_cache_group_add_privacy = 14;
+  bool privacy_cache_read_receipts = 15;
+  bool privacy_cache_allow_profile_zoom = 16;
+  string chat_entry_mode = 17;
+  string emoji_style = 18;
 }

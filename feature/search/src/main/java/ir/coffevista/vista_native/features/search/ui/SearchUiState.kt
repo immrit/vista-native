@@ -54,6 +54,7 @@ data class SearchUiState(
 internal object SearchTestTags {
     const val Launcher = "search-launcher"
     const val LauncherField = "search-launcher-field"
+    const val LauncherQrScanner = "search-launcher-qr-scanner"
     const val Workspace = "search-workspace"
     const val Field = "search-field"
     const val ClearQuery = "search-clear-query"

@@ -259,3 +259,29 @@ upgrade-compatible بودن artifact فعلی نیست.
     Remediation Backlog جداگانه باز می‌مانند.
 14. **مرز فاز:** `FND-01`، Feature، Backend، Navigation، Room، DataStore،
     WorkManager، Hilt، Migration Bridge و تغییر رفتار Auth/Startup اجرا نشد.
+
+## 9. P03 Revalidation — 2026-08-06
+
+**وضعیت:** `Partial — activation gates open`؛ Local Build/Release Governance روی `main@bf2b69e` بازتأیید شد، اما production replacement هنوز مجاز نیست.
+
+| معیار | نتیجه | شاهد جاری |
+|---|---|---|
+| Package/config | Pass | `app/build.gradle.kts:28-45,66-76`؛ namespace=`ir.coffevista.vista_native`، beta=`ir.coffevista.vista_native`، production=`ir.coffevista.vista`، baseline منتشرشده Flutter=`2.6.2+4049` و Native default=`2.6.3+4050`؛ override فقط از Gradle/env و `versionCode > 4049` الزام شده است |
+| SDK | Partial / runtime blocked | `build-logic/src/main/kotlin/VistaAndroidApplicationPlugin.kt:16-20`؛ compile/target=`36` و min=`24`. AVD رسمی API 24/x86_64 به ADB رسید ولی shell/package manager در سه launch تمیز غیرپاسخگو شد؛ fallback x86 download نشد. دستگاه متصل OnePlus API 30/arm64 است، پس API 24 هنوز Pass نیست |
+| Signing/update | Blocked | `app/build.gradle.kts:18-32,48-60,90-96`؛ debug signed و production بدون چهار secret صریحاً unsigned است. SHA-256 گواهی APK منتشرشده Flutter=`45ED8D0152484EBA6805A575A1E67778F0AD8E5B5F970DFE8BD07EDC141684AE`؛ material اصلی در دسترس نیست و مالک `REL-02` باید lineage و upgrade را روی دستگاه clone اثبات کند |
+| Reproducible gate | Pass | `.\gradlew.bat --no-daemon lint test :app:assembleBetaDebug :app:assembleProductionRelease "-Pvista.isolatedBuildDir=true" "-Pvista.isolatedBuildOutput=p03-20260806c" "-Pkotlin.incremental=false"` بدون `--write-locks`: ۱۲۶۱ task، `BUILD SUCCESSFUL` |
+| Tests/lint/R8 | Pass | ۵۹ XML suite، ۳۵۴ test، failure/error/skipped=`0`; lint: ۱۲ report، error=`0`، warning=`47`، hint=`2`; `app/outputs/mapping/productionRelease/mapping.txt` موجود |
+| Artifact provenance | Pass local | betaDebug: `17488221` bytes، SHA-256=`1F4BA657234FC70A06CDC7E9A1E005413D3CAFD339067C3E48089F24319356C7`; productionRelease unsigned: `5640807` bytes، SHA-256=`C667AEA6DE6D07352131ABED580939F99E9427F4B6CF410C95D4A5ACBDD94F3C`; هر دو به HEAD/variant بالا متصل‌اند |
+| CI | Defined / execution unverified | `.github/workflows/android-ci.yml:13-90` wrapper، secret، diff، build/test/lint/R8/artifact و CVE را تعریف می‌کند؛ اجرای runner جاری اثبات نشده و CVE نیازمند `NVD_API_KEY` است |
+| Secrets | Pass local | real-account credential فقط در محیط فرایند runtime استفاده شد؛ scan رسمی روی ۹۵۹ tracked/untracked file و literal scan نتیجهٔ صفر داشت |
+| Architecture boundary | Pass | dependency مستقیم Gradle از `feature/feed`، `feature/profile`، `feature/search` و `feature/shell` به feature دیگر صفر شد؛ قرارداد session در `core/model/.../session/AuthenticationState.kt` و composition UI در `app/.../AppNavGraph.kt` مالکیت صریح دارد. `scripts/verify-module-boundaries.ps1` و test/compile affected modules پاس شدند |
+
+Revalidation جاری پس از boundary/P04 foundation: `lint test :app:assembleBetaDebug` بدون lock rewrite در output ایزوله پاس شد؛ ۵۹ suite و ۳۵۴ test با failure/error/skipped=`0`. instrumentation `:app:connectedBetaDebugAndroidTest` روی OnePlus N100 API 30/arm64 پس از رفع compatibility خود تست، `23/23` پاس شد. APK betaDebug جاری 17,457,742 bytes و SHA-256=`FEA0753FD6420E7DD1C9BBEEF62DC15065F14B40F685C9EC72DD9F9CB40CC572` است.
+
+`SearchScreens.kt` audit: تغییر `AnimatedContent` فقط target-state `(phase, selectedTab)` را به `SearchBody` منتقل می‌کند؛ طبقه‌بندی=`Evidence-driven functional fix`، نه تغییر UI نامرتبط. WIP حفظ شد و با boundary/full gate بالا compile/test شد.
+
+Runtime Login smoke: APK `betaDebug` روی emulator API 33/x86_64 نصب شد؛ یک تلاش با حساب واقعی به session معتبر و authenticated Shell/Feed رسید، OTP/2FA فعال نشد و credential/token/response حساس ذخیره یا log نشد. این شاهد فقط Login boundary است و تکمیل کل Auth یا سایر journeyها را ثابت نمی‌کند.
+
+روش acceptance آینده `REL-02`: چهار signing secret فقط در محیط امن تزریق شوند؛ `productionRelease` با `versionCode` بزرگ‌تر از نسخه نصب‌شده ساخته شود؛ fingerprint خروجی با baseline بالا برابر باشد؛ `adb install -r` روی clone دارای Flutter و داده واقعی انجام و session/storage migration تأیید شود. rollback فقط با همان certificate و `versionCode` بالاتر مجاز است و هر schema migration باید backward-safe یا restore-tested باشد.
+
+Activation gateهای باز: production signing/certificate lineage و upgrade (`REL-02`)، اجرای موفق CVE در CI و runtime API 24. این external blockerها بدون material/runner واقعی Pass نمی‌شوند؛ شروع محدود P04 به foundation پایدار مجاز است، اما P03 تا بسته‌شدن gateهای رسمی `Partial` می‌ماند.

@@ -25,12 +25,15 @@ data class StoredSession(
     val profileCompleted: Boolean,
     val passwordRequired: Boolean,
     val displayName: String = "کاربر ویستا",
+    val biometricEnabled: Boolean = false,
 )
 
 interface SessionStore {
     fun read(): StoredSession?
     fun save(payload: AuthPayload)
     fun markPasswordConfigured()
+    fun isBiometricEnabled(): Boolean
+    fun setBiometricEnabled(enabled: Boolean)
     fun clear()
 }
 
@@ -65,6 +68,10 @@ class EncryptedSessionStore internal constructor(
     }
 
     override fun save(payload: AuthPayload) {
+        val preservedBiometricPreference = read()
+            ?.takeIf { current -> current.userId == payload.user.id }
+            ?.biometricEnabled
+            ?: false
         saveStoredSession(
             StoredSession(
                 accessToken = payload.session.accessToken,
@@ -74,6 +81,7 @@ class EncryptedSessionStore internal constructor(
                 profileCompleted = payload.user.profileCompleted,
                 passwordRequired = payload.user.passwordRequired,
                 displayName = payload.user.welcomeName,
+                biometricEnabled = preservedBiometricPreference,
             ),
         )
     }
@@ -81,6 +89,13 @@ class EncryptedSessionStore internal constructor(
     override fun markPasswordConfigured() {
         val current = read() ?: return
         saveStoredSession(current.copy(passwordRequired = false))
+    }
+
+    override fun isBiometricEnabled(): Boolean = read()?.biometricEnabled == true
+
+    override fun setBiometricEnabled(enabled: Boolean) {
+        val current = read() ?: return
+        saveStoredSession(current.copy(biometricEnabled = enabled))
     }
 
     override fun clear() {
@@ -192,6 +207,7 @@ internal object SessionEnvelopeCodec {
             .put(KEY_PROFILE_COMPLETED, session.profileCompleted)
             .put(KEY_PASSWORD_REQUIRED, session.passwordRequired)
             .put(KEY_DISPLAY_NAME, session.displayName)
+            .put(KEY_BIOMETRIC_ENABLED, session.biometricEnabled)
             .toString()
             .toByteArray(Charsets.UTF_8)
         val cipher = Cipher.getInstance(TRANSFORMATION)
@@ -256,6 +272,7 @@ internal object SessionEnvelopeCodec {
                 .takeIf(String::isNotEmpty)
                 ?: displayNameFromJwt(accessToken)
                 ?: "کاربر ویستا",
+            biometricEnabled = json.optBoolean(KEY_BIOMETRIC_ENABLED, false),
         )
     }
 
@@ -290,6 +307,7 @@ private const val KEY_EXPIRES_AT = "expires_at"
 private const val KEY_PROFILE_COMPLETED = "profile_completed"
 private const val KEY_PASSWORD_REQUIRED = "password_required"
 private const val KEY_DISPLAY_NAME = "display_name"
+private const val KEY_BIOMETRIC_ENABLED = "biometric_enabled"
 
 fun expiryFromJwt(token: String): Long? = jwtPayload(token)
     ?.optLong("exp")

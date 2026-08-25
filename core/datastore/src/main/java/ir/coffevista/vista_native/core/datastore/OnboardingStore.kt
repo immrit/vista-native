@@ -9,7 +9,7 @@ interface OnboardingStore {
     suspend fun markCompleted()
 }
 
-internal class ProtoOnboardingStore(
+class ProtoOnboardingStore(
     private val dataStore: DataStore<AppPreferences>,
 ) : OnboardingStore {
     override suspend fun isCompleted(): Boolean {
@@ -31,7 +31,7 @@ internal class ProtoOnboardingStore(
     }
 }
 
-internal const val CURRENT_SCHEMA_VERSION = 1
+internal const val CURRENT_SCHEMA_VERSION = 5
 internal const val CURRENT_ONBOARDING_VERSION = "1.0.0"
 
 internal fun isCurrentOnboardingCompletion(

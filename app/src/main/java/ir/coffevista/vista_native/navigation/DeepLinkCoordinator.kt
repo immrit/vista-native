@@ -12,9 +12,10 @@ import javax.inject.Singleton
 data class PendingDestination(
     val kind: DeferredFeatureKind,
     val reference: String,
+    val secondaryReference: String? = null,
 ) {
     val deliveryKey: String
-        get() = "${kind.name}:$reference"
+        get() = "${kind.name}:$reference:${secondaryReference.orEmpty()}"
 }
 
 sealed interface DeepLinkParseResult {
@@ -30,7 +31,6 @@ object DeepLinkParser {
             uri.scheme?.lowercase() != SCHEME ||
             uri.userInfo != null ||
             uri.port != -1 ||
-            uri.query != null ||
             uri.fragment != null
         ) {
             return DeepLinkParseResult.Rejected(DeepLinkFailureReason.UNSUPPORTED)
@@ -48,12 +48,28 @@ object DeepLinkParser {
         if (segments.size != 1 || !REFERENCE_PATTERN.matches(segments.single())) {
             return DeepLinkParseResult.Rejected(DeepLinkFailureReason.INVALID_ARGUMENT)
         }
+        val secondaryReference = when {
+            uri.rawQuery == null -> null
+            kind != DeferredFeatureKind.CHAT ->
+                return DeepLinkParseResult.Rejected(DeepLinkFailureReason.UNSUPPORTED)
+            else -> parseChatMessageReference(uri.rawQuery)
+                ?: return DeepLinkParseResult.Rejected(DeepLinkFailureReason.INVALID_ARGUMENT)
+        }
         return DeepLinkParseResult.Supported(
             PendingDestination(
                 kind = kind,
                 reference = segments.single(),
+                secondaryReference = secondaryReference,
             ),
         )
+    }
+
+    private fun parseChatMessageReference(rawQuery: String): String? {
+        val pairs = rawQuery.split('&')
+        if (pairs.size != 1) return null
+        val parts = pairs.single().split('=', limit = 2)
+        if (parts.size != 2 || parts[0] !in setOf("messageId", "message_id")) return null
+        return parts[1].takeIf(REFERENCE_PATTERN::matches)
     }
 
     private val REFERENCE_PATTERN = Regex("[A-Za-z0-9_-]{1,128}")
