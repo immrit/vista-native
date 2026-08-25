@@ -1,92 +1,59 @@
 package ir.coffevista.vista_native.features.chat.presentation.components
 
-import android.content.Context
-import android.text.Editable
-import android.text.InputType
-import android.text.TextWatcher
-import android.util.TypedValue
-import android.view.Gravity
-import android.view.KeyEvent
-import android.view.View
-import android.view.inputmethod.InputMethodManager
-import android.widget.EditText
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
-import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDirection
+import androidx.compose.ui.unit.sp
 
 /**
- * کنترلر مستقیم فیلد ورودی متن بومی بر پایه معماری کلاس EditTextEmoji در مخزن اصلی Telegram
- * تمامی عملیات درج شکلک و حذف بدون وابستگی به بازچینی‌های سنگین کامپوز انجام می‌شوند
+ * کنترلر فیلد ورودی پیام برای شکلک‌ها، صفحه‌کلید و عملکرد سریع
  */
 class TelegramComposerController {
-    var internalEditText: EditText? = null
-    var isUpdatingText = false
+    var onInsertEmoji: ((String) -> Unit)? = null
+    var onDispatchBackspace: (() -> Unit)? = null
+    var onRequestKeyboard: (() -> Unit)? = null
+    var onHideKeyboard: (() -> Unit)? = null
 
     fun insertEmoji(symbol: String) {
-        val editText = internalEditText ?: return
-        try {
-            val start = editText.selectionStart.coerceAtLeast(0)
-            val end = editText.selectionEnd.coerceAtLeast(0)
-            val selStart = Math.min(start, end)
-            val selEnd = Math.max(start, end)
-            val text = editText.text
-            if (text != null) {
-                // Keep the editable surface Unicode-only. Constructing custom spans
-                // can synchronously decode assets, which must never happen while the
-                // IME is opening or a user is entering text.
-                text.replace(selStart, selEnd, symbol)
-                val newCursor = selStart + symbol.length
-                editText.setSelection(newCursor.coerceIn(0, text.length))
-            }
-        } catch (e: Exception) {
-            try {
-                val curText = editText.text?.toString() ?: ""
-                val selStart = editText.selectionStart.coerceIn(0, curText.length)
-                val selEnd = editText.selectionEnd.coerceIn(0, curText.length)
-                val minS = Math.min(selStart, selEnd)
-                val maxS = Math.max(selStart, selEnd)
-                val newText = curText.substring(0, minS) + symbol + curText.substring(maxS)
-                editText.setText(newText)
-                editText.setSelection((minS + symbol.length).coerceIn(0, newText.length))
-            } catch (_: Exception) {}
-        }
+        onInsertEmoji?.invoke(symbol)
     }
 
     fun dispatchBackspace() {
-        val editText = internalEditText ?: return
-        try {
-            editText.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DEL))
-            editText.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_DEL))
-        } catch (_: Exception) {}
+        onDispatchBackspace?.invoke()
     }
 
     fun openKeyboard() {
-        val editText = internalEditText ?: return
-        // Wait until the AndroidView has completed its current layout pass. Asking
-        // the IME to attach while Compose is also applying window insets causes a
-        // visible first-focus hitch on slower physical devices.
-        editText.post {
-            if (!editText.hasFocus()) editText.requestFocus()
-            val imm = editText.context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
-            imm?.showSoftInput(editText, InputMethodManager.SHOW_IMPLICIT)
-        }
+        onRequestKeyboard?.invoke()
     }
 
     fun closeKeyboard() {
-        val editText = internalEditText ?: return
-        val imm = editText.context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
-        imm?.hideSoftInputFromWindow(editText.windowToken, 0)
+        onHideKeyboard?.invoke()
     }
 }
-
 /**
- * فیلد ورودی متن پیشرفته با پشتیبانی کامل از رندر مستقیم شکلک‌های گرافیکی تلگرام (Apple-Style)
- * و سوییچ کاملاً خودکار، بدون پرش و بدون تغییر مختصات عمودی (الگوی رسمی Telegram)
+ * فیلد ورودی پیام با کارایی بالا، پشتیبانی کامل از متن فارسی/RTL و تعامل بدون تأخیر
  */
 @Composable
 fun TelegramComposerField(
@@ -100,95 +67,87 @@ fun TelegramComposerField(
     hint: String = "پیام...",
     maxLines: Int = 6,
 ) {
-    val textColor = MaterialTheme.colorScheme.onSurface.toArgb()
-    val hintColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f).toArgb()
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val actualFocusRequester = focusRequester ?: remember { FocusRequester() }
 
-    AndroidView(
-        modifier = modifier,
-        factory = { ctx: Context ->
-            EditText(ctx).apply {
-                controller.internalEditText = this
-                background = null
-                gravity = Gravity.CENTER_VERTICAL or Gravity.START
-                textDirection = View.TEXT_DIRECTION_ANY_RTL
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f)
-                setTextColor(textColor)
-                setHintTextColor(hintColor)
-                this.hint = hint
-                this.maxLines = maxLines
-                isSingleLine = false
-                inputType = InputType.TYPE_CLASS_TEXT or
-                    InputType.TYPE_TEXT_FLAG_MULTI_LINE or
-                    InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
-
-                setPadding(0, 0, 0, 0)
-                includeFontPadding = false
-
-                setOnFocusChangeListener { _, hasFocus ->
-                    if (hasFocus && !isEmojiPanelOpen) {
-                        onFocusText()
-                    }
-                }
-
-                addTextChangedListener(object : TextWatcher {
-                    private var isFormatting = false
-
-                    override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-                    override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
-
-                    override fun afterTextChanged(s: Editable?) {
-                        if (controller.isUpdatingText || isFormatting || s == null) return
-                        isFormatting = true
-                        try {
-                            val newText = s.toString()
-                            val curStart = selectionStart.coerceIn(0, newText.length)
-                            val curEnd = selectionEnd.coerceIn(0, newText.length)
-                            if (newText != value.text || curStart != value.selection.start || curEnd != value.selection.end) {
-                                onValueChange(TextFieldValue(newText, TextRange(curStart, curEnd)))
-                            }
-                        } catch (_: Exception) {
-                        } finally {
-                            isFormatting = false
-                        }
-                    }
-                })
+    DisposableEffect(controller, value, onValueChange) {
+        controller.onInsertEmoji = { symbol ->
+            val start = value.selection.min
+            val end = value.selection.max
+            val currentText = value.text
+            val newText = currentText.substring(0, start) + symbol + currentText.substring(end)
+            val newCursor = start + symbol.length
+            onValueChange(TextFieldValue(newText, TextRange(newCursor)))
+        }
+        controller.onDispatchBackspace = {
+            val start = value.selection.min
+            val end = value.selection.max
+            val currentText = value.text
+            if (start != end) {
+                val newText = currentText.substring(0, start) + currentText.substring(end)
+                onValueChange(TextFieldValue(newText, TextRange(start)))
+            } else if (start > 0) {
+                val deleteLength = if (start >= 2 && Character.isSurrogatePair(currentText[start - 2], currentText[start - 1])) 2 else 1
+                val newText = currentText.substring(0, start - deleteLength) + currentText.substring(start)
+                onValueChange(TextFieldValue(newText, TextRange(start - deleteLength)))
             }
-        },
-        update = { editText: EditText ->
-            controller.internalEditText = editText
-            editText.setTextColor(textColor)
-            editText.setHintTextColor(hintColor)
+        }
+        controller.onRequestKeyboard = {
+            actualFocusRequester.requestFocus()
+            keyboardController?.show()
+        }
+        controller.onHideKeyboard = {
+            keyboardController?.hide()
+        }
+        onDispose {
+            controller.onInsertEmoji = null
+            controller.onDispatchBackspace = null
+            controller.onRequestKeyboard = null
+            controller.onHideKeyboard = null
+        }
+    }
 
-            val currentText = editText.text?.toString() ?: ""
-            if (currentText != value.text) {
-                controller.isUpdatingText = true
-                try {
-                    // Keep the editor as plain Unicode text. Applying custom emoji
-                    // spans here reparsed the entire draft and synchronously decoded
-                    // assets on every keystroke. Rich emoji rendering is retained in
-                    // the read-only message bubbles, where it does not block IME input.
-                    editText.setText(value.text)
-                    val safeStart = value.selection.start.coerceIn(0, value.text.length)
-                    val safeEnd = value.selection.end.coerceIn(0, value.text.length)
-                    editText.setSelection(safeStart, safeEnd)
-                } catch (_: Exception) {
-                } finally {
-                    controller.isUpdatingText = false
+    BasicTextField(
+        value = value,
+        onValueChange = onValueChange,
+        modifier = modifier
+            .focusRequester(actualFocusRequester)
+            .onFocusChanged { if (it.isFocused && !isEmojiPanelOpen) onFocusText() }
+            .semantics {
+                contentDescription = hint
+            },
+        textStyle = MaterialTheme.typography.bodyLarge.copy(
+            color = MaterialTheme.colorScheme.onSurface,
+            fontSize = 16.sp,
+            lineHeight = 22.sp,
+            textDirection = TextDirection.ContentOrRtl,
+            textAlign = TextAlign.Start,
+        ),
+        keyboardOptions = KeyboardOptions(
+            capitalization = KeyboardCapitalization.Sentences,
+            autoCorrect = true,
+            keyboardType = KeyboardType.Text,
+            imeAction = ImeAction.Default,
+        ),
+        maxLines = maxLines,
+        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+        decorationBox = { innerTextField ->
+            Box(
+                modifier = Modifier.fillMaxWidth(),
+                contentAlignment = Alignment.CenterStart,
+            ) {
+                if (value.text.isEmpty()) {
+                    Text(
+                        text = hint,
+                        style = MaterialTheme.typography.bodyLarge.copy(
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                            fontSize = 16.sp,
+                            textDirection = TextDirection.Rtl,
+                            textAlign = TextAlign.Start,
+                        ),
+                    )
                 }
-            } else {
-                val curStart = editText.selectionStart
-                val curEnd = editText.selectionEnd
-                val targetStart = value.selection.start.coerceIn(0, value.text.length)
-                val targetEnd = value.selection.end.coerceIn(0, value.text.length)
-                if (curStart >= 0 && curEnd >= 0 && (curStart != targetStart || curEnd != targetEnd)) {
-                    controller.isUpdatingText = true
-                    try {
-                        editText.setSelection(targetStart, targetEnd)
-                    } catch (_: Exception) {
-                    } finally {
-                        controller.isUpdatingText = false
-                    }
-                }
+                innerTextField()
             }
         },
     )

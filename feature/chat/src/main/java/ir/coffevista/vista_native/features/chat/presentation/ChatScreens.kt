@@ -1803,6 +1803,12 @@ fun MessageDetailScreen(
                                             selectedMessageKeys + message.stableKey
                                         }
                                     },
+                                    onOpenContextMenu = { bounds ->
+                                        if (message.content != MessageContent.Deleted) {
+                                            selectedMessage = message
+                                            selectedMessageBubbleBounds = bounds
+                                        }
+                                    },
                                     onLongPress = { bounds ->
                                         if (message.content != MessageContent.Deleted) {
                                             if (selectedMessageKeys.isNotEmpty()) {
@@ -2247,6 +2253,7 @@ private fun MessageBubble(
     selectionMode: Boolean = false,
     selected: Boolean = false,
     onToggleSelection: () -> Unit = {},
+    onOpenContextMenu: (Rect?) -> Unit = {},
     onLongPress: (Rect?) -> Unit = {},
     onReply: () -> Unit,
     onReact: (String) -> Unit = {},
@@ -2331,9 +2338,7 @@ private fun MessageBubble(
                                 onResumeDownload(task.messageId)
                             attachment?.transferState == TransferState.COMPLETE && !attachment.remoteUrl.isNullOrBlank() ->
                                 onStartDownload(message)
-                            // Telegram-style context actions are long-press only;
-                            // a normal text tap must not compete with scrolling.
-                            else -> Unit
+                            else -> onOpenContextMenu(bubbleCoordinates[0]?.boundsInWindow())
                         }
                     },
                     onLongClick = { onLongPress(bubbleCoordinates[0]?.boundsInWindow()) },
@@ -4027,12 +4032,13 @@ private fun PartnerDetailsScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .verticalScroll(rememberScrollState())
                 .padding(contentPadding),
         ) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(340.dp)
+                    .height(280.dp)
                     .background(MaterialTheme.colorScheme.surfaceVariant),
             ) {
                 val heroAvatar = profile?.avatarUrl ?: conversation?.avatarUrl
@@ -4185,7 +4191,7 @@ private fun PartnerDetailsScreen(
                 ) { onOpenSearch() }
             }
 
-            if (state.isPartnerProfileLoading) {
+            if (state.isPartnerProfileLoading && profile == null) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()

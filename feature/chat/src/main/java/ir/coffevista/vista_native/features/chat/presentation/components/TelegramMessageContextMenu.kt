@@ -230,7 +230,7 @@ fun TelegramMessageContextMenu(
                                 if (isTextOnly) {
                                     TelegramContextMenuItem(
                                         icon = Icons.Default.ContentCopy,
-                                        label = "کپی متن",
+                                        label = "کپی",
                                         iconColor = iconPrimaryColor,
                                         textColor = textPrimaryColor,
                                         onClick = onCopy,
@@ -238,7 +238,7 @@ fun TelegramMessageContextMenu(
                                 }
                                 TelegramContextMenuItem(
                                     icon = Icons.AutoMirrored.Filled.Forward,
-                                    label = "هدایت پیام",
+                                    label = "فوروارد",
                                     iconColor = iconPrimaryColor,
                                     textColor = textPrimaryColor,
                                     onClick = onForward,
@@ -263,14 +263,14 @@ fun TelegramMessageContextMenu(
                                 }
                                 TelegramContextMenuItem(
                                     icon = Icons.Default.CheckCircleOutline,
-                                    label = "انتخاب پیام",
+                                    label = "انتخاب",
                                     iconColor = iconPrimaryColor,
                                     textColor = textPrimaryColor,
                                     onClick = onSelect,
                                 )
                                 TelegramContextMenuItem(
                                     icon = Icons.Default.Info,
-                                    label = "جزئیات پیام",
+                                    label = "جزئیات",
                                     iconColor = iconPrimaryColor,
                                     textColor = textPrimaryColor,
                                     onClick = onInfo,
@@ -279,10 +279,10 @@ fun TelegramMessageContextMenu(
                                     modifier = Modifier.padding(vertical = 3.dp, horizontal = 10.dp),
                                     thickness = 0.5.dp,
                                     color = dividerColor,
-                                )
+                                    )
                                 TelegramContextMenuItem(
                                     icon = Icons.Default.Delete,
-                                    label = "حذف پیام",
+                                    label = "حذف",
                                     iconColor = deleteColor,
                                     textColor = deleteColor,
                                     onClick = onDelete,
@@ -317,7 +317,7 @@ fun TelegramMessageContextMenu(
                                     if (isTextOnly) {
                                         TelegramContextMenuItem(
                                             icon = Icons.Default.ContentCopy,
-                                            label = "کپی متن",
+                                            label = "کپی",
                                             iconColor = iconPrimaryColor,
                                             textColor = textPrimaryColor,
                                             onClick = onCopy,
@@ -325,7 +325,7 @@ fun TelegramMessageContextMenu(
                                     }
                                     TelegramContextMenuItem(
                                         icon = Icons.AutoMirrored.Filled.Forward,
-                                        label = "هدایت پیام",
+                                        label = "فوروارد",
                                         iconColor = iconPrimaryColor,
                                         textColor = textPrimaryColor,
                                         onClick = onForward,
@@ -350,14 +350,14 @@ fun TelegramMessageContextMenu(
                                     }
                                     TelegramContextMenuItem(
                                         icon = Icons.Default.CheckCircleOutline,
-                                        label = "انتخاب پیام",
+                                        label = "انتخاب",
                                         iconColor = iconPrimaryColor,
                                         textColor = textPrimaryColor,
                                         onClick = onSelect,
                                     )
                                     TelegramContextMenuItem(
                                         icon = Icons.Default.Info,
-                                        label = "جزئیات پیام",
+                                        label = "جزئیات",
                                         iconColor = iconPrimaryColor,
                                         textColor = textPrimaryColor,
                                         onClick = onInfo,
@@ -369,7 +369,7 @@ fun TelegramMessageContextMenu(
                                     )
                                     TelegramContextMenuItem(
                                         icon = Icons.Default.Delete,
-                                        label = "حذف پیام",
+                                        label = "حذف",
                                         iconColor = deleteColor,
                                         textColor = deleteColor,
                                         onClick = onDelete,
