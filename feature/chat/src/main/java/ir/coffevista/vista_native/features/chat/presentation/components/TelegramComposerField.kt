@@ -153,7 +153,7 @@ fun ChatComposerField(
             ),
             keyboardOptions = KeyboardOptions(
                 capitalization = KeyboardCapitalization.Sentences,
-                autoCorrect = true,
+                autoCorrectEnabled = true,
                 keyboardType = KeyboardType.Text,
                 imeAction = ImeAction.Default,
             ),

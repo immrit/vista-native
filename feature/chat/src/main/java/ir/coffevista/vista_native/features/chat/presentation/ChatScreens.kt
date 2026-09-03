@@ -1720,7 +1720,7 @@ fun MessageDetailScreen(
                             onValueChange = onSearch,
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true,
-                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                            keyboardOptions = KeyboardOptions.Default.copy(imeAction = ImeAction.Search),
                             textStyle = MaterialTheme.typography.bodyLarge.copy(
                                 color = MaterialTheme.colorScheme.onSurface,
                                 textAlign = TextAlign.Right,

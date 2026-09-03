@@ -1,6 +1,8 @@
 package ir.coffevista.vista_native.features.chat.presentation.components
 
 import android.content.Context
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.media.MediaRecorder
 import android.os.Build
@@ -77,6 +79,7 @@ fun VoiceRecorderDock(
     var recordingFile by remember { mutableStateOf<File?>(null) }
     var meterJob by remember { mutableStateOf<Job?>(null) }
     var ownsAudioFocus by remember { mutableStateOf(false) }
+    var audioFocusRequest by remember { mutableStateOf<AudioFocusRequest?>(null) }
     val lockThresholdPx = with(LocalDensity.current) { 140.dp.toPx() }
     val cancelThresholdPx = with(LocalDensity.current) { 180.dp.toPx() }
 
@@ -100,9 +103,15 @@ fun VoiceRecorderDock(
         }
         mediaRecorder = null
         if (ownsAudioFocus) {
-            audioManager.abandonAudioFocus(null)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                audioFocusRequest?.let(audioManager::abandonAudioFocusRequest)
+            } else {
+                @Suppress("DEPRECATION")
+                audioManager.abandonAudioFocus(null)
+            }
             ownsAudioFocus = false
         }
+        audioFocusRequest = null
         if (deleteFile) {
             recordingFile?.let { runCatching { it.delete() } }
         }
@@ -135,13 +144,32 @@ fun VoiceRecorderDock(
         }
 
         try {
-            @Suppress("DEPRECATION")
-            val focusResult = audioManager.requestAudioFocus(
-                null,
-                AudioManager.STREAM_MUSIC,
-                AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE,
-            )
+            val focusResult = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE)
+                    .setAudioAttributes(
+                        AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                            .build(),
+                    )
+                    .setAcceptsDelayedFocusGain(false)
+                    .build()
+                audioFocusRequest = request
+                audioManager.requestAudioFocus(request)
+            } else {
+                @Suppress("DEPRECATION")
+                audioManager.requestAudioFocus(
+                    null,
+                    AudioManager.STREAM_MUSIC,
+                    AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE,
+                )
+            }
             ownsAudioFocus = focusResult == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+            if (!ownsAudioFocus) {
+                runCatching { recorder.release() }
+                cleanupRecorder(deleteFile = true)
+                return
+            }
             recorder.setAudioSource(MediaRecorder.AudioSource.MIC)
             recorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
             recorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
@@ -193,9 +221,15 @@ fun VoiceRecorderDock(
         mediaRecorder = null
 
         if (ownsAudioFocus) {
-            audioManager.abandonAudioFocus(null)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                audioFocusRequest?.let(audioManager::abandonAudioFocusRequest)
+            } else {
+                @Suppress("DEPRECATION")
+                audioManager.abandonAudioFocus(null)
+            }
             ownsAudioFocus = false
         }
+        audioFocusRequest = null
 
         if (file != null && file.exists() && duration >= 1) {
             val draft = ChatAttachmentDraft(
