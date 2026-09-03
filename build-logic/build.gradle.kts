@@ -4,9 +4,10 @@ plugins {
 
 group = "ir.coffevista.buildlogic"
 
-val validationBuildRoot = System.getProperty("chatValidationBuildRoot") ?: ".chat-validation-build"
-layout.buildDirectory.set(layout.projectDirectory.dir("../$validationBuildRoot/build-logic"))
-
+val buildLogicRunId = providers.gradleProperty("vista.buildLogicRunId").orNull ?: "run-${System.currentTimeMillis()}"
+layout.buildDirectory.set(
+    layout.projectDirectory.dir("../.gradle/build-logic-$buildLogicRunId")
+)
 
 kotlin {
     jvmToolchain(17)

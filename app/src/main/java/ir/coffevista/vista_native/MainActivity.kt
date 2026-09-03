@@ -120,6 +120,17 @@ class MainActivity : FragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (savedInstanceState != null) {
+            biometricUnlockRequired = savedInstanceState.getBoolean(
+                KEY_BIOMETRIC_LOCKED,
+                sessionStore.isBiometricEnabled(),
+            )
+            savedInstanceState.getBundle(KEY_PENDING_CHAT_NOTIFICATION)?.let { b ->
+                pendingChatNotification = b.keySet().associateWith { key -> b.getString(key).orEmpty() }
+            }
+        } else {
+            biometricUnlockRequired = sessionStore.isBiometricEnabled()
+        }
         notificationManager.createNotificationChannels()
         pushTokenRegistrar.syncTokenAsync()
         configureStartupFixtures(intent)
@@ -275,8 +286,20 @@ class MainActivity : FragmentActivity() {
         ownProfileApiFixtures.forEach { fixture -> fixture.configure(scenario) }
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putBoolean(KEY_BIOMETRIC_LOCKED, biometricUnlockRequired)
+        pendingChatNotification?.let { data ->
+            val b = Bundle()
+            data.forEach { (k, v) -> b.putString(k, v) }
+            outState.putBundle(KEY_PENDING_CHAT_NOTIFICATION, b)
+        }
+    }
+
     private companion object {
         const val FOUNDATION_FIXTURE_EXTRA = "vista.foundation.fixture"
+        const val KEY_BIOMETRIC_LOCKED = "vista.lifecycle.biometric_locked"
+        const val KEY_PENDING_CHAT_NOTIFICATION = "vista.lifecycle.pending_chat_notification"
     }
 }
 

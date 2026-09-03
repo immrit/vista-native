@@ -31,13 +31,11 @@ val vistaVersionCode = injectedValue("vista.versionCode", "VISTA_VERSION_CODE")
 val vistaVersionName = injectedValue("vista.versionName", "VISTA_VERSION_NAME") ?: "2.6.3"
 val flutterReferenceApplicationId = "ir.coffevista.vista"
 val nativeBetaApplicationId = injectedValue("vista.applicationId.beta", "VISTA_BETA_APPLICATION_ID")
-    ?: "ir.coffevista.vista_native"
-val nativeProductionApplicationId = "ir.coffevista.vista_native.production"
+    ?: "ir.coffevista.vista_native.beta"
+val nativeProductionApplicationId = injectedValue("vista.applicationId.production", "VISTA_PRODUCTION_APPLICATION_ID")
+    ?: "ir.coffevista.vista"
 check(vistaVersionCode > 4049) {
     "Native versionCode must remain above the published Flutter baseline (4049)."
-}
-check(nativeProductionApplicationId != flutterReferenceApplicationId) {
-    "Native builds must never use the Flutter reference applicationId."
 }
 
 android {
@@ -113,14 +111,15 @@ android {
 
 val verifyNativeApplicationIds by tasks.registering {
     group = "verification"
-    description = "Rejects Native variants that collide with the Flutter runtime package."
+    description = "Validates production in-place upgrade and beta isolation package IDs."
     doLast {
-        val nativeApplicationIds = android.productFlavors.mapNotNull { it.applicationId }
-        check(nativeApplicationIds.none { it == flutterReferenceApplicationId }) {
-            "Native variants must not use Flutter application ID $flutterReferenceApplicationId: $nativeApplicationIds"
+        val productionFlavor = android.productFlavors.firstOrNull { it.name == "production" }
+        val betaFlavor = android.productFlavors.firstOrNull { it.name == "beta" }
+        check(productionFlavor?.applicationId == nativeProductionApplicationId) {
+            "Native production variant must use reconciled application ID: ${productionFlavor?.applicationId}"
         }
-        check(nativeApplicationIds.all { it.startsWith("ir.coffevista.vista_native") }) {
-            "Native variants must use an explicit Native package suffix: $nativeApplicationIds"
+        check(betaFlavor?.applicationId?.startsWith("ir.coffevista.vista_native") == true) {
+            "Native beta variant must retain isolated beta package ID: ${betaFlavor?.applicationId}"
         }
     }
 }

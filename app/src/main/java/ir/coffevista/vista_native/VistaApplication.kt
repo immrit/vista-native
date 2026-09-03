@@ -24,6 +24,11 @@ class VistaApplication : Application(), Configuration.Provider, ImageLoaderFacto
             .setWorkerFactory(workerFactory)
             .build()
 
+    override fun onCreate() {
+        super.onCreate()
+        ir.coffevista.vista_native.crash.VistaCrashReporter.install(this)
+    }
+
     override fun newImageLoader(): ImageLoader = ImageLoader.Builder(this)
         .okHttpClient(externalMediaClient)
         .crossfade(true)

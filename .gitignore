@@ -36,3 +36,26 @@ secrets/
 dependency-check-report/
 dependency-check-data/
 artifacts/
+
+# Local validation builds, caches, and logs
+.chat-validation-build*/
+.gradle-*/
+.claude/
+.codex-temp/
+*.log
+*.apk
+**/*build_old*/
+build_services/
+screen.png
+vista-ui.xml
+memory.md
+.gitmodules
+bunfig.toml
+.npmrc
+.yarnrc*
+package*.json
+pnpm-lock.yaml
+yarn.lock
+*.flutter-reference.json
+
+

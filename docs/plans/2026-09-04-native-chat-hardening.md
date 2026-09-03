@@ -2,7 +2,7 @@
 
 **Type:** bug | ui | perf
 **Status:** in-progress
-**Progress:** `[████░░░░░░] 40%`
+**Progress:** `[██████░░░░] 60%`
 
 ## Problem / Goal
 بستن مشکلات باقی‌مانده‌ی چت Native در انتخاب پیام و منوی کانتکست، با حفظ قراردادهای موجود و بدون تغییر در کارهای نامرتبط.
@@ -15,7 +15,7 @@
 ### Phase 1 — Investigate
 - [x] بررسی worktree و diff فایل ChatScreens.kt
 - [x] مرور تست‌های selection و placement
-- [ ] بررسی جزئیات چت Native در برابر مرجع Flutter
+- [x] بررسی جزئیات چت Native در برابر مرجع Flutter
 
 ### Phase 2 — Implement
 - [x] اصلاح تراز ریل selection بدون جابه‌جایی bubble
@@ -27,9 +27,13 @@
 - [x] تست‌های واحد چت
 - [ ] build/install/launch و replay روی emulator در صورت دسترسی
 - [ ] ثبت Verified / Partial / Blocked
-- [ ] commit و push واقعی با گزارش نتیجه
+- [x] commit محلی با فایل‌های محدود چت
+- [ ] push واقعی با گزارش نتیجه
 
 ## Decisions & Notes
 - فایل‌ها و تغییرات خارج از feature/chat متعلق به کاربر هستند و stage نمی‌شوند.
 - داده‌ی جعلی برای جزئیات چت اضافه نمی‌شود؛ نبود backend با empty state معتبر نمایش داده می‌شود.
 - `:feature:chat:testDebugUnitTest` پس از اصلاح rail و تبدیل مختصات Dialog سبز شد (۴ سپتامبر ۲۰۲۶).
+- Verified: selection rail، تراز bubble، تست‌های placement و کامپایل منوی کانتکست.
+- Partial: صفحه‌ی جزئیات شخصی/گروهی ساختار پایه و empty state معتبر دارد، اما parity کامل Flutter هنوز باقی است.
+- Blocked: `git push origin main` توسط کنترل ایمنی محیط برای ارسال به remote خارجی رد شد؛ کامیت محلی محفوظ است.
