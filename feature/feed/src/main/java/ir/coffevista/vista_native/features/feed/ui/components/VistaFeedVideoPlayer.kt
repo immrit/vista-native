@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -123,6 +124,18 @@ fun VistaFeedVideoPlayer(
         }
     }
 
+    var currentProgress by remember { mutableStateOf(0f) }
+
+    LaunchedEffect(isPlaying) {
+        while (isPlaying) {
+            val duration = exoPlayer.duration
+            if (duration > 0) {
+                currentProgress = (exoPlayer.currentPosition.toFloat() / duration.toFloat()).coerceIn(0f, 1f)
+            }
+            kotlinx.coroutines.delay(100)
+        }
+    }
+
     val finalAspectRatio = aspectRatio ?: (4f / 5f)
 
     Box(
@@ -221,6 +234,19 @@ fun VistaFeedVideoPlayer(
                     modifier = Modifier.size(20.dp),
                 )
             }
+        }
+
+        // Video progress indicator
+        if (hasRenderedFirstFrame && currentProgress > 0f) {
+            androidx.compose.material3.LinearProgressIndicator(
+                progress = { currentProgress },
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .height(2.5.dp),
+                color = MaterialTheme.colorScheme.primary,
+                trackColor = Color.White.copy(alpha = 0.2f),
+            )
         }
     }
 }

@@ -1,11 +1,18 @@
 package ir.coffevista.vista_native.features.feed.ui
 
 import android.content.res.Configuration
-import android.content.Intent
+import android.net.Uri
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -18,6 +25,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -36,6 +44,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -44,8 +53,26 @@ import androidx.compose.material3.TabRow
 import androidx.compose.material3.TabRowDefaults
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.Spring
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.foundation.text.ClickableText
+import ir.coffevista.vista_native.features.feed.ui.components.EditPostDialog
+import ir.coffevista.vista_native.features.feed.ui.components.PostModerationBanner
+import ir.coffevista.vista_native.features.feed.ui.components.ReportReasonDialog
+import ir.coffevista.vista_native.core.designsystem.component.VistaEmojiText
+import ir.coffevista.vista_native.core.designsystem.component.VistaFloatingActionButton
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -72,26 +99,35 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
+import androidx.media3.exoplayer.ExoPlayer
 import coil.compose.AsyncImage
 import ir.coffevista.vista_native.core.designsystem.R as DesignSystemR
 import ir.coffevista.vista_native.features.feed.data.FeedKind
 import ir.coffevista.vista_native.features.feed.data.FeedPost
 import java.time.Duration
 import java.time.Instant
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 
@@ -102,23 +138,33 @@ fun FeedScreen(
     onAuthorClick: (String) -> Unit,
     viewModel: FeedViewModel,
     commentsViewModel: CommentsViewModel,
+    onHashtagClick: (String) -> Unit = {},
+    onMentionClick: (String) -> Unit = {},
+    onAppealClick: (String) -> Unit = {},
     onNotificationClick: () -> Unit = {},
     onStoryClick: () -> Unit = {},
     onCreatePostClick: () -> Unit = {},
     onOpenStoryPlayer: (Int) -> Unit = {},
     onCreateStory: () -> Unit = {},
+    onSendDirectMessage: (FeedPost) -> Unit = {},
 ) {
-    val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val selectedKind by viewModel.selectedKind.collectAsStateWithLifecycle()
     val viewerUserId by viewModel.viewerUserId.collectAsStateWithLifecycle()
+    val unreadNotificationCount by viewModel.unreadNotificationCount.collectAsStateWithLifecycle()
     var showCommentsForPostId by remember { mutableStateOf<String?>(null) }
+    var showShareForPost by remember { mutableStateOf<FeedPost?>(null) }
+    var reportPostTarget by remember { mutableStateOf<FeedPost?>(null) }
+    var isReporting by remember { mutableStateOf(false) }
+    var editPostTarget by remember { mutableStateOf<FeedPost?>(null) }
+    var isEditing by remember { mutableStateOf(false) }
 
     val storyUsers by viewModel.activeStoryUsers.collectAsStateWithLifecycle()
 
     FeedScreenContent(
         uiState = uiState,
         viewerUserId = viewerUserId,
+        unreadNotificationCount = unreadNotificationCount,
         selectedKind = selectedKind,
         storyUsers = storyUsers,
         onKindSelected = viewModel::selectKind,
@@ -129,27 +175,15 @@ fun FeedScreen(
         onLikeClick = viewModel::toggleLike,
         onSaveClick = viewModel::toggleSave,
         onCommentClick = { showCommentsForPostId = it },
-        onShareClick = { post ->
-            val shareText = buildString {
-                post.content?.takeIf(String::isNotBlank)?.let(::append)
-                if (isNotEmpty()) append("\n")
-                append("https://coffevista.ir/posts/${post.id}")
-            }
-            context.startActivity(
-                Intent.createChooser(
-                    Intent(Intent.ACTION_SEND).apply {
-                        type = "text/plain"
-                        putExtra(Intent.EXTRA_TEXT, shareText)
-                    },
-                    "اشتراک‌گذاری پست",
-                ),
-            )
-            viewModel.trackEvent(post.id, "share")
-        },
+        onShareClick = { post -> showShareForPost = post },
+        onEditPost = { post -> editPostTarget = post },
         onDeletePost = viewModel::deletePost,
-        onReportPost = viewModel::reportPost,
+        onReportPost = { post -> reportPostTarget = post },
         onNotInterested = viewModel::markNotInterested,
         onVisibilityChange = viewModel::updateEngagementVisibility,
+        onHashtagClick = onHashtagClick,
+        onMentionClick = onMentionClick,
+        onAppealClick = onAppealClick,
         onNotificationClick = onNotificationClick,
         onStoryClick = onStoryClick,
         onCreatePostClick = onCreatePostClick,
@@ -161,7 +195,44 @@ fun FeedScreen(
         CommentsBottomSheet(
             postId = postId,
             onDismissRequest = { showCommentsForPostId = null },
-            viewModel = commentsViewModel
+            viewModel = commentsViewModel,
+            onAuthorClick = onAuthorClick,
+            onHashtagClick = onHashtagClick,
+        )
+    }
+    showShareForPost?.let { post ->
+        PostShareBottomSheet(
+            post = post,
+            onDismiss = { showShareForPost = null },
+            onShared = { viewModel.trackEvent(post.id, "share") },
+            onSendDirectMessage = onSendDirectMessage,
+        )
+    }
+    reportPostTarget?.let { target ->
+        ReportReasonDialog(
+            isSubmitting = isReporting,
+            onDismiss = { if (!isReporting) reportPostTarget = null },
+            onSubmit = { reason, details ->
+                isReporting = true
+                viewModel.reportPost(target, reason, details) {
+                    isReporting = false
+                    reportPostTarget = null
+                }
+            },
+        )
+    }
+    editPostTarget?.let { target ->
+        EditPostDialog(
+            initialContent = target.content.orEmpty(),
+            isSubmitting = isEditing,
+            onDismiss = { if (!isEditing) editPostTarget = null },
+            onConfirm = { newContent ->
+                isEditing = true
+                viewModel.updatePostContent(target.id, newContent) {
+                    isEditing = false
+                    editPostTarget = null
+                }
+            },
         )
     }
 }
@@ -172,6 +243,7 @@ internal fun FeedScreenContent(
     uiState: FeedUiState,
     viewerUserId: String? = null,
     storyUsers: List<ir.coffevista.vista_native.features.stories.domain.StoryUser> = emptyList(),
+    unreadNotificationCount: Int = 0,
     onRefresh: () -> Unit,
     onLoadMore: () -> Unit,
     onPostClick: (String) -> Unit,
@@ -180,10 +252,14 @@ internal fun FeedScreenContent(
     onSaveClick: (String, Boolean) -> Unit = { _, _ -> },
     onCommentClick: (String) -> Unit = {},
     onShareClick: (FeedPost) -> Unit = {},
+    onEditPost: (FeedPost) -> Unit = {},
     onDeletePost: (String) -> Unit = {},
-    onReportPost: (FeedPost, String) -> Unit = { _, _ -> },
+    onReportPost: (FeedPost) -> Unit = {},
     onNotInterested: (String) -> Unit = {},
     onVisibilityChange: (FeedPost, Boolean?, Boolean?) -> Unit = { _, _, _ -> },
+    onHashtagClick: (String) -> Unit = {},
+    onMentionClick: (String) -> Unit = {},
+    onAppealClick: (String) -> Unit = {},
     onNotificationClick: () -> Unit = {},
     onStoryClick: () -> Unit = {},
     onCreatePostClick: () -> Unit = {},
@@ -197,7 +273,10 @@ internal fun FeedScreenContent(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background),
     ) {
-        FeedAppBar(onNotificationClick)
+        FeedAppBar(
+            onNotificationClick = onNotificationClick,
+            unreadNotificationCount = unreadNotificationCount,
+        )
         FeedTabs(selectedKind = selectedKind, onKindSelected = onKindSelected)
         ir.coffevista.vista_native.features.stories.ui.tray.StoryTray(
             storyUsers = storyUsers,
@@ -205,6 +284,9 @@ internal fun FeedScreenContent(
             currentUserAvatar = null,
             onOpenStoryPlayer = onOpenStoryPlayer,
             onCreateStory = onCreateStory,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(115.dp),
         )
         Box(modifier = Modifier.fillMaxSize()) {
             when (val state = uiState) {
@@ -231,26 +313,40 @@ internal fun FeedScreenContent(
                         onSaveClick = onSaveClick,
                         onCommentClick = onCommentClick,
                         onShareClick = onShareClick,
+                        onEditPost = onEditPost,
                         onDeletePost = onDeletePost,
                         onReportPost = onReportPost,
                         onNotInterested = onNotInterested,
                         onVisibilityChange = onVisibilityChange,
+                        onHashtagClick = onHashtagClick,
+                        onMentionClick = onMentionClick,
+                        onAppealClick = onAppealClick,
                     )
                 }
             }
-            Surface(
+            VistaFloatingActionButton(
                 onClick = onCreatePostClick,
-                modifier = Modifier.align(Alignment.BottomEnd).padding(end = 20.dp, bottom = 112.dp).size(56.dp),
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.primary,
-                shadowElevation = 10.dp,
-            ) { Box(contentAlignment = Alignment.Center) { Text("+", color = MaterialTheme.colorScheme.onPrimary, fontSize = 32.sp) } }
+                contentDescription = "ارسال پست جدید",
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 16.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Add,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(28.dp),
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun FeedAppBar(onNotificationClick: () -> Unit) {
+private fun FeedAppBar(
+    onNotificationClick: () -> Unit,
+    unreadNotificationCount: Int = 0,
+) {
     val dark = (LocalConfiguration.current.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
         Configuration.UI_MODE_NIGHT_YES
     val logoId = if (dark) {
@@ -272,6 +368,7 @@ private fun FeedAppBar(onNotificationClick: () -> Unit) {
             modifier = Modifier.size(35.dp),
         )
         NotificationBell(
+            unreadCount = unreadNotificationCount,
             modifier = Modifier
                 .align(Alignment.CenterEnd)
                 .padding(horizontal = 16.dp)
@@ -356,16 +453,22 @@ private fun FeedTabs(
                 selected = kind == selectedKind,
                 onClick = { onKindSelected(kind) },
                 modifier = Modifier
-                    .height(46.dp)
+                    .height(48.dp)
                     .testTag(FeedTestTags.tab(kind)),
                 text = {
+                    val selected = kind == selectedKind
                     Text(
                         text = label,
-                        fontSize = 15.sp,
-                        fontWeight = if (kind == selectedKind) {
-                            FontWeight.Bold
+                        fontSize = 16.sp,
+                        fontWeight = if (selected) {
+                            FontWeight.SemiBold
                         } else {
-                            FontWeight.Medium
+                            FontWeight.Normal
+                        },
+                        color = if (selected) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
                         },
                     )
                 },
@@ -385,10 +488,14 @@ internal fun FeedContent(
     onSaveClick: (String, Boolean) -> Unit,
     onCommentClick: (String) -> Unit,
     onShareClick: (FeedPost) -> Unit,
+    onEditPost: (FeedPost) -> Unit = {},
     onDeletePost: (String) -> Unit,
-    onReportPost: (FeedPost, String) -> Unit,
+    onReportPost: (FeedPost) -> Unit,
     onNotInterested: (String) -> Unit,
     onVisibilityChange: (FeedPost, Boolean?, Boolean?) -> Unit,
+    onHashtagClick: (String) -> Unit = {},
+    onMentionClick: (String) -> Unit = {},
+    onAppealClick: (String) -> Unit = {},
     selectedKind: FeedKind = FeedKind.Explore,
 ) {
     val listState = rememberLazyListState()
@@ -430,10 +537,14 @@ internal fun FeedContent(
                 onSaveClick = onSaveClick,
                 onCommentClick = { onCommentClick(post.id) },
                 onShareClick = { onShareClick(post) },
+                onEditPost = { onEditPost(post) },
                 onDeletePost = { onDeletePost(post.id) },
-                onReportPost = { reason -> onReportPost(post, reason) },
+                onReportPost = { onReportPost(post) },
                 onNotInterested = { onNotInterested(post.id) },
                 onVisibilityChange = { hideLike, hideComment -> onVisibilityChange(post, hideLike, hideComment) },
+                onHashtagClick = onHashtagClick,
+                onMentionClick = onMentionClick,
+                onAppealClick = onAppealClick,
             )
             HorizontalDivider(
                 thickness = 0.5.dp,
@@ -513,10 +624,14 @@ fun VistaFeedPostCard(
     onSaveClick: (String, Boolean) -> Unit = { _, _ -> },
     onCommentClick: (String) -> Unit = {},
     onShareClick: () -> Unit = {},
+    onEditPost: () -> Unit = {},
     onDeletePost: () -> Unit = {},
-    onReportPost: (String) -> Unit = {},
+    onReportPost: () -> Unit = {},
     onNotInterested: () -> Unit = {},
     onVisibilityChange: (Boolean?, Boolean?) -> Unit = { _, _ -> },
+    onHashtagClick: (String) -> Unit = {},
+    onMentionClick: (String) -> Unit = {},
+    onAppealClick: (String) -> Unit = {},
     showFollowState: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
@@ -545,13 +660,15 @@ fun VistaFeedPostCard(
                 Spacer(Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
+                        VistaEmojiText(
                             text = post.authorUsername?.takeIf { it.isNotBlank() } ?: post.authorFullName,
                             modifier = Modifier.weight(1f, fill = false),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold,
+                            style = TextStyle(
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                            ),
                         )
                         if (post.authorIsVerified) {
                             VerifiedMark(Modifier.padding(start = 4.dp))
@@ -602,17 +719,29 @@ fun VistaFeedPostCard(
             }
         }
 
+        PostModerationBanner(
+            post = post,
+            isOwner = isOwnPost,
+            onAppealClick = onAppealClick,
+            modifier = Modifier.padding(horizontal = 16.dp),
+        )
+
         post.content?.takeIf(String::isNotBlank)?.let { caption ->
-            Text(
+            HashtagMentionCaption(
                 text = caption,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 4.dp)
                     .then(if (verticalMenu) Modifier.testTag(PostDetailTestTags.Caption) else Modifier),
-                fontSize = 15.sp,
-                lineHeight = 21.sp,
+                style = TextStyle(
+                    fontSize = 15.sp,
+                    lineHeight = 21.sp,
+                    color = MaterialTheme.colorScheme.onSurface,
+                ),
                 maxLines = if (expanded) Int.MAX_VALUE else 6,
                 overflow = TextOverflow.Ellipsis,
+                onHashtagClick = onHashtagClick,
+                onMentionClick = onMentionClick,
             )
             if (!expanded && caption.length > 180) {
                 Text(
@@ -628,10 +757,16 @@ fun VistaFeedPostCard(
         PostMedia(
             post = post,
             onClick = onPostClick,
+            onDoubleTap = {
+                if (!post.isLiked) {
+                    onLikeClick(post.id, post.isLiked, post.likeCount)
+                }
+            },
             modifier = Modifier
                 .padding(horizontal = 16.dp, vertical = 6.dp)
                 .then(if (verticalMenu) Modifier.testTag(PostDetailTestTags.Media) else Modifier),
         )
+        PostMusicBubble(post = post)
         Spacer(Modifier.height(4.dp))
         PostActionRow(
             post = post,
@@ -640,6 +775,7 @@ fun VistaFeedPostCard(
             onSaveClick = { onSaveClick(post.id, post.isSaved) },
             onCommentClick = { onCommentClick(post.id) },
             onShareClick = onShareClick,
+            onEditPost = onEditPost,
             onDeletePost = onDeletePost,
             onReportPost = onReportPost,
             onNotInterested = onNotInterested,
@@ -705,17 +841,35 @@ private fun PostAvatar(post: FeedPost) {
 private fun PostMedia(
     post: FeedPost,
     onClick: () -> Unit,
+    onDoubleTap: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val mediaUrl = post.videoThumbnailUrl ?: post.primaryImageUrl
     if (mediaUrl == null && post.videoUrl == null) return
     val ratio = post.aspectRatio?.toFloatOrNull()?.coerceIn(0.55f, 1.91f) ?: 1f
+    var heartBurstKey by remember(post.id) { mutableStateOf(0) }
+    var showHeartBurst by remember(post.id) { mutableStateOf(false) }
+    LaunchedEffect(heartBurstKey) {
+        if (heartBurstKey > 0) {
+            showHeartBurst = true
+            delay(620)
+            showHeartBurst = false
+        }
+    }
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant)
-            .clickable(onClick = onClick)
+            .pointerInput(post.id, post.isLiked, post.likeCount) {
+                detectTapGestures(
+                    onDoubleTap = {
+                        heartBurstKey += 1
+                        onDoubleTap()
+                    },
+                    onTap = { onClick() },
+                )
+            }
             .testTag(FeedTestTags.media(post.id)),
     ) {
         if (!post.videoUrl.isNullOrBlank()) {
@@ -736,7 +890,34 @@ private fun PostMedia(
                     .fillMaxWidth()
                     .height(mediaHeight),
             ) {
-                if (mediaUrl != null) {
+                if (post.imageUrls.size > 1) {
+                    val pagerState = rememberPagerState(pageCount = { post.imageUrls.size })
+                    HorizontalPager(
+                        state = pagerState,
+                        modifier = Modifier.fillMaxSize(),
+                    ) { page ->
+                        AsyncImage(
+                            model = post.imageUrls[page],
+                            contentDescription = "تصویر ${page + 1} از پست",
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop,
+                        )
+                    }
+                    Surface(
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(10.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color.Black.copy(alpha = 0.62f),
+                        contentColor = Color.White,
+                    ) {
+                        Text(
+                            text = "${pagerState.currentPage + 1}/${post.imageUrls.size}".toPersianDigits(),
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                            fontSize = 12.sp,
+                        )
+                    }
+                } else if (mediaUrl != null) {
                     AsyncImage(
                         model = mediaUrl,
                         contentDescription = "تصویر پست",
@@ -744,25 +925,175 @@ private fun PostMedia(
                         contentScale = ContentScale.Crop,
                     )
                 }
-                if (post.imageUrls.size > 1) {
-                Surface(
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(10.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    color = Color.Black.copy(alpha = 0.62f),
-                    contentColor = Color.White,
-                ) {
-                    Text(
-                        text = "۱/${post.imageUrls.size}",
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                        fontSize = 12.sp,
-                    )
-                }
             }
+        }
+        AnimatedVisibility(
+            visible = showHeartBurst,
+            modifier = Modifier.align(Alignment.Center),
+            enter = fadeIn(animationSpec = tween(90)) + scaleIn(initialScale = 0.72f),
+            exit = fadeOut(animationSpec = tween(260)) + scaleOut(targetScale = 1.18f),
+        ) {
+            Icon(
+                imageVector = Icons.Default.Favorite,
+                contentDescription = null,
+                tint = Color.White.copy(alpha = 0.92f),
+                modifier = Modifier
+                    .size(86.dp)
+                    .graphicsLayer { shadowElevation = 10f },
+            )
         }
     }
 }
+
+@Composable
+private fun HashtagMentionCaption(
+    text: String,
+    style: TextStyle,
+    maxLines: Int,
+    overflow: TextOverflow,
+    onHashtagClick: (String) -> Unit = {},
+    onMentionClick: (String) -> Unit = {},
+    modifier: Modifier = Modifier,
+) {
+    val entityStyle = SpanStyle(
+        color = Color(0xFF1E88E5),
+        fontWeight = FontWeight.Bold,
+    )
+    val annotated = remember(text) {
+        buildAnnotatedString {
+            val pattern = Regex("""(?<![^\s\n])@([\u0600-\u06FF\w_]+)|#([\u0600-\u06FF\w_]+)""")
+            var cursor = 0
+            pattern.findAll(text).forEach { match ->
+                if (match.range.first > cursor) {
+                    append(text.substring(cursor, match.range.first))
+                }
+                val start = length
+                append(match.value)
+                addStyle(entityStyle, start, length)
+                if (match.value.startsWith("#")) {
+                    addStringAnnotation(
+                        tag = "HASHTAG",
+                        annotation = match.value,
+                        start = start,
+                        end = length,
+                    )
+                } else if (match.value.startsWith("@")) {
+                    addStringAnnotation(
+                        tag = "MENTION",
+                        annotation = match.value.removePrefix("@"),
+                        start = start,
+                        end = length,
+                    )
+                }
+                cursor = match.range.last + 1
+            }
+            if (cursor < text.length) {
+                append(text.substring(cursor))
+            }
+        }
+    }
+    ClickableText(
+        text = annotated,
+        modifier = modifier,
+        style = style,
+        maxLines = maxLines,
+        overflow = overflow,
+        onClick = { offset ->
+            annotated.getStringAnnotations(tag = "HASHTAG", start = offset, end = offset).firstOrNull()?.let {
+                onHashtagClick(it.item)
+            }
+            annotated.getStringAnnotations(tag = "MENTION", start = offset, end = offset).firstOrNull()?.let {
+                onMentionClick(it.item)
+            }
+        },
+    )
+}
+
+@Composable
+private fun PostMusicBubble(post: FeedPost) {
+    val musicUrl = post.musicUrl?.trim().orEmpty()
+    if (musicUrl.isEmpty()) return
+
+    val context = LocalContext.current
+    var isPlaying by remember(post.id) { mutableStateOf(false) }
+    val player = remember(musicUrl) {
+        ExoPlayer.Builder(context).build().apply {
+            setMediaItem(MediaItem.fromUri(Uri.parse(musicUrl)))
+            repeatMode = Player.REPEAT_MODE_OFF
+            prepare()
+        }
+    }
+
+    DisposableEffect(player) {
+        val listener = object : Player.Listener {
+            override fun onIsPlayingChanged(playing: Boolean) {
+                isPlaying = playing
+            }
+        }
+        player.addListener(listener)
+        onDispose {
+            player.removeListener(listener)
+            player.release()
+        }
+    }
+
+    Surface(
+        modifier = Modifier
+            .padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 8.dp)
+            .fillMaxWidth()
+            .clickable {
+                if (player.isPlaying) {
+                    player.pause()
+                } else {
+                    player.play()
+                }
+            },
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.70f),
+        contentColor = MaterialTheme.colorScheme.onSurface,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Surface(
+                modifier = Modifier.size(42.dp),
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
+                contentColor = MaterialTheme.colorScheme.primary,
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                        contentDescription = if (isPlaying) "توقف موسیقی" else "پخش موسیقی",
+                        modifier = Modifier.size(24.dp),
+                    )
+                }
+            }
+            Spacer(Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = resolveMusicTitle(post),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    text = "موسیقی پست",
+                    maxLines = 1,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 12.sp,
+                )
+            }
+            Icon(
+                imageVector = Icons.Default.MusicNote,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(22.dp),
+            )
+        }
+    }
 }
 
 @Composable
@@ -775,8 +1106,9 @@ private fun PostActionRow(
     onSaveClick: () -> Unit,
     onCommentClick: () -> Unit,
     onShareClick: () -> Unit,
+    onEditPost: () -> Unit,
     onDeletePost: () -> Unit,
-    onReportPost: (String) -> Unit,
+    onReportPost: () -> Unit,
     onNotInterested: () -> Unit,
     onVisibilityChange: (Boolean?, Boolean?) -> Unit,
 ) {
@@ -791,6 +1123,18 @@ private fun PostActionRow(
     val haptics = LocalHapticFeedback.current
     var menuExpanded by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
+
+    var likeScale by remember { mutableStateOf(1f) }
+    val animatedLikeScale by animateFloatAsState(
+        targetValue = likeScale,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessLow,
+        ),
+        finishedListener = { likeScale = 1f },
+        label = "likeScale",
+    )
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -802,10 +1146,15 @@ private fun PostActionRow(
             inactiveColor = heartTint,
             modifier = Modifier
                 .size(19.dp)
+                .graphicsLayer(scaleX = animatedLikeScale, scaleY = animatedLikeScale)
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
-                    onClick = { haptics.performHapticFeedback(HapticFeedbackType.LongPress); onLikeClick() }
+                    onClick = {
+                        likeScale = 1.28f
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onLikeClick()
+                    }
                 ),
         )
         if (!post.hideLikeCount) {
@@ -864,13 +1213,60 @@ private fun PostActionRow(
         Box {
             MoreDots(color = actionTint, vertical = verticalMenu, modifier = Modifier.size(32.dp).clickable { menuExpanded = true }.padding(5.dp))
             DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
-                if (!isOwnPost) DropdownMenuItem(text = { Text("گزارش پست") }, onClick = { menuExpanded = false; onReportPost("spam") })
-                DropdownMenuItem(text = { Text("کپی متن") }, onClick = { menuExpanded = false; clipboard.setText(AnnotatedString(post.content.orEmpty())) })
-                if (!isOwnPost) DropdownMenuItem(text = { Text("کمتر نشان بده") }, onClick = { menuExpanded = false; onNotInterested() })
+                if (!isOwnPost) {
+                    DropdownMenuItem(
+                        text = { Text("گزارش پست") },
+                        onClick = {
+                            menuExpanded = false
+                            onReportPost()
+                        }
+                    )
+                }
+                DropdownMenuItem(
+                    text = { Text("کپی متن") },
+                    onClick = {
+                        menuExpanded = false
+                        clipboard.setText(AnnotatedString(post.content.orEmpty()))
+                    }
+                )
+                if (!isOwnPost) {
+                    DropdownMenuItem(
+                        text = { Text("کمتر نشان بده") },
+                        onClick = {
+                            menuExpanded = false
+                            onNotInterested()
+                        }
+                    )
+                }
                 if (isOwnPost) {
-                    DropdownMenuItem(text = { Text(if (post.hideLikeCount) "نمایش تعداد لایک" else "مخفی کردن تعداد لایک") }, onClick = { menuExpanded = false; onVisibilityChange(!post.hideLikeCount, null) })
-                    DropdownMenuItem(text = { Text(if (post.hideCommentCount) "نمایش تعداد دیدگاه" else "مخفی کردن تعداد دیدگاه") }, onClick = { menuExpanded = false; onVisibilityChange(null, !post.hideCommentCount) })
-                    DropdownMenuItem(text = { Text("حذف پست", color = MaterialTheme.colorScheme.error) }, onClick = { menuExpanded = false; confirmDelete = true })
+                    DropdownMenuItem(
+                        text = { Text("ویرایش پست") },
+                        onClick = {
+                            menuExpanded = false
+                            onEditPost()
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text(if (post.hideLikeCount) "نمایش تعداد لایک" else "مخفی کردن تعداد لایک") },
+                        onClick = {
+                            menuExpanded = false
+                            onVisibilityChange(!post.hideLikeCount, null)
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text(if (post.hideCommentCount) "نمایش تعداد دیدگاه" else "مخفی کردن تعداد دیدگاه") },
+                        onClick = {
+                            menuExpanded = false
+                            onVisibilityChange(null, !post.hideCommentCount)
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("حذف پست", color = MaterialTheme.colorScheme.error) },
+                        onClick = {
+                            menuExpanded = false
+                            confirmDelete = true
+                        }
+                    )
                 }
             }
         }
@@ -886,6 +1282,32 @@ private fun PostActionRow(
 
 @Composable
 private fun FeedSkeletonList() {
+    val transition = androidx.compose.animation.core.rememberInfiniteTransition(label = "shimmerTransition")
+    val translateAnim by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1000f,
+        animationSpec = androidx.compose.animation.core.infiniteRepeatable(
+            animation = androidx.compose.animation.core.tween(
+                durationMillis = 1200,
+                easing = androidx.compose.animation.core.LinearEasing,
+            ),
+            repeatMode = androidx.compose.animation.core.RepeatMode.Restart,
+        ),
+        label = "shimmerTranslate",
+    )
+
+    val baseColor = MaterialTheme.colorScheme.surfaceVariant
+    val highlightColor = MaterialTheme.colorScheme.surface
+    val shimmerBrush = androidx.compose.ui.graphics.Brush.linearGradient(
+        colors = listOf(
+            baseColor.copy(alpha = 0.6f),
+            highlightColor.copy(alpha = 0.9f),
+            baseColor.copy(alpha = 0.6f),
+        ),
+        start = androidx.compose.ui.geometry.Offset(x = translateAnim - 400f, y = translateAnim - 400f),
+        end = androidx.compose.ui.geometry.Offset(x = translateAnim, y = translateAnim),
+    )
+
     LazyColumn(
         contentPadding = PaddingValues(top = 8.dp, bottom = 110.dp),
         userScrollEnabled = false,
@@ -897,7 +1319,7 @@ private fun FeedSkeletonList() {
                         Modifier
                             .size(44.dp)
                             .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.surfaceVariant),
+                            .background(shimmerBrush),
                     )
                     Spacer(Modifier.width(12.dp))
                     Column {
@@ -906,7 +1328,7 @@ private fun FeedSkeletonList() {
                                 .width(120.dp)
                                 .height(14.dp)
                                 .clip(RoundedCornerShape(5.dp))
-                                .background(MaterialTheme.colorScheme.surfaceVariant),
+                                .background(shimmerBrush),
                         )
                         Spacer(Modifier.height(8.dp))
                         Box(
@@ -914,7 +1336,7 @@ private fun FeedSkeletonList() {
                                 .width(82.dp)
                                 .height(11.dp)
                                 .clip(RoundedCornerShape(5.dp))
-                                .background(MaterialTheme.colorScheme.surfaceVariant),
+                                .background(shimmerBrush),
                         )
                     }
                 }
@@ -922,9 +1344,9 @@ private fun FeedSkeletonList() {
                 Box(
                     Modifier
                         .fillMaxWidth()
-                        .height(170.dp)
+                        .height(180.dp)
                         .clip(RoundedCornerShape(14.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                        .background(shimmerBrush),
                 )
             }
         }
@@ -1012,15 +1434,41 @@ private fun OfflineBanner() {
 }
 
 @Composable
-private fun VerifiedMark(modifier: Modifier = Modifier) {
-    Box(
+internal fun VerifiedMark(modifier: Modifier = Modifier) {
+    Canvas(
         modifier = modifier
-            .size(14.dp)
-            .clip(CircleShape)
-            .background(Color(0xFF2196F3)),
-        contentAlignment = Alignment.Center,
+            .size(16.dp)
+            .semantics {
+                contentDescription = "نشان تأیید"
+                role = Role.Image
+            },
     ) {
-        Text("✓", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+        val center = Offset(size.width / 2f, size.height / 2f)
+        val outer = size.minDimension * 0.50f
+        val inner = size.minDimension * 0.43f
+        val badge = Path().apply {
+            for (i in 0 until 24) {
+                val angle = -Math.PI / 2.0 + i * Math.PI / 12.0
+                val radius = if (i % 2 == 0) outer else inner
+                val point = Offset(
+                    x = center.x + kotlin.math.cos(angle).toFloat() * radius,
+                    y = center.y + kotlin.math.sin(angle).toFloat() * radius,
+                )
+                if (i == 0) moveTo(point.x, point.y) else lineTo(point.x, point.y)
+            }
+            close()
+        }
+        drawPath(badge, Color(0xFF2196F3))
+        val check = Path().apply {
+            moveTo(size.width * 0.28f, size.height * 0.52f)
+            lineTo(size.width * 0.43f, size.height * 0.67f)
+            lineTo(size.width * 0.74f, size.height * 0.34f)
+        }
+        drawPath(
+            path = check,
+            color = Color.White,
+            style = Stroke(width = size.minDimension * 0.12f, cap = StrokeCap.Round),
+        )
     }
 }
 
@@ -1125,44 +1573,106 @@ private fun MoreDots(color: Color, vertical: Boolean = false, modifier: Modifier
 }
 
 @Composable
-private fun NotificationBell(modifier: Modifier = Modifier) {
+private fun NotificationBell(
+    unreadCount: Int = 0,
+    modifier: Modifier = Modifier,
+) {
     val color = MaterialTheme.colorScheme.onBackground
-    Canvas(modifier.semantics { contentDescription = "اعلان‌ها" }) {
-        drawArc(
-            color = color,
-            startAngle = 180f,
-            sweepAngle = 180f,
-            useCenter = false,
-            topLeft = Offset(size.width * .23f, size.height * .18f),
-            size = Size(size.width * .54f, size.height * .62f),
-            style = Stroke(width = size.minDimension * .085f, cap = StrokeCap.Round),
-        )
-        drawLine(
-            color,
-            Offset(size.width * .23f, size.height * .5f),
-            Offset(size.width * .18f, size.height * .78f),
-            strokeWidth = size.minDimension * .085f,
-            cap = StrokeCap.Round,
-        )
-        drawLine(
-            color,
-            Offset(size.width * .77f, size.height * .5f),
-            Offset(size.width * .82f, size.height * .78f),
-            strokeWidth = size.minDimension * .085f,
-            cap = StrokeCap.Round,
-        )
-        drawLine(
-            color,
-            Offset(size.width * .18f, size.height * .78f),
-            Offset(size.width * .82f, size.height * .78f),
-            strokeWidth = size.minDimension * .085f,
-            cap = StrokeCap.Round,
-        )
-        drawCircle(color, size.minDimension * .07f, Offset(size.width * .5f, size.height * .91f))
+    Box(modifier = modifier.semantics { contentDescription = "اعلان‌ها" }) {
+        Canvas(Modifier.fillMaxSize()) {
+            drawArc(
+                color = color,
+                startAngle = 180f,
+                sweepAngle = 180f,
+                useCenter = false,
+                topLeft = Offset(size.width * .23f, size.height * .18f),
+                size = Size(size.width * .54f, size.height * .62f),
+                style = Stroke(width = size.minDimension * .085f, cap = StrokeCap.Round),
+            )
+            drawLine(
+                color,
+                Offset(size.width * .23f, size.height * .5f),
+                Offset(size.width * .18f, size.height * .78f),
+                strokeWidth = size.minDimension * .085f,
+                cap = StrokeCap.Round,
+            )
+            drawLine(
+                color,
+                Offset(size.width * .77f, size.height * .5f),
+                Offset(size.width * .82f, size.height * .78f),
+                strokeWidth = size.minDimension * .085f,
+                cap = StrokeCap.Round,
+            )
+            drawLine(
+                color,
+                Offset(size.width * .18f, size.height * .78f),
+                Offset(size.width * .82f, size.height * .78f),
+                strokeWidth = size.minDimension * .085f,
+                cap = StrokeCap.Round,
+            )
+            drawCircle(color, size.minDimension * .07f, Offset(size.width * .5f, size.height * .91f))
+        }
+        if (unreadCount > 0) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .offset(x = 7.dp, y = (-7).dp)
+                    .background(Color(0xFFF44336), CircleShape)
+                    .padding(horizontal = 5.dp, vertical = 3.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = if (unreadCount > 99) "99+" else unreadCount.toString(),
+                    color = Color.White,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                )
+            }
+        }
     }
 }
 
 private fun relativeTime(raw: String): String = feedRelativeTime(raw)
+
+private fun resolveMusicTitle(post: FeedPost): String {
+    val direct = post.musicTitle?.trim().orEmpty()
+    if (direct.isNotEmpty()) return direct
+
+    val url = post.musicUrl?.trim().orEmpty()
+    if (url.isEmpty()) return "موزیک"
+
+    val lastSegment = runCatching {
+        Uri.parse(url).pathSegments.lastOrNull()
+    }.getOrNull().takeUnless { it.isNullOrBlank() } ?: url.substringAfterLast('/')
+    val withoutExtension = lastSegment.replace(Regex("""\.[^.]+$"""), "")
+    val normalized = withoutExtension
+        .replace(Regex("""^[^_]+_[0-9]+_"""), "")
+        .replace('_', ' ')
+        .trim()
+    return normalized.ifEmpty { "موزیک" }
+}
+
+private fun String.toPersianDigits(): String = buildString(length) {
+    this@toPersianDigits.forEach { character ->
+        append(
+            when (character) {
+                '0' -> '۰'
+                '1' -> '۱'
+                '2' -> '۲'
+                '3' -> '۳'
+                '4' -> '۴'
+                '5' -> '۵'
+                '6' -> '۶'
+                '7' -> '۷'
+                '8' -> '۸'
+                '9' -> '۹'
+                else -> character
+            }
+        )
+    }
+}
 
 internal object FeedTestTags {
     const val AppBar = "feed-app-bar"
@@ -1183,3 +1693,4 @@ internal object FeedTestTags {
     fun likeCount(id: String) = "feed-like-count-$id"
     fun commentCount(id: String) = "feed-comment-count-$id"
 }
+

@@ -29,6 +29,25 @@ interface FeedApi {
         @Query("offset") offset: Int,
     ): FeedResponseDto
 
+    @GET("v1/posts/hashtag/{tag}")
+    suspend fun getHashtagPosts(
+        @Path("tag") tag: String,
+        @Query("limit") limit: Int,
+        @Query("offset") offset: Int,
+    ): FeedResponseDto
+
+    @GET("v1/hashtags/trending")
+    suspend fun getTrendingHashtags(
+        @Query("limit") limit: Int = 20,
+        @Query("days") days: Int = 30,
+    ): HashtagSuggestionsResponseDto
+
+    @GET("v1/hashtags/search")
+    suspend fun searchHashtags(
+        @Query("q") query: String,
+        @Query("limit") limit: Int = 20,
+    ): HashtagSuggestionsResponseDto
+
     @retrofit2.http.POST("v1/posts/like/{postId}")
     suspend fun toggleLike(
         @Path("postId") postId: String,
@@ -51,6 +70,9 @@ interface FeedApi {
 
     @retrofit2.http.POST("v1/posts/report")
     suspend fun reportPost(@retrofit2.http.Body body: ReportPostRequestDto)
+
+    @retrofit2.http.POST("v1/posts/appeal")
+    suspend fun submitAppeal(@retrofit2.http.Body body: SubmitAppealRequestDto)
 
     @retrofit2.http.POST("v1/feed/event")
     suspend fun trackFeedEvent(@retrofit2.http.Body body: FeedEventRequestDto)

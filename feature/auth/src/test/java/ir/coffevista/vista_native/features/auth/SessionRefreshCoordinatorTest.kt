@@ -1,4 +1,4 @@
-package ir.coffevista.vista_native.features.auth
+﻿package ir.coffevista.vista_native.features.auth
 
 import ir.coffevista.vista_native.core.common.AppError
 import ir.coffevista.vista_native.core.common.ErrorKind
@@ -103,6 +103,9 @@ private class RecordingSessionStore(
         saveCalls += 1
     }
     override fun markPasswordConfigured() = Unit
+    override fun markProfileCompleted() = Unit
+    override fun isBiometricEnabled(): Boolean = false
+    override fun setBiometricEnabled(enabled: Boolean) = Unit
     override fun clear() {
         clearCalls += 1
     }
@@ -133,6 +136,14 @@ private class FakeRefreshRepository(
         error("unused")
     override suspend fun setPassword(accessToken: String, password: String): Outcome<Unit> =
         error("unused")
+    override suspend fun recoveryOptions(identifier: String) = error("unused")
+
+    override suspend fun sendRecoveryCode(optionId: String) = error("unused")
+
+    override suspend fun verifyRecoveryCode(optionId: String, code: String) = error("unused")
+
+    override suspend fun completeRecovery(token: String, newPassword: String) = error("unused")
+
     override suspend fun maintenanceMode(): Outcome<Boolean> = error("unused")
 
     override suspend fun refresh(refreshToken: String): Outcome<AuthPayload> {
@@ -147,3 +158,4 @@ private fun payload() = AuthPayload(
     session = AuthSession("access", "refresh", 1_900_000_000),
     isNewUser = false,
 )
+

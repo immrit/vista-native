@@ -27,12 +27,13 @@ object DeepLinkParser {
     fun parse(rawUri: String): DeepLinkParseResult {
         val uri = runCatching { URI(rawUri) }.getOrNull()
             ?: return DeepLinkParseResult.Rejected(DeepLinkFailureReason.INVALID_ARGUMENT)
-        if (
-            uri.scheme?.lowercase() != SCHEME ||
-            uri.userInfo != null ||
-            uri.port != -1 ||
-            uri.fragment != null
-        ) {
+        if (uri.userInfo != null || uri.port != -1 || uri.fragment != null) {
+            return DeepLinkParseResult.Rejected(DeepLinkFailureReason.UNSUPPORTED)
+        }
+        if (uri.scheme?.lowercase() == HTTPS_SCHEME) {
+            return parseVistaWebLink(uri)
+        }
+        if (uri.scheme?.lowercase() != SCHEME) {
             return DeepLinkParseResult.Rejected(DeepLinkFailureReason.UNSUPPORTED)
         }
         val kind = when (uri.host?.lowercase()) {
@@ -64,6 +65,30 @@ object DeepLinkParser {
         )
     }
 
+    private fun parseVistaWebLink(uri: URI): DeepLinkParseResult {
+        if (uri.host?.lowercase() !in VISTA_WEB_HOSTS || uri.rawQuery != null) {
+            return DeepLinkParseResult.Rejected(DeepLinkFailureReason.UNSUPPORTED)
+        }
+        val segments = uri.path.orEmpty()
+            .split('/')
+            .filter(String::isNotBlank)
+        val kind = when (segments.firstOrNull()?.lowercase()) {
+            "post" -> DeferredFeatureKind.POST
+            "profile" -> DeferredFeatureKind.PROFILE
+            "group" -> DeferredFeatureKind.GROUP
+            else -> return DeepLinkParseResult.Rejected(DeepLinkFailureReason.UNSUPPORTED)
+        }
+        val reference = segments.getOrNull(1)
+            ?.takeIf(REFERENCE_PATTERN::matches)
+            ?: return DeepLinkParseResult.Rejected(DeepLinkFailureReason.INVALID_ARGUMENT)
+        if (segments.size != 2) {
+            return DeepLinkParseResult.Rejected(DeepLinkFailureReason.INVALID_ARGUMENT)
+        }
+        return DeepLinkParseResult.Supported(
+            PendingDestination(kind = kind, reference = reference),
+        )
+    }
+
     private fun parseChatMessageReference(rawQuery: String): String? {
         val pairs = rawQuery.split('&')
         if (pairs.size != 1) return null
@@ -74,6 +99,8 @@ object DeepLinkParser {
 
     private val REFERENCE_PATTERN = Regex("[A-Za-z0-9_-]{1,128}")
     private const val SCHEME = "vista"
+    private const val HTTPS_SCHEME = "https"
+    private val VISTA_WEB_HOSTS = setOf("cafevista.ir", "www.cafevista.ir", "vista.me")
 }
 
 sealed interface DeepLinkDeliveryState {

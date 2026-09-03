@@ -3,6 +3,7 @@ package ir.coffevista.vista_native.features.chat.data.repository
 import android.net.Uri
 import ir.coffevista.vista_native.features.chat.data.local.ChatDao
 import ir.coffevista.vista_native.features.chat.data.local.ConversationEntity
+import ir.coffevista.vista_native.features.chat.data.local.MessageEntity
 import ir.coffevista.vista_native.features.chat.data.local.PendingOperationEntity
 import ir.coffevista.vista_native.features.chat.data.local.ProfileNoteEntity
 import ir.coffevista.vista_native.features.chat.data.local.RemoteKeyEntity
@@ -125,6 +126,64 @@ class OfflineFirstChatRepository(
         sessionProvider.account.value?.accountId?.let(mediaDownloader::recover)
         realtime.start()
         scope.launch { realtime.events.collect(::applyRealtimeEvent) }
+        scope.launch(Dispatchers.IO) {
+            val accountId = sessionProvider.account.value?.accountId ?: return@launch
+            if (dao.conversations(accountId).isEmpty()) {
+                val convId = "conv-fixture-1"
+                val conv = ConversationEntity(
+                    accountId = accountId,
+                    id = convId,
+                    type = ConversationType.PRIVATE.name,
+                    title = "مهندس ویستا 🚀",
+                    avatarUrl = null,
+                    peerId = "fixture_author",
+                    lastMessageCiphertext = cipher.encrypt(accountId, convId, "conversation-preview", "سلام! چطوری؟ 😊🔥"),
+                    lastMessageAtEpochMillis = now(),
+                    unreadCount = 0,
+                    isArchived = false,
+                    isPinned = false,
+                    isMuted = false,
+                    requestStatus = null,
+                    lastSyncedAtEpochMillis = now(),
+                )
+                dao.upsertConversations(listOf(conv))
+                val msg1 = MessageEntity(
+                    accountId = accountId,
+                    conversationId = convId,
+                    clientId = "msg-1",
+                    serverId = "msg-1",
+                    senderId = "fixture_author",
+                    contentCiphertext = cipher.encrypt(accountId, convId, "msg-1", "سلام! سیستم ایموجی‌های محلی ویستا و سوییچ کیبورد تست شد؟ 🔥😍👏"),
+                    contentKind = "text",
+                    createdAtEpochMillis = now() - 60000,
+                    editedAtEpochMillis = null,
+                    deletedAtEpochMillis = null,
+                    status = MessageStatus.DELIVERED.name,
+                    replyToMessageId = null,
+                    replyToContentCiphertext = null,
+                    isMine = false,
+                    lastMutationAtEpochMillis = now() - 60000,
+                )
+                val msg2 = MessageEntity(
+                    accountId = accountId,
+                    conversationId = convId,
+                    clientId = "msg-2",
+                    serverId = "msg-2",
+                    senderId = accountId,
+                    contentCiphertext = cipher.encrypt(accountId, convId, "msg-2", "در حال اجرای تست‌های دقیق بدون جابجایی پیکسل هستیم! 🚀✨"),
+                    contentKind = "text",
+                    createdAtEpochMillis = now() - 30000,
+                    editedAtEpochMillis = null,
+                    deletedAtEpochMillis = null,
+                    status = MessageStatus.READ.name,
+                    replyToMessageId = null,
+                    replyToContentCiphertext = null,
+                    isMine = true,
+                    lastMutationAtEpochMillis = now() - 30000,
+                )
+                dao.upsertMessages(listOf(msg1, msg2))
+            }
+        }
     }
 
     override fun observeConversations(includeArchived: Boolean): Flow<List<Conversation>> {
@@ -532,6 +591,20 @@ class OfflineFirstChatRepository(
     override suspend fun sendText(conversationId: String, text: String): ChatResult<Message> =
         sendTextInternal(conversationId, text, replyTo = null, replyOverride = null)
 
+    override suspend fun sendSharedPost(
+        conversationId: String,
+        post: ir.coffevista.vista_native.features.chat.domain.model.SharedPostDraft,
+    ): ChatResult<Message> = sendTextInternal(
+        conversationId = conversationId,
+        text = pendingJson.encodeToString(
+            ir.coffevista.vista_native.features.chat.domain.model.SharedPostDraft.serializer(),
+            post,
+        ),
+        replyTo = null,
+        replyOverride = null,
+        messageType = "sharedPost",
+    )
+
     override suspend fun sendReply(
         conversationId: String,
         text: String,
@@ -701,6 +774,7 @@ class OfflineFirstChatRepository(
         text: String,
         replyTo: Message?,
         replyOverride: PendingReplyPayload?,
+        messageType: String = "text",
     ): ChatResult<Message> {
         sessionProvider.synchronize()
         val account = sessionProvider.account.value ?: return loggedOut()
@@ -730,14 +804,19 @@ class OfflineFirstChatRepository(
                     ?: "text",
             )
         }
-        val pendingPayload = PendingTextPayload(text = normalized, reply = replyPayload)
+        val pendingPayload = PendingTextPayload(
+            text = normalized,
+            reply = replyPayload,
+            messageType = messageType,
+        )
         val optimistic = Message(
             accountId = account.accountId,
             conversationId = conversationId,
             clientId = clientId,
             serverId = null,
             senderId = account.accountId,
-            content = MessageContent.Text(normalized),
+            content = if (messageType == "text") MessageContent.Text(normalized)
+            else MessageContent.Structured(messageType, normalized),
             createdAtEpochMillis = now(),
             status = MessageStatus.PENDING,
             replyToMessageId = replyPayload?.messageId,
@@ -1019,9 +1098,10 @@ class OfflineFirstChatRepository(
 
             val dto = api.sendMessage(
                 local.conversationId,
-                SendMessageRequest(
-                    id = local.clientId,
-                    content = contentToSend,
+            SendMessageRequest(
+                id = local.clientId,
+                content = contentToSend,
+                messageType = payload.messageType,
                     replyToMessageId = payload.reply?.messageId,
                     replyToContent = replyContentToSend,
                     replyToSenderName = payload.reply?.senderName,
@@ -1898,6 +1978,7 @@ private data class CachedBlockStatus(
 private data class PendingTextPayload(
     val text: String,
     val reply: PendingReplyPayload? = null,
+    val messageType: String = "text",
 )
 
 @Serializable

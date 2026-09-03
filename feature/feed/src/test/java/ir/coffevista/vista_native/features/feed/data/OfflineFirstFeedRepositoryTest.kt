@@ -344,6 +344,14 @@ private class FakeFeedApi : FeedApi {
         return response
     }
 
+    override suspend fun getHashtagPosts(tag: String, limit: Int, offset: Int): FeedResponseDto = response
+
+    override suspend fun getTrendingHashtags(limit: Int, days: Int): HashtagSuggestionsResponseDto =
+        HashtagSuggestionsResponseDto()
+
+    override suspend fun searchHashtags(query: String, limit: Int): HashtagSuggestionsResponseDto =
+        HashtagSuggestionsResponseDto()
+
     override suspend fun toggleLike(postId: String, body: LikeRequestDto): LikeResponseDto {
         failure?.let { throw it }
         return LikeResponseDto(isLiked = true, likeCount = 1)
@@ -357,6 +365,7 @@ private class FakeFeedApi : FeedApi {
     override suspend fun updatePost(postId: String, body: UpdatePostRequestDto): FeedPostDto = error("unused")
     override suspend fun deletePost(postId: String) = Unit
     override suspend fun reportPost(body: ReportPostRequestDto) = Unit
+    override suspend fun submitAppeal(body: SubmitAppealRequestDto) = Unit
     override suspend fun trackFeedEvent(body: FeedEventRequestDto) = Unit
     override suspend fun presignUpload(request: PostPresignRequestDto): PostPresignResponseDto = error("unused")
     override suspend fun createPost(request: CreatePostRequestDto): CreatePostResponseDto = error("unused")

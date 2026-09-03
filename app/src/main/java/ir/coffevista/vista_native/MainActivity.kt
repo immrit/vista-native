@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -131,6 +132,7 @@ class MainActivity : FragmentActivity() {
                 .distinctUntilChanged()
                 .collectLatest { userId ->
                     if (userId != null) {
+                        pushTokenRegistrar.syncTokenAsync()
                         ownProfileRepository.fetchAndCacheOwnProfile(userId)
                         reconcilePendingChatNotification()
                     }
@@ -171,6 +173,7 @@ class MainActivity : FragmentActivity() {
                                 searchRepository = searchRepository,
                                 chatRepository = chatRepository,
                                 servicesRepository = servicesRepository,
+                                biometricAuthenticator = biometricAuthenticator,
                                 onExitRequested = ::finish,
                             )
                             if (biometricUnlockRequired && sessionStore.isBiometricEnabled()) {
@@ -219,6 +222,7 @@ class MainActivity : FragmentActivity() {
             .orEmpty()
         val chatDestination = ChatNavigationContract.fromNotification(notificationData)
         if (chatDestination != null) pendingChatNotification = notificationData
+        val notificationDeepLink = notificationDeepLink(notificationData)
         deepLinkCoordinator.submit(
             rawUri = chatDestination?.let { destination ->
                 buildString {
@@ -229,10 +233,25 @@ class MainActivity : FragmentActivity() {
                         append(messageId)
                     }
                 }
-            } ?: intent?.dataString,
+            } ?: notificationDeepLink ?: intent?.dataString,
             authenticated = authenticationStateOwner.state.value is AuthenticationState.SignedIn,
         )
         reconcilePendingChatNotification()
+    }
+
+    private fun notificationDeepLink(data: Map<String, String>): String? {
+        val type = (data["type"] ?: data["notification_type"]).orEmpty().lowercase()
+        return when {
+            type in setOf("post", "like", "comment", "comment_reply", "mention", "suggest_post") ->
+                data["post_id"]?.takeIf(String::isNotBlank)?.let { "vista://post/$it" }
+            type in setOf("follow", "follow_request", "follow_request_accepted", "suggest_follow") ->
+                (data["user_id"] ?: data["sender_id"] ?: data["follower_id"])
+                    ?.takeIf(String::isNotBlank)
+                    ?.let { "vista://profile/$it" }
+            type == "story" ->
+                data["user_id"]?.takeIf(String::isNotBlank)?.let { "vista://profile/$it" }
+            else -> null
+        }
     }
 
     private fun reconcilePendingChatNotification() {
@@ -266,6 +285,7 @@ private fun BiometricLockOverlay(onUnlock: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxSize()
+            .safeDrawingPadding()
             .background(MaterialTheme.colorScheme.background),
         contentAlignment = Alignment.Center,
     ) {

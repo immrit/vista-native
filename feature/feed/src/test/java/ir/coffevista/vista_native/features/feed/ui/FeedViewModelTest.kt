@@ -289,6 +289,9 @@ private class FakeFeedRepository : FeedRepository {
         userId: String,
     ): FeedAppendResult = onAppend(accountId)
 
+    override suspend fun getHashtagPosts(accountId: String, hashtag: String, offset: Int): FeedSnapshot =
+        FeedSnapshot(emptyList(), hasMore = false, nextOffset = offset)
+
     override suspend fun clearAccount(accountId: String) {
         snapshots.remove(accountId)
     }
@@ -298,6 +301,7 @@ private class FakeFeedRepository : FeedRepository {
     override suspend fun updatePost(accountId: String, postId: String, content: String?, hideLikeCount: Boolean?, hideCommentCount: Boolean?) = error("unused")
     override suspend fun deletePost(accountId: String, postId: String) = Unit
     override suspend fun reportPost(postId: String, reportedUserId: String, reason: String, additionalDetails: String?) = Unit
+    override suspend fun submitAppeal(postId: String, reason: String) = Unit
     override suspend fun trackFeedEvent(postId: String, eventType: String) = Unit
 
     fun emit(accountId: String, posts: List<FeedPost>, hasMore: Boolean) {

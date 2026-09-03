@@ -19,6 +19,7 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.put
 import retrofit2.Response
 import retrofit2.Retrofit
@@ -49,6 +50,18 @@ interface AuthApi {
         @Header("Authorization") authorization: String,
         @Body body: JsonObject,
     ): Response<Unit>
+
+    @POST("recovery-options")
+    suspend fun recoveryOptions(@Body body: JsonObject): Response<JsonObject>
+
+    @POST("recovery-send")
+    suspend fun sendRecoveryCode(@Body body: JsonObject): Response<JsonObject>
+
+    @POST("recovery-verify")
+    suspend fun verifyRecoveryCode(@Body body: JsonObject): Response<JsonObject>
+
+    @POST("recovery-complete")
+    suspend fun completeRecovery(@Body body: JsonObject): Response<JsonObject>
 
     @POST("v1/auth/refresh")
     suspend fun refresh(@Body body: JsonObject): Response<JsonObject>
@@ -120,6 +133,30 @@ class OkHttpAuthRemoteDataSource @Inject constructor(
                 body = jsonBody("password" to password),
             ),
         )
+    }
+
+    override suspend fun recoveryOptions(identifier: String): List<RecoveryOption> {
+        val json = execute(api.recoveryOptions(jsonBody("identifier" to identifier)))
+        return json["options"]?.jsonArray.orEmpty().mapNotNull { item ->
+            val option = item.jsonObject
+            val id = option.string("id") ?: return@mapNotNull null
+            val method = option.string("method") ?: return@mapNotNull null
+            RecoveryOption(id, method.lowercase(), option.string("masked").orEmpty())
+        }
+    }
+
+    override suspend fun sendRecoveryCode(optionId: String) {
+        execute(api.sendRecoveryCode(jsonBody("option_id" to optionId)))
+    }
+
+    override suspend fun verifyRecoveryCode(optionId: String, code: String): String {
+        val json = execute(api.verifyRecoveryCode(jsonBody("option_id" to optionId, "code" to code)))
+        return json.string("password_reset_token")
+            ?: throw kotlinx.serialization.SerializationException("password_reset_token missing")
+    }
+
+    override suspend fun completeRecovery(token: String, newPassword: String) {
+        execute(api.completeRecovery(jsonBody("password_reset_token" to token, "new_password" to newPassword)))
     }
 
     override suspend fun refresh(refreshToken: String): AuthPayload =

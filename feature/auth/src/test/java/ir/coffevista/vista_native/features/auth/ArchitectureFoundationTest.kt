@@ -1,4 +1,4 @@
-package ir.coffevista.vista_native.features.auth
+﻿package ir.coffevista.vista_native.features.auth
 
 import ir.coffevista.vista_native.core.common.ErrorKind
 import ir.coffevista.vista_native.core.common.DispatcherProvider
@@ -100,6 +100,15 @@ private open class FakeRemote : AuthRemoteDataSource {
 
     override suspend fun setPassword(accessToken: String, password: String) = Unit
 
+    override suspend fun recoveryOptions(identifier: String) =
+        emptyList<ir.coffevista.vista_native.features.auth.data.RecoveryOption>()
+
+    override suspend fun sendRecoveryCode(optionId: String) = Unit
+
+    override suspend fun verifyRecoveryCode(optionId: String, code: String) = "token"
+
+    override suspend fun completeRecovery(token: String, newPassword: String) = Unit
+
     override suspend fun refresh(refreshToken: String) = payload()
 
     override suspend fun isMaintenanceMode() = false
@@ -110,3 +119,4 @@ private open class FakeRemote : AuthRemoteDataSource {
         isNewUser = false,
     )
 }
+

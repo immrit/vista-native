@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.ClickableText
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -50,6 +51,9 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -58,6 +62,8 @@ import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import ir.coffevista.vista_native.features.feed.ui.components.ReportReasonDialog
+import ir.coffevista.vista_native.core.designsystem.component.VistaEmojiText
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import ir.coffevista.vista_native.core.designsystem.R as DesignSystemR
@@ -78,77 +84,74 @@ fun CommentsBottomSheet(
     onDismissRequest: () -> Unit,
     viewModel: CommentsViewModel,
     onAuthorClick: (String) -> Unit = {},
+    onHashtagClick: (String) -> Unit = {},
 ) {
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val isDark = isSystemInDarkTheme()
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var reportCommentTargetId by remember { mutableStateOf<String?>(null) }
+
     LaunchedEffect(postId) {
         viewModel.loadComments(postId)
     }
     
-    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    
     ModalBottomSheet(
         onDismissRequest = onDismissRequest,
         sheetState = sheetState,
-        shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
-        containerColor = MaterialTheme.colorScheme.surface,
         dragHandle = null,
+        containerColor = MaterialTheme.colorScheme.surface,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        modifier = Modifier
+            .fillMaxWidth()
+            .fillMaxHeight(0.85f),
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .fillMaxHeight(0.85f)
-                .imePadding()
-        ) {
-            // Drag handle
+        Column(modifier = Modifier.fillMaxSize()) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 8.dp),
+                    .padding(vertical = 12.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 Box(
                     modifier = Modifier
                         .width(40.dp)
                         .height(4.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)),
                 )
             }
-            Spacer(Modifier.height(16.dp))
-
-            // Header
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp),
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Image(
-                    painter = painterResource(DesignSystemR.drawable.vista_comment_sheet),
+                    painter = painterResource(DesignSystemR.drawable.vista_post_comment),
                     contentDescription = null,
-                    modifier = Modifier.size(24.dp),
-                    colorFilter = ColorFilter.tint(
-                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                    ),
+                    modifier = Modifier.size(20.dp),
+                    colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.onSurface),
                 )
-                Spacer(Modifier.width(12.dp))
+                Spacer(Modifier.width(8.dp))
                 Text(
                     text = "نظرات",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 20.sp,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                 )
             }
-            Spacer(Modifier.height(8.dp))
-            
             HorizontalDivider(
-                thickness = 1.dp,
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.1f)
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                thickness = 0.5.dp,
             )
             
-            Box(modifier = Modifier.weight(1f)) {
-                if (uiState.isLoading) {
-                    CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+            ) {
+                if (uiState.isLoading && uiState.comments.isEmpty()) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator()
+                    }
                 } else if (uiState.error != null && uiState.comments.isEmpty()) {
                     Column(
                         modifier = Modifier
@@ -157,14 +160,19 @@ fun CommentsBottomSheet(
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
                         Text(
-                            text = uiState.error.orEmpty(),
+                            text = uiState.error ?: "خطایی رخ داده است",
                             color = MaterialTheme.colorScheme.error,
+                            fontSize = 14.sp,
                             textAlign = TextAlign.Center,
                         )
-                        Spacer(Modifier.height(16.dp))
-                        Button(onClick = viewModel::retry) {
-                            Text("تلاش مجدد")
-                        }
+                        Spacer(Modifier.height(12.dp))
+                        Text(
+                            text = "تلاش مجدد",
+                            color = MaterialTheme.colorScheme.primary,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.clickable { viewModel.retry() },
+                        )
                     }
                 } else if (uiState.comments.isEmpty()) {
                     Column(
@@ -203,12 +211,13 @@ fun CommentsBottomSheet(
                         onReply = viewModel::setReplyingTo,
                         onEdit = { comment, newContent -> viewModel.updateComment(comment.id, newContent) },
                         onDelete = viewModel::deleteComment,
-                        onReport = { commentId -> viewModel.reportComment(commentId, "گزارش تخلف") },
+                        onReport = { commentId -> reportCommentTargetId = commentId },
                         canEdit = viewModel::canEdit,
                         canDelete = { viewModel.canDelete(it) },
                         canReport = viewModel::canReport,
                         isCommentAuthor = { viewModel.isCurrentUser(it.authorUserId) },
                         onAuthorClick = onAuthorClick,
+                        onHashtagClick = onHashtagClick,
                     )
                 }
             }
@@ -216,7 +225,13 @@ fun CommentsBottomSheet(
             CommentComposer(
                 replyingTo = uiState.replyingTo,
                 editingComment = uiState.editingComment,
-                onSubmit = { content -> viewModel.submitComment(content) },
+                mentionCandidates = commentMentionCandidates(uiState.comments),
+                onSubmit = { draft ->
+                    viewModel.submitComment(
+                        content = draft.content,
+                        mentionedUserIds = draft.mentionedUserIds,
+                    )
+                },
                 onCancelReplyOrEdit = {
                     viewModel.setReplyingTo(null)
                     viewModel.setEditingComment(null)
@@ -226,6 +241,17 @@ fun CommentsBottomSheet(
                 currentUserAvatarUrl = uiState.currentUserAvatarUrl,
             )
         }
+    }
+
+    reportCommentTargetId?.let { commentId ->
+        ReportReasonDialog(
+            title = "گزارش نظر",
+            onDismiss = { reportCommentTargetId = null },
+            onSubmit = { reason, _ ->
+                viewModel.reportComment(commentId, reason)
+                reportCommentTargetId = null
+            },
+        )
     }
 }
 
@@ -249,6 +275,7 @@ internal fun CommentsList(
     canReport: (Comment) -> Boolean,
     isCommentAuthor: (Comment) -> Boolean,
     onAuthorClick: (String) -> Unit = {},
+    onHashtagClick: (String) -> Unit = {},
 ) {
     val listState = rememberLazyListState()
     
@@ -288,6 +315,7 @@ internal fun CommentsList(
                 canReport = canReport,
                 isCommentAuthor = isCommentAuthor,
                 onAuthorClick = onAuthorClick,
+                onHashtagClick = onHashtagClick,
                 depth = 0,
             )
         }
@@ -321,6 +349,7 @@ internal fun CommentThread(
     canReport: (Comment) -> Boolean,
     isCommentAuthor: (Comment) -> Boolean,
     onAuthorClick: (String) -> Unit = {},
+    onHashtagClick: (String) -> Unit = {},
     depth: Int = 0,
 ) {
     val flattenedReplies = remember(comment.replies) { flattenReplies(comment.replies) }
@@ -339,6 +368,7 @@ internal fun CommentThread(
         canReport = canReport(comment),
         isCommentAuthor = isCommentAuthor(comment),
         onAuthorClick = onAuthorClick,
+        onHashtagClick = onHashtagClick,
         isReply = depth > 0,
         hasLineAbove = depth > 0,
         hasLineBelow = (depth == 0 && hasReplies && visibleReplyCount > 0) || depth > 0,
@@ -374,6 +404,7 @@ internal fun CommentThread(
             canReport = canReport(reply),
             isCommentAuthor = isCommentAuthor(reply),
             onAuthorClick = onAuthorClick,
+            onHashtagClick = onHashtagClick,
             isReply = true,
             hasLineAbove = true,
             hasLineBelow = !isLastReply && !isLoadingReplies,
@@ -429,6 +460,33 @@ private fun flattenReplies(replies: List<Comment>): List<Comment> = buildList {
     append(replies)
 }
 
+/** A mention is stored by stable user ID; the username is presentation-only. */
+internal data class CommentMention(
+    val userId: String,
+    val username: String,
+)
+
+internal data class CommentDraft(
+    val content: String,
+    val mentionedUserIds: List<String>,
+)
+
+private fun Comment.asMentionCandidate(): CommentMention? =
+    authorUsername
+        ?.trim()
+        ?.takeIf(String::isNotEmpty)
+        ?.let { username -> CommentMention(authorUserId, username) }
+
+internal fun commentMentionCandidates(comments: List<Comment>): List<CommentMention> = buildList {
+    fun collect(items: List<Comment>) {
+        items.forEach { comment ->
+            comment.asMentionCandidate()?.let(::add)
+            collect(comment.replies)
+        }
+    }
+    collect(comments)
+}.distinctBy { it.userId }
+
 /** Mirrors Flutter's `_loadMoreReplies`: promote 0/1 to 10 before async data returns. */
 internal fun nextVisibleReplyCount(currentCount: Int, loadedReplyCount: Int): Int = when {
     currentCount <= 1 -> 10
@@ -448,6 +506,7 @@ private fun CommentItem(
     canReport: Boolean,
     isCommentAuthor: Boolean,
     onAuthorClick: (String) -> Unit = {},
+    onHashtagClick: (String) -> Unit = {},
     modifier: Modifier = Modifier,
     isReply: Boolean = false,
     hasLineAbove: Boolean = false,
@@ -537,11 +596,13 @@ private fun CommentItem(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.clickable { onAuthorClick(comment.authorUserId) }
             ) {
-                Text(
+                VistaEmojiText(
                     text = comment.authorUsername?.takeIf { it.isNotBlank() } ?: comment.authorFullName,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    style = TextStyle(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    ),
                 )
                 if (comment.authorIsVerified) {
                     Spacer(Modifier.width(4.dp))
@@ -645,14 +706,9 @@ private fun CommentItem(
                 }
             } else {
                 // Normal comment text
-                Text(
+                ClickableCommentText(
                     text = comment.content,
-                    fontSize = 14.sp,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    lineHeight = 19.6.sp,
-                    style = TextStyle(
-                        textDirection = if (isRtlText(comment.content)) TextDirection.Rtl else TextDirection.Ltr,
-                    ),
+                    onHashtagClick = onHashtagClick,
                 )
                 
                 Spacer(Modifier.height(8.dp))
@@ -780,6 +836,41 @@ private fun CommentItem(
 }
 
 @Composable
+private fun ClickableCommentText(text: String, onHashtagClick: (String) -> Unit) {
+    val textColor = MaterialTheme.colorScheme.onSurface
+    val tagColor = MaterialTheme.colorScheme.primary
+    val annotated = remember(text, textColor, tagColor) {
+        buildAnnotatedString {
+            var cursor = 0
+            HASHTAG.findAll(text).forEach { match ->
+                append(text.substring(cursor, match.range.first))
+                pushStringAnnotation(HASHTAG_ANNOTATION, match.value.removePrefix("#"))
+                withStyle(SpanStyle(color = tagColor, fontWeight = FontWeight.SemiBold)) { append(match.value) }
+                pop()
+                cursor = match.range.last + 1
+            }
+            if (cursor < text.length) append(text.substring(cursor))
+        }
+    }
+    ClickableText(
+        text = annotated,
+        style = TextStyle(
+            fontSize = 14.sp,
+            color = textColor,
+            lineHeight = 19.6.sp,
+            textDirection = if (isRtlText(text)) TextDirection.Rtl else TextDirection.Ltr,
+        ),
+        onClick = { offset ->
+            annotated.getStringAnnotations(HASHTAG_ANNOTATION, offset, offset)
+                .firstOrNull()?.item?.takeIf(String::isNotBlank)?.let(onHashtagClick)
+        },
+    )
+}
+
+private const val HASHTAG_ANNOTATION = "comment_hashtag"
+private val HASHTAG = Regex("#[\\p{L}\\p{N}_]+")
+
+@Composable
 internal fun CommentVerificationBadge(
     isVerified: Boolean,
     verificationType: String?,
@@ -872,7 +963,8 @@ private fun commentRelativeTime(raw: String): String = runCatching {
 internal fun CommentComposer(
     replyingTo: Comment?,
     editingComment: Comment?,
-    onSubmit: (String) -> Unit,
+    mentionCandidates: List<CommentMention> = emptyList(),
+    onSubmit: (CommentDraft) -> Unit,
     onCancelReplyOrEdit: () -> Unit,
     isSubmitting: Boolean = false,
     error: String? = null,
@@ -883,7 +975,23 @@ internal fun CommentComposer(
     }
     val isDark = isSystemInDarkTheme()
     val canSend = text.trim().isNotEmpty() && text.trim().codePointCount(0, text.trim().length) <= 2200 && !isSubmitting
-    
+
+    val mentionMatch = remember(text) {
+        val lastWord = text.substringAfterLast(" ", text).substringAfterLast("\n", text)
+        if (lastWord.startsWith("@") && lastWord.length > 1) {
+            lastWord.removePrefix("@").lowercase()
+        } else null
+    }
+
+    var selectedMentions by rememberSaveable(replyingTo?.id, editingComment?.id) {
+        mutableStateOf(emptyMap<String, String>())
+    }
+    val availableMentions = remember(mentionCandidates, replyingTo) {
+        (mentionCandidates + listOfNotNull(replyingTo?.asMentionCandidate()))
+            .filter { it.userId.isNotBlank() && it.username.isNotBlank() }
+            .distinctBy { it.userId }
+    }
+
     Surface(
         color = if (isDark) MaterialTheme.colorScheme.surface else Color.White,
         shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
@@ -892,11 +1000,49 @@ internal fun CommentComposer(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                // Flutter's CommentInputField is wrapped in SafeArea. Keep the composer
-                // above both gesture navigation and the IME in the native surface too.
                 .navigationBarsPadding()
                 .padding(16.dp)
         ) {
+            // Mention autocomplete chip row
+            if (mentionMatch != null && availableMentions.isNotEmpty()) {
+                val matches = availableMentions.filter {
+                    it.username.lowercase().contains(mentionMatch)
+                }
+                if (matches.isNotEmpty()) {
+                    androidx.compose.foundation.lazy.LazyRow(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        items(matches, key = { it.userId }) { candidate ->
+                            Surface(
+                                onClick = {
+                                    val currentToken = "@$mentionMatch"
+                                    val prefix = text.removeSuffix(currentToken)
+                                    text = "$prefix@${candidate.username} "
+                                    selectedMentions = selectedMentions + (candidate.userId to candidate.username)
+                                },
+                                shape = RoundedCornerShape(16.dp),
+                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text(
+                                        text = "@${candidate.username}",
+                                        color = MaterialTheme.colorScheme.primary,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             error?.let {
                 Text(
                     text = it,
@@ -1028,7 +1174,14 @@ internal fun CommentComposer(
                 ) {
                     BasicTextField(
                         value = text,
-                        onValueChange = { text = it },
+                        onValueChange = { updated ->
+                            text = updated
+                            // A mention is valid only while its visible token remains in the draft.
+                            selectedMentions = selectedMentions.filterValues { username ->
+                                Regex("(?<![\\p{L}\\p{N}_])@${Regex.escape(username)}(?:\\b|\\s|$)")
+                                    .containsMatchIn(updated)
+                            }
+                        },
                         modifier = Modifier.fillMaxWidth(),
                         textStyle = TextStyle(
                             color = MaterialTheme.colorScheme.onSurface,
@@ -1064,8 +1217,14 @@ internal fun CommentComposer(
                         .clickable(enabled = canSend) {
                             val submitText = text.trim()
                             if (submitText.isNotEmpty()) {
-                                onSubmit(submitText)
+                                onSubmit(
+                                    CommentDraft(
+                                        content = submitText,
+                                        mentionedUserIds = selectedMentions.keys.toList(),
+                                    ),
+                                )
                                 text = ""
+                                selectedMentions = emptyMap()
                             }
                         },
                     contentAlignment = Alignment.Center,

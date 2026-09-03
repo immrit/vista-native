@@ -35,7 +35,10 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Videocam
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -51,7 +54,9 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.RangeSlider
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Switch
@@ -63,7 +68,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -92,6 +99,8 @@ fun AddPostScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+    var showLocationDialog by remember { mutableStateOf(false) }
+    var showMusicTrimSheet by remember { mutableStateOf(false) }
 
     // Launcher for Images (multi-selection)
     val imagePickerLauncher = rememberLauncherForActivityResult(
@@ -112,10 +121,20 @@ fun AddPostScreen(
         }
     }
 
+    val musicPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent(),
+    ) { uri ->
+        uri?.let(viewModel::onMusicFileSelected)
+    }
+
     LaunchedEffect(uiState.isSuccess) {
         if (uiState.isSuccess) {
             onPostCreated()
         }
+    }
+
+    LaunchedEffect(uiState.selectedMusicUri) {
+        if (uiState.selectedMusicUri != null) showMusicTrimSheet = true
     }
 
     uiState.errorMessage?.let { msg ->
@@ -503,6 +522,43 @@ fun AddPostScreen(
                     maxLines = 6,
                 )
 
+                AnimatedVisibility(
+                    visible = uiState.isLoadingHashtagSuggestions || uiState.hashtagSuggestions.isNotEmpty(),
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                ) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        ),
+                    ) {
+                        if (uiState.isLoadingHashtagSuggestions && uiState.hashtagSuggestions.isEmpty()) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(14.dp),
+                                horizontalArrangement = Arrangement.Center,
+                            ) { CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp) }
+                        } else {
+                            uiState.hashtagSuggestions.take(6).forEach { suggestion ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { viewModel.selectHashtagSuggestion(suggestion.tag) }
+                                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text("#", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                                    Spacer(Modifier.width(8.dp))
+                                    Column(Modifier.weight(1f)) {
+                                        Text("#${suggestion.tag}", fontWeight = FontWeight.SemiBold)
+                                        Text("${suggestion.usageCount} پست", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                    Text("افزودن", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp)
+                                }
+                            }
+                        }
+                    }
+                }
+
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -513,6 +569,50 @@ fun AddPostScreen(
                         text = "${uiState.content.length}/${uiState.maxCharLength}",
                         fontSize = 12.sp,
                         color = if (uiState.content.length >= uiState.maxCharLength) MaterialTheme.colorScheme.error else Color.Gray,
+                    )
+                }
+
+                // Location & Music Attachment Chips
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    FilterChip(
+                        selected = uiState.selectedLocation != null,
+                        onClick = { showLocationDialog = true },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.LocationOn,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                            )
+                        },
+                        label = {
+                            Text(
+                                text = uiState.selectedLocation ?: "افزودن موقعیت",
+                                fontSize = 12.sp,
+                            )
+                        },
+                    )
+
+                    FilterChip(
+                        selected = uiState.selectedMusicTitle != null,
+                        onClick = { musicPickerLauncher.launch("audio/*") },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.MusicNote,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                            )
+                        },
+                        label = {
+                            Text(
+                                text = uiState.selectedMusicTitle ?: "افزودن موسیقی",
+                                fontSize = 12.sp,
+                            )
+                        },
                     )
                 }
 
@@ -539,13 +639,14 @@ fun AddPostScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Column {
+                        Column(modifier = Modifier.weight(1f)) {
                             Text("مخفی کردن تعداد لایک‌ها", fontSize = 14.sp, fontWeight = FontWeight.Medium)
                             Text("تعداد لایک‌های این پست برای دیگران نمایش داده نمی‌شود", fontSize = 11.sp, color = Color.Gray)
                         }
-                        Switch(
+                        Spacer(modifier = Modifier.width(12.dp))
+                        ir.coffevista.vista_native.core.designsystem.component.VistaSwitch(
                             checked = uiState.hideLikeCount,
-                            onCheckedChange = viewModel::toggleHideLikeCount,
+                            onCheckedChange = { viewModel.toggleHideLikeCount(it) },
                         )
                     }
 
@@ -556,18 +657,116 @@ fun AddPostScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Column {
+                        Column(modifier = Modifier.weight(1f)) {
                             Text("بستن نظرات", fontSize = 14.sp, fontWeight = FontWeight.Medium)
                             Text("امکان ثبت نظر روی این پست غیرفعال می‌شود", fontSize = 11.sp, color = Color.Gray)
                         }
-                        Switch(
+                        Spacer(modifier = Modifier.width(12.dp))
+                        ir.coffevista.vista_native.core.designsystem.component.VistaSwitch(
                             checked = uiState.commentsDisabled,
-                            onCheckedChange = viewModel::toggleCommentsDisabled,
+                            onCheckedChange = { viewModel.toggleCommentsDisabled(it) },
                         )
                     }
                 }
 
                 Spacer(modifier = Modifier.height(40.dp))
+            }
+        }
+
+        if (showLocationDialog) {
+            var customCity by remember { mutableStateOf(uiState.selectedLocation.orEmpty()) }
+            val quickCities = listOf("تهران، ایران", "شیراز، فارس", "اصفهان", "مشهد، خراسان", "تبریز، آذربایجان", "کیش، هرمزگان")
+            AlertDialog(
+                onDismissRequest = { showLocationDialog = false },
+                title = { Text("انتخاب موقعیت مکانی", fontWeight = FontWeight.Bold) },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        OutlinedTextField(
+                            value = customCity,
+                            onValueChange = { customCity = it },
+                            label = { Text("نام شهر یا مکان") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Text("مکان‌های پیشنهادی:", fontSize = 12.sp, color = Color.Gray)
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            quickCities.forEach { city ->
+                                Text(
+                                    text = "📍 $city",
+                                    fontSize = 13.sp,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            viewModel.onLocationSelected(city)
+                                            showLocationDialog = false
+                                        }
+                                        .padding(vertical = 4.dp),
+                                )
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        viewModel.onLocationSelected(customCity.trim().ifBlank { null })
+                        showLocationDialog = false
+                    }) { Text("تایید") }
+                },
+                dismissButton = {
+                    if (uiState.selectedLocation != null) {
+                        TextButton(onClick = {
+                            viewModel.onLocationSelected(null)
+                            showLocationDialog = false
+                        }) { Text("حذف مکان") }
+                    } else {
+                        TextButton(onClick = { showLocationDialog = false }) { Text("انصراف") }
+                    }
+                },
+            )
+        }
+
+        if (showMusicTrimSheet && uiState.selectedMusicUri != null && uiState.musicDurationMs > 0) {
+            val maxClipMs = if (uiState.isPremium) 60_000 else 15_000
+            var trimRange by remember(uiState.selectedMusicUri) {
+                mutableStateOf(uiState.musicStartMs.toFloat()..uiState.musicEndMs.toFloat())
+            }
+            ModalBottomSheet(onDismissRequest = { showMusicTrimSheet = false }) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    Text("برش موسیقی", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    Text(uiState.selectedMusicTitle.orEmpty(), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("بازه: ${(trimRange.start / 1000).toInt()} تا ${(trimRange.endInclusive / 1000).toInt()} ثانیه")
+                    RangeSlider(
+                        value = trimRange,
+                        onValueChange = { value ->
+                            val start = value.start.coerceAtLeast(0f)
+                            val end = value.endInclusive.coerceAtMost(uiState.musicDurationMs.toFloat())
+                            trimRange = start..minOf(end, start + maxClipMs)
+                        },
+                        valueRange = 0f..uiState.musicDurationMs.toFloat(),
+                    )
+                    Text(
+                        if (uiState.isPremium) "حداکثر برش: ۶۰ ثانیه" else "حداکثر برش: ۱۵ ثانیه",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Button(
+                        onClick = {
+                            viewModel.onMusicTrimChanged(trimRange.start.toInt(), trimRange.endInclusive.toInt())
+                            showMusicTrimSheet = false
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("تایید برش") }
+                    TextButton(
+                        onClick = {
+                            viewModel.onMusicSelected(null, null)
+                            showMusicTrimSheet = false
+                        },
+                        modifier = Modifier.align(Alignment.CenterHorizontally),
+                    ) { Text("حذف موسیقی") }
+                }
             }
         }
     }

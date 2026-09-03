@@ -28,14 +28,20 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.ui.text.TextStyle
+import ir.coffevista.vista_native.core.designsystem.component.VistaEmojiText
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -70,6 +76,7 @@ import ir.coffevista.vista_native.features.profile.R
 import ir.coffevista.vista_native.core.designsystem.R as DesignSystemR
 import java.time.Duration
 import java.time.Instant
+import java.time.ZoneId
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 
@@ -318,11 +325,13 @@ internal fun ProfileHeader(
             modifier = Modifier.padding(top = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
+            VistaEmojiText(
                 text = header.fullName.ifBlank { header.username ?: "" },
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground,
+                style = TextStyle(
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onBackground,
+                ),
             )
             if (header.isVerified) {
                 VerificationBadgeIcon(
@@ -352,16 +361,18 @@ internal fun ProfileHeader(
 
         // Bio (RTL text with hashtags)
         header.bio?.takeIf(String::isNotBlank)?.let { bioText ->
-            Text(
+            VistaEmojiText(
                 text = bioText,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 5.dp),
                 maxLines = 5,
                 overflow = TextOverflow.Ellipsis,
-                fontSize = 14.sp,
-                lineHeight = 20.sp,
-                color = MaterialTheme.colorScheme.onBackground,
+                style = TextStyle(
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp,
+                    color = MaterialTheme.colorScheme.onBackground,
+                ),
             )
         }
 
@@ -393,7 +404,7 @@ internal fun MemberOrderBadge(
                 Color(0xFFF59E0B),
                 Color(0xFFB45309),
                 R.drawable.ic_badge_founder,
-                "عضو بنیان‌گذار ویستا  #$joinOrder",
+                "عضو بنیان‌گذار ویستا \u200E#$joinOrder",
             )
         }
         joinOrder <= 1000 -> {
@@ -402,7 +413,7 @@ internal fun MemberOrderBadge(
                 Color(0xFF3B82F6),
                 Color(0xFF1D4ED8),
                 R.drawable.ic_badge_rocket,
-                "از اولین هزار نفر  #$joinOrder",
+                "از اولین هزار نفر \u200E#$joinOrder",
             )
         }
         joinOrder <= 10000 -> {
@@ -411,7 +422,7 @@ internal fun MemberOrderBadge(
                 Color(0xFF8B5CF6),
                 Color(0xFF6D28D9),
                 R.drawable.ic_badge_bolt,
-                "عضو پیشگام  #$joinOrder",
+                "عضو پیشگام \u200E#$joinOrder",
             )
         }
         else -> {
@@ -420,7 +431,7 @@ internal fun MemberOrderBadge(
                 Color(0xFF94A3B8),
                 Color(0xFF475569),
                 R.drawable.ic_badge_star,
-                "عضو شماره  #$joinOrder",
+                "عضو شماره \u200E#$joinOrder",
             )
         }
     }
@@ -463,7 +474,7 @@ internal fun MemberOrderBadge(
                 )
                 if (onClick != null) {
                     Icon(
-                        imageVector = ImageVector.vectorResource(R.drawable.ic_profile_chevron),
+                        imageVector = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
                         contentDescription = null,
                         modifier = Modifier.size(13.dp),
                         tint = textColor.copy(alpha = 0.65f),
@@ -706,6 +717,17 @@ internal fun ProfilePostCard(
                         fontSize = 13.sp,
                     )
                 }
+            }
+            IconButton(
+                onClick = { /* post options */ },
+                modifier = Modifier.size(32.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Default.MoreVert,
+                    contentDescription = "گزینه‌های بیشتر",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp),
+                )
             }
         }
 
@@ -1129,14 +1151,28 @@ private fun ProfileHeart(filled: Boolean, modifier: Modifier = Modifier) {
     }
 }
 
+private val TehranZone: ZoneId = ZoneId.of("Asia/Tehran")
+private const val PersianDigits = "۰۱۲۳۴۵۶۷۸۹"
+
+private fun Long.toPersianDigits(): String = toString().toPersianDigits()
+private fun String.toPersianDigits(): String = buildString(length) {
+    this@toPersianDigits.forEach { character ->
+        append(if (character in '0'..'9') PersianDigits[character - '0'] else character)
+    }
+}
+
 private fun profileRelativeTime(raw: String): String = runCatching {
-    val duration = Duration.between(Instant.parse(raw), Instant.now())
+    val published = Instant.parse(raw)
+    val elapsed = Duration.between(published, Instant.now()).coerceAtLeast(Duration.ZERO)
     when {
-        duration.isNegative || duration.toMinutes() < 1 -> "اکنون"
-        duration.toHours() < 1 -> "${duration.toMinutes()}m"
-        duration.toDays() < 1 -> "${duration.toHours()}h"
-        duration.toDays() < 7 -> "${duration.toDays()}d"
-        else -> "${duration.toDays() / 7}w"
+        elapsed.toMinutes() < 1 -> "هم اکنون"
+        elapsed.toMinutes() < 60 -> "${elapsed.toMinutes().toPersianDigits()} دقیقه پیش"
+        elapsed.toHours() < 24 -> "${elapsed.toHours().toPersianDigits()} ساعت پیش"
+        elapsed.toDays() < 7 -> "${elapsed.toDays().toPersianDigits()} روز پیش"
+        else -> {
+            val zdt = published.atZone(TehranZone)
+            "${zdt.monthValue}/${zdt.dayOfMonth}".toPersianDigits()
+        }
     }
 }.getOrDefault(raw.take(10))
 

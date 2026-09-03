@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
@@ -228,6 +229,7 @@ fun VistaAboutSlideshowScreen(
                 onClick = onClose,
                 modifier = Modifier
                     .align(Alignment.TopStart)
+                    .safeDrawingPadding()
                     .padding(16.dp),
             ) {
                 Icon(
@@ -242,6 +244,7 @@ fun VistaAboutSlideshowScreen(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
+                    .safeDrawingPadding()
                     .padding(horizontal = 24.dp, vertical = 32.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {

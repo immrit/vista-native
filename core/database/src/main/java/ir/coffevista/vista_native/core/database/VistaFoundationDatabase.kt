@@ -26,7 +26,7 @@ import ir.coffevista.vista_native.core.database.search.SearchHistoryEntity
         SearchHistoryEntity::class,
         ir.coffevista.vista_native.core.database.chat.ConversationEntity::class,
     ],
-    version = 9,
+    version = 10,
     exportSchema = true,
 )
 @TypeConverters(
@@ -308,6 +308,14 @@ abstract class VistaFoundationDatabase : RoomDatabase() {
                 database.addColumnIfMissing("own_profile", "show_birth_date", "INTEGER NOT NULL DEFAULT 0")
                 database.addColumnIfMissing("own_profile", "show_gender", "INTEGER NOT NULL DEFAULT 0")
                 database.addColumnIfMissing("own_profile", "show_marital_status", "INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.addColumnIfMissing("feed_post", "edited_by_vista", "INTEGER NOT NULL DEFAULT 0")
+                database.addColumnIfMissing("feed_post", "moderation_reason", "TEXT")
+                database.addColumnIfMissing("feed_post", "comments_disabled", "INTEGER NOT NULL DEFAULT 0")
             }
         }
 

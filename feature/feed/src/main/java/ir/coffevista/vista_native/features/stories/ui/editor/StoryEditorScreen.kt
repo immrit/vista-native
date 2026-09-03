@@ -20,8 +20,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddLocation
 import androidx.compose.material.icons.filled.AlternateEmail
@@ -107,6 +109,7 @@ fun StoryEditorScreen(
 
     var showLocationDialog by remember { mutableStateOf(false) }
     var locationName by remember { mutableStateOf("") }
+    var showCloseFriendsDialog by remember { mutableStateOf(false) }
 
     // Media Launchers
     val photoPickerLauncher = rememberLauncherForActivityResult(
@@ -362,10 +365,13 @@ fun StoryEditorScreen(
                         FilterChip(
                             selected = uiState.privacyType == StoryPrivacyType.CloseFriends,
                             onClick = {
-                                viewModel.setPrivacy(
-                                    if (uiState.privacyType == StoryPrivacyType.Everyone) StoryPrivacyType.CloseFriends
-                                    else StoryPrivacyType.Everyone,
-                                )
+                                if (uiState.privacyType == StoryPrivacyType.CloseFriends) {
+                                    viewModel.setPrivacy(StoryPrivacyType.Everyone)
+                                } else {
+                                    viewModel.setPrivacy(StoryPrivacyType.CloseFriends)
+                                    showCloseFriendsDialog = true
+                                    viewModel.loadCloseFriends()
+                                }
                             },
                             label = {
                                 Text(
@@ -591,6 +597,61 @@ fun StoryEditorScreen(
                     },
                     dismissButton = {
                         TextButton(onClick = { showLocationDialog = false }) { Text("انصراف") }
+                    },
+                )
+            }
+
+            if (showCloseFriendsDialog) {
+                AlertDialog(
+                    onDismissRequest = { showCloseFriendsDialog = false },
+                    title = { Text("انتخاب دوستان نزدیک") },
+                    text = {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(360.dp)
+                                .verticalScroll(rememberScrollState()),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            when {
+                                uiState.isLoadingCloseFriends -> Box(
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
+                                    contentAlignment = Alignment.Center,
+                                ) { CircularProgressIndicator() }
+                                uiState.closeFriendsError != null -> {
+                                    Text(uiState.closeFriendsError.orEmpty(), color = MaterialTheme.colorScheme.error)
+                                    TextButton(onClick = viewModel::loadCloseFriends) { Text("تلاش دوباره") }
+                                }
+                                uiState.closeFriendCandidates.isEmpty() -> {
+                                    Text("کاربر دنبال‌شده‌ای برای انتخاب وجود ندارد")
+                                }
+                                else -> uiState.closeFriendCandidates.forEach { user ->
+                                    FilterChip(
+                                        selected = user.id in uiState.selectedCloseFriendIds,
+                                        onClick = { viewModel.toggleCloseFriend(user.id) },
+                                        label = {
+                                            Text(
+                                                text = "@${user.username}",
+                                                modifier = Modifier.fillMaxWidth(),
+                                            )
+                                        },
+                                        modifier = Modifier.fillMaxWidth(),
+                                    )
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                viewModel.saveCloseFriends()
+                                showCloseFriendsDialog = false
+                            },
+                            enabled = !uiState.isLoadingCloseFriends,
+                        ) { Text("ذخیره") }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showCloseFriendsDialog = false }) { Text("انصراف") }
                     },
                 )
             }

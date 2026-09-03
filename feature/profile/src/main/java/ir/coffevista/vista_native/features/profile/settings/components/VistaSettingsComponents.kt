@@ -115,27 +115,31 @@ fun VistaSettingsTile(
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
             .clickable(enabled = enabled && onClick != null) { onClick?.invoke() }
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Trailing arrow / custom widget (on the start/left in RTL)
-        if (trailing != null) {
-            trailing()
-        } else if (showChevron) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                modifier = Modifier.size(20.dp),
-            )
+        // Leading icon (at START = Right in RTL)
+        if (icon != null) {
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(iconContainerColor),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = if (enabled) iconColor else iconColor.copy(alpha = 0.38f),
+                    modifier = Modifier.size(20.dp),
+                )
+            }
+            Spacer(modifier = Modifier.width(12.dp))
         }
-
-        Spacer(modifier = Modifier.weight(1f))
 
         // Title and optional subtitle
         Column(
-            horizontalAlignment = Alignment.End,
-            modifier = Modifier.padding(horizontal = 12.dp),
+            modifier = Modifier.weight(1f),
         ) {
             Text(
                 text = title,
@@ -157,7 +161,46 @@ fun VistaSettingsTile(
             }
         }
 
-        // Leading icon (on the right in RTL)
+        Spacer(modifier = Modifier.width(8.dp))
+
+        // Trailing arrow / custom widget (at END = Left in RTL)
+        if (trailing != null) {
+            trailing()
+        } else if (showChevron) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                modifier = Modifier.size(20.dp),
+            )
+        }
+    }
+}
+
+/**
+ * Reusable Settings Switch Tile (matching VistaSettingsSwitch in Flutter with custom Telegram-style switch)
+ */
+@Composable
+fun VistaSettingsSwitch(
+    title: String,
+    value: Boolean,
+    onChanged: ((Boolean) -> Unit)?,
+    modifier: Modifier = Modifier,
+    subtitle: String? = null,
+    icon: ImageVector? = null,
+    iconColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    iconContainerColor: Color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+    enabled: Boolean = true,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(enabled = enabled && onChanged != null) { onChanged?.invoke(!value) }
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // Leading icon (at START = Right in RTL)
         if (icon != null) {
             Box(
                 modifier = Modifier
@@ -173,47 +216,12 @@ fun VistaSettingsTile(
                     modifier = Modifier.size(20.dp),
                 )
             }
+            Spacer(modifier = Modifier.width(12.dp))
         }
-    }
-}
 
-/**
- * Reusable Settings Switch Tile (matching VistaSettingsSwitch in Flutter)
- */
-@Composable
-fun VistaSettingsSwitch(
-    title: String,
-    value: Boolean,
-    onChanged: ((Boolean) -> Unit)?,
-    modifier: Modifier = Modifier,
-    subtitle: String? = null,
-    icon: ImageVector? = null,
-    iconColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
-    enabled: Boolean = true,
-) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Switch(
-            checked = value,
-            onCheckedChange = if (enabled && onChanged != null) onChanged else null,
-            enabled = enabled && onChanged != null,
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = Color.White,
-                checkedTrackColor = MaterialTheme.colorScheme.primary,
-                uncheckedThumbColor = MaterialTheme.colorScheme.outline,
-                uncheckedTrackColor = MaterialTheme.colorScheme.surfaceVariant,
-            ),
-        )
-
-        Spacer(modifier = Modifier.weight(1f))
-
+        // Title and optional subtitle
         Column(
-            horizontalAlignment = Alignment.End,
-            modifier = Modifier.padding(horizontal = 12.dp),
+            modifier = Modifier.weight(1f),
         ) {
             Text(
                 text = title,
@@ -235,22 +243,14 @@ fun VistaSettingsSwitch(
             }
         }
 
-        if (icon != null) {
-            Box(
-                modifier = Modifier
-                    .size(36.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = if (enabled) iconColor else iconColor.copy(alpha = 0.38f),
-                    modifier = Modifier.size(20.dp),
-                )
-            }
-        }
+        Spacer(modifier = Modifier.width(12.dp))
+
+        // Custom Telegram/Vista Switch (at END = Left in RTL)
+        ir.coffevista.vista_native.core.designsystem.component.VistaSwitch(
+            checked = value,
+            onCheckedChange = if (enabled && onChanged != null) onChanged else null,
+            enabled = enabled && onChanged != null,
+        )
     }
 }
 

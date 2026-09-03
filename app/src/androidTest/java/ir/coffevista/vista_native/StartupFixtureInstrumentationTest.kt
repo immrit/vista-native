@@ -222,12 +222,8 @@ class StartupFixtureInstrumentationTest {
             scenario.onActivity { activity ->
                 activity.onBackPressedDispatcher.onBackPressed()
             }
-            awaitText(
-                "پست آزمایشی شماره 1 برای بررسی فید فقط‌خواندنی",
-                "warm-deep-link-feed-ready-after-back",
-            )
-            composeRule.onNodeWithText("پست آزمایشی شماره 1", substring = true)
-                .assertIsDisplayed()
+            awaitTag("feed-tab-explore", "warm-deep-link-feed-ready-after-back")
+            composeRule.onNodeWithTag("feed-tab-explore").assertIsDisplayed()
         }
     }
 

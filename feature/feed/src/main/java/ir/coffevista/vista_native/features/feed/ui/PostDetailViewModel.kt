@@ -117,6 +117,9 @@ class PostDetailViewModel @Inject constructor(
         viewModelScope.launch {
             val authState = authStateProvider.state.value
             val accountId = (authState as? AuthenticationState.SignedIn)?.context?.userId ?: return@launch
+            if (!isLiked) {
+                runCatching { repository.trackFeedEvent(postId, "like") }
+            }
             try {
                 val newCount = if (isLiked) currentLikeCount - 1 else currentLikeCount + 1
                 val ownerId = (_uiState.value as? PostDetailUiState.Content)?.post?.userId ?: return@launch
@@ -131,6 +134,9 @@ class PostDetailViewModel @Inject constructor(
         viewModelScope.launch {
             val authState = authStateProvider.state.value
             val accountId = (authState as? AuthenticationState.SignedIn)?.context?.userId ?: return@launch
+            if (!isSaved) {
+                runCatching { repository.trackFeedEvent(postId, "save") }
+            }
             try {
                 repository.toggleSave(accountId, postId, !isSaved)
             } catch (e: Exception) {
@@ -147,10 +153,42 @@ class PostDetailViewModel @Inject constructor(
         }
     }
 
-    fun reportPost(reason: String) {
+    fun updatePostContent(
+        newContent: String,
+        onResult: (Boolean) -> Unit,
+    ) {
+        viewModelScope.launch {
+            val accountId = signedInAccountId() ?: return@launch
+            try {
+                val updated = repository.updatePost(
+                    accountId = accountId,
+                    postId = postId,
+                    content = newContent,
+                )
+                val current = _uiState.value as? PostDetailUiState.Content
+                if (current != null) {
+                    _uiState.value = current.copy(post = updated)
+                }
+                onResult(true)
+            } catch (e: Exception) {
+                onResult(false)
+            }
+        }
+    }
+
+    fun reportPost(
+        reason: String,
+        additionalDetails: String? = null,
+        onResult: ((Boolean) -> Unit)? = null,
+    ) {
         viewModelScope.launch {
             val post = (_uiState.value as? PostDetailUiState.Content)?.post ?: return@launch
-            runCatching { repository.reportPost(post.id, post.userId, reason) }
+            try {
+                repository.reportPost(post.id, post.userId, reason, additionalDetails)
+                onResult?.invoke(true)
+            } catch (e: Exception) {
+                onResult?.invoke(false)
+            }
         }
     }
 

@@ -12,6 +12,7 @@ import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.POST
+import retrofit2.http.PUT
 import retrofit2.http.Path
 import retrofit2.http.Query
 
@@ -23,6 +24,21 @@ interface StoryApi {
     suspend fun getUserStories(
         @Path("userId") userId: String,
     ): UserStoriesResponseDto
+
+    @GET("v1/profiles/following/{userId}")
+    suspend fun getFollowingUsers(
+        @Path("userId") userId: String,
+        @Query("limit") limit: Int = 100,
+        @Query("offset") offset: Int = 0,
+    ): ir.coffevista.vista_native.features.stories.domain.FollowingStoryUsersResponseDto
+
+    @GET("v1/me/close-friends")
+    suspend fun getCloseFriends(): List<String>
+
+    @PUT("v1/me/close-friends")
+    suspend fun updateCloseFriends(
+        @Body request: ir.coffevista.vista_native.features.stories.domain.CloseFriendsUpdateRequestDto,
+    )
 
     @GET("v1/stories/{storyId}")
     suspend fun getStoryById(

@@ -1,6 +1,9 @@
 package ir.coffevista.vista_native.features.feed.ui.create
 
 import android.net.Uri
+import android.content.Context
+import android.media.MediaMetadataRetriever
+import dagger.hilt.android.qualifiers.ApplicationContext
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -8,11 +11,14 @@ import ir.coffevista.vista_native.core.model.session.AuthenticationState
 import ir.coffevista.vista_native.core.model.session.AuthenticationStateProvider
 import ir.coffevista.vista_native.features.feed.data.CreatePostRequestDto
 import ir.coffevista.vista_native.features.feed.data.FeedApi
+import ir.coffevista.vista_native.features.feed.data.HashtagSuggestionDto
 import ir.coffevista.vista_native.features.feed.data.PostMediaUploadGateway
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
 import javax.inject.Inject
@@ -40,12 +46,23 @@ data class AddPostUiState(
     val isSuccess: Boolean = false,
     val errorMessage: String? = null,
     val isPremium: Boolean = false,
+    val selectedLocation: String? = null,
+    val selectedMusicTitle: String? = null,
+    val selectedMusicUrl: String? = null,
+    val selectedMusicUri: Uri? = null,
+    val musicDurationMs: Int = 0,
+    val musicStartMs: Int = 0,
+    val musicEndMs: Int = 0,
+    val hashtagSuggestions: List<HashtagSuggestionDto> = emptyList(),
+    val isLoadingHashtagSuggestions: Boolean = false,
 ) {
     val maxCharLength: Int get() = if (isPremium) 1000 else 500
     val maxGalleryImages: Int get() = if (isPremium) 10 else 3
     val maxUploadBytes: Long get() = if (isPremium) 100L * 1024 * 1024 else 15L * 1024 * 1024
     val maxVideoDurationMs: Long get() = if (isPremium) 120_000L else 60_000L
-    val canSubmit: Boolean get() = !isUploading && (content.isNotBlank() || selectedImages.isNotEmpty() || selectedVideo != null)
+    val canSubmit: Boolean get() = !isUploading && (
+        content.isNotBlank() || selectedImages.isNotEmpty() || selectedVideo != null || selectedMusicUri != null
+    )
 }
 
 @HiltViewModel
@@ -53,7 +70,10 @@ class AddPostViewModel @Inject constructor(
     private val api: FeedApi,
     private val uploader: PostMediaUploadGateway,
     private val authStateProvider: AuthenticationStateProvider,
+    @ApplicationContext private val appContext: Context,
 ) : ViewModel() {
+
+    private var hashtagSearchJob: Job? = null
 
     private val _uiState = MutableStateFlow(AddPostUiState())
     val uiState: StateFlow<AddPostUiState> = _uiState.asStateFlow()
@@ -64,8 +84,44 @@ class AddPostViewModel @Inject constructor(
     fun onContentChanged(newContent: String) {
         if (newContent.length <= _uiState.value.maxCharLength) {
             _uiState.update { it.copy(content = newContent, errorMessage = null) }
+            loadHashtagSuggestions(activeHashtagQuery(newContent))
         }
     }
+
+    fun selectHashtagSuggestion(tag: String) {
+        val normalized = tag.removePrefix("#").trim()
+        if (normalized.isBlank()) return
+        _uiState.update { state ->
+            val replaced = ACTIVE_HASHTAG.replace(state.content) { match ->
+                "${match.groupValues[1]}#$normalized "
+            }
+            state.copy(content = replaced, hashtagSuggestions = emptyList())
+        }
+    }
+
+    private fun loadHashtagSuggestions(query: String?) {
+        hashtagSearchJob?.cancel()
+        if (query == null) {
+            _uiState.update { it.copy(hashtagSuggestions = emptyList(), isLoadingHashtagSuggestions = false) }
+            return
+        }
+        hashtagSearchJob = viewModelScope.launch {
+            delay(280)
+            _uiState.update { it.copy(isLoadingHashtagSuggestions = true) }
+            val suggestions = runCatching {
+                if (query.isBlank()) api.getTrendingHashtags() else api.searchHashtags(query)
+            }.getOrNull()?.hashtags.orEmpty()
+            _uiState.update { current ->
+                current.copy(
+                    hashtagSuggestions = suggestions.distinctBy { it.tag.lowercase() },
+                    isLoadingHashtagSuggestions = false,
+                )
+            }
+        }
+    }
+
+    private fun activeHashtagQuery(content: String): String? =
+        ACTIVE_HASHTAG.find(content)?.groupValues?.getOrNull(2)
 
     fun onImagesSelected(uris: List<Uri>) {
         if (uris.isEmpty()) return
@@ -137,6 +193,63 @@ class AddPostViewModel @Inject constructor(
         _uiState.update { it.copy(commentsDisabled = disabled) }
     }
 
+    fun onLocationSelected(location: String?) {
+        _uiState.update { it.copy(selectedLocation = location) }
+    }
+
+    fun onMusicSelected(title: String?, url: String?) {
+        _uiState.update {
+            if (title == null && url == null) {
+                it.copy(
+                    selectedMusicTitle = null,
+                    selectedMusicUrl = null,
+                    selectedMusicUri = null,
+                    musicDurationMs = 0,
+                    musicStartMs = 0,
+                    musicEndMs = 0,
+                )
+            } else {
+                it.copy(selectedMusicTitle = title, selectedMusicUrl = url)
+            }
+        }
+    }
+
+    fun onMusicFileSelected(uri: Uri) {
+        viewModelScope.launch {
+            val durationMs = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                val retriever = MediaMetadataRetriever()
+                try {
+                    retriever.setDataSource(appContext, uri)
+                    retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toIntOrNull() ?: 0
+                } finally {
+                    runCatching { retriever.release() }
+                }
+            }
+            if (durationMs <= 0) {
+                _uiState.update { it.copy(errorMessage = "مدت فایل صوتی قابل تشخیص نیست") }
+                return@launch
+            }
+            val title = uri.lastPathSegment?.substringAfterLast('/')?.substringBeforeLast('.')?.ifBlank { "موسیقی" } ?: "موسیقی"
+            _uiState.update {
+                it.copy(
+                    selectedMusicUri = uri,
+                    selectedMusicUrl = null,
+                    selectedMusicTitle = title,
+                    musicDurationMs = durationMs,
+                    musicStartMs = 0,
+                    musicEndMs = minOf(durationMs, 15_000),
+                )
+            }
+        }
+    }
+
+    fun onMusicTrimChanged(startMs: Int, endMs: Int) {
+        val duration = _uiState.value.musicDurationMs
+        val maxClipMs = if (_uiState.value.isPremium) 60_000 else 15_000
+        if (duration <= 0 || startMs !in 0 until duration || endMs !in 1..duration || endMs <= startMs || endMs - startMs > maxClipMs) return
+        _uiState.update { it.copy(musicStartMs = startMs, musicEndMs = endMs) }
+    }
+
     fun clearError() {
         _uiState.update { it.copy(errorMessage = null) }
     }
@@ -164,6 +277,12 @@ class AddPostViewModel @Inject constructor(
                 var finalVideoUrl: String? = null
                 var finalThumbUrl: String? = null
                 val finalImageUrls = mutableListOf<String>()
+                val finalMusicUrl = state.selectedMusicUri?.let { audioUri ->
+                    _uiState.update { it.copy(uploadStatusMessage = "در حال آپلود موسیقی…") }
+                    uploader.uploadAudio(userId, audioUri, state.maxUploadBytes) { progress ->
+                        _uiState.update { it.copy(uploadProgress = 0.05f + progress * 0.25f) }
+                    }.url
+                } ?: state.selectedMusicUrl
 
                 // 1. Upload Video if present
                 if (state.isVideo && state.selectedVideo != null) {
@@ -216,6 +335,10 @@ class AddPostViewModel @Inject constructor(
                     imageUrl = finalImageUrls.firstOrNull() ?: finalThumbUrl,
                     imageUrls = finalImageUrls,
                     videoUrl = finalVideoUrl,
+                    musicUrl = finalMusicUrl,
+                    musicTitle = state.selectedMusicTitle,
+                    musicStartMs = state.musicStartMs.takeIf { finalMusicUrl != null },
+                    musicEndMs = state.musicEndMs.takeIf { finalMusicUrl != null },
                     aspectRatio = state.aspectRatio.ratioValue,
                     tags = hashtags,
                     hideLikeCount = state.hideLikeCount,
@@ -254,5 +377,9 @@ class AddPostViewModel @Inject constructor(
     private fun extractHashtags(text: String): List<String> {
         val regex = Regex("#[\\p{L}\\p{N}_]+")
         return regex.findAll(text).map { it.value.removePrefix("#") }.toList()
+    }
+
+    private companion object {
+        val ACTIVE_HASHTAG = Regex("(^|\\s)#([\\p{L}\\p{N}_]*)$")
     }
 }

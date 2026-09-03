@@ -58,6 +58,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
 import androidx.compose.material.icons.rounded.CloudOff
+import androidx.compose.material.icons.rounded.ContactPage
 import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.LockOpen
 import androidx.compose.material.icons.rounded.People
@@ -154,7 +155,7 @@ fun ServicesScreen(
                                 fontFamily = VistaFontFamily,
                                 fontWeight = FontWeight.Black,
                                 fontSize = 22.sp,
-                                color = VistaBrandColors.Indigo,
+                                color = MaterialTheme.colorScheme.onBackground,
                                 letterSpacing = (-0.4).sp,
                             ),
                         )
@@ -824,6 +825,7 @@ private fun CompactStateBanner(
             contentAlignment = Alignment.Center,
         ) {
             val imageVector = when (iconName.lowercase()) {
+                "contact_page", "contacts" -> Icons.Rounded.ContactPage
                 "person_add" -> Icons.Rounded.PersonAdd
                 "lock_open" -> Icons.Rounded.LockOpen
                 "cloud_off" -> Icons.Rounded.CloudOff

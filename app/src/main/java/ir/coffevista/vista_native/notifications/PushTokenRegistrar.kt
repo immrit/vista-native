@@ -4,7 +4,9 @@ import android.content.Context
 import android.os.Build
 import com.google.firebase.messaging.FirebaseMessaging
 import dagger.hilt.android.qualifiers.ApplicationContext
+import ir.coffevista.vista_native.core.network.AppEnvironment
 import ir.coffevista.vista_native.core.network.InternalApi
+import ir.coffevista.vista_native.core.network.InternalEnvironment
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -26,14 +28,15 @@ data class FcmTokenRegistrationDto(
     val token: String,
     val platform: String = "android",
     @SerialName("device_type") val deviceType: String = "mobile",
-    @SerialName("device_model") val deviceModel: String = Build.MODEL,
-    @SerialName("os_version") val osVersion: String = Build.VERSION.RELEASE,
+    @SerialName("device_model") val deviceModel: String = runCatching { Build.MODEL }.getOrNull() ?: "Android",
+    @SerialName("os_version") val osVersion: String = runCatching { Build.VERSION.RELEASE }.getOrNull() ?: "14",
 )
 
 @Singleton
 class PushTokenRegistrar @Inject constructor(
     @ApplicationContext private val context: Context,
     @InternalApi private val client: Call.Factory,
+    @InternalEnvironment private val environment: AppEnvironment,
 ) {
     private val scope = CoroutineScope(Dispatchers.IO)
     private val prefs = context.getSharedPreferences("fcm_token_prefs", Context.MODE_PRIVATE)
@@ -66,7 +69,7 @@ class PushTokenRegistrar @Inject constructor(
                 FcmTokenRegistrationDto(token = token),
             )
             val request = Request.Builder()
-                .url("https://coffevista.ir/api/v1/fcm/token")
+                .url("${environment.internalBaseUrl.trimEnd('/')}/v1/fcm/token")
                 .post(payload.toRequestBody("application/json".toMediaType()))
                 .build()
 

@@ -83,6 +83,15 @@ data class FeedPostEntity(
     @ColumnInfo(name = "feed_source")
     val feedSource: String? = null,
 
+    @ColumnInfo(name = "edited_by_vista", defaultValue = "0")
+    val editedByVista: Boolean = false,
+
+    @ColumnInfo(name = "moderation_reason")
+    val moderationReason: String? = null,
+
+    @ColumnInfo(name = "comments_disabled", defaultValue = "0")
+    val commentsDisabled: Boolean = false,
+
     @ColumnInfo(name = "created_at")
     val createdAt: String,
 

@@ -31,6 +31,7 @@ import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PersonAdd
 import androidx.compose.material.icons.rounded.Phone
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Radar
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Replay
 import androidx.compose.material.icons.rounded.Search
@@ -62,7 +63,7 @@ fun ServicesActionIcon(
     modifier: Modifier = Modifier,
 ) {
     val imageVector: ImageVector = when (kind) {
-        ServicesActionKind.NEARBY -> Icons.Rounded.Explore
+        ServicesActionKind.NEARBY -> Icons.Rounded.Radar
         ServicesActionKind.GAME -> Icons.Rounded.SportsEsports
         ServicesActionKind.GROUPS -> Icons.Rounded.Groups
         ServicesActionKind.CONTACTS -> Icons.Rounded.ContactPage

@@ -1,4 +1,9 @@
 plugins {
+    // Protobuf 0.9.4 must observe AGP before its own callback runs; applying
+    // these explicitly preserves the shared convention below while avoiding
+    // its Java-source-set fallback during a full multi-module configuration.
+    id("com.android.library")
+    id("org.jetbrains.kotlin.android")
     id("vista.android.library")
     alias(libs.plugins.protobuf)
 }

@@ -9,7 +9,21 @@ import android.media.PlaybackParams
 import android.os.Build
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -17,16 +31,27 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -35,6 +60,9 @@ import ir.coffevista.vista_native.core.designsystem.tokens.VistaBrandColors
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 
+/**
+ * حباب اختصاصی پخش پیام صوتی با Waveform لمسی و تعاملی به سبک تلگرام.
+ */
 @Composable
 fun VoicePlayerBubble(
     modifier: Modifier = Modifier,
@@ -48,9 +76,9 @@ fun VoicePlayerBubble(
     }
     var isPlaying by remember { mutableStateOf(false) }
     var isPreparing by remember { mutableStateOf(false) }
-    var currentPositionMs by remember { mutableStateOf(0) }
-    var totalDurationMs by remember { mutableStateOf(durationSeconds * 1000) }
-    var playbackSpeed by remember { mutableStateOf(1.0f) }
+    var currentPositionMs by remember { mutableIntStateOf(0) }
+    var totalDurationMs by remember { mutableIntStateOf(durationSeconds * 1000) }
+    var playbackSpeed by remember { mutableFloatStateOf(1.0f) }
     var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
     var audioFocusRequest by remember { mutableStateOf<AudioFocusRequest?>(null) }
 
@@ -107,7 +135,7 @@ fun VoicePlayerBubble(
         while (isActive && isPlaying && mediaPlayer != null) {
             val pos = runCatching { mediaPlayer?.currentPosition ?: 0 }.getOrDefault(0)
             currentPositionMs = pos
-            delay(100)
+            delay(50)
         }
     }
 
@@ -169,6 +197,15 @@ fun VoicePlayerBubble(
         }
     }
 
+    fun seekToFraction(fraction: Float) {
+        val clamped = fraction.coerceIn(0f, 1f)
+        val targetMs = (clamped * totalDurationMs).toInt()
+        currentPositionMs = targetMs
+        mediaPlayer?.let { player ->
+            runCatching { player.seekTo(targetMs) }
+        }
+    }
+
     fun toggleSpeed() {
         val nextSpeed = when (playbackSpeed) {
             1.0f -> 1.5f
@@ -186,88 +223,102 @@ fun VoicePlayerBubble(
     val progress = if (totalDurationMs > 0) (currentPositionMs.toFloat() / totalDurationMs.toFloat()).coerceIn(0f, 1f) else 0f
 
     val activeColor = if (isOutgoing) Color.White else VistaBrandColors.VioletDeep
-    val inactiveColor = if (isOutgoing) Color.White.copy(alpha = 0.4f) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
+    val inactiveColor = if (isOutgoing) Color.White.copy(alpha = 0.38f) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.28f)
 
     Row(
         modifier = modifier
-            .widthIn(min = 210.dp, max = 260.dp)
-            .padding(horizontal = 4.dp, vertical = 2.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .widthIn(min = 210.dp, max = 270.dp)
+            .padding(horizontal = 4.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Play / Pause Circle
+        // دکمه دایره‌ای پخش / مکث
         Box(
             modifier = Modifier
-                .size(38.dp)
+                .size(40.dp)
                 .clip(CircleShape)
                 .background(if (isOutgoing) Color.White.copy(alpha = 0.25f) else VistaBrandColors.VioletDeep.copy(alpha = 0.12f))
-                .clickable(onClick = ::togglePlay),
-            contentAlignment = Alignment.Center
+                .clickable(role = Role.Button, onClick = ::togglePlay)
+                .semantics {
+                    contentDescription = when {
+                        isPreparing -> "در حال آماده‌سازی پیام صوتی"
+                        isPlaying -> "مکث پیام صوتی"
+                        else -> "پخش پیام صوتی"
+                    }
+                },
+            contentAlignment = Alignment.Center,
         ) {
             Icon(
                 imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                contentDescription = when {
-                    isPreparing -> "در حال آماده‌سازی ویس"
-                    isPlaying -> "مکث ویس"
-                    else -> "پخش ویس"
-                },
+                contentDescription = null,
                 tint = if (isOutgoing) Color.White else VistaBrandColors.VioletDeep,
-                modifier = Modifier.size(22.dp)
+                modifier = Modifier.size(24.dp),
             )
         }
 
-        Spacer(Modifier.width(8.dp))
+        Spacer(Modifier.width(10.dp))
 
-            // Waveform + Timer
-            Column(modifier = Modifier.weight(1f)) {
-            // Simulated Waveform Bars with progress fill
-            Row(
+        // ستون فرم‌موج تعاملی و زمان/سرعت
+        Column(modifier = Modifier.weight(1f)) {
+            // نوار فرم‌موج لمسی و قابل جابجایی
+            BoxWithConstraints(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(24.dp),
-                horizontalArrangement = Arrangement.spacedBy(2.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                val totalBars = 22
-                for (i in 0 until totalBars) {
-                    val barProgress = i.toFloat() / totalBars.toFloat()
-                    val isFilled = barProgress <= progress
-                    // Varied amplitude pattern
-                    val amp = ((i * 7) % 5 + 2) / 7f
-                    val h = (6 + (amp * 16)).dp
-
-                    Box(
-                        modifier = Modifier
-                            .width(2.5.dp)
-                            .height(h)
-                            .clip(RoundedCornerShape(1.dp))
-                            .background(if (isFilled) activeColor else inactiveColor)
-                    )
-                }
-                }
-
-                Slider(
-                    value = progress,
-                    onValueChange = { fraction ->
-                        val position = (fraction * totalDurationMs).toInt()
-                        currentPositionMs = position
-                        mediaPlayer?.let { player ->
-                            runCatching { player.seekTo(position) }
+                    .height(28.dp)
+                    .testTag("voice-playback-waveform")
+                    .semantics {
+                        progressBarRangeInfo = ProgressBarRangeInfo(progress, 0f..1f)
+                        contentDescription = "نوار موقعیت پیام صوتی"
+                    }
+                    .pointerInput(totalDurationMs) {
+                        detectTapGestures { offset ->
+                            if (size.width > 0) {
+                                seekToFraction(offset.x / size.width.toFloat())
+                            }
+                        }
+                    }
+                    .pointerInput(totalDurationMs) {
+                        detectDragGestures { change, _ ->
+                            change.consume()
+                            if (size.width > 0) {
+                                seekToFraction(change.position.x / size.width.toFloat())
+                            }
                         }
                     },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(14.dp)
-                        .testTag("voice-playback-position")
-                        .semantics { contentDescription = "موقعیت پخش صدا" },
-                )
+                contentAlignment = Alignment.CenterStart,
+            ) {
+                val totalBars = 26
+                val barWidth = 2.5.dp
 
-                Spacer(Modifier.height(3.dp))
+                Row(
+                    modifier = Modifier.fillMaxSize(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    for (i in 0 until totalBars) {
+                        val barFraction = (i.toFloat() + 0.5f) / totalBars.toFloat()
+                        val isFilled = barFraction <= progress
+                        // الگوی دامنه فرکانسی طبیعی
+                        val amp = ((i * 11 + 3) % 7 + 2) / 8.5f
+                        val barHeight = (6 + (amp * 18)).dp
 
-            // Time & Speed
+                        Box(
+                            modifier = Modifier
+                                .width(barWidth)
+                                .height(barHeight)
+                                .clip(RoundedCornerShape(1.dp))
+                                .background(if (isFilled) activeColor else inactiveColor),
+                        )
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(4.dp))
+
+            // زمان سپری‌شده و دکمه سرعت پخش
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 val displaySecs = if (currentPositionMs > 0) currentPositionMs / 1000 else (totalDurationMs / 1000)
                 val mins = displaySecs / 60
@@ -276,22 +327,23 @@ fun VoicePlayerBubble(
                     text = String.format("%02d:%02d", mins, secs),
                     fontSize = 11.sp,
                     color = if (isOutgoing) Color.White.copy(alpha = 0.85f) else MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontWeight = FontWeight.Medium
+                    fontWeight = FontWeight.Medium,
                 )
 
-                // Speed Pill
+                // دکمه انتخاب سرعت (1x, 1.5x, 2x)
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
                         .background(if (isOutgoing) Color.White.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant)
-                        .clickable(onClick = ::toggleSpeed)
-                        .padding(horizontal = 5.dp, vertical = 1.dp)
+                        .clickable(role = Role.Button, onClick = ::toggleSpeed)
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                        .semantics { contentDescription = "تغییر سرعت پخش به ${playbackSpeed} برابر" },
                 ) {
                     Text(
                         text = if (playbackSpeed == 1.0f) "1X" else "${playbackSpeed}X",
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
-                        color = if (isOutgoing) Color.White else VistaBrandColors.VioletDeep
+                        color = if (isOutgoing) Color.White else VistaBrandColors.VioletDeep,
                     )
                 }
             }

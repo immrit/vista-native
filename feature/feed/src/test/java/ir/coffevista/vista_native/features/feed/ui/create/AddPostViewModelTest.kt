@@ -1,6 +1,7 @@
 package ir.coffevista.vista_native.features.feed.ui.create
 
 import android.net.Uri
+import android.test.mock.MockContext
 import ir.coffevista.vista_native.core.model.session.AuthenticatedContext
 import ir.coffevista.vista_native.core.model.session.AuthenticationState
 import ir.coffevista.vista_native.core.model.session.AuthenticationStateProvider
@@ -64,11 +65,17 @@ class AddPostViewModelTest {
         override suspend fun getFollowingFeed(limit: Int, cursor: String?) = throw NotImplementedError()
         override suspend fun getPost(postId: String) = throw NotImplementedError()
         override suspend fun getUserPosts(userId: String, limit: Int, offset: Int) = throw NotImplementedError()
+        override suspend fun getHashtagPosts(tag: String, limit: Int, offset: Int) = throw NotImplementedError()
+        override suspend fun getTrendingHashtags(limit: Int, days: Int) =
+            ir.coffevista.vista_native.features.feed.data.HashtagSuggestionsResponseDto()
+        override suspend fun searchHashtags(query: String, limit: Int) =
+            ir.coffevista.vista_native.features.feed.data.HashtagSuggestionsResponseDto()
         override suspend fun toggleLike(postId: String, body: ir.coffevista.vista_native.features.feed.data.LikeRequestDto) = throw NotImplementedError()
         override suspend fun toggleSave(postId: String) = throw NotImplementedError()
         override suspend fun updatePost(postId: String, body: ir.coffevista.vista_native.features.feed.data.UpdatePostRequestDto) = throw NotImplementedError()
         override suspend fun deletePost(postId: String) = throw NotImplementedError()
         override suspend fun reportPost(body: ir.coffevista.vista_native.features.feed.data.ReportPostRequestDto) = throw NotImplementedError()
+        override suspend fun submitAppeal(body: ir.coffevista.vista_native.features.feed.data.SubmitAppealRequestDto) = throw NotImplementedError()
         override suspend fun trackFeedEvent(body: ir.coffevista.vista_native.features.feed.data.FeedEventRequestDto) = throw NotImplementedError()
         override suspend fun presignUpload(request: ir.coffevista.vista_native.features.feed.data.PostPresignRequestDto) = throw NotImplementedError()
     }
@@ -88,6 +95,13 @@ class AddPostViewModelTest {
             maxBytes: Long,
             onProgress: (Float) -> Unit,
         ): UploadedMediaResult = error("Media upload is not used by these tests")
+
+        override suspend fun uploadAudio(
+            userId: String,
+            uri: Uri,
+            maxBytes: Long,
+            onProgress: (Float) -> Unit,
+        ): UploadedMediaResult = error("Media upload is not used by these tests")
     }
     private lateinit var viewModel: AddPostViewModel
 
@@ -99,6 +113,7 @@ class AddPostViewModelTest {
             api = fakeApi,
             uploader = fakeUploader,
             authStateProvider = authStateProvider,
+            appContext = MockContext(),
         )
     }
 
@@ -114,6 +129,18 @@ class AddPostViewModelTest {
         assertTrue(state.selectedImages.isEmpty())
         assertFalse(state.isVideo)
         assertFalse(state.canSubmit)
+    }
+
+    @Test
+    fun `music-only draft can be submitted after audio selection`() {
+        val state = AddPostUiState(
+            selectedMusicUri = Uri.parse("content://media/external/audio/1"),
+            selectedMusicTitle = "موسیقی تست",
+            musicDurationMs = 30_000,
+            musicEndMs = 15_000,
+        )
+
+        assertTrue(state.canSubmit)
     }
 
     @Test

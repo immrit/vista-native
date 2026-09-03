@@ -1,6 +1,7 @@
 package ir.coffevista.vista_native.features.chat.domain.model
 
 import androidx.compose.runtime.Immutable
+import kotlinx.serialization.Serializable
 
 @Immutable
 data class Conversation(
@@ -56,6 +57,26 @@ data class ChatUser(
         ?: username.trim().takeIf(String::isNotEmpty)
         ?: "کاربر"
 }
+
+/** Wire-compatible payload rendered as a shared-post card by Flutter and Native chat. */
+@Immutable
+@Serializable
+data class SharedPostDraft(
+    val postId: String,
+    val authorName: String,
+    val authorUsername: String,
+    val authorAvatar: String? = null,
+    val content: String = "",
+    val mediaUrls: List<String> = emptyList(),
+    val postVideoUrl: String? = null,
+    val likesCount: Long = 0L,
+    val commentsCount: Long = 0L,
+    val createdAt: String,
+    val isVerified: Boolean = false,
+    val verificationType: String = "none",
+    val role: String? = null,
+    val hashtags: List<String> = emptyList(),
+)
 
 /** Ephemeral peer metadata for the in-chat detail screen. Never persisted with messages. */
 @Immutable

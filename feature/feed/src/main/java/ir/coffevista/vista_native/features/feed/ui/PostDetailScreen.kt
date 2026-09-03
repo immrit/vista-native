@@ -1,6 +1,5 @@
 package ir.coffevista.vista_native.features.feed.ui
 
-import android.content.Intent
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -35,12 +34,13 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import ir.coffevista.vista_native.features.feed.ui.components.EditPostDialog
+import ir.coffevista.vista_native.features.feed.ui.components.ReportReasonDialog
 import ir.coffevista.vista_native.features.feed.data.FeedPost
 import ir.coffevista.vista_native.core.designsystem.R as DesignSystemR
 
@@ -48,13 +48,23 @@ import ir.coffevista.vista_native.core.designsystem.R as DesignSystemR
 fun PostDetailScreen(
     onBack: () -> Unit,
     onAuthorClick: (String) -> Unit = {},
+    onHashtagClick: (String) -> Unit = {},
+    onMentionClick: (String) -> Unit = {},
+    onAppealClick: (String) -> Unit = {},
+    onSendDirectMessage: (FeedPost) -> Unit = {},
     viewModel: PostDetailViewModel,
     commentsViewModel: CommentsViewModel,
 ) {
-    val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val commentsState by commentsViewModel.uiState.collectAsStateWithLifecycle()
-    val postId = (uiState as? PostDetailUiState.Content)?.post?.id
+    val currentPost = (uiState as? PostDetailUiState.Content)?.post
+    val postId = currentPost?.id
+    var showShareSheet by remember { mutableStateOf(false) }
+    var showReportDialog by remember { mutableStateOf(false) }
+    var isReporting by remember { mutableStateOf(false) }
+    var showEditDialog by remember { mutableStateOf(false) }
+    var isEditing by remember { mutableStateOf(false) }
+
     LaunchedEffect(postId) { postId?.let(commentsViewModel::loadComments) }
     PostDetailContent(
         uiState = uiState,
@@ -63,27 +73,15 @@ fun PostDetailScreen(
         onAuthorClick = onAuthorClick,
         onLikeClick = { _, isLiked, count -> viewModel.toggleLike(isLiked, count) },
         onSaveClick = { _, isSaved -> viewModel.toggleSave(isSaved) },
-        onShareClick = { post ->
-            val text = buildString {
-                post.content?.takeIf(String::isNotBlank)?.let(::append)
-                if (isNotEmpty()) append("\n")
-                append("https://coffevista.ir/posts/${post.id}")
-            }
-            context.startActivity(
-                Intent.createChooser(
-                    Intent(Intent.ACTION_SEND).apply {
-                        type = "text/plain"
-                        putExtra(Intent.EXTRA_TEXT, text)
-                    },
-                    "اشتراک‌گذاری پست",
-                )
-            )
-            viewModel.trackShare()
-        },
+        onShareClick = { showShareSheet = true },
+        onEditPost = { showEditDialog = true },
         onDeletePost = viewModel::deletePost,
-        onReportPost = viewModel::reportPost,
+        onReportPost = { showReportDialog = true },
         onNotInterested = viewModel::markNotInterested,
         onVisibilityChange = viewModel::updateEngagementVisibility,
+        onHashtagClick = onHashtagClick,
+        onMentionClick = onMentionClick,
+        onAppealClick = onAppealClick,
         onLoadMoreComments = commentsViewModel::loadMore,
         onLoadReplies = commentsViewModel::loadReplies,
         onRetryComments = commentsViewModel::retry,
@@ -95,12 +93,52 @@ fun PostDetailScreen(
         canDelete = { commentsViewModel.canDelete(it, (uiState as? PostDetailUiState.Content)?.post?.userId) },
         canReport = commentsViewModel::canReport,
         isCommentAuthor = { commentsViewModel.isCurrentUser(it.authorUserId) },
-        onSubmitComment = commentsViewModel::submitComment,
+        onSubmitComment = { draft ->
+            commentsViewModel.submitComment(
+                content = draft.content,
+                mentionedUserIds = draft.mentionedUserIds,
+            )
+        },
         onCancelReplyOrEdit = {
             commentsViewModel.setReplyingTo(null)
             commentsViewModel.setEditingComment(null)
         },
     )
+    currentPost?.takeIf { showShareSheet }?.let { post ->
+        PostShareBottomSheet(
+            post = post,
+            onDismiss = { showShareSheet = false },
+            onShared = viewModel::trackShare,
+            onSendDirectMessage = onSendDirectMessage,
+        )
+    }
+    if (showReportDialog) {
+        ReportReasonDialog(
+            isSubmitting = isReporting,
+            onDismiss = { if (!isReporting) showReportDialog = false },
+            onSubmit = { reason, details ->
+                isReporting = true
+                viewModel.reportPost(reason, details) {
+                    isReporting = false
+                    showReportDialog = false
+                }
+            },
+        )
+    }
+    if (showEditDialog) {
+        EditPostDialog(
+            initialContent = currentPost?.content.orEmpty(),
+            isSubmitting = isEditing,
+            onDismiss = { if (!isEditing) showEditDialog = false },
+            onConfirm = { newContent ->
+                isEditing = true
+                viewModel.updatePostContent(newContent) {
+                    isEditing = false
+                    showEditDialog = false
+                }
+            },
+        )
+    }
 }
 
 @Composable
@@ -112,10 +150,14 @@ internal fun PostDetailContent(
     onLikeClick: (String, Boolean, Long) -> Unit = { _, _, _ -> },
     onSaveClick: (String, Boolean) -> Unit = { _, _ -> },
     onShareClick: (FeedPost) -> Unit = {},
+    onEditPost: () -> Unit = {},
     onDeletePost: () -> Unit = {},
-    onReportPost: (String) -> Unit = {},
+    onReportPost: () -> Unit = {},
     onNotInterested: () -> Unit = {},
     onVisibilityChange: (Boolean?, Boolean?) -> Unit = { _, _ -> },
+    onHashtagClick: (String) -> Unit = {},
+    onMentionClick: (String) -> Unit = {},
+    onAppealClick: (String) -> Unit = {},
     onLoadMoreComments: () -> Unit = {},
     onLoadReplies: (String) -> Unit = {},
     onRetryComments: () -> Unit = {},
@@ -127,7 +169,7 @@ internal fun PostDetailContent(
     canDelete: (ir.coffevista.vista_native.features.feed.data.Comment) -> Boolean = { false },
     canReport: (ir.coffevista.vista_native.features.feed.data.Comment) -> Boolean = { false },
     isCommentAuthor: (ir.coffevista.vista_native.features.feed.data.Comment) -> Boolean = { false },
-    onSubmitComment: (String) -> Unit = {},
+    onSubmitComment: (CommentDraft) -> Unit = {},
     onCancelReplyOrEdit: () -> Unit = {},
 ) {
     Column(
@@ -158,10 +200,14 @@ internal fun PostDetailContent(
                         onLikeClick = onLikeClick,
                         onSaveClick = onSaveClick,
                         onShareClick = onShareClick,
+                        onEditPost = onEditPost,
                         onDeletePost = onDeletePost,
                         onReportPost = onReportPost,
                         onNotInterested = onNotInterested,
                         onVisibilityChange = onVisibilityChange,
+                        onHashtagClick = onHashtagClick,
+                        onMentionClick = onMentionClick,
+                        onAppealClick = onAppealClick,
                         commentsState = commentsState,
                         onLoadMoreComments = onLoadMoreComments,
                         onLoadReplies = onLoadReplies,
@@ -221,10 +267,14 @@ private fun ReadOnlyPostDetail(
     onLikeClick: (String, Boolean, Long) -> Unit,
     onSaveClick: (String, Boolean) -> Unit,
     onShareClick: (FeedPost) -> Unit,
+    onEditPost: () -> Unit = {},
     onDeletePost: () -> Unit,
-    onReportPost: (String) -> Unit,
+    onReportPost: () -> Unit = {},
     onNotInterested: () -> Unit,
     onVisibilityChange: (Boolean?, Boolean?) -> Unit,
+    onHashtagClick: (String) -> Unit = {},
+    onMentionClick: (String) -> Unit = {},
+    onAppealClick: (String) -> Unit = {},
     commentsState: CommentsUiState,
     onLoadMoreComments: () -> Unit,
     onLoadReplies: (String) -> Unit,
@@ -237,7 +287,7 @@ private fun ReadOnlyPostDetail(
     canDelete: (ir.coffevista.vista_native.features.feed.data.Comment) -> Boolean,
     canReport: (ir.coffevista.vista_native.features.feed.data.Comment) -> Boolean,
     isCommentAuthor: (ir.coffevista.vista_native.features.feed.data.Comment) -> Boolean,
-    onSubmitComment: (String) -> Unit,
+    onSubmitComment: (CommentDraft) -> Unit,
     onCancelReplyOrEdit: () -> Unit,
 ) {
     Column(
@@ -263,10 +313,14 @@ private fun ReadOnlyPostDetail(
                 onSaveClick = onSaveClick,
                 onCommentClick = {},
                 onShareClick = { onShareClick(state.post) },
+                onEditPost = onEditPost,
                 onDeletePost = onDeletePost,
                 onReportPost = onReportPost,
                 onNotInterested = onNotInterested,
                 onVisibilityChange = onVisibilityChange,
+                onHashtagClick = onHashtagClick,
+                onMentionClick = onMentionClick,
+                onAppealClick = onAppealClick,
                 verticalMenu = true,
                 modifier = Modifier.testTag(PostDetailTestTags.Author),
             )
@@ -313,6 +367,7 @@ private fun ReadOnlyPostDetail(
                   canReport = canReport,
                   isCommentAuthor = isCommentAuthor,
                   onAuthorClick = onCommentAuthorClick,
+                  onHashtagClick = onHashtagClick,
                   depth = 0,
               )
             }
@@ -332,6 +387,7 @@ private fun ReadOnlyPostDetail(
         CommentComposer(
             replyingTo = commentsState.replyingTo,
             editingComment = commentsState.editingComment,
+            mentionCandidates = commentMentionCandidates(commentsState.comments),
             onSubmit = onSubmitComment,
             onCancelReplyOrEdit = onCancelReplyOrEdit,
             isSubmitting = commentsState.isSubmitting,
@@ -446,3 +502,4 @@ internal object PostDetailTestTags {
     const val Media = "post-detail-media"
     const val Counts = "post-detail-counts"
 }
+

@@ -18,6 +18,7 @@ class OfflineFirstFeedRepository @Inject constructor(
     private val exploreLimit = 15
     private val followingLimit = 20
     private val profileLimit = 30
+    private val hashtagLimit = 24
     private val appendMutexes = mutableMapOf<String, Mutex>()
 
     override fun observeFeed(accountId: String, kind: FeedKind): Flow<FeedSnapshot> =
@@ -102,6 +103,25 @@ class OfflineFirstFeedRepository @Inject constructor(
         return appendPage(storageAccountId) { _, offset ->
             feedApi.getUserPosts(userId, profileLimit, offset)
         }
+    }
+
+    override suspend fun getHashtagPosts(
+        accountId: String,
+        hashtag: String,
+        offset: Int,
+    ): FeedSnapshot {
+        val normalized = hashtag.removePrefix("#").trim()
+        require(normalized.isNotBlank()) { "هشتگ نامعتبر است" }
+        val safeOffset = offset.coerceAtLeast(0)
+        val response = feedApi.getHashtagPosts(normalized, hashtagLimit, safeOffset)
+        return FeedSnapshot(
+            posts = response.posts.mapIndexed { index, post ->
+                post.asEntity("$accountId${NAMESPACE_SEPARATOR}hashtag$NAMESPACE_SEPARATOR$normalized", index.toLong())
+                    .asExternalModel()
+            },
+            hasMore = response.hasMore,
+            nextOffset = safeOffset + response.posts.size,
+        )
     }
 
     private suspend fun replaceFirstPage(
@@ -243,6 +263,17 @@ class OfflineFirstFeedRepository @Inject constructor(
         require(reason.isNotBlank()) { "دلیل گزارش را انتخاب کنید" }
         feedApi.reportPost(
             ReportPostRequestDto(postId, reportedUserId, reason.trim(), additionalDetails?.trim()),
+        )
+    }
+
+    override suspend fun submitAppeal(postId: String, reason: String) {
+        require(postId.isNotBlank()) { "شناسه پست نامعتبر است" }
+        require(reason.trim().length >= 10) { "توضیح اعتراض باید حداقل ۱۰ نویسه باشد" }
+        feedApi.submitAppeal(
+            SubmitAppealRequestDto(
+                postId = postId,
+                reason = reason.trim(),
+            ),
         )
     }
 

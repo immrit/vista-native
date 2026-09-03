@@ -13,6 +13,9 @@ class DeepLinkContractTest {
             "vista://profile/user-42" to DeferredFeatureKind.PROFILE,
             "vista://group/invite_42" to DeferredFeatureKind.GROUP,
             "vista://chat/conversation-42" to DeferredFeatureKind.CHAT,
+            "https://cafevista.ir/post/post_42" to DeferredFeatureKind.POST,
+            "https://vista.me/profile/user-42" to DeferredFeatureKind.PROFILE,
+            "https://www.cafevista.ir/group/invite_42" to DeferredFeatureKind.GROUP,
         )
 
         cases.forEach { (uri, expectedKind) ->
@@ -37,11 +40,12 @@ class DeepLinkContractTest {
         }
 
         val unsupported = listOf(
-            "https://vista.me/post/42",
             "vista://chat-detail/42",
             "javascript://post/42",
             "vista://post/42?token=secret",
             "vista://unknown/42",
+            "https://cafevista.ir/feed",
+            "https://coffevista.ir/post/42",
         )
         unsupported.forEach { uri ->
             assertEquals(

@@ -30,6 +30,7 @@ object DatabaseModule {
             VistaFoundationDatabase.MIGRATION_6_7,
             VistaFoundationDatabase.MIGRATION_7_8,
             VistaFoundationDatabase.MIGRATION_8_9,
+            VistaFoundationDatabase.MIGRATION_9_10,
         )
         .build()
 

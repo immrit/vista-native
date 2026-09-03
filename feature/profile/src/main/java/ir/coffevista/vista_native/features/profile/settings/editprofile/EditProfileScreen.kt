@@ -49,6 +49,9 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import ir.coffevista.vista_native.features.profile.ui.components.JalaliDatePickerDialog
+import ir.coffevista.vista_native.features.profile.ui.components.gregorianIsoToJalaliDisplay
+import ir.coffevista.vista_native.features.profile.ui.components.jalaliToGregorianIso
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -93,7 +96,12 @@ fun EditProfileScreen(
     var email by remember { mutableStateOf(profile?.email.orEmpty()) }
     var phone by remember { mutableStateOf(profile?.phoneNumber.orEmpty()) }
     var website by remember { mutableStateOf(profile?.websiteUrl.orEmpty()) }
-    var birthDate by remember { mutableStateOf(profile?.birthDate.orEmpty()) }
+    var birthDate by remember {
+        mutableStateOf(
+            profile?.birthDate?.let(::gregorianIsoToJalaliDisplay) ?: profile?.birthDate.orEmpty()
+        )
+    }
+    var showBirthDatePicker by remember { mutableStateOf(false) }
     var gender by remember { mutableStateOf(profile?.gender.orEmpty()) }
     var maritalStatus by remember { mutableStateOf(profile?.maritalStatus.orEmpty()) }
     var expandedGender by remember { mutableStateOf(false) }
@@ -362,19 +370,23 @@ fun EditProfileScreen(
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // Birth date
+                // Birth date (Jalali)
                 OutlinedTextField(
                     value = birthDate,
-                    onValueChange = { birthDate = it },
-                    label = { Text("تاریخ تولد") },
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("تاریخ تولد (شمسی)") },
                     leadingIcon = { Icon(Icons.Outlined.Cake, contentDescription = null) },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showBirthDatePicker = true },
                     shape = RoundedCornerShape(12.dp),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedContainerColor = MaterialTheme.colorScheme.surface,
                         unfocusedContainerColor = MaterialTheme.colorScheme.surface,
                     ),
                     singleLine = true,
+                    enabled = true,
                 )
 
                 Spacer(modifier = Modifier.height(14.dp))
@@ -444,7 +456,7 @@ fun EditProfileScreen(
                                     email = email.trim(),
                                     phoneNumber = phone.trim(),
                                     websiteUrl = website.trim(),
-                                    birthDate = birthDate.trim(),
+                                    birthDate = (jalaliToGregorianIso(birthDate) ?: birthDate).trim(),
                                     gender = gender,
                                     maritalStatus = maritalStatus,
                                     showEmail = showEmail,
@@ -525,6 +537,16 @@ fun EditProfileScreen(
                 Spacer(modifier = Modifier.height(16.dp))
             }
         }
+        if (showBirthDatePicker) {
+            JalaliDatePickerDialog(
+                initialValue = birthDate,
+                onDismissRequest = { showBirthDatePicker = false },
+                onDateSelected = { date ->
+                    birthDate = date.displayValue
+                    showBirthDatePicker = false
+                },
+            )
+        }
     }
 }
 
@@ -540,6 +562,6 @@ private fun VisibilityOption(
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
         Text(title, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
+        ir.coffevista.vista_native.core.designsystem.component.VistaSwitch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }

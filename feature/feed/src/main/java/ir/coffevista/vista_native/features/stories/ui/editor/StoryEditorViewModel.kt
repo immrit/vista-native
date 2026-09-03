@@ -17,6 +17,7 @@ import ir.coffevista.vista_native.features.stories.domain.StoryMention
 import ir.coffevista.vista_native.features.stories.domain.StoryPoll
 import ir.coffevista.vista_native.features.stories.domain.StoryPollOption
 import ir.coffevista.vista_native.features.stories.domain.StoryPrivacyType
+import ir.coffevista.vista_native.features.stories.domain.StoryUser
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -32,6 +33,10 @@ data class StoryEditorUiState(
     val elements: List<StoryElement> = emptyList(),
     val durationType: StoryDurationType = StoryDurationType.Hours24,
     val privacyType: StoryPrivacyType = StoryPrivacyType.Everyone,
+    val closeFriendCandidates: List<StoryUser> = emptyList(),
+    val selectedCloseFriendIds: Set<String> = emptySet(),
+    val isLoadingCloseFriends: Boolean = false,
+    val closeFriendsError: String? = null,
     val isUploading: Boolean = false,
     val uploadProgress: Float = 0f,
     val uploadStatus: String? = null,
@@ -141,6 +146,44 @@ class StoryEditorViewModel @Inject constructor(
         _uiState.update { it.copy(privacyType = privacy) }
     }
 
+    fun loadCloseFriends() {
+        val userId = currentUserId
+        if (userId.isBlank() || _uiState.value.isLoadingCloseFriends) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoadingCloseFriends = true, closeFriendsError = null) }
+            val users = repository.getFollowingUsers(userId)
+            val selected = repository.getCloseFriendIds()
+            _uiState.update { current ->
+                current.copy(
+                    closeFriendCandidates = users.getOrDefault(emptyList()),
+                    selectedCloseFriendIds = selected.getOrDefault(current.selectedCloseFriendIds.toList()).toSet(),
+                    isLoadingCloseFriends = false,
+                    closeFriendsError = users.exceptionOrNull()?.message ?: selected.exceptionOrNull()?.message,
+                )
+            }
+        }
+    }
+
+    fun toggleCloseFriend(userId: String) {
+        _uiState.update { current ->
+            val selected = current.selectedCloseFriendIds.toMutableSet()
+            if (!selected.add(userId)) selected.remove(userId)
+            current.copy(selectedCloseFriendIds = selected, closeFriendsError = null)
+        }
+    }
+
+    fun saveCloseFriends() {
+        if (_uiState.value.isLoadingCloseFriends) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoadingCloseFriends = true, closeFriendsError = null) }
+            repository.updateCloseFriends(_uiState.value.selectedCloseFriendIds.toList())
+                .onSuccess { _uiState.update { it.copy(isLoadingCloseFriends = false) } }
+                .onFailure { error ->
+                    _uiState.update { it.copy(isLoadingCloseFriends = false, closeFriendsError = error.message ?: "ذخیره دوستان نزدیک ناموفق بود") }
+                }
+        }
+    }
+
     fun clearError() {
         _uiState.update { it.copy(errorMessage = null) }
     }
@@ -199,6 +242,7 @@ class StoryEditorViewModel @Inject constructor(
                         StoryPrivacyType.Custom -> "custom"
                         else -> "everyone"
                     },
+                    allowedUserIds = state.selectedCloseFriendIds.toList(),
                     interactiveElements = state.elements,
                 )
 

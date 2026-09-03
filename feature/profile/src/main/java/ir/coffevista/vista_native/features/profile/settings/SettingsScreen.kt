@@ -434,41 +434,7 @@ private fun SettingsProfileCard(
                 .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                modifier = Modifier.size(20.dp),
-            )
-
-            Spacer(modifier = Modifier.weight(1f))
-
-            Column(
-                horizontalAlignment = Alignment.End,
-                modifier = Modifier.padding(horizontal = 12.dp),
-            ) {
-                Text(
-                    text = profile?.fullName?.ifBlank { profile.username } ?: (profile?.username ?: "کاربر ویستا"),
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontSize = 15.5.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    ),
-                )
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    // OwnProfileEntity intentionally does not persist email. Never render a
-                    // borrowed or fixture identity here; the server-backed username is the
-                    // available profile identifier for this screen.
-                    text = profile?.username?.takeIf { it.isNotBlank() }?.let { "@$it" } ?: "",
-                    style = MaterialTheme.typography.bodySmall.copy(
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                    ),
-                )
-            }
-
-            // Avatar
+            // Avatar at start (Right in RTL)
             Box(
                 modifier = Modifier
                     .size(54.dp)
@@ -492,6 +458,40 @@ private fun SettingsProfileCard(
                     )
                 }
             }
+
+            Column(
+                horizontalAlignment = Alignment.Start,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 12.dp),
+            ) {
+                Text(
+                    text = profile?.fullName?.ifBlank { profile.username } ?: (profile?.username ?: "کاربر ویستا"),
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontSize = 15.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    ),
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    // OwnProfileEntity intentionally does not persist email. Never render a
+                    // borrowed or fixture identity here; the server-backed username is the
+                    // available profile identifier for this screen.
+                    text = profile?.username?.takeIf { it.isNotBlank() }?.let { "\u200E@$it" } ?: "",
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    ),
+                )
+            }
+
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                modifier = Modifier.size(20.dp),
+            )
         }
     }
 }
@@ -536,18 +536,27 @@ private fun SettingsPremiumCard(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
-                    contentDescription = null,
-                    tint = Color.White.copy(alpha = 0.7f),
-                    modifier = Modifier.size(20.dp),
-                )
-
-                Spacer(modifier = Modifier.weight(1f))
+                // Badge at start (Right in RTL)
+                Box(
+                    modifier = Modifier
+                        .size(38.dp)
+                        .clip(CircleShape)
+                        .background(Color.White.copy(alpha = 0.25f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.VerifiedUser,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
 
                 Column(
-                    horizontalAlignment = Alignment.End,
-                    modifier = Modifier.padding(horizontal = 12.dp),
+                    horizontalAlignment = Alignment.Start,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = 12.dp),
                 ) {
                     Text(
                         text = "ویستا پریمیوم فعال",
@@ -567,20 +576,12 @@ private fun SettingsPremiumCard(
                     )
                 }
 
-                Box(
-                    modifier = Modifier
-                        .size(38.dp)
-                        .clip(CircleShape)
-                        .background(Color.White.copy(alpha = 0.25f)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.VerifiedUser,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(22.dp),
-                    )
-                }
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                    contentDescription = null,
+                    tint = Color.White.copy(alpha = 0.7f),
+                    modifier = Modifier.size(20.dp),
+                )
             }
         }
     }

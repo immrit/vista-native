@@ -46,11 +46,13 @@ interface FeedRepository {
     suspend fun refreshPost(accountId: String, postId: String): FeedPost
     suspend fun refreshUserPosts(accountId: String, userId: String): FeedRefreshResult
     suspend fun loadMoreUserPosts(accountId: String, userId: String): FeedAppendResult
+    suspend fun getHashtagPosts(accountId: String, hashtag: String, offset: Int): FeedSnapshot
     suspend fun clearAccount(accountId: String)
     suspend fun toggleLike(accountId: String, postId: String, ownerId: String, isLiked: Boolean, newLikeCount: Long)
     suspend fun toggleSave(accountId: String, postId: String, isSaved: Boolean)
     suspend fun updatePost(accountId: String, postId: String, content: String? = null, hideLikeCount: Boolean? = null, hideCommentCount: Boolean? = null): FeedPost
     suspend fun deletePost(accountId: String, postId: String)
     suspend fun reportPost(postId: String, reportedUserId: String, reason: String, additionalDetails: String? = null)
+    suspend fun submitAppeal(postId: String, reason: String)
     suspend fun trackFeedEvent(postId: String, eventType: String)
 }

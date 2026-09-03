@@ -32,6 +32,7 @@
          <ignored-key id="59E05CE618187ED4" reason="Key couldn't be downloaded from any key server"/>
          <ignored-key id="5F7786DF73E61F56" reason="Key couldn't be downloaded from any key server"/>
          <ignored-key id="6A65176A0FB1CD0B" reason="Key couldn't be downloaded from any key server; SHA-256 is pinned below"/>
+         <ignored-key id="6A0975F8B1127B83" reason="Key couldn't be downloaded from any key server; SHA-256 is pinned below"/>
          <ignored-key id="7C25280EAE63EBE5" reason="Key couldn't be downloaded from any key server"/>
          <ignored-key id="7FE9900F412D622E" reason="Key couldn't be downloaded from any key server"/>
          <ignored-key id="80C08B1C29100955" reason="Key couldn't be downloaded from any key server"/>
@@ -42,6 +43,7 @@
          <ignored-key id="B0F3710FA64900E7" reason="Key couldn't be downloaded from any key server"/>
          <ignored-key id="B7AE15C15C321C44" reason="Key couldn't be downloaded from any key server"/>
          <ignored-key id="BA9255C2CA445309" reason="Key couldn't be downloaded from any key server"/>
+         <ignored-key id="BCF4173966770193" reason="Key couldn't be downloaded from any key server; SHA-256 is pinned below"/>
          <ignored-key id="BF984B4145EA13F7" reason="Key couldn't be downloaded from any key server"/>
          <ignored-key id="CCC16740C5666D5A" reason="Key couldn't be downloaded from any key server"/>
          <ignored-key id="D908A43FB7EC07AC" reason="Key couldn't be downloaded from any key server"/>

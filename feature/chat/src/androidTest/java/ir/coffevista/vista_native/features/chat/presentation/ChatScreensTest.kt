@@ -3,6 +3,7 @@ package ir.coffevista.vista_native.features.chat.presentation
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onAllNodesWithText
@@ -11,10 +12,12 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.swipe
+import androidx.compose.material3.Text
 import androidx.test.platform.app.InstrumentationRegistry
 import android.net.Uri
 import androidx.compose.runtime.getValue
@@ -37,12 +40,14 @@ import ir.coffevista.vista_native.features.chat.domain.model.DownloadState
 import ir.coffevista.vista_native.features.chat.domain.model.DownloadTask
 import ir.coffevista.vista_native.features.chat.presentation.conversations.ConversationsUiState
 import ir.coffevista.vista_native.features.chat.presentation.messages.MessagesUiState
+import ir.coffevista.vista_native.features.chat.presentation.components.SwipeToReplyLayout
 import org.junit.Rule
 import org.junit.Test
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 
 class ChatScreensTest {
     @get:Rule val compose = createComposeRule()
@@ -142,7 +147,7 @@ class ChatScreensTest {
     }
 
     @Test
-    fun messageTapShowsFlutterParityActions() {
+    fun idleTextMessageTapOpensContextActions() {
         compose.setContent {
             VistaTheme {
                 MessageDetailScreen(
@@ -176,14 +181,12 @@ class ChatScreensTest {
 
         compose.onNodeWithContentDescription("پیام شما، ارسال شد").performClick()
         compose.onNodeWithText("پاسخ").assertExists()
-        compose.onNodeWithText("فوروارد").assertExists()
-        compose.onNodeWithText("سنجاق کردن").assertExists()
-        compose.onNodeWithText("ویرایش").assertExists()
-        compose.onNodeWithText("حذف").assertExists()
+        compose.onNodeWithText("کپی").assertExists()
+        compose.onAllNodesWithText("1 انتخاب شده").assertCountEquals(0)
     }
 
     @Test
-    fun messageLongPressStartsFlutterMultiSelectionAndTapAddsAnotherMessage() {
+    fun messageLongPressStartsSelectionWithAlignedSelectionToolbar() {
         compose.setContent {
             VistaTheme {
                 MessageDetailScreen(
@@ -229,11 +232,87 @@ class ChatScreensTest {
 
         compose.onNodeWithContentDescription("پیام شما، ارسال شد").performTouchInput { longClick() }
         compose.onNodeWithText("1 انتخاب شده").assertExists()
+        compose.onNodeWithContentDescription("پیام انتخاب شده، لغو انتخاب").assertExists()
         compose.onNodeWithContentDescription("پیام دریافتی، ارسال شد").performClick()
         compose.onNodeWithText("2 انتخاب شده").assertExists()
+        val ownCheckbox = compose
+            .onAllNodesWithTag("message-selection-checkbox:mine-server")
+            .fetchSemanticsNodes()
+            .single()
+        val peerCheckbox = compose
+            .onAllNodesWithTag("message-selection-checkbox:peer-server")
+            .fetchSemanticsNodes()
+            .single()
+        assertEquals(ownCheckbox.boundsInRoot.left, peerCheckbox.boundsInRoot.left, 0.5f)
+        val ownBubble = compose
+            .onAllNodesWithContentDescription("پیام شما، ارسال شد")
+            .fetchSemanticsNodes()
+            .single()
+        val peerBubble = compose
+            .onAllNodesWithContentDescription("پیام دریافتی، ارسال شد")
+            .fetchSemanticsNodes()
+            .single()
+        assertTrue(
+            "Outgoing bubbles must remain physically right of incoming bubbles in RTL.",
+            ownBubble.boundsInRoot.left > peerBubble.boundsInRoot.left,
+        )
         compose.onNodeWithContentDescription("کپی پیام‌های انتخاب شده").assertExists()
         compose.onNodeWithContentDescription("فوروارد پیام‌های انتخاب شده").assertExists()
         compose.onNodeWithContentDescription("حذف پیام‌های انتخاب شده").assertExists()
+    }
+
+    @Test
+    fun composerRemainsPinnedAcrossTenEmojiKeyboardSwitches() {
+        compose.setContent {
+            VistaTheme {
+                MessageDetailScreen(
+                    state = MessagesUiState(
+                        conversationId = "conversation",
+                        messages = emptyList(),
+                        isInitialLoading = false,
+                        hasMore = false,
+                    ),
+                    title = "گفتگو",
+                    onBack = {},
+                    onRefresh = {},
+                    onLoadOlder = {},
+                    onSend = { _, _ -> },
+                    onRetry = {},
+                )
+            }
+        }
+
+        // Start from a real, measured IME footprint. A plain click can return
+        // before Android 13 has animated the IME, so wait for the composer to
+        // move before freezing the baseline. This exercises the same geometry
+        // path that production uses when switching to the emoji panel.
+        val composerNode = compose.onNodeWithTag("chat-composer-surface")
+        val composerBeforeIme = composerNode.fetchSemanticsNode().boundsInRoot
+        compose.onNodeWithContentDescription("پیام...").performClick()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            composerNode.fetchSemanticsNode().boundsInRoot.top < composerBeforeIme.top - 40f
+        }
+        compose.waitForIdle()
+        val baseline = composerNode.fetchSemanticsNode().boundsInRoot
+
+        repeat(10) { switchIndex ->
+            val control = if (switchIndex % 2 == 0) "شکلک‌ها" else "صفحه‌کلید"
+            compose.onNodeWithContentDescription(control).performClick()
+            compose.waitForIdle()
+            val current = composerNode.fetchSemanticsNode().boundsInRoot
+            assertEquals(
+                "Composer top moved on switch ${switchIndex + 1}.",
+                baseline.top,
+                current.top,
+                0.5f,
+            )
+            assertEquals(
+                "Composer bottom moved on switch ${switchIndex + 1}.",
+                baseline.bottom,
+                current.bottom,
+                0.5f,
+            )
+        }
     }
 
     @Test
@@ -279,6 +358,87 @@ class ChatScreensTest {
             }
         compose.onNodeWithText("پاسخ به", substring = true).assertExists()
         compose.onAllNodesWithText("متن دریافتی برای پاسخ")[0].assertExists()
+    }
+
+    @Test
+    fun disabledSwipeDoesNotCompeteWithSelectionGestures() {
+        var replyCount = 0
+        compose.setContent {
+            VistaTheme {
+                SwipeToReplyLayout(
+                    enabled = false,
+                    onReply = { replyCount += 1 },
+                ) {
+                    Text("پیام انتخاب‌شده")
+                }
+            }
+        }
+
+        compose.onNodeWithText("پیام انتخاب‌شده").performTouchInput {
+            swipe(
+                start = Offset(1f, center.y),
+                end = Offset((center.x * 2f) - 1f, center.y),
+                durationMillis = 500,
+            )
+        }
+
+        compose.runOnIdle { assertEquals(0, replyCount) }
+    }
+
+    @Test
+    fun leftSwipeDoesNotStartReply() {
+        var replyCount = 0
+        compose.setContent {
+            VistaTheme {
+                SwipeToReplyLayout(onReply = { replyCount += 1 }) {
+                    Text("پیام با حرکت چپ")
+                }
+            }
+        }
+
+        compose.onNodeWithText("پیام با حرکت چپ").performTouchInput {
+            swipe(
+                start = Offset((center.x * 2f) - 1f, center.y),
+                end = Offset(1f, center.y),
+                durationMillis = 500,
+            )
+        }
+
+        compose.runOnIdle { assertEquals(0, replyCount) }
+    }
+
+    @Test
+    fun ownMessageRepliesOnlyOnLeftSwipe() {
+        var replyCount = 0
+        compose.setContent {
+            VistaTheme {
+                SwipeToReplyLayout(
+                    bubbleOnRight = true,
+                    onReply = { replyCount += 1 },
+                ) {
+                    Text("پیام خودم")
+                }
+            }
+        }
+
+        compose.onNodeWithText("پیام خودم").performTouchInput {
+            swipe(
+                start = Offset(1f, center.y),
+                end = Offset((center.x * 2f) - 1f, center.y),
+                durationMillis = 500,
+            )
+        }
+        compose.runOnIdle { assertEquals(0, replyCount) }
+
+        compose.onNodeWithText("پیام خودم").performTouchInput {
+            swipe(
+                start = Offset((center.x * 2f) - 1f, center.y),
+                end = Offset(1f, center.y),
+                durationMillis = 500,
+            )
+        }
+
+        compose.runOnIdle { assertEquals(1, replyCount) }
     }
 
     @Test
@@ -522,6 +682,7 @@ class ChatScreensTest {
 
         compose.onNodeWithContentDescription("گزینه‌های گفتگو").performClick()
         compose.onNodeWithText("اطلاعات گروه").performClick()
+        compose.onNodeWithTag("group-details-list").performScrollToNode(hasText("عضو نمونه"))
         compose.onNodeWithText("عضو نمونه").assertExists()
         compose.onNodeWithText("کپی لینک").assertExists()
         compose.onNodeWithTag("group-details-list").performScrollToNode(hasText("ترک گروه"))
@@ -688,6 +849,7 @@ class ChatScreensTest {
 
         compose.onNodeWithText("actions.pdf").performTouchInput { longClick() }
         compose.onNodeWithText("1 انتخاب شده").assertExists()
+        compose.onNodeWithContentDescription("پیام انتخاب شده، لغو انتخاب").assertExists()
         compose.onNodeWithContentDescription("حذف پیام‌های انتخاب شده").assertExists()
     }
 

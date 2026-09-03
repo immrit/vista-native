@@ -32,6 +32,7 @@ interface SessionStore {
     fun read(): StoredSession?
     fun save(payload: AuthPayload)
     fun markPasswordConfigured()
+    fun markProfileCompleted()
     fun isBiometricEnabled(): Boolean
     fun setBiometricEnabled(enabled: Boolean)
     fun clear()
@@ -89,6 +90,11 @@ class EncryptedSessionStore internal constructor(
     override fun markPasswordConfigured() {
         val current = read() ?: return
         saveStoredSession(current.copy(passwordRequired = false))
+    }
+
+    override fun markProfileCompleted() {
+        val current = read() ?: return
+        saveStoredSession(current.copy(profileCompleted = true))
     }
 
     override fun isBiometricEnabled(): Boolean = read()?.biometricEnabled == true

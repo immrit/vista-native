@@ -46,6 +46,13 @@ interface PostMediaUploadGateway {
         maxBytes: Long = 15L * 1024 * 1024,
         onProgress: (Float) -> Unit = {},
     ): UploadedMediaResult
+
+    suspend fun uploadAudio(
+        userId: String,
+        uri: Uri,
+        maxBytes: Long = 15L * 1024 * 1024,
+        onProgress: (Float) -> Unit = {},
+    ): UploadedMediaResult
 }
 
 @Singleton
@@ -176,6 +183,48 @@ class PostMediaUploader @Inject constructor(
             isVideo = true,
             thumbnailUrl = uploadedThumbnailUrl,
         )
+    }
+
+    override suspend fun uploadAudio(
+        userId: String,
+        uri: Uri,
+        maxBytes: Long,
+        onProgress: (Float) -> Unit,
+    ): UploadedMediaResult = withContext(Dispatchers.IO) {
+        require(userId.isNotBlank()) { "شناسه کاربر نامعتبر است" }
+        val mimeType = resolver.getType(uri)?.takeIf { it.startsWith("audio/") }
+            ?: throw IOException("فایل انتخاب‌شده صوتی نیست")
+        val extension = when (mimeType) {
+            "audio/mp4" -> "m4a"
+            "audio/ogg" -> "ogg"
+            "audio/wav", "audio/x-wav" -> "wav"
+            "audio/aac" -> "aac"
+            else -> "mp3"
+        }
+        val temporaryAudio = File.createTempFile("post-audio-", ".$extension", cacheDir)
+        try {
+            resolver.openInputStream(uri)?.use { input ->
+                temporaryAudio.outputStream().use { output -> input.copyTo(output) }
+            }
+                ?: throw IOException("فایل صوتی قابل خواندن نیست")
+            require(temporaryAudio.length() > 0L && temporaryAudio.length() <= maxBytes) {
+                "حجم فایل صوتی بیش از حد مجاز است"
+            }
+            val objectKey = "music/${userId.safeSegment()}/${System.currentTimeMillis()}_audio.$extension"
+            val presign = api.presignUpload(PostPresignRequestDto(objectKey, mimeType, temporaryAudio.length()))
+            val request = Request.Builder().url(presign.url)
+                .put(ProgressRequestBody(temporaryAudio, mimeType, onProgress))
+            presign.headers.forEach { (name, value) ->
+                if (!name.equals("host", true) && !name.equals("content-length", true)) request.header(name, value)
+            }
+            externalClient.newCall(request.build()).execute().use { response ->
+                if (!response.isSuccessful) throw IOException("آپلود موسیقی با خطای ${response.code} متوقف شد")
+            }
+            onProgress(1f)
+            UploadedMediaResult(url = presign.objectUrl, objectKey = presign.objectKey)
+        } finally {
+            temporaryAudio.delete()
+        }
     }
 
     private fun compressImageToJpeg(uri: Uri, maxBytes: Long): File {

@@ -9,6 +9,13 @@ object ShellRoutes {
     fun storyPlayer(userIndex: Int) = "story_player/$userIndex"
     const val StoryPlayerRoute = "story_player/{userIndex}"
     const val StoryCreate = "story_create"
+    const val Notifications = "notifications"
+    fun appeal(postId: String) = "appeal/$postId"
+    const val AppealRoute = "appeal/{postId}"
+    fun hashtag(tag: String) = "hashtag/" + java.net.URLEncoder.encode(tag.removePrefix("#"), "UTF-8")
+    const val HashtagRoute = "hashtag/{tag}"
+    fun reels(postId: String? = null) = if (postId != null) "reels?postId=$postId" else "reels"
+    const val ReelsRoute = "reels?postId={postId}"
 
     const val SearchGraph = "search_graph"
     const val SearchRoot = "search_root"

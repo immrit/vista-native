@@ -11,6 +11,7 @@ import ir.coffevista.vista_native.features.chat.domain.model.Page
 import ir.coffevista.vista_native.features.chat.domain.model.PaginationCursor
 import ir.coffevista.vista_native.features.chat.domain.model.RealtimeConnectionState
 import ir.coffevista.vista_native.features.chat.domain.model.ProfileNote
+import ir.coffevista.vista_native.features.chat.domain.model.SharedPostDraft
 import ir.coffevista.vista_native.features.chat.domain.model.PresenceState
 import ir.coffevista.vista_native.features.chat.domain.model.GroupInfo
 import ir.coffevista.vista_native.features.chat.domain.model.GroupMember
@@ -109,6 +110,8 @@ interface ChatRepository {
         ChatResult.Failure("اطلاعات کاربر در دسترس نیست", false)
 
     suspend fun sendText(conversationId: String, text: String): ChatResult<Message>
+    suspend fun sendSharedPost(conversationId: String, post: SharedPostDraft): ChatResult<Message> =
+        ChatResult.Failure("ارسال پست در دسترس نیست", false)
     suspend fun sendReply(conversationId: String, text: String, replyTo: Message): ChatResult<Message> =
         sendText(conversationId, text)
     suspend fun sendAttachment(conversationId: String, draft: ChatAttachmentDraft): ChatResult<Message>

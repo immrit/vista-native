@@ -3,7 +3,14 @@
 // Some historical module build directories in this checkout are owned by a
 // different Windows SID.  Keep the normal source tree untouched while a fresh
 // APK is assembled for the chat runtime verification.
+def validationBuildRoot = System.getProperty('chatValidationBuildRoot') ?: '.chat-validation-build'
+
 gradle.beforeProject { project ->
     def projectSuffix = project.path == ':' ? 'root' : project.path.substring(1).replace(':', '/')
-    project.buildDir = new File(gradle.rootProject.projectDir, ".chat-validation-build/${projectSuffix}")
+    // Keep Gradle's legacy buildDir and its lazy layout provider in sync.
+    // Kotlin/AGP tasks resolve the latter; changing only buildDir sends Hilt's
+    // generated Java and Kotlin class outputs to different directories.
+    def isolatedBuildDir = new File(gradle.rootProject.projectDir, "${validationBuildRoot}/${projectSuffix}")
+    project.layout.buildDirectory.set(isolatedBuildDir)
+    project.buildDir = isolatedBuildDir
 }

@@ -30,6 +30,7 @@ import androidx.compose.material.icons.rounded.QrCodeScanner
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -98,6 +99,7 @@ fun SearchLauncherScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
+            .safeDrawingPadding()
             .background(MaterialTheme.colorScheme.background)
             .testTag(SearchTestTags.Launcher),
     ) {
@@ -158,6 +160,7 @@ fun SearchWorkspaceScreen(
     viewModel: SearchViewModel,
     onUserClick: (SearchUser) -> Unit,
     onPostClick: (SearchPost) -> Unit,
+    onHashtagClick: (String) -> Unit = {},
     autoFocus: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
@@ -172,7 +175,10 @@ fun SearchWorkspaceScreen(
         onHistory = viewModel::selectHistory,
         onDeleteHistory = viewModel::deleteHistory,
         onClearHistory = viewModel::clearHistory,
-        onHashtag = viewModel::selectHashtag,
+        onHashtag = { hashtag ->
+            viewModel.selectHashtag(hashtag)
+            onHashtagClick(hashtag)
+        },
         onUser = { user ->
             viewModel.selectUser(user)
             onUserClick(user)
@@ -220,6 +226,7 @@ internal fun SearchWorkspaceContent(
     Column(
         modifier = modifier
             .fillMaxSize()
+            .safeDrawingPadding()
             .background(MaterialTheme.colorScheme.background)
             .testTag(SearchTestTags.Workspace),
     ) {
@@ -334,6 +341,24 @@ private fun SearchField(
                     tag = SearchTestTags.ClearQuery,
                     onClick = onClear,
                 ) { color -> CloseGlyph(Modifier.size(21.dp), color) }
+            }
+            AnimatedVisibility(
+                visible = value.isEmpty(),
+                enter = fadeIn(tween(200)),
+                exit = fadeOut(tween(200)),
+            ) {
+                SmallIconButton(
+                    description = "اسکن بارکد و QR",
+                    tag = "search-scan-qr",
+                    onClick = { /* open scanner */ },
+                ) { color ->
+                    Icon(
+                        imageVector = Icons.Rounded.QrCodeScanner,
+                        contentDescription = null,
+                        modifier = Modifier.size(22.dp),
+                        tint = color,
+                    )
+                }
             }
         }
     }

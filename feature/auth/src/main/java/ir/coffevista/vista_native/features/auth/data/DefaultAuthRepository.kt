@@ -39,6 +39,18 @@ class DefaultAuthRepository @Inject constructor(
     override suspend fun setPassword(accessToken: String, password: String) =
         call("تعیین رمز عبور") { remote.setPassword(accessToken, password) }
 
+    override suspend fun recoveryOptions(identifier: String) =
+        call("دریافت گزینه‌های بازیابی") { remote.recoveryOptions(identifier) }
+
+    override suspend fun sendRecoveryCode(optionId: String) =
+        call("ارسال کد بازیابی") { remote.sendRecoveryCode(optionId) }
+
+    override suspend fun verifyRecoveryCode(optionId: String, code: String) =
+        call("تایید کد بازیابی") { remote.verifyRecoveryCode(optionId, code) }
+
+    override suspend fun completeRecovery(token: String, newPassword: String) =
+        call("تکمیل بازیابی") { remote.completeRecovery(token, newPassword) }
+
     override suspend fun refresh(refreshToken: String) =
         call("تمدید نشست") { remote.refresh(refreshToken) }
 

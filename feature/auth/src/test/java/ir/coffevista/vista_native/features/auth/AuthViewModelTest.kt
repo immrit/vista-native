@@ -121,7 +121,6 @@ class AuthViewModelTest {
         runCurrent()
 
         assertEquals(1, repository.setPasswordCalls)
-        assertNotNull(viewModel.state.value.completedContext)
         assertFalse(viewModel.state.value.completedContext!!.passwordRequired)
         assertTrue(store.saveCalls >= 2)
     }
@@ -216,6 +215,41 @@ class AuthViewModelTest {
         assertTrue(owner.state.value is AuthenticationState.SignedIn)
     }
 
+    @Test
+    fun forgotPasswordTriggersOtpAndSetsRecoveryFlow() = runTest(dispatcher) {
+        val repository = RecordingAuthRepository(
+            lookupResult = Outcome.Success(
+                IdentifierLookup(true, true, "09123456789", "password", "active"),
+            ),
+            verifyOtpResult = Outcome.Success(
+                OtpVerification.Authenticated(authPayload()),
+            ),
+        )
+        val store = AuthTestSessionStore()
+        val viewModel = viewModel(repository, store)
+
+        viewModel.onAction(AuthAction.IdentifierChanged("09123456789"))
+        viewModel.onAction(AuthAction.Submit)
+        runCurrent()
+        assertEquals(AuthStep.PASSWORD, viewModel.state.value.step)
+
+        viewModel.onAction(AuthAction.ForgotPassword)
+        runCurrent()
+        assertEquals(AuthStep.OTP, viewModel.state.value.step)
+        assertTrue(viewModel.state.value.isPasswordRecovery)
+
+        viewModel.onAction(AuthAction.OtpChanged("۱۲۳۴۵"))
+        viewModel.onAction(AuthAction.Submit)
+        runCurrent()
+        assertEquals(AuthStep.SET_PASSWORD, viewModel.state.value.step)
+
+        viewModel.onAction(AuthAction.PasswordChanged("NewPassword123"))
+        viewModel.onAction(AuthAction.Submit)
+        runCurrent()
+        assertEquals(1, repository.completeRecoveryCalls)
+        assertEquals("token", repository.completedRecoveryToken)
+    }
+
     private fun viewModel(
         repository: RecordingAuthRepository,
         store: AuthTestSessionStore = AuthTestSessionStore(),
@@ -243,6 +277,8 @@ private class RecordingAuthRepository(
 ) : AuthRepository {
     var setPasswordCalls = 0
     var verifyTwoFactorCalls = 0
+    var completeRecoveryCalls = 0
+    var completedRecoveryToken: String? = null
 
     override suspend fun lookupIdentifier(identifier: String) = lookupResult
 
@@ -266,6 +302,28 @@ private class RecordingAuthRepository(
         password: String,
     ): Outcome<Unit> {
         setPasswordCalls += 1
+        return Outcome.Success(Unit)
+    }
+
+    override suspend fun recoveryOptions(identifier: String) =
+        Outcome.Success(
+            listOf(
+                ir.coffevista.vista_native.features.auth.data.RecoveryOption(
+                    id = "sms-option",
+                    method = "sms",
+                    masked = "0912****6789",
+                ),
+            ),
+        )
+
+    override suspend fun sendRecoveryCode(optionId: String) = Outcome.Success(Unit)
+
+    override suspend fun verifyRecoveryCode(optionId: String, code: String) =
+        Outcome.Success("token")
+
+    override suspend fun completeRecovery(token: String, newPassword: String): Outcome<Unit> {
+        completeRecoveryCalls += 1
+        completedRecoveryToken = token
         return Outcome.Success(Unit)
     }
 
@@ -297,6 +355,16 @@ private class AuthTestSessionStore(
     override fun markPasswordConfigured() {
         markPasswordCalls += 1
         initial = initial?.copy(passwordRequired = false)
+    }
+
+    override fun markProfileCompleted() {
+        initial = initial?.copy(profileCompleted = true)
+    }
+
+    override fun isBiometricEnabled(): Boolean = initial?.biometricEnabled == true
+
+    override fun setBiometricEnabled(enabled: Boolean) {
+        initial = initial?.copy(biometricEnabled = enabled)
     }
 
     override fun clear() {

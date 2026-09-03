@@ -8,6 +8,10 @@ import dagger.multibindings.IntoSet
 import ir.coffevista.vista_native.core.model.session.AuthenticatedContext
 import ir.coffevista.vista_native.features.startup.StartupDestination
 import ir.coffevista.vista_native.features.startup.StartupFixture
+import ir.coffevista.vista_native.core.model.auth.AuthPayload
+import ir.coffevista.vista_native.core.model.auth.AuthSession
+import ir.coffevista.vista_native.core.model.auth.AuthUser
+import ir.coffevista.vista_native.core.security.SessionStore
 import java.util.concurrent.atomic.AtomicReference
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -34,7 +38,9 @@ enum class DebugStartupScenario(val wireName: String) {
 }
 
 @Singleton
-class DebugStartupFixture @Inject constructor() : StartupFixture {
+class DebugStartupFixture @Inject constructor(
+    private val sessionStore: SessionStore,
+) : StartupFixture {
     private val scenario = AtomicReference(DebugStartupScenario.NONE)
 
     override fun configure(rawScenario: String?) {
@@ -58,15 +64,37 @@ class DebugStartupFixture @Inject constructor() : StartupFixture {
         -> StartupDestination.Authentication
     }
 
-    private fun authenticated(offline: Boolean) = StartupDestination.Authenticated(
-        AuthenticatedContext(
-            userId = "fnd-debug-user",
-            profileCompleted = true,
-            passwordRequired = false,
-            offline = offline,
-            displayName = "کاربر تست Foundation",
-        ),
-    )
+    private fun authenticated(offline: Boolean): StartupDestination {
+        sessionStore.save(
+            AuthPayload(
+                user = AuthUser(
+                    id = "fnd-debug-user",
+                    phoneNumber = "09120000000",
+                    profileCompleted = true,
+                    hasPassword = true,
+                    passwordRequired = false,
+                    accountStatus = "active",
+                    username = "fixture_user",
+                    fullName = "کاربر تست",
+                ),
+                session = AuthSession(
+                    accessToken = "debug-access-token",
+                    refreshToken = "debug-refresh-token",
+                    expiresAtEpochSeconds = System.currentTimeMillis() / 1000 + 86400 * 30,
+                ),
+                isNewUser = false,
+            ),
+        )
+        return StartupDestination.Authenticated(
+            AuthenticatedContext(
+                userId = "fnd-debug-user",
+                profileCompleted = true,
+                passwordRequired = false,
+                offline = offline,
+                displayName = "کاربر تست Foundation",
+            ),
+        )
+    }
 }
 
 @Module

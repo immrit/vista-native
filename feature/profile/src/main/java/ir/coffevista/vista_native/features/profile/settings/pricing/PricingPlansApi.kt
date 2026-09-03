@@ -17,6 +17,7 @@ interface PricingPlansApi {
 
     @POST("v1/payment/zibal/verify")
     suspend fun verifyZibal(@Body request: ZibalVerifyRequestDto): Response<ZibalVerifyResponseDto>
+
 }
 
 @Serializable

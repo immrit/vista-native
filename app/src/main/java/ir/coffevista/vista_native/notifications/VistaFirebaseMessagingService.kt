@@ -37,7 +37,7 @@ class VistaFirebaseMessagingService : FirebaseMessagingService() {
         val body = notification?.body ?: data["body"] ?: data["content"] ?: "اعلان جدید"
 
         when (type.lowercase()) {
-            "chat", "message" -> {
+            "chat", "message", "chat_message", "reaction" -> {
                 val conversationId = data["conversation_id"] ?: data["chat_id"].orEmpty()
                 val peerId = data["sender_id"] ?: data["peer_id"].orEmpty()
                 val senderName = data["sender_name"] ?: title
@@ -52,8 +52,10 @@ class VistaFirebaseMessagingService : FirebaseMessagingService() {
                 )
             }
 
-            "post", "comment", "like" -> {
+            "post", "comment", "comment_reply", "like" -> {
                 val postId = data["post_id"]
+                val userId = data["user_id"] ?: data["sender_id"]
+                val commentId = data["comment_id"]
                 val notificationId = (postId ?: body).hashCode().coerceAtLeast(1)
 
                 notificationManager.showSocialNotification(
@@ -61,6 +63,8 @@ class VistaFirebaseMessagingService : FirebaseMessagingService() {
                     title = title,
                     body = body,
                     postId = postId,
+                    userId = userId,
+                    commentId = commentId,
                 )
             }
 
@@ -73,15 +77,35 @@ class VistaFirebaseMessagingService : FirebaseMessagingService() {
                     title = title,
                     body = body,
                     storyId = storyId,
+                    userId = data["user_id"] ?: data["sender_id"],
                 )
             }
 
-            else -> {
-                val notificationId = System.currentTimeMillis().toInt()
+            "follow",
+            "follow_request",
+            "follow_request_accepted",
+            "mention",
+            "suggest_follow",
+            "suggest_post",
+            "daily_suggestion_digest",
+            "social",
+            -> {
+                val notificationId = (data["notification_id"] ?: body).hashCode().coerceAtLeast(1)
                 notificationManager.showSocialNotification(
                     notificationId = notificationId,
                     title = title,
                     body = body,
+                    userId = data["user_id"] ?: data["sender_id"],
+                )
+            }
+
+            else -> {
+                val notificationId = (data["notification_id"] ?: body).hashCode().coerceAtLeast(1)
+                notificationManager.showSocialNotification(
+                    notificationId = notificationId,
+                    title = title,
+                    body = body,
+                    userId = data["user_id"] ?: data["sender_id"],
                 )
             }
         }

@@ -15,6 +15,17 @@ data class FeedResponseDto(
 )
 
 @Serializable
+data class HashtagSuggestionsResponseDto(
+    @SerialName("hashtags") val hashtags: List<HashtagSuggestionDto> = emptyList(),
+)
+
+@Serializable
+data class HashtagSuggestionDto(
+    @SerialName("tag") val tag: String = "",
+    @SerialName("usage_count") val usageCount: Long = 0,
+)
+
+@Serializable
 data class FeedPostDto(
     @SerialName("id")
     val id: String,
@@ -60,6 +71,8 @@ data class FeedPostDto(
     val moderationReason: String? = null,
     @SerialName("edited_by_vista")
     val editedByVista: Boolean = false,
+    @SerialName("comments_disabled")
+    val commentsDisabled: Boolean = false,
     @SerialName("hide_like_count")
     val hideLikeCount: Boolean = false,
     @SerialName("hide_comment_count")
@@ -117,6 +130,9 @@ internal fun FeedPostDto.asEntity(
     authorVerificationType = author.verificationType,
     authorFollowStatus = authorFollowStatus,
     feedSource = feedSource,
+    editedByVista = editedByVista,
+    moderationReason = moderationReason,
+    commentsDisabled = commentsDisabled,
     createdAt = createdAt,
     updatedAt = updatedAt,
     sortOrder = sortOrder,
@@ -187,6 +203,8 @@ data class CreatePostRequestDto(
     @SerialName("video_url") val videoUrl: String? = null,
     @SerialName("music_url") val musicUrl: String? = null,
     @SerialName("music_title") val musicTitle: String? = null,
+    @SerialName("music_start_ms") val musicStartMs: Int? = null,
+    @SerialName("music_end_ms") val musicEndMs: Int? = null,
     @SerialName("aspect_ratio") val aspectRatio: String? = null,
     @SerialName("tags") val tags: List<String> = emptyList(),
     @SerialName("hide_like_count") val hideLikeCount: Boolean = false,
@@ -199,4 +217,9 @@ data class CreatePostResponseDto(
     @SerialName("post") val post: FeedPostDto? = null,
     @SerialName("success") val success: Boolean = true,
     @SerialName("message") val message: String? = null,
+)
+@Serializable
+data class SubmitAppealRequestDto(
+    @SerialName("post_id") val postId: String,
+    val reason: String,
 )

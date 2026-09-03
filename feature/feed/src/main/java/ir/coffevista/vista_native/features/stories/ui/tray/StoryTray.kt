@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaBrandColors
 import ir.coffevista.vista_native.features.stories.domain.StoryUser
+import java.time.Instant
 
 @Composable
 fun StoryTray(
@@ -49,141 +50,91 @@ fun StoryTray(
         colors = listOf(VistaBrandColors.Indigo, VistaBrandColors.Pink),
     )
 
-    val ownStoryUser = storyUsers.firstOrNull { it.id == currentUserId }
-    val otherStoryUsers = storyUsers.filterNot { it.id == currentUserId }
+    val sortedUsers = storyUsers
+        .filter { it.stories.isNotEmpty() }
+        .sortedWith(
+            compareByDescending<StoryUser> { it.hasUnseenStories }
+                .thenByDescending { user ->
+                    runCatching {
+                        user.lastStoryAt?.let(Instant::parse)
+                            ?: user.stories.maxOfOrNull { Instant.parse(it.createdAt) }
+                    }.getOrNull()
+                },
+        )
 
     LazyRow(
         modifier = modifier,
-        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
-        verticalAlignment = Alignment.CenterVertically,
+        contentPadding = PaddingValues(horizontal = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(0.dp),
+        verticalAlignment = Alignment.Top,
     ) {
-        // 1. Current User Story item
-        item(key = "story_tray_my_story") {
-            MyStoryItem(
-                avatarUrl = currentUserAvatar ?: ownStoryUser?.avatarUrl,
-                hasActiveStory = ownStoryUser?.stories?.isNotEmpty() == true,
-                hasUnseenStory = ownStoryUser?.hasUnseenStories == true,
+        item(key = "story_tray_add_story") {
+            AddStoryItem(
                 brandGradient = brandGradient,
-                onClick = {
-                    if (ownStoryUser?.stories?.isNotEmpty() == true) {
-                        onOpenStoryPlayer(0)
-                    } else {
-                        onCreateStory()
-                    }
-                },
-                onAddClick = onCreateStory,
+                onClick = onCreateStory,
             )
         }
 
-        // 2. Other Users' Story items
         itemsIndexed(
-            items = otherStoryUsers,
+            items = sortedUsers,
             key = { _, user -> "story_user_${user.id}" },
         ) { index, user ->
-            val playerIndex = if (ownStoryUser != null) index + 1 else index
             StoryUserItem(
                 user = user,
                 brandGradient = brandGradient,
-                onClick = { onOpenStoryPlayer(playerIndex) },
+                onClick = { onOpenStoryPlayer(index) },
             )
         }
     }
 }
 
 @Composable
-private fun MyStoryItem(
-    avatarUrl: String?,
-    hasActiveStory: Boolean,
-    hasUnseenStory: Boolean,
+private fun AddStoryItem(
     brandGradient: Brush,
     onClick: () -> Unit,
-    onAddClick: () -> Unit,
 ) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
-            .width(72.dp)
+            .width(86.dp)
+            .padding(horizontal = 6.dp, vertical = 8.dp)
             .clickable(onClick = onClick),
     ) {
         Box(
-            modifier = Modifier.size(68.dp),
+            modifier = Modifier
+                .size(74.dp)
+                .border(1.5.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.26f), CircleShape)
+                .padding(2.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)),
             contentAlignment = Alignment.Center,
         ) {
-            // Ring
-            val ringModifier = if (hasActiveStory) {
-                if (hasUnseenStory) {
-                    Modifier
-                        .size(68.dp)
-                        .clip(CircleShape)
-                        .background(brandGradient)
-                        .padding(2.5.dp)
-                } else {
-                    Modifier
-                        .size(68.dp)
-                        .clip(CircleShape)
-                        .border(2.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape)
-                        .padding(2.5.dp)
-                }
-            } else {
-                Modifier.size(64.dp)
-            }
-
             Box(
-                modifier = ringModifier
+                modifier = Modifier
+                    .size(28.dp)
                     .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.surface),
+                    .background(brandGradient),
                 contentAlignment = Alignment.Center,
             ) {
-                if (!avatarUrl.isNullOrBlank()) {
-                    AsyncImage(
-                        model = avatarUrl,
-                        contentDescription = "استوری شما",
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .clip(CircleShape),
-                        contentScale = ContentScale.Crop,
-                    )
-                } else {
-                    Icon(
-                        imageVector = Icons.Default.Person,
-                        contentDescription = "استوری شما",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(32.dp),
-                    )
-                }
-            }
-
-            // Plus Badge
-            if (!hasActiveStory) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .size(22.dp)
-                        .clip(CircleShape)
-                        .background(VistaBrandColors.Indigo)
-                        .border(2.dp, MaterialTheme.colorScheme.surface, CircleShape)
-                        .clickable(onClick = onAddClick),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Add,
-                        contentDescription = "افزودن استوری",
-                        tint = Color.White,
-                        modifier = Modifier.size(14.dp),
-                    )
-                }
+                Icon(
+                    imageVector = Icons.Default.Add,
+                    contentDescription = "افزودن استوری",
+                    tint = Color.White,
+                    modifier = Modifier.size(20.dp),
+                )
             }
         }
 
         Text(
-            text = "استوری شما",
+            text = "استوری جدید",
             fontSize = 11.sp,
-            fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.54f),
             textAlign = TextAlign.Center,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(top = 4.dp),
+            modifier = Modifier
+                .width(74.dp)
+                .padding(top = 4.dp),
         )
     }
 }
@@ -197,22 +148,23 @@ private fun StoryUserItem(
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
-            .width(72.dp)
+            .width(86.dp)
+            .padding(horizontal = 6.dp, vertical = 8.dp)
             .clickable(onClick = onClick),
     ) {
         Box(
             modifier = Modifier
-                .size(68.dp)
+                .size(74.dp)
                 .clip(CircleShape)
                 .then(
                     if (user.hasUnseenStories) {
                         Modifier
                             .background(brandGradient)
-                            .padding(2.5.dp)
+                            .padding(2.dp)
                     } else {
                         Modifier
                             .border(1.5.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape)
-                            .padding(2.5.dp)
+                            .padding(2.dp)
                     },
                 )
                 .clip(CircleShape)
@@ -240,12 +192,14 @@ private fun StoryUserItem(
 
         Text(
             text = user.username,
-            fontSize = 11.sp,
+            fontSize = 12.sp,
             fontWeight = if (user.hasUnseenStories) FontWeight.Bold else FontWeight.Normal,
             textAlign = TextAlign.Center,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(top = 4.dp),
+            modifier = Modifier
+                .width(70.dp)
+                .padding(top = 4.dp),
         )
     }
 }

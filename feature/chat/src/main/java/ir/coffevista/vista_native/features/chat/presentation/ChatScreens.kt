@@ -3,11 +3,13 @@ package ir.coffevista.vista_native.features.chat.presentation
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Rect as AndroidRect
 import android.media.MediaRecorder
 import android.media.MediaPlayer
 import android.media.PlaybackParams
 import android.net.Uri
 import android.view.HapticFeedbackConstants
+import android.view.ViewTreeObserver
 import androidx.core.content.FileProvider
 import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -17,6 +19,11 @@ import ir.coffevista.vista_native.features.chat.presentation.components.VoiceRec
 import ir.coffevista.vista_native.features.chat.presentation.components.SwipeToReplyLayout
 import ir.coffevista.vista_native.features.chat.presentation.components.VoicePlayerBubble
 import ir.coffevista.vista_native.features.chat.presentation.components.ChatAttachmentBottomSheet
+import ir.coffevista.vista_native.features.chat.presentation.components.ChatLinkPreviewCard
+import ir.coffevista.vista_native.features.chat.presentation.components.ChatTextBubbleLayout
+import ir.coffevista.vista_native.features.chat.presentation.components.PinnedMessagesBar
+import ir.coffevista.vista_native.features.chat.presentation.components.UnreadMessagesDivider
+import ir.coffevista.vista_native.features.chat.presentation.components.extractFirstUrl
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.Canvas
@@ -33,6 +40,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.absoluteOffset
 import androidx.compose.foundation.layout.absolutePadding
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -45,6 +53,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.statusBars
@@ -103,14 +112,16 @@ import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.EmojiEmotions
 import androidx.compose.material.icons.filled.Keyboard
 import ir.coffevista.vista_native.features.chat.presentation.components.TelegramEmojiText
+import ir.coffevista.vista_native.features.chat.presentation.components.TelegramEmoji
 import ir.coffevista.vista_native.features.chat.presentation.components.TelegramEmojiParser
 import ir.coffevista.vista_native.features.chat.presentation.components.EmojiCursorHelper
-import ir.coffevista.vista_native.features.chat.presentation.components.TelegramComposerField
-import ir.coffevista.vista_native.features.chat.presentation.components.TelegramComposerController
+import ir.coffevista.vista_native.features.chat.presentation.components.ChatComposerField
+import ir.coffevista.vista_native.features.chat.presentation.components.ChatComposerController
 import ir.coffevista.vista_native.features.chat.presentation.components.TelegramXMediaPanel
-import ir.coffevista.vista_native.features.chat.presentation.components.TelegramMessageContextMenu
+import ir.coffevista.vista_native.features.chat.presentation.components.MessageContextMenu
+import ir.coffevista.vista_native.features.chat.presentation.components.MessageContextCapabilities
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.material.icons.filled.Group
@@ -189,6 +200,7 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.shadow
@@ -203,6 +215,7 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -258,7 +271,6 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import java.util.UUID
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @Composable
@@ -425,21 +437,16 @@ fun ConversationListScreen(
         },
         floatingActionButton = {
             if (!searchVisible && !state.includeArchived) {
-                Box(
-                    Modifier.padding(bottom = 80.dp),
+                ir.coffevista.vista_native.core.designsystem.component.VistaFloatingActionButton(
+                    onClick = onNewMessage,
+                    contentDescription = "پیام جدید",
                 ) {
-                    Box(
-                        Modifier
-                            .size(56.dp)
-                            .shadow(8.dp, RoundedCornerShape(18.dp))
-                            .clip(RoundedCornerShape(18.dp))
-                            .background(Brush.linearGradient(listOf(VistaBrandColors.Indigo, VistaBrandColors.VioletDeep)))
-                            .clickable(role = Role.Button, onClick = onNewMessage)
-                            .semantics { contentDescription = "پیام جدید" },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(Icons.Default.Edit, contentDescription = null, tint = Color.White, modifier = Modifier.size(22.dp))
-                    }
+                    Icon(
+                        imageVector = Icons.Default.Edit,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(24.dp),
+                    )
                 }
             }
         },
@@ -995,12 +1002,14 @@ private fun ConversationRow(
                             MutedGlyph(MaterialTheme.colorScheme.onSurfaceVariant)
                             Spacer(Modifier.width(4.dp))
                         }
-                        Text(
-                            conversation.title.ifBlank { "کاربر" },
+                        TelegramEmojiText(
+                            text = conversation.title.ifBlank { "کاربر" },
                             modifier = Modifier.weight(1f),
-                            fontSize = 15.sp,
-                            fontWeight = if (conversation.unreadCount > 0) FontWeight.SemiBold else FontWeight.Medium,
-                            color = if (conversation.type.name == "SECRET") Color(0xFF2E7D32) else MaterialTheme.colorScheme.onSurface,
+                            style = TextStyle(
+                                fontSize = 15.sp,
+                                fontWeight = if (conversation.unreadCount > 0) FontWeight.SemiBold else FontWeight.Medium,
+                                color = if (conversation.type.name == "SECRET") Color(0xFF2E7D32) else MaterialTheme.colorScheme.onSurface,
+                            ),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
@@ -1034,17 +1043,19 @@ private fun ConversationRow(
                     }
                     Spacer(Modifier.height(4.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            if (typing) {
+                        TelegramEmojiText(
+                            text = if (typing) {
                                 "در حال نوشتن..."
                             } else {
                                 conversation.inboxPreviewText() ?: "پیام جدیدی ارسال کنید"
                             },
                             modifier = Modifier.weight(1f),
-                            color = if (typing) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 13.sp,
-                            fontWeight = if (typing || conversation.unreadCount > 0) FontWeight.Medium else FontWeight.Normal,
-                            fontStyle = if (typing) FontStyle.Italic else FontStyle.Normal,
+                            style = TextStyle(
+                                color = if (typing) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 13.sp,
+                                fontWeight = if (typing || conversation.unreadCount > 0) FontWeight.Medium else FontWeight.Normal,
+                                fontStyle = if (typing) FontStyle.Italic else FontStyle.Normal,
+                            ),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
@@ -1406,34 +1417,179 @@ fun MessageDetailScreen(
         hasRecordAudioPermission = granted
     }
     var attachmentSheetVisible by remember { mutableStateOf(false) }
-    var composer by rememberSaveable { mutableStateOf("") }
-    var composerValue by rememberSaveable(state.conversationId, stateSaver = TextFieldValue.Saver) {
+    // Composer geometry and editable state are reconstructed from the active
+    // conversation. Restoring a raw TextFieldValue after process recreation
+    // can resurrect a stale selection/draft and corrupt input-surface swaps.
+    var composer by remember(state.conversationId) { mutableStateOf("") }
+    var composerValue by remember(state.conversationId) {
         mutableStateOf(TextFieldValue(composer, TextRange(composer.length)))
     }
     // Hoist blank check to derivedStateOf → AnimatedVisibility/AnimatedContent don't
     // rebuild on every keystroke, only on blank↔filled transition
-    val isComposerBlank by remember { derivedStateOf { composer.isBlank() } }
-    val isComposerNotBlank by remember { derivedStateOf { composer.isNotBlank() } }
+    val isComposerBlank = composer.isBlank()
+    val isComposerNotBlank = composer.isNotBlank()
     var emojiPanelVisible by remember { mutableStateOf(false) }
-    val composerController = remember { TelegramComposerController() }
+    val composerController = remember { ChatComposerController() }
     val focusRequester = remember { FocusRequester() }
-    var selectedMessage by remember { mutableStateOf<Message?>(null) }
-    var selectedMessageBubbleBounds by remember { mutableStateOf<Rect?>(null) }
+    val focusManager = LocalFocusManager.current
+    var messageInteraction by remember(state.conversationId) {
+        mutableStateOf<MessageInteractionState>(MessageInteractionState.Idle)
+    }
+    val selectedMessageKeys = messageInteraction.selectedMessageKeys()
+    fun dismissMessageInteraction() {
+        messageInteraction = MessageInteractionState.Idle
+    }
+    fun startSelection(messageKey: String) {
+        // Selection owns the message surface. Keeping the emoji panel open
+        // behind its toolbar gives Back the wrong priority and leaves two
+        // competing interaction modes visible.
+        emojiPanelVisible = false
+        messageInteraction = MessageInteractionState.Selecting(listOf(messageKey))
+    }
+    fun openMessageContext(messageKey: String, bubbleBounds: Rect?) {
+        // A context surface owns the message interaction. Close the composer
+        // surfaces first so its anchor is never covered by a stale IME/panel.
+        emojiPanelVisible = false
+        focusManager.clearFocus(force = true)
+        composerController.closeKeyboard()
+        messageInteraction = MessageInteractionState.Context(messageKey, bubbleBounds)
+    }
+    fun toggleMessageSelection(messageKey: String) {
+        messageInteraction = messageInteraction.toggleSelection(messageKey)
+    }
+    LaunchedEffect(state.messages, messageInteraction) {
+        val selectableKeys = state.messages
+            .asSequence()
+            .filter { it.content != MessageContent.Deleted }
+            .map { it.stableKey }
+            .toSet()
+        messageInteraction = messageInteraction.retainSelection(selectableKeys)
+    }
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
     val defaultKeyboardHeight = remember(configuration.screenHeightDp, isLandscape) {
         if (isLandscape) {
             (configuration.screenHeightDp.dp * 0.5f).coerceIn(160.dp, 240.dp)
         } else {
-            (configuration.screenHeightDp.dp * 0.36f).coerceIn(260.dp, 360.dp)
+            // This is only the cold-start fallback (when the user opens emoji
+            // before focusing the composer).  Once the IME has appeared, the
+            // panel below is always sized from its actual inset instead.
+            300.dp
         }
     }
-    var selectedMessageKeys by rememberSaveable(state.conversationId) { mutableStateOf(emptyList<String>()) }
-    BackHandler(enabled = selectedMessageKeys.isNotEmpty()) {
-        selectedMessageKeys = emptyList()
+    val density = LocalDensity.current
+    val composerHostView = LocalView.current
+    var visibleKeyboardHeightPx by remember(composerHostView) { mutableIntStateOf(0) }
+    var visibleKeyboardPanelHeightPx by remember(composerHostView) { mutableIntStateOf(0) }
+    DisposableEffect(composerHostView) {
+        val root = composerHostView.rootView
+        val visibleFrame = AndroidRect()
+        val listener = ViewTreeObserver.OnGlobalLayoutListener {
+            root.getWindowVisibleDisplayFrame(visibleFrame)
+            val coveredHeight = (root.height - visibleFrame.bottom).coerceAtLeast(0)
+            // With adjustResize, most of the IME is removed from root.height
+            // before visible-frame measurement. The physical root delta keeps
+            // the emoji replacement equal to the real keyboard footprint.
+            val resizedRootHeight = (
+                root.resources.displayMetrics.heightPixels - root.height
+            ).coerceAtLeast(0)
+            val keyboardFootprint = maxOf(coveredHeight, resizedRootHeight)
+            // Ignore status/navigation-only changes. A keyboard surface is
+            // materially taller than 160dp on supported phone layouts.
+            if (keyboardFootprint >= with(density) { 160.dp.roundToPx() }) {
+                visibleKeyboardHeightPx = keyboardFootprint
+                // The visible frame already represents the exact footprint
+                // that the IME takes from this window.  Adding the navigation
+                // bar again makes the custom emoji panel taller than a real
+                // keyboard by one gesture-navigation inset (32–36 px here).
+                visibleKeyboardPanelHeightPx = keyboardFootprint
+            }
+        }
+        root.viewTreeObserver.addOnGlobalLayoutListener(listener)
+        onDispose {
+            root.viewTreeObserver.removeOnGlobalLayoutListener(listener)
+        }
     }
+    // Compose's insets can be consumed on Android 13 with adjustNothing.  The
+    // visible display frame above remains tied to the IME's actual footprint.
+    val imeBottomPx = WindowInsets.ime.getBottom(density)
+    val navBottomPx = WindowInsets.navigationBars.getBottom(density)
+    val imeBottomDp = with(density) { imeBottomPx.toDp() }
+    val navBottomDp = with(density) { navBottomPx.toDp() }
+    val visibleKeyboardHeightDp = with(density) { visibleKeyboardHeightPx.toDp() }
+    // Use the same window footprint measured while the IME was visible.  The
+    // value must not add system bars: they are already accounted for by the
+    // window's visible display frame.
+    val panelReservationDp = with(density) {
+        (visibleKeyboardPanelHeightPx.takeIf { it > 0 } ?: visibleKeyboardHeightPx).toDp()
+    }
+    val isKeyboardOpen = imeBottomPx > navBottomPx + with(density) { 20.dp.roundToPx() }
+    // Emoji is a keyboard replacement, not an extra bottom sheet. Cap its
+    // reservation to the active viewport and reuse the same value while the
+    // IME is returning so the composer cannot jump between the two surfaces.
+    // `screenHeightDp` follows the resized app window while the IME is present.
+    // Using it here caps emoji to that shrunken viewport and moves the composer
+    // between keyboard and emoji. DisplayMetrics keeps the physical screen bound.
+    val physicalScreenHeight = with(density) {
+        composerHostView.resources.displayMetrics.heightPixels.toDp()
+    }
+    val responsivePanelLimit = (physicalScreenHeight * if (isLandscape) 0.58f else 0.48f)
+        .coerceIn(180.dp, 420.dp)
+    val responsivePanelFallback = defaultKeyboardHeight.coerceIn(180.dp, responsivePanelLimit)
+    // Some adjustResize implementations only expose a navigation-sized inset.
+    // Keep the custom panel large enough to replace a phone keyboard even when
+    // that incomplete value is all the platform reports.
+    val emojiPanelMinimum = (physicalScreenHeight * if (isLandscape) 0.42f else 0.37f)
+        .coerceIn(180.dp, responsivePanelLimit)
+    val responsivePanelReservation = when {
+        panelReservationDp >= 160.dp -> panelReservationDp.coerceIn(180.dp, responsivePanelLimit)
+        isKeyboardOpen && imeBottomDp >= 160.dp -> imeBottomDp.coerceIn(180.dp, responsivePanelLimit)
+        else -> responsivePanelFallback
+    }
+    // This is geometry, not user state. Persisting it restores a stale IME
+    // height after process recreation or a density/orientation change.
+    var composerPanelHeightDp by remember(configuration.screenHeightDp, isLandscape) {
+        mutableStateOf(defaultKeyboardHeight.value)
+    }
+    var isSwitchingToKeyboard by remember { mutableStateOf(false) }
+    LaunchedEffect(isSwitchingToKeyboard) {
+        if (isSwitchingToKeyboard) {
+            // Run only after the emoji surface has left composition.  A fixed
+            // delay races that commit on slower frames and can leave the
+            // keyboard button visibly inert on alternating taps.
+            composerController.openKeyboard()
+        }
+    }
+    LaunchedEffect(
+        visibleKeyboardPanelHeightPx,
+        visibleKeyboardHeightPx,
+        imeBottomPx,
+        navBottomPx,
+        isKeyboardOpen,
+        responsivePanelReservation,
+    ) {
+        // On Android 13 with `adjustNothing`, Compose can transiently report a
+        // small navigation-like IME inset (~100dp) even though the keyboard is
+        // visibly full height.  Never let that partial value replace the
+        // portrait fallback; genuine full IME surfaces are substantially taller.
+        if (visibleKeyboardHeightDp.value >= 160f ||
+            (isKeyboardOpen && imeBottomDp.value >= 160f)
+        ) {
+            composerPanelHeightDp = responsivePanelReservation.value
+        }
+        if (isKeyboardOpen && isSwitchingToKeyboard) {
+            isSwitchingToKeyboard = false
+        }
+    }
+    val isPanelActive = emojiPanelVisible || isSwitchingToKeyboard
     BackHandler(enabled = emojiPanelVisible) {
         emojiPanelVisible = false
+    }
+    // Back handlers are dispatched in reverse composition order. Register
+    // selection after the composer panel so Back always leaves selection
+    // before it hides any lower-priority composer surface.
+    BackHandler(enabled = selectedMessageKeys.isNotEmpty()) {
+        dismissMessageInteraction()
     }
     var replyingTo by remember { mutableStateOf<Message?>(null) }
     var editingMessage by remember { mutableStateOf<Message?>(null) }
@@ -1466,6 +1622,11 @@ fun MessageDetailScreen(
     }
     val presentedMessageKeys = remember(state.conversationId) { mutableSetOf<String>() }
     val visibleMessageKeys = remember(state.messages) { state.messages.map(Message::stableKey) }
+    // Message-entry eligibility must remain stable while the composer changes.
+    // Re-reading wall time from every visible cell makes a typing recompose do
+    // unnecessary work and can make a just-arrived message change animation
+    // eligibility halfway through the same list snapshot.
+    val messageEntrySnapshotTime = remember(state.messages) { System.currentTimeMillis() }
     LaunchedEffect(visibleMessageKeys) {
         presentedMessageKeys.addAll(visibleMessageKeys)
     }
@@ -1526,7 +1687,7 @@ fun MessageDetailScreen(
                         actionIconContentColor = MaterialTheme.colorScheme.onPrimary,
                     ),
                     navigationIcon = {
-                        IconButton(onClick = { selectedMessageKeys = emptyList() }) {
+                        IconButton(onClick = ::dismissMessageInteraction) {
                             Icon(Icons.Default.Close, contentDescription = "خروج از انتخاب پیام")
                         }
                     },
@@ -1537,7 +1698,7 @@ fun MessageDetailScreen(
                                 enabled = selectedMessages.isNotEmpty(),
                                 onClick = {
                                     clipboard.setText(AnnotatedString(selectedMessages.joinToString("\n\n") { it.previewText() }))
-                                    selectedMessageKeys = emptyList()
+                                    dismissMessageInteraction()
                                 },
                             ) { Icon(Icons.Default.ContentCopy, contentDescription = "کپی پیام‌های انتخاب شده") }
                             IconButton(
@@ -1605,8 +1766,12 @@ fun MessageDetailScreen(
                     },
                 )
             } else {
+                // A fixed 56dp app bar clips the presence line at large font
+                // scales. Keep the compact default while reserving two lines
+                // when the user has requested an accessibility text size.
+                val conversationTopBarHeight = if (density.fontScale > 1.3f) 72.dp else 56.dp
                 TopAppBar(
-                    modifier = Modifier.height(56.dp),
+                    modifier = Modifier.height(conversationTopBarHeight),
                     title = {
                         Row(
                             modifier = Modifier
@@ -1710,36 +1875,19 @@ fun MessageDetailScreen(
             }
 
             if (state.pinnedMessages.isNotEmpty()) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(26.dp)
-                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.95f))
-                        .clickable {
-                            val pinned = state.pinnedMessages.first()
-                            val index = state.messages.indexOfFirst { message ->
-                                message.serverId != null && message.serverId == pinned.serverId ||
-                                    message.clientId == pinned.clientId
-                            }
-                            if (index >= 0) coroutineScope.launch { listState.animateScrollToItem(index) }
+                PinnedMessagesBar(
+                    pinnedMessages = state.pinnedMessages,
+                    onMessageClick = { pinned ->
+                        val index = state.messages.indexOfFirst { message ->
+                            message.serverId != null && message.serverId == pinned.serverId ||
+                                message.clientId == pinned.clientId
                         }
-                        .padding(horizontal = 16.dp),
-                ) {
-                    Icon(
-                        Icons.Default.PushPin,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(14.dp),
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        "${state.pinnedMessages.size} پیام پین شده",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.Medium,
-                    )
-                }
+                        if (index >= 0) coroutineScope.launch { listState.animateScrollToItem(index) }
+                    },
+                    onUnpinClick = { pinned ->
+                        onTogglePinned(pinned)
+                    },
+                )
             }
 
             if (state.connectionState == RealtimeConnectionState.RECONNECTING ||
@@ -1753,6 +1901,11 @@ fun MessageDetailScreen(
                     .weight(1f)
                     .fillMaxWidth(),
             ) {
+                val displayedMessages = if (searchVisible && state.searchResults.isNotEmpty()) {
+                    listOf(state.searchResults[searchResultIndex.coerceIn(0, state.searchResults.lastIndex)])
+                } else {
+                    state.messages
+                }
                 when {
                     state.isInitialLoading && state.messages.isEmpty() -> CircularProgressIndicator(Modifier.align(Alignment.Center))
                     state.error != null && state.messages.isEmpty() -> ErrorState(state.error, onRefresh)
@@ -1766,20 +1919,25 @@ fun MessageDetailScreen(
                         contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
                     ) {
                         itemsIndexed(
-                            if (searchVisible && state.searchResults.isNotEmpty()) {
-                                listOf(state.searchResults[searchResultIndex.coerceIn(0, state.searchResults.lastIndex)])
-                            } else state.messages,
+                            displayedMessages,
                             key = { _, message -> message.stableKey },
                             contentType = { _, message ->
                                 message.attachment?.kind?.name ?: "text"
                             },
                         ) { index, message ->
+                            val groupPosition = messageGroupPosition(
+                                messages = displayedMessages,
+                                index = index,
+                            )
                             val animateEntry = shouldAnimateMessageEntry(
                                 message = message,
                                 presentedMessageKeys = presentedMessageKeys,
-                                nowEpochMillis = System.currentTimeMillis(),
+                                nowEpochMillis = messageEntrySnapshotTime,
                             )
                             SwipeToReplyLayout(
+                                enabled = messageInteraction is MessageInteractionState.Idle &&
+                                    message.content != MessageContent.Deleted,
+                                bubbleOnRight = message.isMine,
                                 onReply = {
                                     replyingTo = message
                                     editingMessage = null
@@ -1787,6 +1945,9 @@ fun MessageDetailScreen(
                             ) {
                                 MessageBubble(
                                     message = message,
+                                    searchQuery = state.searchQuery.takeIf {
+                                        searchVisible && it.trim().length >= 2
+                                    },
                                     onRetry = onRetry,
                                     onCancelTransfer = onCancelTransfer,
                                     downloadTask = state.downloads[message.serverId ?: message.clientId],
@@ -1797,32 +1958,20 @@ fun MessageDetailScreen(
                                     selectionMode = selectedMessageKeys.isNotEmpty(),
                                     selected = message.stableKey in selectedMessageKeys,
                                     onToggleSelection = {
-                                        selectedMessageKeys = if (message.stableKey in selectedMessageKeys) {
-                                            selectedMessageKeys - message.stableKey
-                                        } else {
-                                            selectedMessageKeys + message.stableKey
+                                        toggleMessageSelection(message.stableKey)
+                                    },
+                                    onLongPress = {
+                                        if (messageInteraction is MessageInteractionState.Idle &&
+                                            message.content != MessageContent.Deleted
+                                        ) {
+                                            startSelection(message.stableKey)
                                         }
                                     },
-                                    onOpenContextMenu = { bounds ->
-                                        if (message.content != MessageContent.Deleted) {
-                                            selectedMessage = message
-                                            selectedMessageBubbleBounds = bounds
-                                        }
-                                    },
-                                    onLongPress = { bounds ->
-                                        if (message.content != MessageContent.Deleted) {
-                                            if (selectedMessageKeys.isNotEmpty()) {
-                                                selectedMessageKeys = if (message.stableKey in selectedMessageKeys) {
-                                                    selectedMessageKeys - message.stableKey
-                                                } else {
-                                                    selectedMessageKeys + message.stableKey
-                                                }
-                                            } else {
-                                                // Enter selection immediately. This is the reliable
-                                                // Telegram-style first long-press contract and keeps
-                                                // a second tap available for multi-select.
-                                                selectedMessageKeys = listOf(message.stableKey)
-                                            }
+                                    onOpenContextMenu = { bubbleBounds ->
+                                        if (messageInteraction is MessageInteractionState.Idle &&
+                                            message.content != MessageContent.Deleted
+                                        ) {
+                                            openMessageContext(message.stableKey, bubbleBounds)
                                         }
                                     },
                                     onReply = {
@@ -1831,10 +1980,28 @@ fun MessageDetailScreen(
                                     },
                                     onReact = { emoji -> onReact(message, emoji) },
                                     animateEntry = animateEntry,
+                                    isFirstInGroup = groupPosition.isFirstInGroup,
+                                    isLastInGroup = groupPosition.isLastInGroup,
                                     onAttachmentClick = { viewedAttachment = it },
+                                    onJumpToRepliedMessage = {
+                                        val targetIndex = state.messages.indexOfFirst { msg ->
+                                            (msg.serverId != null && msg.serverId == message.replyToMessageId) ||
+                                                (msg.clientId.isNotBlank() && msg.clientId == message.replyToMessageId) ||
+                                                (msg.content is MessageContent.Text && (msg.content as MessageContent.Text).value == message.replyToContent)
+                                        }
+                                        if (targetIndex >= 0) {
+                                            coroutineScope.launch { listState.animateScrollToItem(targetIndex) }
+                                        }
+                                    },
                                 )
                             }
                             val older = if (searchVisible) null else state.messages.getOrNull(index + 1)
+                            val isUnreadBoundary = !searchVisible &&
+                                !message.isMine && message.status != MessageStatus.READ &&
+                                (older == null || older.isMine || older.status == MessageStatus.READ)
+                            if (isUnreadBoundary) {
+                                UnreadMessagesDivider()
+                            }
                             if (older != null && !isSameLocalDay(message.createdAtEpochMillis, older.createdAtEpochMillis)) {
                                 DateDivider(message.createdAtEpochMillis)
                             }
@@ -1974,9 +2141,14 @@ fun MessageDetailScreen(
                 onAttach = { attachmentSheetVisible = true },
                 onEmoji = {
                     if (emojiPanelVisible) {
+                        isSwitchingToKeyboard = true
                         emojiPanelVisible = false
-                        composerController.openKeyboard()
                     } else {
+                        // Do not leave the BasicTextField focused beneath the
+                        // panel: Gboard may otherwise immediately re-show and
+                        // consume the same interaction as a text edit.
+                        focusManager.clearFocus(force = true)
+                        isSwitchingToKeyboard = false
                         emojiPanelVisible = true
                         composerController.closeKeyboard()
                     }
@@ -1984,6 +2156,7 @@ fun MessageDetailScreen(
                 isEmojiPanelOpen = emojiPanelVisible,
                 onFocusText = {
                     if (emojiPanelVisible) {
+                        isSwitchingToKeyboard = true
                         emojiPanelVisible = false
                     }
                 },
@@ -2017,9 +2190,15 @@ fun MessageDetailScreen(
                     }
                 )
             }
-            if (emojiPanelVisible) {
-                Box(Modifier.height(defaultKeyboardHeight)) {
-                    TelegramXMediaPanel(
+            if (isPanelActive) {
+                val panelHeight = if (emojiPanelVisible) {
+                    composerPanelHeightDp.dp.coerceAtLeast(emojiPanelMinimum)
+                } else {
+                    composerPanelHeightDp.dp
+                }
+                Box(Modifier.height(panelHeight)) {
+                    if (emojiPanelVisible) {
+                        TelegramXMediaPanel(
                             modifier = Modifier.fillMaxSize(),
                             gifs = state.gifs,
                             query = state.gifQuery,
@@ -2041,15 +2220,15 @@ fun MessageDetailScreen(
                                 composerController.insertEmoji(sticker)
                             },
                         )
+                    }
                 }
+            } else if (isKeyboardOpen) {
+                // Keep the same reserved footprint that the emoji surface uses.
+                // WindowInsets can change by the navigation-bar height while the
+                // IME animates; using it directly here makes the text box jump.
+                Spacer(Modifier.height(composerPanelHeightDp.dp))
             } else {
-                // Read IME progress during layout only. Reading it at the screen
-                // level recomposed every message bubble on every keyboard frame.
-                Spacer(
-                    Modifier.windowInsetsBottomHeight(
-                        WindowInsets.ime.union(WindowInsets.navigationBars),
-                    ),
-                )
+                Spacer(Modifier.height(navBottomDp))
             }
             }
         }
@@ -2069,52 +2248,53 @@ fun MessageDetailScreen(
         }
     }
 
-    selectedMessage?.let { message ->
-        TelegramMessageContextMenu(
+    (messageInteraction as? MessageInteractionState.Context)?.let { contextInteraction ->
+        val message = state.messages.firstOrNull { it.stableKey == contextInteraction.messageKey }
+        if (message == null) {
+            LaunchedEffect(contextInteraction.messageKey) {
+                dismissMessageInteraction()
+            }
+            return@let
+        }
+        MessageContextMenu(
             message = message,
-            bubbleBounds = selectedMessageBubbleBounds,
-            onDismiss = {
-                selectedMessage = null
-                selectedMessageBubbleBounds = null
-            },
+            bubbleBounds = contextInteraction.bubbleBounds,
+            capabilities = MessageContextCapabilities(
+                conversationType = state.conversation?.type ?: ConversationType.PRIVATE,
+                allowsPinning = state.conversation?.type != ConversationType.GROUP ||
+                    state.groupInfo?.isAdmin == true,
+            ),
+            onDismiss = ::dismissMessageInteraction,
             onReact = { emoji ->
                 onReact(message, emoji)
-                selectedMessage = null
-                selectedMessageBubbleBounds = null
+                dismissMessageInteraction()
             },
             onReply = {
                 replyingTo = message
                 editingMessage = null
-                selectedMessage = null
-                selectedMessageBubbleBounds = null
+                dismissMessageInteraction()
             },
             onCopy = {
                 clipboard.setText(AnnotatedString(message.previewText()))
-                selectedMessage = null
-                selectedMessageBubbleBounds = null
+                dismissMessageInteraction()
                 coroutineScope.launch {
                     snackbarHostState.showSnackbar("متن در حافظه کپی شد")
                 }
             },
             onForward = {
                 forwardingMessage = message
-                selectedMessage = null
-                selectedMessageBubbleBounds = null
+                dismissMessageInteraction()
             },
             onSelect = {
-                selectedMessageKeys = listOf(message.stableKey)
-                selectedMessage = null
-                selectedMessageBubbleBounds = null
+                startSelection(message.stableKey)
             },
             onInfo = {
                 infoMessage = message
-                selectedMessage = null
-                selectedMessageBubbleBounds = null
+                dismissMessageInteraction()
             },
             onTogglePinned = {
                 onTogglePinned(message)
-                selectedMessage = null
-                selectedMessageBubbleBounds = null
+                dismissMessageInteraction()
             },
             onEdit = {
                 editingMessage = message
@@ -2122,13 +2302,11 @@ fun MessageDetailScreen(
                 val text = message.previewText()
                 composer = text
                 composerValue = TextFieldValue(text, TextRange(text.length))
-                selectedMessage = null
-                selectedMessageBubbleBounds = null
+                dismissMessageInteraction()
             },
             onDelete = {
                 deletingMessage = message
-                selectedMessage = null
-                selectedMessageBubbleBounds = null
+                dismissMessageInteraction()
             },
         )
     }
@@ -2151,7 +2329,7 @@ fun MessageDetailScreen(
             onSelect = { target ->
                 forwardingMessages.forEach { onForward(it, target.id) }
                 forwardingMessages = emptyList()
-                selectedMessageKeys = emptyList()
+                dismissMessageInteraction()
             },
         )
     }
@@ -2175,7 +2353,7 @@ fun MessageDetailScreen(
             onDelete = { forEveryone ->
                 deletingMessages.forEach { onDelete(it, forEveryone) }
                 deletingMessages = emptyList()
-                selectedMessageKeys = emptyList()
+                dismissMessageInteraction()
             },
         )
     }
@@ -2243,6 +2421,7 @@ fun MessageDetailScreen(
 @Composable
 private fun MessageBubble(
     message: Message,
+    searchQuery: String? = null,
     onRetry: (Message) -> Unit,
     onCancelTransfer: (Message) -> Unit,
     downloadTask: DownloadTask? = null,
@@ -2253,12 +2432,15 @@ private fun MessageBubble(
     selectionMode: Boolean = false,
     selected: Boolean = false,
     onToggleSelection: () -> Unit = {},
+    onLongPress: () -> Unit = {},
     onOpenContextMenu: (Rect?) -> Unit = {},
-    onLongPress: (Rect?) -> Unit = {},
     onReply: () -> Unit,
     onReact: (String) -> Unit = {},
     animateEntry: Boolean = false,
+    isFirstInGroup: Boolean = true,
+    isLastInGroup: Boolean = true,
     onAttachmentClick: (ir.coffevista.vista_native.features.chat.domain.model.Attachment) -> Unit,
+    onJumpToRepliedMessage: () -> Unit = {},
 ) {
     val isDeleted = message.content == MessageContent.Deleted
     val text = when (val content = message.content) {
@@ -2273,6 +2455,7 @@ private fun MessageBubble(
         append(statusDescription(message.status))
     }
     val density = LocalDensity.current
+    var bubbleBounds by remember(message.stableKey) { mutableStateOf<Rect?>(null) }
     val chatEntryMode = LocalChatEntryMode.current
     val entryProgress = if (animateEntry && chatEntryMode != "off") {
         val progress by animateFloatAsState(
@@ -2302,20 +2485,20 @@ private fun MessageBubble(
             ),
         horizontalArrangement = if (message.isMine) Arrangement.Start else Arrangement.End,
     ) {
+            val cornerRounding = messageBubbleCornerRounding(
+                isMine = message.isMine,
+                groupPosition = MessageGroupPosition(isFirstInGroup, isLastInGroup),
+            )
             val shape = AbsoluteRoundedCornerShape(
-                topLeft = 18.dp,
-                topRight = 18.dp,
-                bottomLeft = if (message.isMine) 18.dp else 6.dp,
-                bottomRight = if (message.isMine) 6.dp else 18.dp,
+                topLeft = if (cornerRounding.topLeft) 18.dp else 6.dp,
+                topRight = if (cornerRounding.topRight) 18.dp else 6.dp,
+                bottomLeft = if (cornerRounding.bottomLeft) 18.dp else 6.dp,
+                bottomRight = if (cornerRounding.bottomRight) 18.dp else 6.dp,
             )
             val screenWidth = LocalConfiguration.current.screenWidthDp.dp
-            // This is read only when the long-press menu opens. It must not be
-            // Compose state: item coordinates change on every scroll/IME layout.
-            val bubbleCoordinates = remember { arrayOfNulls<LayoutCoordinates>(1) }
             val base = Modifier
                 .widthIn(min = 60.dp, max = screenWidth * 0.82f)
                 .clip(shape)
-                .onGloballyPositioned { bubbleCoordinates[0] = it }
                 .combinedClickable(
                     onClick = {
                         if (isDeleted) return@combinedClickable
@@ -2338,28 +2521,96 @@ private fun MessageBubble(
                                 onResumeDownload(task.messageId)
                             attachment?.transferState == TransferState.COMPLETE && !attachment.remoteUrl.isNullOrBlank() ->
                                 onStartDownload(message)
-                            else -> onOpenContextMenu(bubbleCoordinates[0]?.boundsInWindow())
+                            // Text payloads have no direct primary action.
+                            // One tap opens the already permission-gated
+                            // contextual surface; media/retry transfers keep
+                            // their established direct interactions above.
+                            else -> onOpenContextMenu(bubbleBounds)
                         }
                     },
-                    onLongClick = { onLongPress(bubbleCoordinates[0]?.boundsInWindow()) },
+                    onLongClick = { onLongPress() },
                 )
                 .semantics { contentDescription = description }
-            if (selectionMode) {
-                Checkbox(
-                    checked = selected,
-                    onCheckedChange = { onToggleSelection() },
-                    modifier = Modifier.padding(horizontal = 4.dp),
-                )
-            }
-            Column(
-                modifier = (if (message.isMine) {
-                    base.background(Brush.linearGradient(listOf(VistaBrandColors.Indigo, VistaBrandColors.VioletDeep)))
-                } else {
-                    base.background(MaterialTheme.colorScheme.surfaceVariant)
-                }).then(
-                    if (selected) Modifier.background(MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)) else Modifier
-                ).padding(start = 12.dp, top = 8.dp, end = 12.dp, bottom = 6.dp),
-            ) {
+            Box(Modifier.fillMaxWidth()) {
+                if (selectionMode) {
+                    val selectionIndicatorColor by animateColorAsState(
+                        targetValue = if (selected) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                        },
+                        animationSpec = tween(durationMillis = 120),
+                        label = "message-selection-indicator",
+                    )
+                    IconButton(
+                        onClick = onToggleSelection,
+                        modifier = Modifier
+                            .align(Alignment.CenterStart)
+                            // The message row keeps asymmetric outer padding so bubbles sit
+                            // against their physical side. Compensate that padding here: the
+                            // selection rail must stay at one fixed screen coordinate for both
+                            // outgoing and incoming messages.
+                            .absoluteOffset(x = if (message.isMine) (-6).dp else 0.dp)
+                            .size(48.dp)
+                            .testTag("message-selection-checkbox:${message.stableKey}")
+                            .semantics {
+                                contentDescription = if (selected) {
+                                    "پیام انتخاب شده، لغو انتخاب"
+                                } else {
+                                    "انتخاب پیام"
+                                }
+                            },
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(22.dp)
+                                .clip(CircleShape)
+                                .border(1.5.dp, selectionIndicatorColor, CircleShape)
+                                .background(
+                                    if (selected) selectionIndicatorColor else Color.Transparent,
+                                    CircleShape,
+                                ),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            if (selected) {
+                                Icon(
+                                    imageVector = Icons.Default.Done,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onPrimary,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                            }
+                        }
+                    }
+                }
+                Column(
+                    modifier = Modifier
+                        // This screen is RTL, where logical End resolves to the
+                        // physical left edge. Message ownership, however, has a
+                        // product-level physical contract: our messages are on
+                        // the right and peer messages are on the left.
+                        .align(
+                            if (message.isMine) {
+                                AbsoluteAlignment.CenterRight
+                            } else {
+                                AbsoluteAlignment.CenterLeft
+                            },
+                        )
+                        // Keep the selection rail outside the bubble background so it
+                        // stays visually and physically fixed for both senders.
+                        .padding(start = if (selectionMode) 48.dp else 0.dp)
+                        .then(if (message.isMine) {
+                            base.background(Brush.linearGradient(listOf(VistaBrandColors.Indigo, VistaBrandColors.VioletDeep)))
+                        } else {
+                            base.background(MaterialTheme.colorScheme.surfaceVariant)
+                        }).then(
+                        if (selected) Modifier.background(MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)) else Modifier
+                    )
+                        .padding(start = 12.dp, top = 8.dp, end = 12.dp, bottom = 6.dp)
+                        .onGloballyPositioned { coordinates ->
+                            bubbleBounds = coordinates.boundsInWindow()
+                        },
+                ) {
                 if (!isDeleted && message.isForwarded) {
                     Row(
                         Modifier.padding(bottom = 4.dp),
@@ -2381,12 +2632,36 @@ private fun MessageBubble(
                     }
                 }
                 if (!isDeleted && !message.replyToContent.isNullOrBlank()) {
-                    Row(Modifier.padding(bottom = 6.dp)) {
-                        Box(Modifier.width(2.dp).height(36.dp).clip(RoundedCornerShape(2.dp)).background(MaterialTheme.colorScheme.primary))
+                    Row(
+                        modifier = Modifier
+                            .padding(bottom = 6.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                            .clickable(onClick = onJumpToRepliedMessage)
+                            .padding(vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(
+                            Modifier
+                                .width(3.dp)
+                                .height(32.dp)
+                                .clip(RoundedCornerShape(1.5.dp))
+                                .background(if (message.isMine) Color.White.copy(alpha = 0.85f) else MaterialTheme.colorScheme.primary)
+                        )
                         Spacer(Modifier.width(8.dp))
                         Column {
-                            Text("پاسخ به", color = if (message.isMine) Color.White else MaterialTheme.colorScheme.primary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                            Text(message.replyToContent, maxLines = 1, overflow = TextOverflow.Ellipsis, color = if (message.isMine) Color.White.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                            Text(
+                                "پاسخ به",
+                                color = if (message.isMine) Color.White.copy(alpha = 0.9f) else MaterialTheme.colorScheme.primary,
+                                fontSize = 10.5.sp,
+                                fontWeight = FontWeight.Bold,
+                            )
+                            Text(
+                                message.replyToContent,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                color = if (message.isMine) Color.White.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 12.sp,
+                            )
                         }
                     }
                 }
@@ -2403,40 +2678,71 @@ private fun MessageBubble(
                     )
                     if (text.isNotBlank()) Spacer(Modifier.height(6.dp))
                 }
-                if (text.isNotBlank()) {
-                    TelegramEmojiText(
-                        text = text,
-                        style = TextStyle(
-                            color = if (message.isMine) Color.White else MaterialTheme.colorScheme.onSurface,
-                            fontSize = 14.5.sp,
-                            lineHeight = 21.75.sp,
-                            textDirection = resolveMessageTextDirection(text),
-                        ),
-                        emojiSize = 18.dp,
-                    )
+                val messageTextDir = resolveMessageTextDirection(text)
+                val isRtlMessage = messageTextDir == androidx.compose.ui.text.style.TextDirection.Rtl ||
+                    messageTextDir == androidx.compose.ui.text.style.TextDirection.ContentOrRtl
+
+                val metaFooter: @Composable () -> Unit = {
+                    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (message.editedAtEpochMillis != null) {
+                                Text(
+                                    "ویرایش شده",
+                                    color = if (message.isMine) Color.White.copy(alpha = 0.55f) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                                    fontSize = 10.sp,
+                                    fontStyle = FontStyle.Italic,
+                                )
+                                Spacer(Modifier.width(4.dp))
+                            }
+                            Text(
+                                formatTime(message.createdAtEpochMillis),
+                                color = if (message.isMine) Color.White.copy(alpha = 0.7f) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                                fontSize = 11.sp,
+                            )
+                            if (message.isMine) {
+                                Spacer(Modifier.width(3.dp))
+                                MessageStatusMark(message.status)
+                            }
+                        }
+                    }
                 }
-                Spacer(Modifier.height(2.dp))
-                CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-                    Row(Modifier.align(Alignment.End), verticalAlignment = Alignment.CenterVertically) {
-                    if (message.editedAtEpochMillis != null) {
-                        Text(
-                            "ویرایش شده",
-                            color = if (message.isMine) Color.White.copy(alpha = 0.55f) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-                            fontSize = 10.sp,
-                            fontStyle = FontStyle.Italic,
-                        )
-                        Spacer(Modifier.width(4.dp))
-                    }
-                    Text(
-                        formatTime(message.createdAtEpochMillis),
-                        color = if (message.isMine) Color.White.copy(alpha = 0.7f) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                        fontSize = 11.sp,
+
+                if (text.isNotBlank()) {
+                    ChatTextBubbleLayout(
+                        text = {
+                            TelegramEmojiText(
+                                text = text,
+                                style = TextStyle(
+                                    color = if (message.isMine) Color.White else MaterialTheme.colorScheme.onSurface,
+                                    fontSize = 14.5.sp,
+                                    lineHeight = 21.75.sp,
+                                    textDirection = messageTextDir,
+                                ),
+                                emojiSize = 18.dp,
+                                highlightQuery = searchQuery,
+                                highlightColor = if (message.isMine) {
+                                    Color.White.copy(alpha = 0.32f)
+                                } else {
+                                    VistaBrandColors.Indigo.copy(alpha = 0.28f)
+                                },
+                            )
+                        },
+                        footer = metaFooter,
+                        layoutDirection = if (isRtlMessage) LayoutDirection.Rtl else LayoutDirection.Ltr,
                     )
-                    if (message.isMine) {
-                        Spacer(Modifier.width(3.dp))
-                        MessageStatusMark(message.status)
+                } else {
+                    Box(Modifier.align(if (isRtlMessage) Alignment.Start else Alignment.End)) {
+                        metaFooter()
                     }
-                    }
+                }
+                val previewUrl = remember(text) { if (!isDeleted && text.isNotBlank()) extractFirstUrl(text) else null }
+                if (previewUrl != null) {
+                    Spacer(Modifier.height(6.dp))
+                    ChatLinkPreviewCard(
+                        url = previewUrl,
+                        isMine = message.isMine,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
                 }
                 AnimatedContent(
                     targetState = if (isDeleted) emptyMap() else message.reactions,
@@ -2467,23 +2773,30 @@ private fun MessageBubble(
                                     animationSpec = tween(180),
                                     label = "reaction-color",
                                 )
-                                Text(
-                                    "${reaction.key} ${reaction.value.size}",
+                                Row(
                                     modifier = Modifier
                                         .graphicsLayer { scaleX = chipScale; scaleY = chipScale }
                                         .clip(RoundedCornerShape(12.dp))
                                         .background(chipColor)
                                         .clickable(role = Role.Button) { onReact(reaction.key) }
                                         .padding(horizontal = 7.dp, vertical = 2.dp),
-                                    fontSize = 11.sp,
-                                    color = if (message.isMine) Color.White else MaterialTheme.colorScheme.onSurface,
-                                )
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(3.dp),
+                                ) {
+                                    TelegramEmoji(emoji = reaction.key, size = 13.dp)
+                                    Text(
+                                        "${reaction.value.size}",
+                                        fontSize = 11.sp,
+                                        color = if (message.isMine) Color.White else MaterialTheme.colorScheme.onSurface,
+                                    )
+                                }
                             }
                         }
                     }
                 }
             }
         }
+    }
 }
 
 @Composable
@@ -2607,7 +2920,7 @@ private fun GroupDetailsSheet(
                     if (info?.isAdmin == true) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text("فعال", modifier = Modifier.weight(1f))
-                            Switch(
+                            ir.coffevista.vista_native.core.designsystem.component.VistaSwitch(
                                 checked = info.inviteEnabled,
                                 onCheckedChange = onSetInviteEnabled,
                                 enabled = !state.isGroupLoading,
@@ -3408,7 +3721,7 @@ private fun Composer(
     value: TextFieldValue,
     isBlank: Boolean,
     isNotBlank: Boolean,
-    controller: TelegramComposerController,
+    controller: ChatComposerController,
     onValueChange: (TextFieldValue) -> Unit,
     onSend: () -> Unit,
     onAttach: () -> Unit,
@@ -3426,7 +3739,10 @@ private fun Composer(
 
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
         Row(
-            Modifier.fillMaxWidth().padding(start = 6.dp, end = 6.dp, top = 2.dp, bottom = 8.dp),
+            Modifier
+                .fillMaxWidth()
+                .testTag("chat-composer-surface")
+                .padding(start = 6.dp, end = 6.dp, top = 2.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
@@ -3462,7 +3778,12 @@ private fun Composer(
                             Icon(Icons.Default.AttachFile, contentDescription = "پیوست فایل", modifier = Modifier.size(22.dp))
                         }
                     }
-                    IconButton(onClick = onEmoji, modifier = Modifier.size(34.dp)) {
+                    IconButton(
+                        onClick = onEmoji,
+                        modifier = Modifier
+                            .size(40.dp)
+                            .zIndex(1f),
+                    ) {
                         Icon(
                             if (isEmojiPanelOpen) Icons.Default.Keyboard else Icons.Default.EmojiEmotions,
                             contentDescription = if (isEmojiPanelOpen) "صفحه‌کلید" else "شکلک‌ها",
@@ -3471,7 +3792,7 @@ private fun Composer(
                     }
                     Box(Modifier.weight(1f)) {
                         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
-                            TelegramComposerField(
+                            ChatComposerField(
                                 value = value,
                                 onValueChange = onValueChange,
                                 onFocusText = onFocusText,
@@ -4293,6 +4614,16 @@ private fun PartnerDetailsScreen(
                         5 -> Icons.Default.EmojiEmotions
                         else -> Icons.Default.Group
                     }
+                    val emptyText = when (selectedTabIndex) {
+                        0 -> "هیچ پست‌هایی یافت نشد"
+                        1 -> "هیچ رسانه‌ای یافت نشد"
+                        2 -> "هیچ فایلی یافت نشد"
+                        3 -> "هیچ لینکی یافت نشد"
+                        4 -> "هیچ صدایی یافت نشد"
+                        5 -> "هیچ گیفی یافت نشد"
+                        6 -> "هیچ گروه مشترکی یافت نشد"
+                        else -> "هیچ موردی یافت نشد"
+                    }
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Icon(
                             imageVector = icon,
@@ -4302,16 +4633,16 @@ private fun PartnerDetailsScreen(
                         )
                         Spacer(Modifier.height(16.dp))
                         Text(
-                            text = "هیچ ${tabs[selectedTabIndex]}‌ای یافت نشد",
+                            text = emptyText,
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
                             fontSize = 16.sp,
                         )
                     }
                 }
-                }
             }
         }
     }
+}
 
     if (blockConfirmVisible) {
         val blocked = state.blockStatus?.isBlocked == true

@@ -229,6 +229,19 @@ private fun PasswordScreen(
             enabled = !state.isLoading,
             onClick = { onAction(AuthAction.Submit) },
         )
+        if (!state.isRegistering) {
+            Spacer(Modifier.height(12.dp))
+            TextButton(
+                onClick = { onAction(AuthAction.ForgotPassword) },
+                enabled = !state.isLoading,
+            ) {
+                Text(
+                    text = "فراموشی رمز عبور؟",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = VistaBrandColors.Indigo,
+                )
+            }
+        }
         state.errorMessage?.let {
             Spacer(Modifier.height(16.dp))
             AuthInlineError(it)

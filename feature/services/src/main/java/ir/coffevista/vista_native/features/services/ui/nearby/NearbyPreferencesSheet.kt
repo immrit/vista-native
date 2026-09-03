@@ -122,16 +122,12 @@ fun NearbyPreferencesSheet(
                             ),
                         )
                     }
-                    Switch(
+                    ir.coffevista.vista_native.core.designsystem.component.VistaSwitch(
                         checked = currentPrefs.isEnabled,
                         onCheckedChange = { enabled ->
                             currentPrefs = currentPrefs.copy(isEnabled = enabled)
                             onToggleEnable(enabled)
                         },
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = Color.White,
-                            checkedTrackColor = VistaBrandColors.Indigo,
-                        ),
                     )
                 }
             }

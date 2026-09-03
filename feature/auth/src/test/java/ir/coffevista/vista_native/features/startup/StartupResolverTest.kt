@@ -260,6 +260,16 @@ private class FakeSessionStore(
         session = session?.copy(passwordRequired = false)
     }
 
+    override fun markProfileCompleted() {
+        session = session?.copy(profileCompleted = true)
+    }
+
+    override fun isBiometricEnabled(): Boolean = session?.biometricEnabled == true
+
+    override fun setBiometricEnabled(enabled: Boolean) {
+        session = session?.copy(biometricEnabled = enabled)
+    }
+
     override fun clear() {
         clearCalls += 1
         session = null
@@ -296,6 +306,14 @@ private class FakeAuthRepository(
         accessToken: String,
         password: String,
     ): Outcome<Unit> = error("unused")
+
+    override suspend fun recoveryOptions(identifier: String) = error("unused")
+
+    override suspend fun sendRecoveryCode(optionId: String) = error("unused")
+
+    override suspend fun verifyRecoveryCode(optionId: String, code: String) = error("unused")
+
+    override suspend fun completeRecovery(token: String, newPassword: String) = error("unused")
 
     override suspend fun refresh(refreshToken: String): Outcome<AuthPayload> {
         refreshCalls += 1

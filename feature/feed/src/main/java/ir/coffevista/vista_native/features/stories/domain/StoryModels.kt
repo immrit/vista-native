@@ -142,6 +142,16 @@ data class UserStoriesResponseDto(
 )
 
 @Serializable
+data class FollowingStoryUsersResponseDto(
+    val profiles: List<StoryUser> = emptyList(),
+)
+
+@Serializable
+data class CloseFriendsUpdateRequestDto(
+    @SerialName("friend_ids") val friendIds: List<String>,
+)
+
+@Serializable
 data class CreateStoryRequestDto(
     @SerialName("media_url") val mediaUrl: String,
     @SerialName("media_type") val mediaType: String,

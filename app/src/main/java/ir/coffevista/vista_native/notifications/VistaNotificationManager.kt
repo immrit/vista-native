@@ -36,6 +36,8 @@ class VistaNotificationManager @Inject constructor(
         const val EXTRA_PEER_ID = "peer_id"
         const val EXTRA_POST_ID = "post_id"
         const val EXTRA_STORY_ID = "story_id"
+        const val EXTRA_USER_ID = "user_id"
+        const val EXTRA_COMMENT_ID = "comment_id"
 
         const val TYPE_CHAT = "chat"
         const val TYPE_POST = "post"
@@ -121,7 +123,7 @@ class VistaNotificationManager @Inject constructor(
         )
 
         val builder = NotificationCompat.Builder(context, CHANNEL_CHAT_MESSAGES)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(senderName)
             .setContentText(messageText)
             .setStyle(NotificationCompat.BigTextStyle().bigText(messageText))
@@ -147,6 +149,8 @@ class VistaNotificationManager @Inject constructor(
         body: String,
         postId: String? = null,
         storyId: String? = null,
+        userId: String? = null,
+        commentId: String? = null,
     ) {
         val intent = Intent(context, MainActivity::class.java).apply {
             action = Intent.ACTION_VIEW
@@ -160,6 +164,8 @@ class VistaNotificationManager @Inject constructor(
             } else {
                 putExtra(EXTRA_NOTIFICATION_TYPE, TYPE_SOCIAL)
             }
+            userId?.let { putExtra(EXTRA_USER_ID, it) }
+            commentId?.let { putExtra(EXTRA_COMMENT_ID, it) }
         }
 
         val pendingIntent = PendingIntent.getActivity(
@@ -170,7 +176,7 @@ class VistaNotificationManager @Inject constructor(
         )
 
         val builder = NotificationCompat.Builder(context, CHANNEL_SOCIAL_NOTIFY)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))

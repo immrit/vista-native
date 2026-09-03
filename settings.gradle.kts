@@ -28,13 +28,23 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "vista_native"
-include(":app")
+val skipDataStoreForChatValidation =
+    providers.gradleProperty("vista.skipDatastoreForChatValidation").orNull == "true"
+
+if (!skipDataStoreForChatValidation) {
+    include(":app")
+}
 include(":core:common")
 include(":core:designsystem")
 include(":core:model")
 include(":core:network")
 include(":core:database")
-include(":core:datastore")
+// The isolated chat instrumentation target has no dependency on DataStore.
+// Keep the production graph unchanged by default, but allow that focused test
+// to run while the independent protobuf configuration regression is repaired.
+if (!skipDataStoreForChatValidation) {
+    include(":core:datastore")
+}
 include(":core:security")
 include(":core:testing")
 include(":core:worker")

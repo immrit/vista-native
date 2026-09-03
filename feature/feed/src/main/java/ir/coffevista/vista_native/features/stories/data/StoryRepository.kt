@@ -1,6 +1,7 @@
 package ir.coffevista.vista_native.features.stories.data
 
 import ir.coffevista.vista_native.features.stories.domain.CreateStoryRequestDto
+import ir.coffevista.vista_native.features.stories.domain.CloseFriendsUpdateRequestDto
 import ir.coffevista.vista_native.features.stories.domain.Story
 import ir.coffevista.vista_native.features.stories.domain.StoryReactRequestDto
 import ir.coffevista.vista_native.features.stories.domain.StoryReplyRequestDto
@@ -48,6 +49,18 @@ class StoryRepository internal constructor(
         } catch (e: Exception) {
             Result.failure(e)
         }
+    }
+
+    suspend fun getFollowingUsers(userId: String): Result<List<StoryUser>> = withContext(ioDispatcher) {
+        runCatching { api.getFollowingUsers(userId).profiles }
+    }
+
+    suspend fun getCloseFriendIds(): Result<List<String>> = withContext(ioDispatcher) {
+        runCatching { api.getCloseFriends() }
+    }
+
+    suspend fun updateCloseFriends(friendIds: List<String>): Result<Unit> = withContext(ioDispatcher) {
+        runCatching { api.updateCloseFriends(CloseFriendsUpdateRequestDto(friendIds.distinct())) }
     }
 
     suspend fun createStory(request: CreateStoryRequestDto): Result<Story> = withContext(ioDispatcher) {

@@ -18,6 +18,7 @@ import androidx.navigation.compose.rememberNavController
 import ir.coffevista.vista_native.R
 import ir.coffevista.vista_native.features.auth.AuthScreen
 import ir.coffevista.vista_native.features.auth.AuthViewModel
+import ir.coffevista.vista_native.features.auth.BiometricLoginScreen
 import ir.coffevista.vista_native.features.chat.domain.repository.ChatRepository
 import ir.coffevista.vista_native.features.chat.presentation.ConversationListRoute
 import ir.coffevista.vista_native.features.chat.presentation.MessageDetailRoute
@@ -29,7 +30,10 @@ import ir.coffevista.vista_native.features.feed.data.FeedPost
 import ir.coffevista.vista_native.features.feed.data.FeedRepository
 import ir.coffevista.vista_native.features.feed.ui.CommentsViewModel
 import ir.coffevista.vista_native.features.feed.ui.FeedScreen
+import ir.coffevista.vista_native.features.feed.ui.FeedViewModel
+import ir.coffevista.vista_native.features.feed.ui.NotificationsScreen
 import ir.coffevista.vista_native.features.feed.ui.PostDetailScreen
+import ir.coffevista.vista_native.features.feed.ui.PostDetailViewModel
 import ir.coffevista.vista_native.features.feed.ui.ProfilePostsViewModel
 import ir.coffevista.vista_native.features.profile.ui.OtherUserProfileScreen
 import ir.coffevista.vista_native.features.profile.ui.OwnProfileScreen
@@ -66,6 +70,7 @@ import ir.coffevista.vista_native.features.shell.VistaShell
 import ir.coffevista.vista_native.features.onboarding.OnboardingSlide
 import ir.coffevista.vista_native.features.onboarding.OnboardingScreen
 import ir.coffevista.vista_native.features.onboarding.OnboardingViewModel
+import ir.coffevista.vista_native.features.startup.BannedScreen
 import ir.coffevista.vista_native.features.startup.MaintenanceScreen
 import ir.coffevista.vista_native.features.startup.StartupDestination
 import ir.coffevista.vista_native.features.startup.StartupScreen
@@ -97,6 +102,7 @@ fun VistaApp(
     searchRepository: SearchRepository,
     chatRepository: ChatRepository,
     servicesRepository: ServicesRepository,
+    biometricAuthenticator: ir.coffevista.vista_native.core.security.BiometricAuthenticator? = null,
     onExitRequested: () -> Unit,
 ) {
     val navController = rememberNavController()
@@ -183,6 +189,7 @@ fun VistaApp(
                     is StartupDestination.RecoverableError,
                     -> null
                     StartupDestination.Maintenance -> AppRoute.Maintenance
+                    is StartupDestination.Banned -> AppRoute.Banned(destination.reasonFa)
                     StartupDestination.Onboarding -> AppRoute.Onboarding
                     StartupDestination.Authentication -> {
                         authenticationStateOwner.signOut()
@@ -192,6 +199,10 @@ fun VistaApp(
                         authenticationStateOwner.accept(destination.context)
                         if (destination.context.passwordRequired) {
                             AppRoute.Authentication
+                        } else if (!destination.context.profileCompleted) {
+                            AppRoute.ProfileSetup
+                        } else if (sessionStore.isBiometricEnabled()) {
+                            AppRoute.BiometricLogin
                         } else {
                             AppRoute.AuthenticatedBoundary
                         }
@@ -207,11 +218,13 @@ fun VistaApp(
                     }
                     when {
                         destination is StartupDestination.Authenticated &&
-                            !destination.context.passwordRequired -> {
+                            !destination.context.passwordRequired &&
+                            !(destination.context.profileCompleted && sessionStore.isBiometricEnabled()) -> {
                             deepLinkCoordinator.onSessionResolved(authenticated = true)
                         }
                         destination == StartupDestination.Onboarding ||
-                            destination == StartupDestination.Authentication -> {
+                            destination == StartupDestination.Authentication ||
+                            destination is StartupDestination.Banned -> {
                             deepLinkCoordinator.onSessionResolved(authenticated = false)
                         }
                     }
@@ -238,6 +251,14 @@ fun VistaApp(
                         popUpTo<AppRoute.Maintenance> { inclusive = true }
                     }
                 },
+            )
+        }
+
+        composable<AppRoute.Banned> { backStackEntry ->
+            val route = backStackEntry.toRoute<AppRoute.Banned>()
+            BannedScreen(
+                reasonFa = route.reasonFa,
+                onExit = onExitRequested,
             )
         }
 
@@ -273,13 +294,72 @@ fun VistaApp(
                 onAction = authViewModel::onAction,
                 visuals = authVisuals,
                 onAuthenticated = {
-                    navController.navigate(AppRoute.AuthenticatedBoundary) {
+                    val destination = (authState as? AuthenticationState.SignedIn)
+                        ?.context
+                        ?.takeIf { !it.profileCompleted }
+                        ?.let { AppRoute.ProfileSetup }
+                        ?: AppRoute.AuthenticatedBoundary
+                    navController.navigate(destination) {
                         popUpTo<AppRoute.Authentication> { inclusive = true }
                         launchSingleTop = true
                     }
                     deepLinkCoordinator.onAuthenticationChanged(authenticated = true)
                 },
             )
+        }
+
+        composable<AppRoute.ProfileSetup> {
+            val signedIn = authState as? AuthenticationState.SignedIn
+            if (signedIn == null) {
+                LaunchedEffect(Unit) {
+                    navController.navigate(AppRoute.Authentication) {
+                        popUpTo<AppRoute.ProfileSetup> { inclusive = true }
+                    }
+                }
+            } else {
+                ir.coffevista.vista_native.features.profile.ui.setup.ProfileSetupWizardScreen(
+                    onCompleted = {
+                        authenticationStateOwner.accept(signedIn.context.copy(profileCompleted = true))
+                        navController.navigate(AppRoute.AuthenticatedBoundary) {
+                            popUpTo<AppRoute.ProfileSetup> { inclusive = true }
+                            launchSingleTop = true
+                        }
+                        deepLinkCoordinator.onSessionResolved(authenticated = true)
+                    },
+                )
+            }
+        }
+
+        composable<AppRoute.BiometricLogin> {
+            val signedIn = authState as? AuthenticationState.SignedIn
+            if (signedIn == null || !sessionStore.isBiometricEnabled()) {
+                LaunchedEffect(Unit) {
+                    navController.navigate(AppRoute.Authentication) {
+                        popUpTo<AppRoute.BiometricLogin> { inclusive = true }
+                    }
+                }
+            } else {
+                BiometricLoginScreen(
+                    onAuthenticated = {
+                        navController.navigate(AppRoute.AuthenticatedBoundary) {
+                            popUpTo<AppRoute.BiometricLogin> { inclusive = true }
+                            launchSingleTop = true
+                        }
+                        deepLinkCoordinator.onSessionResolved(authenticated = true)
+                    },
+                    onUsePasswordOrOtp = {
+                        applicationScope.launch {
+                            sessionStore.clear()
+                            authenticationStateOwner.signOut()
+                            navController.navigate(AppRoute.Authentication) {
+                                popUpTo<AppRoute.BiometricLogin> { inclusive = true }
+                                launchSingleTop = true
+                            }
+                        }
+                    },
+                    biometricAuthenticator = biometricAuthenticator,
+                )
+            }
         }
 
         composable<AppRoute.AuthenticatedBoundary> {
@@ -332,15 +412,53 @@ fun VistaApp(
                     },
                     onExitRequested = onExitRequested,
                     content = ShellFeatureContent(
-                        feedRoot = { onPostClick, onAuthorClick, onCreatePost, onOpenStoryPlayer, onCreateStory ->
+                        feedRoot = { onPostClick, onAuthorClick, onCreatePost, onOpenStoryPlayer, onCreateStory, onNotifications, onAppeal, onHashtag ->
+                            var directSharePost by remember { mutableStateOf<FeedPost?>(null) }
+                            val feedViewModel: FeedViewModel = hiltViewModel()
                             FeedScreen(
-                                viewModel = hiltViewModel(),
+                                viewModel = feedViewModel,
                                 commentsViewModel = hiltViewModel<CommentsViewModel>(),
                                 onPostClick = onPostClick,
                                 onAuthorClick = onAuthorClick,
                                 onCreatePostClick = onCreatePost,
                                 onOpenStoryPlayer = onOpenStoryPlayer,
                                 onCreateStory = onCreateStory,
+                                onNotificationClick = onNotifications,
+                                onAppealClick = onAppeal,
+                                onHashtagClick = onHashtag,
+                                onSendDirectMessage = { directSharePost = it },
+                            )
+                            directSharePost?.let { post ->
+                                PostDirectShareSheet(
+                                    post = post,
+                                    chatRepository = chatRepository,
+                                    onDismiss = { directSharePost = null },
+                                    onDelivered = { feedViewModel.trackEvent(post.id, "share") },
+                                )
+                            }
+                        },
+                        appeal = { postId, onBack ->
+                            ir.coffevista.vista_native.features.feed.ui.appeal.AppealScreen(
+                                postId = postId,
+                                onBack = onBack,
+                            )
+                        },
+                        hashtagPosts = { hashtag, onBack, onPostClick, onAuthorClick ->
+                            ir.coffevista.vista_native.features.feed.ui.hashtag.HashtagPostsScreen(
+                                hashtag = hashtag,
+                                onBack = onBack,
+                                onPostClick = onPostClick,
+                                onAuthorClick = onAuthorClick,
+                            )
+                        },
+                        notifications = { onBack, onPostClick, onUserClick, onChatClick, onSuggestionsClick, onAppealClick ->
+                            NotificationsScreen(
+                                onBack = onBack,
+                                onPostClick = onPostClick,
+                                onUserClick = onUserClick,
+                                onChatClick = onChatClick,
+                                onSuggestionsClick = onSuggestionsClick,
+                                onAppealClick = onAppealClick,
                             )
                         },
                         storyPlayer = { initialUserIndex, onClose, onOpenProfile, onOpenLink ->
@@ -371,6 +489,15 @@ fun VistaApp(
                                 onTrimComplete = onTrimComplete,
                             )
                         },
+                        reels = { postId, onBack, onAuthorClick, onCommentsClick, onShareClick ->
+                            ir.coffevista.vista_native.features.feed.ui.reels.ReelsViewerScreen(
+                                initialPostId = postId,
+                                onBack = onBack,
+                                onAuthorClick = onAuthorClick,
+                                onCommentsClick = onCommentsClick,
+                                onShareClick = onShareClick,
+                            )
+                        },
                         searchRoot = { onOpenWorkspace, onOpenQrScanner ->
                             SearchLauncherScreen(
                                 viewModel = hiltViewModel(),
@@ -378,14 +505,15 @@ fun VistaApp(
                                 onOpenQrScanner = onOpenQrScanner,
                             )
                         },
-                        searchWorkspace = { onUserClick, onPostClick ->
+                        searchWorkspace = { onUserClick, onPostClick, onHashtagClick ->
                             SearchWorkspaceScreen(
                                 viewModel = hiltViewModel(),
                                 onUserClick = { onUserClick(it.id) },
                                 onPostClick = { onPostClick(it.id) },
+                                onHashtagClick = onHashtagClick,
                             )
                         },
-                        ownProfile = { onPostClick, onSettingsClick, logout, onOpenFollowers, onOpenQrScanner ->
+                        ownProfile = { onPostClick, onSettingsClick, logout, onOpenFollowers, onOpenQrScanner, onEditProfile ->
                             val postsViewModel = hiltViewModel<ProfilePostsViewModel>()
                             val postsState by postsViewModel.uiState.collectAsStateWithLifecycle()
                             LaunchedEffect(signedIn.context.userId) {
@@ -397,6 +525,7 @@ fun VistaApp(
                                 onSettingsClick = onSettingsClick,
                                 onOpenFollowers = onOpenFollowers,
                                 onOpenQrScanner = onOpenQrScanner,
+                                onEditProfile = onEditProfile,
                                 postsState = postsState.toPresentationState(),
                                 onPostsRefresh = postsViewModel::refresh,
                                 onPostsLoadMore = postsViewModel::loadMore,
@@ -508,13 +637,26 @@ fun VistaApp(
                         faqPage = { onBack ->
                             FAQScreen(onBack = onBack)
                         },
-                        postDetail = { onBack, onAuthorClick ->
+                        postDetail = { onBack, onAuthorClick, onHashtagClick, onAppealClick ->
+                            var directSharePost by remember { mutableStateOf<FeedPost?>(null) }
+                            val postDetailViewModel: PostDetailViewModel = hiltViewModel()
                             PostDetailScreen(
                                 onBack = onBack,
                                 onAuthorClick = onAuthorClick,
-                                viewModel = hiltViewModel(),
+                                onHashtagClick = onHashtagClick,
+                                onAppealClick = onAppealClick,
+                                viewModel = postDetailViewModel,
                                 commentsViewModel = hiltViewModel<CommentsViewModel>(),
+                                onSendDirectMessage = { directSharePost = it },
                             )
+                            directSharePost?.let { post ->
+                                PostDirectShareSheet(
+                                    post = post,
+                                    chatRepository = chatRepository,
+                                    onDismiss = { directSharePost = null },
+                                    onDelivered = postDetailViewModel::trackShare,
+                                )
+                            }
                         },
                         userProfile = { userId, onBack, onSelfProfile, onPostClick, onOpenFollowers ->
                             val postsViewModel = hiltViewModel<ProfilePostsViewModel>()
@@ -634,14 +776,6 @@ fun VistaApp(
                     ),
                 )
             }
-        }
-
-        composable<AppRoute.DeferredFeature> { backStackEntry ->
-            val route = backStackEntry.toRoute<AppRoute.DeferredFeature>()
-            DeferredDestinationScreen(
-                kind = route.kind,
-                onBack = navController::popBackStack,
-            )
         }
 
         composable<AppRoute.DeepLinkFailure> { backStackEntry ->

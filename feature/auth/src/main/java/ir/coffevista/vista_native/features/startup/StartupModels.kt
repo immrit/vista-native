@@ -5,6 +5,7 @@ import ir.coffevista.vista_native.core.model.session.AuthenticatedContext
 sealed interface StartupDestination {
     data object Loading : StartupDestination
     data object Maintenance : StartupDestination
+    data class Banned(val reasonFa: String? = null) : StartupDestination
     data object Onboarding : StartupDestination
     data object Authentication : StartupDestination
     data class Authenticated(val context: AuthenticatedContext) : StartupDestination

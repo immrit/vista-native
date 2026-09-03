@@ -157,7 +157,7 @@ fun NewMessageScreen(
                     Text("گروه جدید", fontSize = 16.sp, fontWeight = FontWeight.Medium)
                     Text("تا ۲۰ عضو", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                Switch(checked = state.isGroupMode, onCheckedChange = onGroupModeChanged)
+                ir.coffevista.vista_native.core.designsystem.component.VistaSwitch(checked = state.isGroupMode, onCheckedChange = onGroupModeChanged)
             }
             if (!state.isGroupMode) {
                 Row(
@@ -174,7 +174,7 @@ fun NewMessageScreen(
                         Text("گفتگوی محرمانه جدید", fontSize = 16.sp, fontWeight = FontWeight.Medium)
                         Text("تاریخچه موجود در Native محافظت‌شده می‌ماند", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    Switch(checked = state.isSecretMode, onCheckedChange = onSecretModeChanged)
+                    ir.coffevista.vista_native.core.designsystem.component.VistaSwitch(checked = state.isSecretMode, onCheckedChange = onSecretModeChanged)
                 }
             }
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))

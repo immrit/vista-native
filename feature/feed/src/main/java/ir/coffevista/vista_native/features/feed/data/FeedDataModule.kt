@@ -29,6 +29,12 @@ abstract class FeedDataModule {
     abstract fun bindCommentRepository(
         impl: DefaultCommentRepository
     ): CommentRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindNotificationRepository(
+        impl: DefaultNotificationRepository
+    ): NotificationRepository
 }
 
 @Module
@@ -78,6 +84,15 @@ object FeedApiModule {
                 return remote.getUserPosts(userId, limit, offset)
             }
 
+            override suspend fun getHashtagPosts(tag: String, limit: Int, offset: Int): FeedResponseDto =
+                remote.getHashtagPosts(tag, limit, offset)
+
+            override suspend fun getTrendingHashtags(limit: Int, days: Int): HashtagSuggestionsResponseDto =
+                remote.getTrendingHashtags(limit, days)
+
+            override suspend fun searchHashtags(query: String, limit: Int): HashtagSuggestionsResponseDto =
+                remote.searchHashtags(query, limit)
+
             override suspend fun toggleLike(postId: String, body: LikeRequestDto): LikeResponseDto {
                 return remote.toggleLike(postId, body)
             }
@@ -92,6 +107,9 @@ object FeedApiModule {
             override suspend fun deletePost(postId: String) = remote.deletePost(postId)
 
             override suspend fun reportPost(body: ReportPostRequestDto) = remote.reportPost(body)
+
+            override suspend fun submitAppeal(body: SubmitAppealRequestDto) =
+                remote.submitAppeal(body)
 
             override suspend fun trackFeedEvent(body: FeedEventRequestDto) = remote.trackFeedEvent(body)
 
@@ -151,4 +169,10 @@ object FeedApiModule {
     ): ir.coffevista.vista_native.features.stories.data.StoryApi {
         return retrofit.create(ir.coffevista.vista_native.features.stories.data.StoryApi::class.java)
     }
+
+    @Provides
+    @Singleton
+    fun provideNotificationApi(
+        @InternalApi retrofit: Retrofit,
+    ): NotificationApi = retrofit.create(NotificationApi::class.java)
 }

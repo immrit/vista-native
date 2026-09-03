@@ -1,6 +1,6 @@
 param(
     [string]$Serial = "emulator-5554",
-    [string]$Package = "ir.coffevista.vista_native",
+    [string]$Package = "ir.coffevista.vista_native.production",
     [string]$Activity = "ir.coffevista.vista_native.MainActivity",
     [Parameter(Mandatory = $true)]
     [string]$ApkPath,
@@ -149,14 +149,23 @@ try {
     Invoke-Adb shell cmd uimode night no | Out-Null
 
     if ($InstallClean) {
-        $installedBefore = ((Invoke-Adb shell pm list packages $Package) -join "") -match $Package
+        $installedBefore = @(
+            Invoke-Adb shell pm list packages $Package |
+                ForEach-Object { $_.ToString().Trim() } |
+                Where-Object { $_ -eq "package:$Package" }
+        ).Count -gt 0
         if ($installedBefore) {
             Invoke-Adb uninstall $Package | Out-Null
         }
         Invoke-Adb install $resolvedApk | Out-Null
     }
 
-    $packageLine = ((Invoke-Adb shell pm list packages $Package) -join "").Trim()
+    $packageLine = @(
+        Invoke-Adb shell pm list packages $Package |
+            ForEach-Object { $_.ToString().Trim() } |
+            Where-Object { $_ -eq "package:$Package" }
+    ) | Select-Object -First 1
+    $packageLine = if ($null -eq $packageLine) { "" } else { $packageLine.ToString().Trim() }
     if ($packageLine -ne "package:$Package") {
         throw "Expected installed package '$Package'; got '$packageLine'."
     }

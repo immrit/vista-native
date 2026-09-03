@@ -12,19 +12,22 @@ sealed interface AppRoute {
     data object Maintenance : AppRoute
 
     @Serializable
+    data class Banned(val reasonFa: String? = null) : AppRoute
+
+    @Serializable
     data object Onboarding : AppRoute
 
     @Serializable
     data object Authentication : AppRoute
 
     @Serializable
-    data object AuthenticatedBoundary : AppRoute
+    data object BiometricLogin : AppRoute
 
     @Serializable
-    data class DeferredFeature(
-        val kind: DeferredFeatureKind,
-        val reference: String,
-    ) : AppRoute
+    data object ProfileSetup : AppRoute
+
+    @Serializable
+    data object AuthenticatedBoundary : AppRoute
 
     @Serializable
     data class DeepLinkFailure(

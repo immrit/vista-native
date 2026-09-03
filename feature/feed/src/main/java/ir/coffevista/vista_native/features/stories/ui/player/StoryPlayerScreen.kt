@@ -134,6 +134,14 @@ fun StoryPlayerScreen(
     var showViewersSheet by remember { mutableStateOf(false) }
     var replyText by remember { mutableStateOf("") }
     var isLiked by remember(activeStory.id) { mutableStateOf(false) }
+    var floatingReaction by remember(activeStory.id) { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(floatingReaction) {
+        if (floatingReaction != null) {
+            delay(900)
+            floatingReaction = null
+        }
+    }
 
     // Video Player
     val exoPlayer = remember(activeStory.id) {
@@ -468,12 +476,44 @@ fun StoryPlayerScreen(
                                 )
                             }
                         } else {
-                            // Direct Reply Input & Heart Button
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            ) {
+                            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                AnimatedVisibility(
+                                    visible = floatingReaction != null,
+                                    enter = fadeIn(),
+                                    exit = fadeOut(),
+                                    modifier = Modifier.align(Alignment.CenterHorizontally),
+                                ) {
+                                    Text(
+                                        text = floatingReaction.orEmpty(),
+                                        fontSize = 54.sp,
+                                        modifier = Modifier.padding(bottom = 6.dp),
+                                    )
+                                }
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(22.dp))
+                                        .background(Color.Black.copy(alpha = 0.28f))
+                                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                                    horizontalArrangement = Arrangement.SpaceEvenly,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    STORY_QUICK_REACTIONS.forEach { reaction ->
+                                        IconButton(
+                                            onClick = {
+                                                floatingReaction = reaction.emoji
+                                                viewModel.reactToStory(activeStory.id, reaction.apiValue)
+                                            },
+                                            modifier = Modifier.size(38.dp),
+                                        ) { Text(reaction.emoji, fontSize = 22.sp) }
+                                    }
+                                }
+                                // Direct Reply Input & Heart Button
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                ) {
                                 OutlinedTextField(
                                     value = replyText,
                                     onValueChange = { replyText = it },
@@ -535,6 +575,7 @@ fun StoryPlayerScreen(
                                     )
                                 }
                             }
+                            }
                         }
                     }
                 }
@@ -555,3 +596,13 @@ fun StoryPlayerScreen(
         }
     }
 }
+
+private data class StoryQuickReaction(val apiValue: String, val emoji: String)
+
+private val STORY_QUICK_REACTIONS = listOf(
+    StoryQuickReaction("like", "❤️"),
+    StoryQuickReaction("laugh", "😂"),
+    StoryQuickReaction("wow", "😮"),
+    StoryQuickReaction("sad", "😢"),
+    StoryQuickReaction("fire", "🔥"),
+)

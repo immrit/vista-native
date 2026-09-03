@@ -10,6 +10,7 @@ import ir.coffevista.vista_native.features.feed.data.FeedKind
 import ir.coffevista.vista_native.features.feed.data.FeedPost
 import ir.coffevista.vista_native.features.feed.data.FeedRepository
 import ir.coffevista.vista_native.features.feed.data.FeedSnapshot
+import ir.coffevista.vista_native.features.feed.data.NotificationRepository
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -17,6 +18,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.yield
@@ -26,10 +29,16 @@ import javax.inject.Inject
 class FeedViewModel @Inject constructor(
     private val feedRepository: FeedRepository,
     private val storyRepository: ir.coffevista.vista_native.features.stories.data.StoryRepository,
+    notificationRepository: NotificationRepository,
     private val authStateProvider: AuthenticationStateProvider,
 ) : ViewModel() {
 
     val activeStoryUsers = storyRepository.activeStoryUsers
+    val unreadNotificationCount: StateFlow<Int> = notificationRepository.unreadCount.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5_000),
+        initialValue = 0,
+    )
 
     private val _uiState = MutableStateFlow<FeedUiState>(FeedUiState.Loading)
     val uiState: StateFlow<FeedUiState> = _uiState.asStateFlow()
@@ -254,6 +263,9 @@ class FeedViewModel @Inject constructor(
 
     fun toggleLike(postId: String, isLiked: Boolean, currentLikeCount: Long) {
         val userId = currentUserId ?: return
+        if (!isLiked) {
+            trackEvent(postId, "like")
+        }
         viewModelScope.launch {
             try {
                 val newCount = if (isLiked) currentLikeCount - 1 else currentLikeCount + 1
@@ -269,6 +281,9 @@ class FeedViewModel @Inject constructor(
 
     fun toggleSave(postId: String, isSaved: Boolean) {
         val userId = currentUserId ?: return
+        if (!isSaved) {
+            trackEvent(postId, "save")
+        }
         viewModelScope.launch {
             try {
                 feedRepository.toggleSave(userId, postId, !isSaved)
@@ -285,14 +300,43 @@ class FeedViewModel @Inject constructor(
         }
     }
 
-    fun reportPost(post: FeedPost, reason: String) {
+    fun updatePostContent(
+        postId: String,
+        newContent: String,
+        onResult: (Boolean) -> Unit,
+    ) {
+        val userId = currentUserId ?: return
         viewModelScope.launch {
-            runCatching {
+            try {
+                feedRepository.updatePost(
+                    accountId = userId,
+                    postId = postId,
+                    content = newContent,
+                )
+                onResult(true)
+            } catch (e: Exception) {
+                onResult(false)
+            }
+        }
+    }
+
+    fun reportPost(
+        post: FeedPost,
+        reason: String,
+        additionalDetails: String? = null,
+        onResult: ((Boolean) -> Unit)? = null,
+    ) {
+        viewModelScope.launch {
+            try {
                 feedRepository.reportPost(
                     postId = post.id,
                     reportedUserId = post.userId,
                     reason = reason,
+                    additionalDetails = additionalDetails,
                 )
+                onResult?.invoke(true)
+            } catch (e: Exception) {
+                onResult?.invoke(false)
             }
         }
     }

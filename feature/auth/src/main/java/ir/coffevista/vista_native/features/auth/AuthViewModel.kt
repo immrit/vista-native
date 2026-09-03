@@ -33,6 +33,9 @@ data class AuthUiState(
     val passwordVisible: Boolean = false,
     val isLoading: Boolean = false,
     val isRegistering: Boolean = false,
+    val isPasswordRecovery: Boolean = false,
+    val recoveryOptionId: String? = null,
+    val recoveryToken: String? = null,
     val isTwoFactor: Boolean = false,
     val resendSeconds: Int = 0,
     val errorMessage: String? = null,
@@ -46,6 +49,7 @@ sealed interface AuthAction {
     data class OtpChanged(val value: String) : AuthAction
     data object TogglePasswordVisibility : AuthAction
     data object Submit : AuthAction
+    data object ForgotPassword : AuthAction
     data object ResendOtp : AuthAction
     data object Back : AuthAction
     data object ClearMessage : AuthAction
@@ -87,6 +91,7 @@ class AuthViewModel @Inject constructor(
                 )
             }
             AuthAction.Submit -> submit()
+            AuthAction.ForgotPassword -> forgotPassword()
             AuthAction.ResendOtp -> resendOtp()
             AuthAction.Back -> goBack()
             AuthAction.ClearMessage -> {
@@ -258,6 +263,27 @@ class AuthViewModel @Inject constructor(
             return
         }
         launchLoading {
+            if (mutableState.value.isPasswordRecovery) {
+                val optionId = mutableState.value.recoveryOptionId
+                if (optionId.isNullOrBlank()) {
+                    showError("اطلاعات بازیابی ناقص است")
+                    return@launchLoading
+                }
+                when (val result = repository.verifyRecoveryCode(optionId, mutableState.value.otp)) {
+                    is Outcome.Failure -> showError(result.error.messageFa)
+                    is Outcome.Success -> {
+                        countdownJob?.cancel()
+                        mutableState.value = mutableState.value.copy(
+                            step = AuthStep.SET_PASSWORD,
+                            recoveryToken = result.value,
+                            isLoading = false,
+                            errorMessage = null,
+                            infoMessage = "رمز عبور جدید خود را تعیین کنید.",
+                        )
+                    }
+                }
+                return@launchLoading
+            }
             when (val result = repository.verifyOtp(phone, mutableState.value.otp)) {
                 is Outcome.Failure -> showError(result.error.messageFa)
                 is Outcome.Success -> when (val verification = result.value) {
@@ -278,10 +304,11 @@ class AuthViewModel @Inject constructor(
                         pendingAuthPayload = verification.payload
                         sessionStore.save(verification.payload)
                         if (verification.payload.user.passwordRequired ||
-                            mutableState.value.isRegistering
+                            mutableState.value.isRegistering ||
+                            mutableState.value.isPasswordRecovery
                         ) {
                             val selectedPassword = mutableState.value.password
-                            if (selectedPassword.isNotBlank()) {
+                            if (selectedPassword.isNotBlank() && !mutableState.value.isPasswordRecovery) {
                                 configurePassword(selectedPassword)
                             } else {
                                 mutableState.value = mutableState.value.copy(
@@ -289,7 +316,7 @@ class AuthViewModel @Inject constructor(
                                     password = "",
                                     isLoading = false,
                                     errorMessage = null,
-                                    infoMessage = "برای ادامه، یک رمز عبور امن تعیین کنید.",
+                                    infoMessage = "برای ادامه، یک رمز عبور جدید تعیین کنید.",
                                 )
                             }
                         } else {
@@ -310,7 +337,25 @@ class AuthViewModel @Inject constructor(
             showError(validation)
             return
         }
-        launchLoading { configurePassword(password) }
+        launchLoading {
+            if (mutableState.value.isPasswordRecovery) {
+                val token = mutableState.value.recoveryToken
+                if (token.isNullOrBlank()) {
+                    showError("نشست بازیابی معتبر نیست")
+                    return@launchLoading
+                }
+                when (val result = repository.completeRecovery(token, password)) {
+                    is Outcome.Failure -> showError(result.error.messageFa)
+                    is Outcome.Success -> {
+                        mutableState.value = AuthUiState(
+                            infoMessage = "رمز عبور با موفقیت تغییر کرد. اکنون وارد شوید.",
+                        )
+                    }
+                }
+            } else {
+                configurePassword(password)
+            }
+        }
     }
 
     private suspend fun configurePassword(password: String) {
@@ -390,7 +435,72 @@ class AuthViewModel @Inject constructor(
         ) {
             return
         }
+        if (mutableState.value.isPasswordRecovery) {
+            val optionId = mutableState.value.recoveryOptionId
+            if (optionId.isNullOrBlank()) {
+                showError("گزینه بازیابی معتبر نیست")
+                return
+            }
+            launchLoading {
+                when (val sent = repository.sendRecoveryCode(optionId)) {
+                    is Outcome.Failure -> showError(sent.error.messageFa)
+                    is Outcome.Success -> {
+                        mutableState.value = mutableState.value.copy(
+                            resendSeconds = 60,
+                            isLoading = false,
+                            errorMessage = null,
+                            infoMessage = "کد بازیابی دوباره ارسال شد.",
+                        )
+                        startCountdown()
+                    }
+                }
+            }
+            return
+        }
         sendOtp()
+    }
+
+    private fun forgotPassword() {
+        if (mutableState.value.isLoading) return
+        val phone = mutableState.value.normalizedPhone
+            ?: normalizeIranPhone(mutableState.value.identifier)
+        if (phone != null) {
+            mutableState.value = mutableState.value.copy(
+                isRegistering = false,
+                isPasswordRecovery = true,
+                errorMessage = null,
+            )
+            launchLoading {
+                when (val options = repository.recoveryOptions(phone)) {
+                    is Outcome.Failure -> showError(options.error.messageFa)
+                    is Outcome.Success -> {
+                        val option = options.value.firstOrNull()
+                        if (option == null) {
+                            showError("گزینه‌ای برای بازیابی پیدا نشد")
+                            return@launchLoading
+                        }
+                        when (val sent = repository.sendRecoveryCode(option.id)) {
+                            is Outcome.Failure -> showError(sent.error.messageFa)
+                            is Outcome.Success -> {
+                                mutableState.value = mutableState.value.copy(
+                                    step = AuthStep.OTP,
+                                    normalizedPhone = phone,
+                                    recoveryOptionId = option.id,
+                                    otp = "",
+                                    resendSeconds = 60,
+                                    isLoading = false,
+                                    errorMessage = null,
+                                    infoMessage = "کد بازیابی برای ${option.masked.ifBlank { phone }} ارسال شد.",
+                                )
+                                startCountdown()
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            showError("برای بازیابی رمز عبور لطفاً از شماره موبایل استفاده کنید")
+        }
     }
 
     private fun goBack() {
@@ -404,11 +514,12 @@ class AuthViewModel @Inject constructor(
                 password = "",
                 isTwoFactor = false,
                 isRegistering = false,
+                isPasswordRecovery = false,
                 errorMessage = null,
                 infoMessage = null,
             )
             AuthStep.OTP -> mutableState.value.copy(
-                step = if (mutableState.value.isRegistering) AuthStep.PASSWORD else AuthStep.IDENTIFIER,
+                step = if (mutableState.value.isRegistering || mutableState.value.isPasswordRecovery) AuthStep.PASSWORD else AuthStep.IDENTIFIER,
                 otp = "",
                 resendSeconds = 0,
                 errorMessage = null,

@@ -1,8 +1,13 @@
 package ir.coffevista.vista_native.core.designsystem.component
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -10,12 +15,18 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
+import ir.coffevista.vista_native.core.designsystem.tokens.VistaBrandColors
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaComponentSize
 
 enum class VistaButtonVariant { Primary, Secondary, Outline, Text, Destructive }
@@ -83,3 +94,43 @@ fun VistaButton(
         }
     }
 }
+
+/**
+ * Standard Floating Action Button (FAB) across the Vista application.
+ * Positioned consistently above the floating bottom navigation bar with a uniform bottom padding (100.dp),
+ * 56.dp squircle dimensions, 8.dp elevation shadow, and brand gradient.
+ */
+@Composable
+fun VistaFloatingActionButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    contentDescription: String? = null,
+    content: @Composable () -> Unit,
+) {
+    Box(
+        modifier = modifier
+            .padding(bottom = 100.dp)
+            .size(56.dp)
+            .shadow(8.dp, RoundedCornerShape(18.dp))
+            .clip(RoundedCornerShape(18.dp))
+            .background(
+                Brush.linearGradient(
+                    listOf(
+                        VistaBrandColors.Indigo,
+                        VistaBrandColors.VioletDeep,
+                    )
+                )
+            )
+            .clickable(role = Role.Button, onClick = onClick)
+            .semantics {
+                if (contentDescription != null) {
+                    this.contentDescription = contentDescription
+                }
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        content()
+    }
+}
+
+

@@ -1,7 +1,4 @@
-def buildRoot = System.getProperty("vista.phase2.build.root")
-if (buildRoot == null || buildRoot.trim().isEmpty()) {
-    throw new GradleException("vista.phase2.build.root is required")
-}
+def buildRoot = System.getProperty("vista.phase2.build.root") ?: "E:/vista_native/.gradle-tmp/build"
 
 gradle.beforeProject { project ->
     def directory = project.path == ':' ? 'root' : project.path.substring(1).replace(':', '_')
