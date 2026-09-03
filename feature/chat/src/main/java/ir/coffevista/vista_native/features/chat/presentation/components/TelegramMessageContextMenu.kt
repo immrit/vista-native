@@ -160,6 +160,19 @@ internal fun MessageContextMenu(
                     .drawWithContent {
                         drawContent()
                         bubbleBounds?.let { bounds ->
+                            // A short, translucent halo makes the selected message
+                            // feel elevated while the exact bubble area below stays
+                            // completely clear of the frosted scrim.
+                            val halo = focusedBubbleCornerRadiusPx * 0.16f
+                            drawRoundRect(
+                                color = Color.White.copy(alpha = 0.20f * scrimProgress),
+                                topLeft = Offset(bounds.left - halo, bounds.top - halo),
+                                size = Size(bounds.width + halo * 2f, bounds.height + halo * 2f),
+                                cornerRadius = CornerRadius(
+                                    focusedBubbleCornerRadiusPx + halo,
+                                    focusedBubbleCornerRadiusPx + halo,
+                                ),
+                            )
                             drawRoundRect(
                                 color = Color.Transparent,
                                 topLeft = Offset(bounds.left, bounds.top),

@@ -2531,7 +2531,14 @@ private fun MessageBubble(
                     onLongClick = { onLongPress() },
                 )
                 .semantics { contentDescription = description }
-            Box(Modifier.fillMaxWidth()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    // Keep a dedicated Telegram-style selection gutter. The
+                    // gutter owns its 48dp hit target; the bubble never paints
+                    // underneath it and therefore cannot collide with the check.
+                    .padding(start = if (selectionMode) 48.dp else 0.dp),
+            ) {
                 if (selectionMode) {
                     val selectionIndicatorColor by animateColorAsState(
                         targetValue = if (selected) {
@@ -2546,11 +2553,7 @@ private fun MessageBubble(
                         onClick = onToggleSelection,
                         modifier = Modifier
                             .align(Alignment.CenterStart)
-                            // The message row keeps asymmetric outer padding so bubbles sit
-                            // against their physical side. Compensate that padding here: the
-                            // selection rail must stay at one fixed screen coordinate for both
-                            // outgoing and incoming messages.
-                            .absoluteOffset(x = if (message.isMine) (-6).dp else 0.dp)
+                            .absoluteOffset(x = (-48).dp)
                             .size(48.dp)
                             .testTag("message-selection-checkbox:${message.stableKey}")
                             .semantics {
@@ -2596,9 +2599,9 @@ private fun MessageBubble(
                                 AbsoluteAlignment.CenterLeft
                             },
                         )
-                        // Keep the selection rail outside the bubble background so it
-                        // stays visually and physically fixed for both senders.
-                        .padding(start = if (selectionMode) 48.dp else 0.dp)
+                        // Selection is rendered in a separate fixed rail below.  Never
+                        // reserve its width inside the bubble: doing that shifts the
+                        // text and makes selected outgoing messages visibly "jump".
                         .then(if (message.isMine) {
                             base.background(Brush.linearGradient(listOf(VistaBrandColors.Indigo, VistaBrandColors.VioletDeep)))
                         } else {
