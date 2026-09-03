@@ -2533,11 +2533,7 @@ private fun MessageBubble(
                 .semantics { contentDescription = description }
             Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    // Keep a dedicated Telegram-style selection gutter. The
-                    // gutter owns its 48dp hit target; the bubble never paints
-                    // underneath it and therefore cannot collide with the check.
-                    .padding(start = if (selectionMode) 48.dp else 0.dp),
+                    .fillMaxWidth(),
             ) {
                 if (selectionMode) {
                     val selectionIndicatorColor by animateColorAsState(
@@ -2553,7 +2549,10 @@ private fun MessageBubble(
                         onClick = onToggleSelection,
                         modifier = Modifier
                             .align(Alignment.CenterStart)
-                            .absoluteOffset(x = (-48).dp)
+                            // Rows have asymmetric physical outer padding. Offset
+                            // only the outgoing row so every checkbox occupies the
+                            // same fixed left rail without moving either bubble.
+                            .absoluteOffset(x = if (message.isMine) (-6).dp else 0.dp)
                             .size(48.dp)
                             .testTag("message-selection-checkbox:${message.stableKey}")
                             .semantics {
@@ -2607,7 +2606,11 @@ private fun MessageBubble(
                         } else {
                             base.background(MaterialTheme.colorScheme.surfaceVariant)
                         }).then(
-                        if (selected) Modifier.background(MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)) else Modifier
+                        if (selected) Modifier.border(
+                            width = 2.dp,
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.72f),
+                            shape = shape,
+                        ) else Modifier
                     )
                         .padding(start = 12.dp, top = 8.dp, end = 12.dp, bottom = 6.dp)
                         .onGloballyPositioned { coordinates ->

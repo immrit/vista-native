@@ -62,6 +62,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -135,6 +137,7 @@ internal fun MessageContextMenu(
     val focusedBubbleCornerRadiusPx = with(density) { 18.dp.toPx() }
     var menuSizePx by remember { mutableStateOf(IntSize.Zero) }
     var reactionsSizePx by remember { mutableStateOf(IntSize.Zero) }
+    var dialogContentBounds by remember { mutableStateOf(Rect.Zero) }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -148,10 +151,24 @@ internal fun MessageContextMenu(
         // the custom scrim below can punch through around the selected message bubble.
         val dialogWindow = (LocalView.current.parent as? DialogWindowProvider)?.window
         SideEffect { dialogWindow?.setDimAmount(0f) }
+        // `bubbleBounds` is reported in the host window. Dialog content may begin at a
+        // different window origin (notably with edge-to-edge and IME insets), so convert
+        // it once to this canvas before drawing or feeding the placement engine.
+        val dialogAnchor = remember(bubbleBounds, dialogContentBounds) {
+            bubbleBounds?.let { anchor ->
+                Rect(
+                    left = anchor.left - dialogContentBounds.left,
+                    top = anchor.top - dialogContentBounds.top,
+                    right = anchor.right - dialogContentBounds.left,
+                    bottom = anchor.bottom - dialogContentBounds.top,
+                )
+            }
+        }
         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
             BoxWithConstraints(
                 modifier = Modifier
                     .fillMaxSize()
+                    .onGloballyPositioned { dialogContentBounds = it.boundsInWindow() }
                     // Render the scrim offscreen so BlendMode.Clear can reveal the
                     // original anchored bubble beneath it. The selected message
                     // remains the visual reference while the chat is subdued.
@@ -159,7 +176,7 @@ internal fun MessageContextMenu(
                     .background(colors.scrim.copy(alpha = colors.scrim.alpha * scrimProgress))
                     .drawWithContent {
                         drawContent()
-                        bubbleBounds?.let { bounds ->
+                        dialogAnchor?.let { bounds ->
                             // A short, translucent halo makes the selected message
                             // feel elevated while the exact bubble area below stays
                             // completely clear of the frosted scrim.
@@ -191,13 +208,13 @@ internal fun MessageContextMenu(
                         onClick = onDismiss,
                     ),
             ) {
-                if (bubbleBounds != null) {
+                if (dialogAnchor != null) {
                     val insetPadding = WindowInsets.statusBars
                         .union(WindowInsets.navigationBars)
                         .union(WindowInsets.ime)
                         .asPaddingValues()
                     val placement = remember(
-                        bubbleBounds,
+                        dialogAnchor,
                         constraints.maxWidth,
                         constraints.maxHeight,
                         policy.visibleActionCount,
@@ -208,7 +225,7 @@ internal fun MessageContextMenu(
                     ) {
                         with(density) {
                             calculateMessageContextMenuPlacement(
-                                anchor = bubbleBounds,
+                                anchor = dialogAnchor,
                                 viewport = androidx.compose.ui.unit.IntSize(
                                     maxWidth.toPx().roundToInt(),
                                     maxHeight.toPx().roundToInt(),
