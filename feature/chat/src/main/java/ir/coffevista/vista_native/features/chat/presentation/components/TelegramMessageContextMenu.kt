@@ -72,15 +72,13 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.IntOffset
+import androidx.activity.compose.BackHandler
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
-import androidx.compose.ui.window.DialogWindowProvider
 import ir.coffevista.vista_native.features.chat.domain.model.Message
 import kotlin.math.roundToInt
 
@@ -137,122 +135,111 @@ internal fun MessageContextMenu(
     val focusedBubbleCornerRadiusPx = with(density) { 18.dp.toPx() }
     var menuSizePx by remember { mutableStateOf(IntSize.Zero) }
     var reactionsSizePx by remember { mutableStateOf(IntSize.Zero) }
-    var dialogContentBounds by remember { mutableStateOf(Rect.Zero) }
+    var overlayBounds by remember { mutableStateOf(Rect.Zero) }
 
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(
-            usePlatformDefaultWidth = false,
-            dismissOnBackPress = true,
-            dismissOnClickOutside = true,
-        ),
-    ) {
-        // Compose Dialog applies its own dim-behind layer. Keep that layer transparent so
-        // the custom scrim below can punch through around the selected message bubble.
-        val dialogWindow = (LocalView.current.parent as? DialogWindowProvider)?.window
-        SideEffect { dialogWindow?.setDimAmount(0f) }
-        // `bubbleBounds` is reported in the host window. Dialog content may begin at a
-        // different window origin (notably with edge-to-edge and IME insets), so convert
-        // it once to this canvas before drawing or feeding the placement engine.
-        val dialogAnchor = remember(bubbleBounds, dialogContentBounds) {
-            bubbleBounds?.let { anchor ->
-                Rect(
-                    left = anchor.left - dialogContentBounds.left,
-                    top = anchor.top - dialogContentBounds.top,
-                    right = anchor.right - dialogContentBounds.left,
-                    bottom = anchor.bottom - dialogContentBounds.top,
-                )
-            }
+    BackHandler(enabled = true, onBack = onDismiss)
+
+    // محاسبه مختصات حباب در فضای محلی این لایه اورلی
+    val overlayAnchor = remember(bubbleBounds, overlayBounds) {
+        bubbleBounds?.let { anchor ->
+            Rect(
+                left = anchor.left - overlayBounds.left,
+                top = anchor.top - overlayBounds.top,
+                right = anchor.right - overlayBounds.left,
+                bottom = anchor.bottom - overlayBounds.top,
+            )
         }
-        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-            BoxWithConstraints(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .onGloballyPositioned { dialogContentBounds = it.boundsInWindow() }
-                    // Render the scrim offscreen so BlendMode.Clear can reveal the
-                    // original anchored bubble beneath it. The selected message
-                    // remains the visual reference while the chat is subdued.
-                    .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
-                    .background(colors.scrim.copy(alpha = colors.scrim.alpha * scrimProgress))
-                    .drawWithContent {
-                        drawContent()
-                        dialogAnchor?.let { bounds ->
-                            // A short, translucent halo makes the selected message
-                            // feel elevated while the exact bubble area below stays
-                            // completely clear of the frosted scrim.
-                            val halo = focusedBubbleCornerRadiusPx * 0.16f
-                            drawRoundRect(
-                                color = Color.White.copy(alpha = 0.20f * scrimProgress),
-                                topLeft = Offset(bounds.left - halo, bounds.top - halo),
-                                size = Size(bounds.width + halo * 2f, bounds.height + halo * 2f),
-                                cornerRadius = CornerRadius(
-                                    focusedBubbleCornerRadiusPx + halo,
-                                    focusedBubbleCornerRadiusPx + halo,
-                                ),
-                            )
-                            drawRoundRect(
-                                color = Color.Transparent,
-                                topLeft = Offset(bounds.left, bounds.top),
-                                size = Size(bounds.width, bounds.height),
-                                cornerRadius = CornerRadius(
-                                    focusedBubbleCornerRadiusPx,
-                                    focusedBubbleCornerRadiusPx,
-                                ),
-                                blendMode = BlendMode.Clear,
-                            )
-                        }
+    }
+
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+        BoxWithConstraints(
+            modifier = Modifier
+                .fillMaxSize()
+                .zIndex(999f)
+                .onGloballyPositioned { overlayBounds = it.boundsInWindow() }
+                // رسم پس‌زمینه مات و روزنه حباب پیام در لایه گرافیکی مستقل
+                .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
+                .drawWithContent {
+                    // ۱. ابتدا لایه مات سراسری کشیده می‌شود
+                    drawRect(colors.scrim.copy(alpha = colors.scrim.alpha * scrimProgress))
+
+                    // ۲. سپس هاله نورانی و روزنه شفاف دقیقاً در محل فیزیکی حباب پیام پانچ می‌شود
+                    overlayAnchor?.let { bounds ->
+                        val halo = focusedBubbleCornerRadiusPx * 0.16f
+                        drawRoundRect(
+                            color = Color.White.copy(alpha = 0.22f * scrimProgress),
+                            topLeft = Offset(bounds.left - halo, bounds.top - halo),
+                            size = Size(bounds.width + halo * 2f, bounds.height + halo * 2f),
+                            cornerRadius = CornerRadius(
+                                focusedBubbleCornerRadiusPx + halo,
+                                focusedBubbleCornerRadiusPx + halo,
+                            ),
+                        )
+                        drawRoundRect(
+                            color = Color.Transparent,
+                            topLeft = Offset(bounds.left, bounds.top),
+                            size = Size(bounds.width, bounds.height),
+                            cornerRadius = CornerRadius(
+                                focusedBubbleCornerRadiusPx,
+                                focusedBubbleCornerRadiusPx,
+                            ),
+                            blendMode = BlendMode.Clear,
+                        )
                     }
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = onDismiss,
-                    ),
-            ) {
-                if (dialogAnchor != null) {
-                    val insetPadding = WindowInsets.statusBars
-                        .union(WindowInsets.navigationBars)
-                        .union(WindowInsets.ime)
-                        .asPaddingValues()
-                    val placement = remember(
-                        dialogAnchor,
-                        constraints.maxWidth,
-                        constraints.maxHeight,
-                        policy.visibleActionCount,
-                        policy.canReact,
-                        message.isMine,
-                        insetPadding,
-                        layoutDirection,
-                    ) {
-                        with(density) {
-                            calculateMessageContextMenuPlacement(
-                                anchor = dialogAnchor,
-                                viewport = androidx.compose.ui.unit.IntSize(
-                                    maxWidth.toPx().roundToInt(),
-                                    maxHeight.toPx().roundToInt(),
-                                ),
-                                safeInsets = MessageContextMenuSafeInsets(
-                                    left = insetPadding.calculateLeftPadding(layoutDirection).toPx(),
-                                    top = insetPadding.calculateTopPadding().toPx(),
-                                    right = insetPadding.calculateRightPadding(layoutDirection).toPx(),
-                                    bottom = insetPadding.calculateBottomPadding().toPx(),
-                                ),
-                                isMine = message.isMine,
-                                menuWidth = 195.dp.toPx(),
-                                // Font scale, optional divider, and icon metrics make
-                                // a fixed dp estimate unreliable. Reposition after the
-                                // first measurement so the two real surfaces never meet.
-                                menuHeight = menuSizePx.height.takeIf { it > 0 }?.toFloat()
-                                    ?: (policy.visibleActionCount * 40 + 16).dp.toPx(),
-                                reactionsWidth = reactionsSizePx.width.takeIf { it > 0 }?.toFloat()
-                                    ?: 300.dp.toPx(),
-                                reactionsHeight = reactionsSizePx.height.takeIf { it > 0 }?.toFloat()
-                                    ?: 44.dp.toPx(),
-                                showReactions = policy.canReact,
-                                edgeGap = 12.dp.toPx(),
-                                elementGap = 8.dp.toPx(),
-                            )
-                        }
+
+                    // ۳. در نهایت، نوار واکنش‌ها و کارت منو روی لایه کشیده می‌شوند (هرگز پاک نمی‌شوند)
+                    drawContent()
+                }
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = onDismiss,
+                ),
+        ) {
+            if (overlayAnchor != null) {
+                val insetPadding = WindowInsets.statusBars
+                    .union(WindowInsets.navigationBars)
+                    .union(WindowInsets.ime)
+                    .asPaddingValues()
+                val placement = remember(
+                    overlayAnchor,
+                    constraints.maxWidth,
+                    constraints.maxHeight,
+                    policy.visibleActionCount,
+                    policy.canReact,
+                    message.isMine,
+                    menuSizePx,
+                    reactionsSizePx,
+                    insetPadding,
+                    layoutDirection,
+                ) {
+                    with(density) {
+                        calculateMessageContextMenuPlacement(
+                            anchor = overlayAnchor,
+                            viewport = androidx.compose.ui.unit.IntSize(
+                                maxWidth.toPx().roundToInt(),
+                                maxHeight.toPx().roundToInt(),
+                            ),
+                            safeInsets = MessageContextMenuSafeInsets(
+                                left = insetPadding.calculateLeftPadding(layoutDirection).toPx(),
+                                top = insetPadding.calculateTopPadding().toPx(),
+                                right = insetPadding.calculateRightPadding(layoutDirection).toPx(),
+                                bottom = insetPadding.calculateBottomPadding().toPx(),
+                            ),
+                            isMine = message.isMine,
+                            menuWidth = 195.dp.toPx(),
+                            menuHeight = menuSizePx.height.takeIf { it > 0 }?.toFloat()
+                                ?: (policy.visibleActionCount * 40 + 16).dp.toPx(),
+                            reactionsWidth = reactionsSizePx.width.takeIf { it > 0 }?.toFloat()
+                                ?: 300.dp.toPx(),
+                            reactionsHeight = reactionsSizePx.height.takeIf { it > 0 }?.toFloat()
+                                ?: 44.dp.toPx(),
+                            showReactions = policy.canReact,
+                            edgeGap = 12.dp.toPx(),
+                            elementGap = 8.dp.toPx(),
+                        )
                     }
+                }
 
                     if (policy.canReact) Surface(
                         shape = RoundedCornerShape(22.dp),
@@ -389,7 +376,6 @@ internal fun MessageContextMenu(
             }
         }
     }
-}
 
 private data class MessageContextMenuColors(
     val surface: Color,

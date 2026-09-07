@@ -26,7 +26,7 @@ fun StoryProgressBar(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .height(3.5.dp),
+            .height(3.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         for (i in 0 until totalCount) {
@@ -41,7 +41,7 @@ fun StoryProgressBar(
                     .weight(1f)
                     .fillMaxHeight()
                     .clip(RoundedCornerShape(2.dp))
-                    .background(Color.White.copy(alpha = 0.35f)),
+                    .background(Color.White.copy(alpha = 0.3f)),
             ) {
                 if (progress > 0f) {
                     Box(

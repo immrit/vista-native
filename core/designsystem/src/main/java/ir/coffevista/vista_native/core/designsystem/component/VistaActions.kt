@@ -5,9 +5,12 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -26,6 +29,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalDensity
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaBrandColors
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaComponentSize
 
@@ -97,8 +101,7 @@ fun VistaButton(
 
 /**
  * Standard Floating Action Button (FAB) across the Vista application.
- * Positioned consistently above the floating bottom navigation bar with a uniform bottom padding (100.dp),
- * 56.dp squircle dimensions, 8.dp elevation shadow, and brand gradient.
+ * Positioned consistently above the floating bottom navigation bar and system/IME insets.
  */
 @Composable
 fun VistaFloatingActionButton(
@@ -107,12 +110,19 @@ fun VistaFloatingActionButton(
     contentDescription: String? = null,
     content: @Composable () -> Unit,
 ) {
+    val density = LocalDensity.current
+    val bottomInset = with(density) {
+        maxOf(
+            WindowInsets.navigationBars.getBottom(density),
+            WindowInsets.ime.getBottom(density),
+        ).toDp()
+    }
     Box(
         modifier = modifier
-            .padding(bottom = 100.dp)
+            .padding(bottom = 110.dp + bottomInset)
             .size(56.dp)
-            .shadow(8.dp, RoundedCornerShape(18.dp))
-            .clip(RoundedCornerShape(18.dp))
+            .shadow(8.dp, CircleShape)
+            .clip(CircleShape)
             .background(
                 Brush.linearGradient(
                     listOf(
@@ -132,5 +142,4 @@ fun VistaFloatingActionButton(
         content()
     }
 }
-
 

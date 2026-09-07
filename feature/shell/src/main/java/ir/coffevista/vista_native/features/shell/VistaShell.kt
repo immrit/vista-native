@@ -616,6 +616,9 @@ fun VistaShell(
                     { targetUserId, initialTab ->
                         navController.navigate(ShellRoutes.userFollow(targetUserId, initialTab))
                     },
+                    { chatUserId ->
+                        navController.navigate(ShellRoutes.chatDetail(chatUserId))
+                    },
                 )
             }
             composable(ShellRoutes.OwnProfileOverlay) {

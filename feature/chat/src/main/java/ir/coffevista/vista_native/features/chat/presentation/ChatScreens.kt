@@ -67,6 +67,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsBottomHeight
@@ -329,7 +330,8 @@ fun ConversationListScreen(
                 conversation.lastMessage.orEmpty().contains(searchQuery, ignoreCase = true)
         }
     }
-    Scaffold(
+    Box(modifier = Modifier.fillMaxSize()) {
+        Scaffold(
         modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
         topBar = {
             if (selectedConversationIds.isNotEmpty()) {
@@ -435,21 +437,6 @@ fun ConversationListScreen(
                 },
             )
         },
-        floatingActionButton = {
-            if (!searchVisible && !state.includeArchived) {
-                ir.coffevista.vista_native.core.designsystem.component.VistaFloatingActionButton(
-                    onClick = onNewMessage,
-                    contentDescription = "پیام جدید",
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Edit,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(24.dp),
-                    )
-                }
-            }
-        },
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
             when {
@@ -500,6 +487,24 @@ fun ConversationListScreen(
             }
             if (state.isRefreshing && state.conversations.isNotEmpty()) {
                 CircularProgressIndicator(Modifier.align(Alignment.TopCenter).padding(VistaSpacing.Small).size(24.dp))
+            }
+        }
+        }
+        if (!searchVisible && !state.includeArchived) {
+            ir.coffevista.vista_native.core.designsystem.component.VistaFloatingActionButton(
+                onClick = onNewMessage,
+                contentDescription = "پیام جدید",
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .offset(y = -45.dp)
+                    .padding(end = 16.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Edit,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(24.dp),
+                )
             }
         }
     }
@@ -2612,10 +2617,10 @@ private fun MessageBubble(
                             shape = shape,
                         ) else Modifier
                     )
-                        .padding(start = 12.dp, top = 8.dp, end = 12.dp, bottom = 6.dp)
                         .onGloballyPositioned { coordinates ->
                             bubbleBounds = coordinates.boundsInWindow()
-                        },
+                        }
+                        .padding(start = 12.dp, top = 8.dp, end = 12.dp, bottom = 6.dp),
                 ) {
                 if (!isDeleted && message.isForwarded) {
                     Row(

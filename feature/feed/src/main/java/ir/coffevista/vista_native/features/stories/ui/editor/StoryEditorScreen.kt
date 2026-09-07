@@ -1,6 +1,7 @@
 package ir.coffevista.vista_native.features.stories.ui.editor
 
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -27,6 +28,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddLocation
 import androidx.compose.material.icons.filled.AlternateEmail
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Link
@@ -110,8 +112,39 @@ fun StoryEditorScreen(
     var showLocationDialog by remember { mutableStateOf(false) }
     var locationName by remember { mutableStateOf("") }
     var showCloseFriendsDialog by remember { mutableStateOf(false) }
+    var showDiscardDialog by remember { mutableStateOf(false) }
+    val hasUnsavedChanges = uiState.mediaUri != null || uiState.elements.isNotEmpty()
 
-    // Media Launchers
+    val requestClose: () -> Unit = {
+        if (hasUnsavedChanges) showDiscardDialog = true else onClose()
+    }
+
+    BackHandler(enabled = hasUnsavedChanges) {
+        requestClose()
+    }
+
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var tempCameraStoryUri by remember { mutableStateOf<Uri?>(null) }
+    val cameraLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicture(),
+    ) { success ->
+        if (success && tempCameraStoryUri != null) {
+            viewModel.onMediaSelected(tempCameraStoryUri!!, isVideo = false)
+        }
+    }
+
+    fun launchCamera() {
+        val cacheDir = java.io.File(context.cacheDir, "camera").apply { mkdirs() }
+        val file = java.io.File(cacheDir, "story_${System.currentTimeMillis()}.jpg")
+        val uri = androidx.core.content.FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.files",
+            file,
+        )
+        tempCameraStoryUri = uri
+        cameraLauncher.launch(uri)
+    }
+
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia(),
     ) { uri ->
@@ -154,37 +187,89 @@ fun StoryEditorScreen(
                         .fillMaxSize()
                         .padding(padding)
                         .background(MaterialTheme.colorScheme.background),
-                    contentAlignment = Alignment.Center,
                 ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.padding(24.dp),
+                    // Top App Bar
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .statusBarsPadding()
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
+                        IconButton(onClick = onClose) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "بستن",
+                                tint = MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
                         Text(
                             text = "ایجاد استوری جدید",
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Spacer(modifier = Modifier.size(40.dp))
+                    }
+
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 24.dp),
+                    ) {
+                        Text(
+                            text = "انتخاب رسانه استوری",
                             fontSize = 20.sp,
                             fontWeight = FontWeight.Bold,
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "یک عکس یا ویدیو برای استوری خود انتخاب کنید",
+                            text = "برای استوری خود یک عکس، ویدیو یا تصویر از دوربین انتخاب کنید",
                             fontSize = 13.sp,
                             color = Color.Gray,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                         )
 
-                        Spacer(modifier = Modifier.height(32.dp))
+                        Spacer(modifier = Modifier.height(36.dp))
 
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
+                            // Camera Option
+                            Card(
+                                onClick = ::launchCamera,
+                                modifier = Modifier.weight(1f).height(130.dp),
+                                shape = RoundedCornerShape(20.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                            ) {
+                                Column(
+                                    modifier = Modifier.fillMaxSize(),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center,
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.CameraAlt,
+                                        contentDescription = null,
+                                        tint = Color(0xFFFFA726),
+                                        modifier = Modifier.size(36.dp),
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text("دوربین", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                }
+                            }
+
+                            // Gallery Photo Option
                             Card(
                                 onClick = {
                                     photoPickerLauncher.launch(
                                         PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
                                     )
                                 },
-                                modifier = Modifier.weight(1f).height(140.dp),
+                                modifier = Modifier.weight(1f).height(130.dp),
                                 shape = RoundedCornerShape(20.dp),
                                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
                             ) {
@@ -197,20 +282,21 @@ fun StoryEditorScreen(
                                         imageVector = Icons.Default.Image,
                                         contentDescription = null,
                                         tint = VistaBrandColors.Indigo,
-                                        modifier = Modifier.size(40.dp),
+                                        modifier = Modifier.size(36.dp),
                                     )
-                                    Spacer(modifier = Modifier.height(10.dp))
-                                    Text("عکس از گالری", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text("تصویر", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                                 }
                             }
 
+                            // Gallery Video Option
                             Card(
                                 onClick = {
                                     videoPickerLauncher.launch(
                                         PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly),
                                     )
                                 },
-                                modifier = Modifier.weight(1f).height(140.dp),
+                                modifier = Modifier.weight(1f).height(130.dp),
                                 shape = RoundedCornerShape(20.dp),
                                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
                             ) {
@@ -223,10 +309,10 @@ fun StoryEditorScreen(
                                         imageVector = Icons.Default.Videocam,
                                         contentDescription = null,
                                         tint = VistaBrandColors.Pink,
-                                        modifier = Modifier.size(40.dp),
+                                        modifier = Modifier.size(36.dp),
                                     )
-                                    Spacer(modifier = Modifier.height(10.dp))
-                                    Text("ویدیو از گالری", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text("ویدیو", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                                 }
                             }
                         }
@@ -271,7 +357,13 @@ fun StoryEditorScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
                         IconButton(
-                            onClick = onClose,
+                            onClick = {
+                                if (hasUnsavedChanges) {
+                                    showDiscardDialog = true
+                                } else {
+                                    onClose()
+                                }
+                            },
                             modifier = Modifier
                                 .size(40.dp)
                                 .clip(CircleShape)
@@ -601,6 +693,8 @@ fun StoryEditorScreen(
                 )
             }
 
+
+
             if (showCloseFriendsDialog) {
                 AlertDialog(
                     onDismissRequest = { showCloseFriendsDialog = false },
@@ -652,6 +746,52 @@ fun StoryEditorScreen(
                     },
                     dismissButton = {
                         TextButton(onClick = { showCloseFriendsDialog = false }) { Text("انصراف") }
+                    },
+                )
+            }
+
+            // Discard Confirmation Dialog
+            if (showDiscardDialog) {
+                AlertDialog(
+                    onDismissRequest = { showDiscardDialog = false },
+                    containerColor = Color(0xFF212121),
+                    shape = RoundedCornerShape(16.dp),
+                    title = {
+                        Text(
+                            text = "تغییرات ذخیره نشده",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    },
+                    text = {
+                        Text(
+                            text = "آیا از انصراف مطمئن هستید؟ تغییرات شما از بین خواهد رفت.",
+                            color = Color(0xFFBDBDBD),
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                showDiscardDialog = false
+                                onClose()
+                            },
+                        ) {
+                            Text(
+                                text = "انصراف",
+                                color = Color(0xFFE53935),
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(
+                            onClick = { showDiscardDialog = false },
+                        ) {
+                            Text(
+                                text = "ادامه ویرایش",
+                                color = Color.White,
+                            )
+                        }
                     },
                 )
             }

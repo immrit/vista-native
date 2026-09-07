@@ -28,19 +28,27 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.border
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Report
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
@@ -69,6 +77,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -84,7 +93,9 @@ import coil.compose.AsyncImage
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaBrandColors
 import ir.coffevista.vista_native.features.stories.data.StoryRepository
 import ir.coffevista.vista_native.features.stories.domain.StoryMediaType
+import ir.coffevista.vista_native.features.stories.domain.StoryPrivacyType
 import ir.coffevista.vista_native.features.stories.domain.StoryUser
+import ir.coffevista.vista_native.features.stories.domain.StoryVerificationType
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -130,11 +141,16 @@ fun StoryPlayerScreen(
     val isOwnStory = activeUser.id == currentUserId
 
     var isPaused by remember { mutableStateOf(false) }
+    var showOptionsSheet by remember { mutableStateOf(false) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    var showReportDialog by remember { mutableStateOf(false) }
     var currentProgress by remember { mutableFloatStateOf(0f) }
     var showViewersSheet by remember { mutableStateOf(false) }
     var replyText by remember { mutableStateOf("") }
     var isLiked by remember(activeStory.id) { mutableStateOf(false) }
     var floatingReaction by remember(activeStory.id) { mutableStateOf<String?>(null) }
+
+    val isPlaybackPaused = isPaused || showOptionsSheet || showDeleteDialog || showReportDialog || showViewersSheet
 
     LaunchedEffect(floatingReaction) {
         if (floatingReaction != null) {
@@ -191,12 +207,17 @@ fun StoryPlayerScreen(
     }
 
     // Timer & Progress Engine
-    LaunchedEffect(activeStory.id, isPaused, currentUserIndex, currentStoryIndex) {
-        if (isPaused) return@LaunchedEffect
+    LaunchedEffect(activeStory.id, isPlaybackPaused, currentUserIndex, currentStoryIndex) {
+        if (isPlaybackPaused) {
+            exoPlayer?.pause()
+            return@LaunchedEffect
+        } else {
+            exoPlayer?.play()
+        }
 
         val isVideo = activeStory.mediaType == StoryMediaType.Video
         if (isVideo && exoPlayer != null) {
-            while (isActive && !isPaused) {
+            while (isActive && !isPlaybackPaused) {
                 val duration = exoPlayer.duration.coerceAtLeast(1)
                 val position = exoPlayer.currentPosition
                 currentProgress = (position.toFloat() / duration).coerceIn(0f, 1f)
@@ -211,13 +232,13 @@ fun StoryPlayerScreen(
             val stepMs = 30L
             var elapsed = (currentProgress * totalDurationMs).toLong()
 
-            while (isActive && !isPaused && elapsed < totalDurationMs) {
+            while (isActive && !isPlaybackPaused && elapsed < totalDurationMs) {
                 delay(stepMs)
                 elapsed += stepMs
                 currentProgress = (elapsed.toFloat() / totalDurationMs).coerceIn(0f, 1f)
             }
 
-            if (currentProgress >= 1f && !isPaused) {
+            if (currentProgress >= 1f && !isPlaybackPaused) {
                 goToNextStory()
             }
         }
@@ -234,12 +255,22 @@ fun StoryPlayerScreen(
                     .fillMaxSize()
                     .padding(padding)
                     .pointerInput(Unit) {
-                        detectDragGestures { _, dragAmount ->
-                            if (dragAmount.y > 60) {
-                                onClose()
-                            } else if (dragAmount.y < -60 && isOwnStory) {
-                                showViewersSheet = true
-                            }
+                        var totalDragY = 0f
+                        detectDragGestures(
+                            onDragStart = { totalDragY = 0f },
+                            onDragCancel = { totalDragY = 0f },
+                            onDragEnd = {
+                                when {
+                                    totalDragY > 100f -> onClose()
+                                    totalDragY < -100f && isOwnStory -> showViewersSheet = true
+                                }
+                                totalDragY = 0f
+                            },
+                        ) { _, dragAmount ->
+                            // Drag callbacks carry small frame deltas, not the
+                            // full gesture distance. Accumulate before deciding
+                            // so the threshold matches Flutter's end-of-drag UX.
+                            totalDragY += dragAmount.y
                         }
                     },
             ) {
@@ -361,9 +392,10 @@ fun StoryPlayerScreen(
                             ) {
                                 Box(
                                     modifier = Modifier
-                                        .size(36.dp)
+                                        .size(40.dp)
+                                        .border(2.dp, Color.White, CircleShape)
                                         .clip(CircleShape)
-                                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                                        .background(Color(0xFF424242)),
                                     contentAlignment = Alignment.Center,
                                 ) {
                                     if (!activeUser.avatarUrl.isNullOrBlank()) {
@@ -378,7 +410,7 @@ fun StoryPlayerScreen(
                                             imageVector = Icons.Default.Person,
                                             contentDescription = null,
                                             tint = Color.White,
-                                            modifier = Modifier.size(20.dp),
+                                            modifier = Modifier.size(24.dp),
                                         )
                                     }
                                 }
@@ -386,38 +418,66 @@ fun StoryPlayerScreen(
                                 Spacer(modifier = Modifier.width(10.dp))
 
                                 Column {
-                                    Text(
-                                        text = activeUser.username,
-                                        color = Color.White,
-                                        fontSize = 14.sp,
-                                        fontWeight = FontWeight.Bold,
-                                    )
-                                    Text(
-                                        text = "استوری ویستا",
-                                        color = Color.White.copy(alpha = 0.7f),
-                                        fontSize = 11.sp,
-                                    )
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = activeUser.username,
+                                            color = Color.White,
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.Bold,
+                                        )
+                                        if (activeUser.isVerified || activeUser.isPremium) {
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            StoryVerificationBadge(
+                                                isVerified = activeUser.isVerified,
+                                                verificationType = activeUser.verificationType,
+                                                isPremium = activeUser.isPremium,
+                                                size = 14.dp,
+                                            )
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = formatStoryTimeAgo(activeStory.createdAt),
+                                            color = Color.White.copy(alpha = 0.7f),
+                                            fontSize = 12.sp,
+                                        )
+                                        if (activeStory.privacyType == StoryPrivacyType.CloseFriends) {
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Row(
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(4.dp))
+                                                    .background(Color(0xFF2E7D32))
+                                                    .padding(horizontal = 6.dp, vertical = 2.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Star,
+                                                    contentDescription = null,
+                                                    tint = Color.White,
+                                                    modifier = Modifier.size(10.dp),
+                                                )
+                                                Spacer(modifier = Modifier.width(2.dp))
+                                                Text(
+                                                    text = "دوستان نزدیک",
+                                                    color = Color.White,
+                                                    fontSize = 10.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                )
+                                            }
+                                        }
+                                    }
                                 }
                             }
 
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                if (isOwnStory) {
-                                    IconButton(
-                                        onClick = {
-                                            coroutineScope.launch {
-                                                repository.deleteStory(activeStory.id)
-                                                goToNextStory()
-                                            }
-                                        },
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Delete,
-                                            contentDescription = "حذف استوری",
-                                            tint = Color.White,
-                                        )
-                                    }
+                                IconButton(onClick = { showOptionsSheet = true }) {
+                                    Icon(
+                                        imageVector = Icons.Default.MoreVert,
+                                        contentDescription = "گزینه‌ها",
+                                        tint = Color.White,
+                                    )
                                 }
-
                                 IconButton(onClick = onClose) {
                                     Icon(
                                         imageVector = Icons.Default.Close,
@@ -593,7 +653,236 @@ fun StoryPlayerScreen(
                     },
                 )
             }
+
+            // Options Bottom Sheet
+            if (showOptionsSheet) {
+                ModalBottomSheet(
+                    onDismissRequest = { showOptionsSheet = false },
+                    containerColor = Color(0xFF1E1E1E),
+                    shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .navigationBarsPadding()
+                            .padding(vertical = 8.dp),
+                    ) {
+                        if (isOwnStory) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        showOptionsSheet = false
+                                        showViewersSheet = true
+                                    }
+                                    .padding(horizontal = 20.dp, vertical = 14.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(Icons.Default.Visibility, contentDescription = null, tint = Color.White)
+                                Spacer(modifier = Modifier.width(16.dp))
+                                Text("مشاهده‌کنندگان", color = Color.White, fontSize = 15.sp)
+                            }
+
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        showOptionsSheet = false
+                                        showDeleteDialog = true
+                                    }
+                                    .padding(horizontal = 20.dp, vertical = 14.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(Icons.Default.Delete, contentDescription = null, tint = Color(0xFFE53935))
+                                Spacer(modifier = Modifier.width(16.dp))
+                                Text("حذف استوری", color = Color(0xFFE53935), fontSize = 15.sp)
+                            }
+                        } else {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        showOptionsSheet = false
+                                        showReportDialog = true
+                                    }
+                                    .padding(horizontal = 20.dp, vertical = 14.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(Icons.Default.Report, contentDescription = null, tint = Color.White)
+                                Spacer(modifier = Modifier.width(16.dp))
+                                Text("گزارش", color = Color.White, fontSize = 15.sp)
+                            }
+                        }
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    showOptionsSheet = false
+                                    val sendIntent = android.content.Intent().apply {
+                                        action = android.content.Intent.ACTION_SEND
+                                        putExtra(android.content.Intent.EXTRA_TEXT, activeStory.mediaUrl)
+                                        type = "text/plain"
+                                    }
+                                    val shareIntent = android.content.Intent.createChooser(sendIntent, "اشتراک‌گذاری استوری")
+                                    context.startActivity(shareIntent)
+                                }
+                                .padding(horizontal = 20.dp, vertical = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(Icons.Default.Share, contentDescription = null, tint = Color.White)
+                            Spacer(modifier = Modifier.width(16.dp))
+                            Text("اشتراک‌گذاری", color = Color.White, fontSize = 15.sp)
+                        }
+                    }
+                }
+            }
+
+            // Delete Confirmation Dialog
+            if (showDeleteDialog) {
+                AlertDialog(
+                    onDismissRequest = { showDeleteDialog = false },
+                    containerColor = Color(0xFF212121),
+                    shape = RoundedCornerShape(16.dp),
+                    title = {
+                        Text(
+                            text = "حذف استوری",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    },
+                    text = {
+                        Text(
+                            text = "آیا از حذف این استوری مطمئن هستید؟",
+                            color = Color(0xFFBDBDBD),
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                showDeleteDialog = false
+                                coroutineScope.launch {
+                                    repository.deleteStory(activeStory.id)
+                                    goToNextStory()
+                                }
+                            },
+                        ) {
+                            Text(
+                                text = "حذف",
+                                color = Color(0xFFE53935),
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(
+                            onClick = { showDeleteDialog = false },
+                        ) {
+                            Text(
+                                text = "ادامه ویرایش",
+                                color = Color.White,
+                            )
+                        }
+                    },
+                )
+            }
+
+            // Report Dialog
+            if (showReportDialog) {
+                val reportReasons = listOf(
+                    "محتوای نامناسب",
+                    "محتوای خشونت‌آمیز",
+                    "اسپم",
+                    "نقض حق نشر",
+                    "سایر موارد",
+                )
+                AlertDialog(
+                    onDismissRequest = { showReportDialog = false },
+                    containerColor = Color(0xFF212121),
+                    shape = RoundedCornerShape(16.dp),
+                    title = {
+                        Text(
+                            text = "گزارش استوری",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            reportReasons.forEach { reason ->
+                                Text(
+                                    text = reason,
+                                    color = Color.White,
+                                    fontSize = 14.sp,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            showReportDialog = false
+                                            coroutineScope.launch {
+                                                snackbarHostState.showSnackbar("گزارش شما ثبت شد")
+                                            }
+                                        }
+                                        .padding(vertical = 10.dp, horizontal = 4.dp),
+                                )
+                            }
+                        }
+                    },
+                    confirmButton = {},
+                    dismissButton = {
+                        TextButton(onClick = { showReportDialog = false }) {
+                            Text("انصراف", color = Color.White)
+                        }
+                    },
+                )
+            }
         }
+    }
+}
+
+@Composable
+private fun StoryVerificationBadge(
+    isVerified: Boolean,
+    verificationType: StoryVerificationType,
+    isPremium: Boolean,
+    size: Dp = 14.dp,
+) {
+    if (!isVerified && !isPremium) return
+    val badgeColor = when (verificationType) {
+        StoryVerificationType.Gold -> Color(0xFFFFA000)
+        StoryVerificationType.Black -> Color.White
+        else -> Color(0xFF2196F3)
+    }
+    Box(
+        modifier = Modifier
+            .size(size)
+            .clip(CircleShape)
+            .background(badgeColor),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = "✓",
+            color = if (badgeColor == Color.White) Color.Black else Color.White,
+            fontSize = (size.value * 0.55f).sp,
+            fontWeight = FontWeight.Bold,
+        )
+    }
+}
+
+private fun formatStoryTimeAgo(createdAt: String?): String {
+    if (createdAt.isNullOrBlank()) return "به‌تازگی"
+    return try {
+        val instant = java.time.Instant.parse(createdAt)
+        val now = java.time.Instant.now()
+        val duration = java.time.Duration.between(instant, now)
+        val seconds = duration.seconds
+        when {
+            seconds < 60 -> "چند لحظه پیش"
+            seconds < 3600 -> "${seconds / 60} دقیقه پیش"
+            seconds < 86400 -> "${seconds / 3600} ساعت پیش"
+            else -> "${seconds / 86400} روز پیش"
+        }
+    } catch (_: Exception) {
+        "به‌تازگی"
     }
 }
 

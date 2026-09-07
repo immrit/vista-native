@@ -53,7 +53,7 @@ class FollowersFollowingViewModelTest {
 
         override suspend fun follow(request: FollowActionRequestDto): Response<FollowActionResponseDto> {
             lastFollowTarget = request.targetUserId
-            return Response.success(FollowActionResponseDto(status = "following"))
+            return Response.success(FollowActionResponseDto(status = "following", message = "ok"))
         }
 
         override suspend fun unfollow(request: FollowActionRequestDto): Response<UnfollowResponseDto> {

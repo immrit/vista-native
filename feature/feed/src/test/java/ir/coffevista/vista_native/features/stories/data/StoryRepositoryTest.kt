@@ -53,6 +53,20 @@ class StoryRepositoryTest {
             return UserStoriesResponseDto(stories = listOf(sampleStory))
         }
 
+        override suspend fun getFollowingUsers(
+            userId: String,
+            limit: Int,
+            offset: Int,
+        ): ir.coffevista.vista_native.features.stories.domain.FollowingStoryUsersResponseDto {
+            return ir.coffevista.vista_native.features.stories.domain.FollowingStoryUsersResponseDto()
+        }
+
+        override suspend fun getCloseFriends(): List<String> = emptyList()
+
+        override suspend fun updateCloseFriends(
+            request: ir.coffevista.vista_native.features.stories.domain.CloseFriendsUpdateRequestDto,
+        ) = Unit
+
         override suspend fun getStoryById(storyId: String): Story = sampleStory
 
         override suspend fun createStory(request: CreateStoryRequestDto): Story = sampleStory

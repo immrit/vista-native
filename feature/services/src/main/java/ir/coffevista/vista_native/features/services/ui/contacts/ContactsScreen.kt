@@ -29,12 +29,20 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
+import android.provider.ContactsContract
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -43,6 +51,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
@@ -69,6 +78,29 @@ fun ContactsScreen(
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+    ) { isGranted ->
+        if (isGranted) {
+            val contacts = queryDeviceContacts(context)
+            viewModel.syncContacts(contacts)
+        } else {
+            viewModel.onContactsPermissionDenied()
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        if (ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.READ_CONTACTS,
+            ) == PackageManager.PERMISSION_GRANTED
+        ) {
+            val contacts = queryDeviceContacts(context)
+            viewModel.syncContacts(contacts)
+        }
+    }
 
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
         Scaffold(
@@ -123,7 +155,16 @@ fun ContactsScreen(
                     is ContactsRailUiState.PermissionRequired -> {
                         PermissionRequiredCard(
                             onGrantPermission = {
-                                // Trigger permission request
+                                if (ContextCompat.checkSelfPermission(
+                                        context,
+                                        Manifest.permission.READ_CONTACTS,
+                                    ) == PackageManager.PERMISSION_GRANTED
+                                ) {
+                                    val contacts = queryDeviceContacts(context)
+                                    viewModel.syncContacts(contacts)
+                                } else {
+                                    permissionLauncher.launch(Manifest.permission.READ_CONTACTS)
+                                }
                             },
                         )
                     }
@@ -377,3 +418,32 @@ private fun ErrorCard(
         }
     }
 }
+
+private fun queryDeviceContacts(context: Context): List<String> {
+    val phoneNumbers = LinkedHashSet<String>()
+    val projection = arrayOf(ContactsContract.CommonDataKinds.Phone.NUMBER)
+    runCatching {
+        context.contentResolver.query(
+            ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+            projection,
+            null,
+            null,
+            null,
+        )?.use { cursor ->
+            val numberIndex = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
+            if (numberIndex != -1) {
+                while (cursor.moveToNext()) {
+                    val raw = cursor.getString(numberIndex)
+                    if (!raw.isNullOrBlank()) {
+                        val cleaned = raw.replace("[\\s\\-\\(\\)]".toRegex(), "")
+                        if (cleaned.isNotBlank()) {
+                            phoneNumbers.add(cleaned)
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return phoneNumbers.toList()
+}
+

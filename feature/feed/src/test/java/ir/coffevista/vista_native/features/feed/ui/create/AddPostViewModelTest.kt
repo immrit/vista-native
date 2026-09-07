@@ -1,7 +1,8 @@
 package ir.coffevista.vista_native.features.feed.ui.create
 
 import android.net.Uri
-import android.test.mock.MockContext
+import ir.coffevista.vista_native.core.database.profile.OwnProfileDao
+import ir.coffevista.vista_native.core.database.profile.OwnProfileEntity
 import ir.coffevista.vista_native.core.model.session.AuthenticatedContext
 import ir.coffevista.vista_native.core.model.session.AuthenticationState
 import ir.coffevista.vista_native.core.model.session.AuthenticationStateProvider
@@ -103,6 +104,13 @@ class AddPostViewModelTest {
             onProgress: (Float) -> Unit,
         ): UploadedMediaResult = error("Media upload is not used by these tests")
     }
+    private class FakeOwnProfileDao : OwnProfileDao {
+        override fun getOwnProfile(userId: String) = MutableStateFlow<OwnProfileEntity?>(null)
+        override suspend fun insertOrUpdate(profile: OwnProfileEntity) = Unit
+        override suspend fun deleteProfile(userId: String) = Unit
+        override suspend fun deleteAll() = Unit
+    }
+
     private lateinit var viewModel: AddPostViewModel
 
     @Before
@@ -113,7 +121,7 @@ class AddPostViewModelTest {
             api = fakeApi,
             uploader = fakeUploader,
             authStateProvider = authStateProvider,
-            appContext = MockContext(),
+            ownProfileDao = FakeOwnProfileDao(),
         )
     }
 
@@ -134,7 +142,7 @@ class AddPostViewModelTest {
     @Test
     fun `music-only draft can be submitted after audio selection`() {
         val state = AddPostUiState(
-            selectedMusicUri = Uri.parse("content://media/external/audio/1"),
+            selectedMusicUrl = "https://example.com/audio.mp3",
             selectedMusicTitle = "موسیقی تست",
             musicDurationMs = 30_000,
             musicEndMs = 15_000,

@@ -1000,7 +1000,7 @@ internal fun CommentComposer(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .navigationBarsPadding()
+                .windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime))
                 .padding(16.dp)
         ) {
             // Mention autocomplete chip row

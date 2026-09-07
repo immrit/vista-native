@@ -17,6 +17,11 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import ir.coffevista.vista_native.core.database.profile.OwnProfileDao
+import ir.coffevista.vista_native.core.database.profile.OwnProfileEntity
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.SharingStarted
@@ -25,13 +30,49 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.yield
 import javax.inject.Inject
 
+@OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class FeedViewModel @Inject constructor(
     private val feedRepository: FeedRepository,
     private val storyRepository: ir.coffevista.vista_native.features.stories.data.StoryRepository,
-    notificationRepository: NotificationRepository,
+    private val notificationRepository: NotificationRepository,
     private val authStateProvider: AuthenticationStateProvider,
+    private val ownProfileDao: OwnProfileDao? = null,
 ) : ViewModel() {
+
+    // Test constructor
+    constructor(
+        feedRepository: FeedRepository,
+        storyRepository: ir.coffevista.vista_native.features.stories.data.StoryRepository,
+        authStateProvider: AuthenticationStateProvider,
+    ) : this(
+        feedRepository = feedRepository,
+        storyRepository = storyRepository,
+        notificationRepository = object : NotificationRepository {
+            override val notifications = MutableStateFlow<List<ir.coffevista.vista_native.features.feed.data.VistaNotification>>(emptyList())
+            override val isLoading = MutableStateFlow(false)
+            override val hasMore = MutableStateFlow(false)
+            override val unreadCount = flowOf(0)
+            override val unreadCountsByFilter = flowOf(emptyMap<String, Int>())
+            override suspend fun refresh() = Unit
+            override suspend fun fetchMore() = Unit
+            override suspend fun markAllAsRead() = Unit
+            override suspend fun markAsRead(notificationId: String) = Unit
+            override suspend fun markAsRead(notificationIds: List<String>) = Unit
+            override suspend fun deleteAll() = Unit
+            override suspend fun deleteNotification(notificationId: String) = Unit
+            override suspend fun respondToFollowRequest(
+                requesterId: String,
+                accept: Boolean,
+                notificationId: String?,
+            ) = ir.coffevista.vista_native.features.feed.data.FollowRequestActionResult(
+                state = ir.coffevista.vista_native.features.feed.data.FollowRequestActionState.Success,
+                message = "",
+            )
+        },
+        authStateProvider = authStateProvider,
+        ownProfileDao = null,
+    )
 
     val activeStoryUsers = storyRepository.activeStoryUsers
     val unreadNotificationCount: StateFlow<Int> = notificationRepository.unreadCount.stateIn(
@@ -49,13 +90,28 @@ class FeedViewModel @Inject constructor(
     private val _viewerUserId = MutableStateFlow<String?>(null)
     val viewerUserId: StateFlow<String?> = _viewerUserId.asStateFlow()
 
+    val ownProfile: StateFlow<OwnProfileEntity?> = _viewerUserId
+        .flatMapLatest { userId ->
+            if (userId != null && ownProfileDao != null) {
+                ownProfileDao.getOwnProfile(userId)
+            } else {
+                flowOf(null)
+            }
+        }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000),
+            initialValue = null,
+        )
+
     private var currentUserId: String? = null
     private var initialRefreshPending = false
     private var pageJob: Job? = null
 
     init {
         viewModelScope.launch {
-            storyRepository.refreshActiveStories()
+            launch { storyRepository.refreshActiveStories() }
+            launch { runCatching { notificationRepository.refresh() } }
             authStateProvider.state.collectLatest { authState ->
                 if (authState is AuthenticationState.SignedIn) {
                     currentUserId = authState.context.userId
@@ -153,7 +209,11 @@ class FeedViewModel @Inject constructor(
         } else {
             _uiState.value = FeedUiState.Loading
         }
-        viewModelScope.launch { refreshFeed(userId, kind) }
+        viewModelScope.launch {
+            launch { storyRepository.refreshActiveStories() }
+            launch { runCatching { notificationRepository.refresh() } }
+            refreshFeed(userId, kind)
+        }
     }
 
     private suspend fun refreshFeed(userId: String, kind: FeedKind) {

@@ -171,11 +171,27 @@ fun DataStorageSettingsScreen(
                     VistaSettingsTile(
                         icon = Icons.Outlined.CleaningServices,
                         title = "پاکسازی کش",
-                        subtitle = "حذف فایل‌های موقت و آزادسازی فضا ($cacheSizeText)",
-                        enabled = cacheState.sizeBytes != null && !cacheState.isClearing,
+                        subtitle = cacheState.sizeBytes?.let {
+                            "فضای اشغال‌شده: $cacheSizeText"
+                        } ?: "حذف فایل‌های موقت و آزادسازی فضا",
+                        enabled = !cacheState.isClearing,
                         onClick = { showClearCacheDialog = true },
                     )
                 }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text(
+                    text = "با پاکسازی کش، تصاویر و فایل‌های موقت حذف می‌شوند. این کار فضای ذخیره‌سازی را آزاد می‌کند.",
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
+                    ),
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(24.dp),
+                )
 
                 Spacer(modifier = Modifier.height(32.dp))
             }

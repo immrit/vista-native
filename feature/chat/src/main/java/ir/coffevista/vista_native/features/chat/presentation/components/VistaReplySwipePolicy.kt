@@ -17,7 +17,7 @@ internal data class ReplySwipePolicy(
     }
 
     private val direction: Float
-        get() = if (bubbleOnRight) -1f else 1f
+        get() = if (bubbleOnRight) 1f else -1f
 
     fun accepts(horizontalDeltaPx: Float, verticalDeltaPx: Float): Boolean =
         abs(horizontalDeltaPx) > touchSlopPx &&

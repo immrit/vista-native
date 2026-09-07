@@ -219,20 +219,15 @@ fun OwnProfileScreen(
                     }
                 }
 
-                // Floating Action Button (+) anchored at bottom-left (matching Flutter)
-                androidx.compose.runtime.CompositionLocalProvider(
-                    androidx.compose.ui.platform.LocalLayoutDirection provides androidx.compose.ui.unit.LayoutDirection.Ltr,
-                ) {
-                    Box(modifier = Modifier.fillMaxSize()) {
-                        ProfileFAB(
-                            onClick = {
-                                onAddPost?.invoke() ?: Toast.makeText(context, "ایجاد پست جدید", Toast.LENGTH_SHORT).show()
-                            },
-                            modifier = Modifier
-                                .align(Alignment.BottomStart)
-                                .padding(start = 20.dp, bottom = 96.dp),
-                        )
-                    }
+                Box(modifier = Modifier.fillMaxSize()) {
+                    ProfileFAB(
+                        onClick = {
+                            onAddPost?.invoke() ?: Toast.makeText(context, "ایجاد پست جدید", Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(end = 16.dp),
+                    )
                 }
 
                 // Options Bottom Sheet
@@ -331,25 +326,12 @@ private fun OwnProfileAppBar(
             }
         }
 
-        // End in RTL (Left side of screen): QR Code + More options + Settings
+        // End in RTL (Left side of screen): More options + Settings.
+        // The Flutter profile header does not expose a QR affordance here.
         Row(
             modifier = Modifier.align(Alignment.CenterEnd),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (onQrClick != null) {
-                IconButton(
-                    onClick = onQrClick,
-                    modifier = Modifier.size(40.dp),
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.QrCodeScanner,
-                        contentDescription = "کد QR پروفایل",
-                        modifier = Modifier.size(22.dp),
-                        tint = MaterialTheme.colorScheme.onBackground,
-                    )
-                }
-                Spacer(Modifier.width(2.dp))
-            }
             IconButton(
                 onClick = onOptionsClick,
                 modifier = Modifier.size(40.dp),

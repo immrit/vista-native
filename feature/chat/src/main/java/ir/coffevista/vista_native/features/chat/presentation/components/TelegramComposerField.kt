@@ -4,6 +4,11 @@ import android.icu.text.BreakIterator
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.viewinterop.AndroidView
+import android.text.Editable
+import android.text.TextWatcher
+import android.widget.EditText
+import android.text.InputType
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -18,6 +23,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.contentDescription
@@ -31,6 +37,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.sp
+import ir.coffevista.vista_native.core.designsystem.component.VistaEmojiSpan
 
 /**
  * کنترلر فیلد ورودی پیام برای شکلک‌ها، صفحه‌کلید و عملکرد سریع
@@ -132,57 +139,54 @@ fun ChatComposerField(
     CompositionLocalProvider(
         LocalLayoutDirection provides if (isRtlParagraph) LayoutDirection.Rtl else LayoutDirection.Ltr,
     ) {
-        BasicTextField(
-            value = value,
-            onValueChange = onValueChange,
+        val textColor = MaterialTheme.colorScheme.onSurface.toArgb()
+        val hintColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f).toArgb()
+        AndroidView(
+            factory = { context ->
+                EditText(context).apply {
+                    background = null
+                    setPadding(0, 0, 0, 0)
+                    inputType = InputType.TYPE_CLASS_TEXT or
+                        InputType.TYPE_TEXT_FLAG_CAP_SENTENCES or
+                        InputType.TYPE_TEXT_FLAG_MULTI_LINE or
+                        InputType.TYPE_TEXT_FLAG_AUTO_CORRECT
+                    setSingleLine(false)
+                    setMaxLines(maxLines)
+                    addTextChangedListener(object : TextWatcher {
+                        override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+                        override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
+                        override fun afterTextChanged(editable: Editable?) {
+                            if (editable == null || this@apply.tag == true) return
+                            VistaEmojiSpan.applySpans(context, editable)
+                            onValueChange(
+                                TextFieldValue(
+                                    editable.toString(),
+                                    TextRange(selectionStart.coerceAtLeast(0)),
+                                ),
+                            )
+                        }
+                    })
+                }
+            },
             modifier = modifier
                 .focusRequester(actualFocusRequester)
                 .onFocusChanged { if (it.isFocused && !isEmojiPanelOpen) onFocusText() }
                 .semantics {
                     contentDescription = hint
                 },
-            textStyle = MaterialTheme.typography.bodyLarge.copy(
-                color = MaterialTheme.colorScheme.onSurface,
-                fontSize = 16.sp,
-                lineHeight = 22.sp,
-                textDirection = if (isRtlParagraph) TextDirection.Rtl else TextDirection.Ltr,
-                // `Start` is resolved against the paragraph's explicit layout
-                // direction above: physical right for Persian and physical
-                // left for Latin.  Never use centred text in the composer.
-                textAlign = TextAlign.Start,
-            ),
-            keyboardOptions = KeyboardOptions(
-                capitalization = KeyboardCapitalization.Sentences,
-                autoCorrectEnabled = true,
-                keyboardType = KeyboardType.Text,
-                imeAction = ImeAction.Default,
-            ),
-            maxLines = maxLines,
-            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-            decorationBox = { innerTextField ->
-                Box(
-                    modifier = Modifier.fillMaxWidth(),
-                    contentAlignment = Alignment.CenterStart,
-                ) {
-                    if (value.text.isEmpty()) {
-                        Text(
-                            text = hint,
-                            modifier = Modifier.fillMaxWidth(),
-                            style = MaterialTheme.typography.bodyLarge.copy(
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                                fontSize = 16.sp,
-                                textDirection = TextDirection.Rtl,
-                                textAlign = TextAlign.Start,
-                            ),
-                        )
-                    }
-                    // `innerTextField` is not guaranteed to consume the
-                    // decoration slot by itself.  Giving it a full-width box
-                    // makes the Start alignment deterministic instead of
-                    // leaving short Latin text visually centred.
-                    Box(Modifier.fillMaxWidth()) {
-                        innerTextField()
-                    }
+            update = { editText ->
+                editText.hint = hint
+                editText.textDirection = if (isRtlParagraph) android.view.View.TEXT_DIRECTION_RTL else android.view.View.TEXT_DIRECTION_LTR
+                editText.setTextColor(textColor)
+                editText.setHintTextColor(hintColor)
+                if (editText.text.toString() != value.text) {
+                    editText.tag = true
+                    editText.setText(value.text)
+                    editText.setSelection(value.selection.min.coerceIn(0, editText.text.length))
+                    VistaEmojiSpan.applySpans(editText.context, editText.text)
+                    editText.tag = false
+                } else if (editText.selectionStart != value.selection.min) {
+                    editText.setSelection(value.selection.min.coerceIn(0, editText.text.length))
                 }
             },
         )

@@ -658,7 +658,7 @@ fun VistaApp(
                                 )
                             }
                         },
-                        userProfile = { userId, onBack, onSelfProfile, onPostClick, onOpenFollowers ->
+                        userProfile = { userId, onBack, onSelfProfile, onPostClick, onOpenFollowers, onOpenChat ->
                             val postsViewModel = hiltViewModel<ProfilePostsViewModel>()
                             val postsState by postsViewModel.uiState.collectAsStateWithLifecycle()
                             LaunchedEffect(userId) {
@@ -675,6 +675,7 @@ fun VistaApp(
                                 onPostClick = onPostClick,
                                 onLikeClick = postsViewModel::toggleLike,
                                 onSaveClick = postsViewModel::toggleSave,
+                                onMessage = onOpenChat?.let { openChat -> { openChat(userId) } },
                             )
                         },
                         followersFollowing = { targetUserId, initialTab, onBack, onOpenProfile ->

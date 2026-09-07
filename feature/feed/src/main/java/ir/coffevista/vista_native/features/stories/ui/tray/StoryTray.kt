@@ -47,7 +47,10 @@ fun StoryTray(
     modifier: Modifier = Modifier,
 ) {
     val brandGradient = Brush.linearGradient(
-        colors = listOf(VistaBrandColors.Indigo, VistaBrandColors.Pink),
+        colors = listOf(VistaBrandColors.Indigo, VistaBrandColors.Violet, VistaBrandColors.Pink),
+    )
+    val primaryGradient = Brush.linearGradient(
+        colors = listOf(VistaBrandColors.Indigo, VistaBrandColors.Violet),
     )
 
     val sortedUsers = storyUsers
@@ -70,7 +73,7 @@ fun StoryTray(
     ) {
         item(key = "story_tray_add_story") {
             AddStoryItem(
-                brandGradient = brandGradient,
+                primaryGradient = primaryGradient,
                 onClick = onCreateStory,
             )
         }
@@ -78,11 +81,18 @@ fun StoryTray(
         itemsIndexed(
             items = sortedUsers,
             key = { _, user -> "story_user_${user.id}" },
-        ) { index, user ->
+        ) { _, user ->
             StoryUserItem(
                 user = user,
                 brandGradient = brandGradient,
-                onClick = { onOpenStoryPlayer(index) },
+                // The player consumes the repository's original list while the
+                // tray is intentionally sorted for unseen/recency priority.
+                // Passing this LazyRow index could open a different user.
+                onClick = {
+                    storyUsers.indexOfFirst { it.id == user.id }
+                        .takeIf { it >= 0 }
+                        ?.let(onOpenStoryPlayer)
+                },
             )
         }
     }
@@ -90,7 +100,7 @@ fun StoryTray(
 
 @Composable
 private fun AddStoryItem(
-    brandGradient: Brush,
+    primaryGradient: Brush,
     onClick: () -> Unit,
 ) {
     Column(
@@ -101,27 +111,32 @@ private fun AddStoryItem(
             .clickable(onClick = onClick),
     ) {
         Box(
-            modifier = Modifier
-                .size(74.dp)
-                .border(1.5.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.26f), CircleShape)
-                .padding(2.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)),
+            modifier = Modifier.size(74.dp),
             contentAlignment = Alignment.Center,
         ) {
             Box(
                 modifier = Modifier
-                    .size(28.dp)
+                    .fillMaxSize()
+                    .border(1.5.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.26f), CircleShape)
+                    .padding(2.dp)
                     .clip(CircleShape)
-                    .background(brandGradient),
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(
-                    imageVector = Icons.Default.Add,
-                    contentDescription = "افزودن استوری",
-                    tint = Color.White,
-                    modifier = Modifier.size(20.dp),
-                )
+                Box(
+                    modifier = Modifier
+                        .size(28.dp)
+                        .clip(CircleShape)
+                        .background(primaryGradient),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = "استوری جدید",
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
             }
         }
 
@@ -155,10 +170,10 @@ private fun StoryUserItem(
         Box(
             modifier = Modifier
                 .size(74.dp)
-                .clip(CircleShape)
                 .then(
                     if (user.hasUnseenStories) {
                         Modifier
+                            .clip(CircleShape)
                             .background(brandGradient)
                             .padding(2.dp)
                     } else {
@@ -168,7 +183,8 @@ private fun StoryUserItem(
                     },
                 )
                 .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.surface),
+                .background(MaterialTheme.colorScheme.surface)
+                .padding(2.5.dp),
             contentAlignment = Alignment.Center,
         ) {
             if (!user.avatarUrl.isNullOrBlank()) {
@@ -190,16 +206,28 @@ private fun StoryUserItem(
             }
         }
 
-        Text(
-            text = user.username,
-            fontSize = 12.sp,
-            fontWeight = if (user.hasUnseenStories) FontWeight.Bold else FontWeight.Normal,
-            textAlign = TextAlign.Center,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
+        androidx.compose.foundation.layout.Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
             modifier = Modifier
-                .width(70.dp)
+                .width(74.dp)
                 .padding(top = 4.dp),
-        )
+        ) {
+            Text(
+                text = user.username,
+                fontSize = 12.sp,
+                fontWeight = if (user.hasUnseenStories) FontWeight.Bold else FontWeight.Normal,
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            if (user.isVerified || user.isPremium) {
+                androidx.compose.foundation.layout.Spacer(modifier = Modifier.width(3.dp))
+                ir.coffevista.vista_native.features.feed.ui.VerifiedMark(
+                    modifier = Modifier.size(12.dp),
+                )
+            }
+        }
     }
 }

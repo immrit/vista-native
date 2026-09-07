@@ -33,8 +33,35 @@ class OfflineFirstUserProfileRepository @Inject constructor(
         if (viewerAccountId == profileUserId) return ProfileRefreshResult.SelfProfile
         val hadCache = dao.get(viewerAccountId, profileUserId) != null
         return try {
-            val response = api.fetchPublicProfile(profileUserId)
+            val isUuid = try {
+                java.util.UUID.fromString(profileUserId)
+                true
+            } catch (_: Exception) {
+                false
+            }
+            val initialResponse = if (isUuid) {
+                api.fetchPublicProfile(profileUserId)
+            } else {
+                api.fetchProfileByUsername(profileUserId)
+            }
+            val response = if (!initialResponse.isSuccessful && isUuid && (initialResponse.code() == 400 || initialResponse.code() == 404)) {
+                api.fetchProfileByUsername(profileUserId)
+            } else {
+                initialResponse
+            }
+
             if (!response.isSuccessful) {
+                val statusCode = response.code()
+                if (!hadCache && (statusCode == 401 || statusCode == 403 || statusCode == 404)) {
+                    return ProfileRefreshResult.Failure(
+                        error = ir.coffevista.vista_native.core.common.AppError(
+                            kind = ir.coffevista.vista_native.core.common.ErrorKind.VALIDATION,
+                            messageFa = "کاربر یافت نشد",
+                            code = "PROFILE_NOT_FOUND",
+                        ),
+                        hadCache = false,
+                    )
+                }
                 ProfileRefreshResult.Failure(
                     error = response.toAppError("دریافت نمایه کاربر"),
                     hadCache = hadCache,

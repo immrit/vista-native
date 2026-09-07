@@ -160,10 +160,12 @@ fun FeedScreen(
     var isEditing by remember { mutableStateOf(false) }
 
     val storyUsers by viewModel.activeStoryUsers.collectAsStateWithLifecycle()
+    val ownProfile by viewModel.ownProfile.collectAsStateWithLifecycle()
 
     FeedScreenContent(
         uiState = uiState,
         viewerUserId = viewerUserId,
+        currentUserAvatar = ownProfile?.avatarUrl,
         unreadNotificationCount = unreadNotificationCount,
         selectedKind = selectedKind,
         storyUsers = storyUsers,
@@ -242,6 +244,7 @@ fun FeedScreen(
 internal fun FeedScreenContent(
     uiState: FeedUiState,
     viewerUserId: String? = null,
+    currentUserAvatar: String? = null,
     storyUsers: List<ir.coffevista.vista_native.features.stories.domain.StoryUser> = emptyList(),
     unreadNotificationCount: Int = 0,
     onRefresh: () -> Unit,
@@ -281,7 +284,7 @@ internal fun FeedScreenContent(
         ir.coffevista.vista_native.features.stories.ui.tray.StoryTray(
             storyUsers = storyUsers,
             currentUserId = viewerUserId.orEmpty(),
-            currentUserAvatar = null,
+            currentUserAvatar = currentUserAvatar,
             onOpenStoryPlayer = onOpenStoryPlayer,
             onCreateStory = onCreateStory,
             modifier = Modifier
@@ -674,9 +677,10 @@ fun VistaFeedPostCard(
                             VerifiedMark(Modifier.padding(start = 4.dp))
                         }
                         Text(
-                            text = " • ",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            text = "•",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                             fontSize = 13.sp,
+                            modifier = Modifier.padding(horizontal = 6.dp),
                         )
                         Text(
                             text = relativeTime(post.createdAt),
@@ -742,6 +746,7 @@ fun VistaFeedPostCard(
                 overflow = TextOverflow.Ellipsis,
                 onHashtagClick = onHashtagClick,
                 onMentionClick = onMentionClick,
+                onPostClick = onPostClick,
             )
             if (!expanded && caption.length > 180) {
                 Text(
@@ -953,6 +958,7 @@ private fun HashtagMentionCaption(
     overflow: TextOverflow,
     onHashtagClick: (String) -> Unit = {},
     onMentionClick: (String) -> Unit = {},
+    onPostClick: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val entityStyle = SpanStyle(
@@ -999,12 +1005,17 @@ private fun HashtagMentionCaption(
         maxLines = maxLines,
         overflow = overflow,
         onClick = { offset ->
-            annotated.getStringAnnotations(tag = "HASHTAG", start = offset, end = offset).firstOrNull()?.let {
-                onHashtagClick(it.item)
+            val hashtag = annotated.getStringAnnotations(tag = "HASHTAG", start = offset, end = offset).firstOrNull()
+            if (hashtag != null) {
+                onHashtagClick(hashtag.item)
+                return@ClickableText
             }
-            annotated.getStringAnnotations(tag = "MENTION", start = offset, end = offset).firstOrNull()?.let {
-                onMentionClick(it.item)
+            val mention = annotated.getStringAnnotations(tag = "MENTION", start = offset, end = offset).firstOrNull()
+            if (mention != null) {
+                onMentionClick(mention.item)
+                return@ClickableText
             }
+            onPostClick()
         },
     )
 }
@@ -1616,7 +1627,7 @@ private fun NotificationBell(
             Box(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .offset(x = 7.dp, y = (-7).dp)
+                    .offset(x = (-6).dp, y = (-6).dp)
                     .background(Color(0xFFF44336), CircleShape)
                     .padding(horizontal = 5.dp, vertical = 3.dp),
                 contentAlignment = Alignment.Center,

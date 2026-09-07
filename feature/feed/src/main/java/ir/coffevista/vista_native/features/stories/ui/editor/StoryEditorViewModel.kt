@@ -1,9 +1,12 @@
 package ir.coffevista.vista_native.features.stories.ui.editor
 
+import android.content.Context
+import android.media.MediaMetadataRetriever
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import ir.coffevista.vista_native.core.model.session.AuthenticationState
 import ir.coffevista.vista_native.core.model.session.AuthenticationStateProvider
 import ir.coffevista.vista_native.features.feed.data.PostMediaUploadGateway
@@ -19,6 +22,11 @@ import ir.coffevista.vista_native.features.stories.domain.StoryPollOption
 import ir.coffevista.vista_native.features.stories.domain.StoryPrivacyType
 import ir.coffevista.vista_native.features.stories.domain.StoryUser
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
@@ -51,6 +59,7 @@ class StoryEditorViewModel @Inject constructor(
     private val repository: StoryRepository,
     private val uploader: PostMediaUploadGateway,
     private val authStateProvider: AuthenticationStateProvider,
+    @ApplicationContext private val context: Context,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(StoryEditorUiState())
@@ -190,6 +199,7 @@ class StoryEditorViewModel @Inject constructor(
 
     fun publishStory() {
         val state = _uiState.value
+        if (state.isUploading || state.isSuccess) return
         val uri = state.mediaUri ?: return
         val userId = currentUserId
         if (userId.isBlank()) {
@@ -211,9 +221,7 @@ class StoryEditorViewModel @Inject constructor(
                 // 1. Upload Media
                 val uploadResult = if (state.isVideo) {
                     _uiState.update { it.copy(uploadStatus = "در حال آپلود ویدیو…") }
-                    val tempFile = File.createTempFile("story-vid-", ".mp4")
-                    // If uri is content uri or file uri
-                    uploader.uploadImage(userId, uri) { p ->
+                    uploadStoryVideo(userId, uri) { p ->
                         _uiState.update { it.copy(uploadProgress = 0.1f + p * 0.7f) }
                     }
                 } else {
@@ -263,6 +271,8 @@ class StoryEditorViewModel @Inject constructor(
                         )
                     }
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _uiState.update {
                     it.copy(
@@ -271,6 +281,50 @@ class StoryEditorViewModel @Inject constructor(
                     )
                 }
             }
+        }
+    }
+
+    private suspend fun uploadStoryVideo(
+        userId: String,
+        uri: Uri,
+        onProgress: (Float) -> Unit,
+    ) = withContext(Dispatchers.IO) {
+        val maxBytes = 100L * 1024 * 1024
+        val temporaryVideo = File.createTempFile("story-video-", ".mp4", context.cacheDir)
+        try {
+            val input = context.contentResolver.openInputStream(uri)
+                ?: throw java.io.IOException("فایل ویدیو قابل خواندن نیست")
+            input.use { source ->
+                temporaryVideo.outputStream().use { target ->
+                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                    var total = 0L
+                    while (true) {
+                        currentCoroutineContext().ensureActive()
+                        val count = source.read(buffer)
+                        if (count < 0) break
+                        total += count
+                        require(total <= maxBytes) { "حجم ویدیو بیش از حد مجاز است (حداکثر ۱۰۰ مگابایت)" }
+                        target.write(buffer, 0, count)
+                    }
+                    require(total > 0) { "فایل ویدیو خالی است" }
+                }
+            }
+            val retriever = MediaMetadataRetriever()
+            val durationMs = try {
+                retriever.setDataSource(temporaryVideo.absolutePath)
+                require(retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_HAS_VIDEO) == "yes") {
+                    "فایل انتخاب‌شده ویدیوی معتبری نیست"
+                }
+                retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()
+            } finally {
+                retriever.release()
+            }
+            require(durationMs != null && durationMs > 0) { "مدت ویدیو قابل تشخیص نیست" }
+            require(durationMs <= 60_000) { "مدت ویدیو بیش از حد مجاز است (حداکثر ۶۰ ثانیه)" }
+            currentCoroutineContext().ensureActive()
+            uploader.uploadVideo(userId, temporaryVideo, maxBytes, onProgress)
+        } finally {
+            temporaryVideo.delete()
         }
     }
 }

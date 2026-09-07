@@ -44,6 +44,9 @@ class FeedViewModelTest {
             object : ir.coffevista.vista_native.features.stories.data.StoryApi {
                 override suspend fun getActiveStories() = ir.coffevista.vista_native.features.stories.domain.ActiveStoriesResponseDto()
                 override suspend fun getUserStories(userId: String) = ir.coffevista.vista_native.features.stories.domain.UserStoriesResponseDto()
+                override suspend fun getFollowingUsers(userId: String, limit: Int, offset: Int) = ir.coffevista.vista_native.features.stories.domain.FollowingStoryUsersResponseDto()
+                override suspend fun getCloseFriends(): List<String> = emptyList()
+                override suspend fun updateCloseFriends(request: ir.coffevista.vista_native.features.stories.domain.CloseFriendsUpdateRequestDto) = Unit
                 override suspend fun getStoryById(storyId: String) = error("unused")
                 override suspend fun createStory(request: ir.coffevista.vista_native.features.stories.domain.CreateStoryRequestDto) = error("unused")
                 override suspend fun deleteStory(storyId: String) = Unit

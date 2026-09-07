@@ -37,9 +37,9 @@ fun SwipeToReplyLayout(
     val haptic = LocalHapticFeedback.current
     val density = LocalDensity.current
     val threshold = with(density) { 72.dp.toPx() }
-    // A reply gesture travels toward the center: peer bubbles on the left move
-    // rightward, while our bubbles on the right move leftward.
-    val replyDirection = if (bubbleOnRight) -1f else 1f
+    // Reply bubbles follow the app's chat gesture convention: peer bubbles
+    // respond to a left swipe and our bubbles respond to a right swipe.
+    val replyDirection = if (bubbleOnRight) 1f else -1f
     val swipePolicy = remember(threshold, bubbleOnRight) {
         ReplySwipePolicy(
             thresholdPx = threshold,

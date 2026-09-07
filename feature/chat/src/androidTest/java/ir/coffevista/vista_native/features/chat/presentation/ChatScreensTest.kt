@@ -316,7 +316,7 @@ class ChatScreensTest {
     }
 
     @Test
-    fun peerMessageSwipeRightStartsReplyLikeFlutter() {
+    fun peerMessageSwipeLeftStartsReply() {
         compose.setContent {
             VistaTheme {
                 MessageDetailScreen(
@@ -351,8 +351,8 @@ class ChatScreensTest {
         compose.onNodeWithContentDescription("پیام دریافتی، خوانده شد")
             .performTouchInput {
                 swipe(
-                    start = Offset(1f, center.y),
-                    end = Offset((center.x * 2f) - 1f, center.y),
+                    start = Offset((center.x * 2f) - 1f, center.y),
+                    end = Offset(1f, center.y),
                     durationMillis = 500,
                 )
             }
@@ -386,7 +386,7 @@ class ChatScreensTest {
     }
 
     @Test
-    fun leftSwipeDoesNotStartReply() {
+    fun rightSwipeDoesNotStartReply() {
         var replyCount = 0
         compose.setContent {
             VistaTheme {
@@ -398,8 +398,8 @@ class ChatScreensTest {
 
         compose.onNodeWithText("پیام با حرکت چپ").performTouchInput {
             swipe(
-                start = Offset((center.x * 2f) - 1f, center.y),
-                end = Offset(1f, center.y),
+                start = Offset(1f, center.y),
+                end = Offset((center.x * 2f) - 1f, center.y),
                 durationMillis = 500,
             )
         }
@@ -408,7 +408,7 @@ class ChatScreensTest {
     }
 
     @Test
-    fun ownMessageRepliesOnlyOnLeftSwipe() {
+    fun ownMessageRepliesOnlyOnRightSwipe() {
         var replyCount = 0
         compose.setContent {
             VistaTheme {
@@ -423,8 +423,8 @@ class ChatScreensTest {
 
         compose.onNodeWithText("پیام خودم").performTouchInput {
             swipe(
-                start = Offset(1f, center.y),
-                end = Offset((center.x * 2f) - 1f, center.y),
+                start = Offset((center.x * 2f) - 1f, center.y),
+                end = Offset(1f, center.y),
                 durationMillis = 500,
             )
         }
@@ -432,8 +432,8 @@ class ChatScreensTest {
 
         compose.onNodeWithText("پیام خودم").performTouchInput {
             swipe(
-                start = Offset((center.x * 2f) - 1f, center.y),
-                end = Offset(1f, center.y),
+                start = Offset(1f, center.y),
+                end = Offset((center.x * 2f) - 1f, center.y),
                 durationMillis = 500,
             )
         }

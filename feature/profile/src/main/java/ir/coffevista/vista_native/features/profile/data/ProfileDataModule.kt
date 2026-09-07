@@ -128,6 +128,17 @@ object ProfileDataModule {
                 return remote.fetchPublicProfile(userId)
             }
 
+            override suspend fun fetchProfileByUsername(
+                username: String,
+            ): retrofit2.Response<PublicProfileDto> {
+                fixtures.forEach { fixture ->
+                    fixture.profileOrNull(username)?.let {
+                        return retrofit2.Response.success(it)
+                    }
+                }
+                return remote.fetchProfileByUsername(username)
+            }
+
             override suspend fun follow(
                 request: FollowActionRequestDto,
             ): retrofit2.Response<FollowActionResponseDto> {

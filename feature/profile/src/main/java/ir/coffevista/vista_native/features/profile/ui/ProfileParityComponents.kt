@@ -42,6 +42,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.ui.text.TextStyle
 import ir.coffevista.vista_native.core.designsystem.component.VistaEmojiText
+import ir.coffevista.vista_native.core.designsystem.component.VistaFloatingActionButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -1030,18 +1031,10 @@ internal fun ProfileFAB(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Box(
-        modifier = modifier
-            .size(56.dp)
-            .shadow(6.dp, CircleShape)
-            .clip(CircleShape)
-            .background(
-                Brush.linearGradient(
-                    listOf(Color(0xFF7C4DFF), Color(0xFF651FFF)),
-                ),
-            )
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center,
+    VistaFloatingActionButton(
+        onClick = onClick,
+        modifier = modifier,
+        contentDescription = "ایجاد پست جدید",
     ) {
         Text(
             text = "+",

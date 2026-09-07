@@ -144,6 +144,9 @@ class FakeOwnProfileRepository : OwnProfileRepository {
         return fetchResult
     }
     
+    override suspend fun updateOwnProfile(request: ir.coffevista.vista_native.features.profile.data.ProfileUpdateRequestDto): Outcome<Unit> = Outcome.Success(Unit)
+    override suspend fun updateAvatar(avatarUrl: String): Outcome<Unit> = Outcome.Success(Unit)
+
     override suspend fun clearProfileData() {
         cleared = true
         _profileFlow.value = null

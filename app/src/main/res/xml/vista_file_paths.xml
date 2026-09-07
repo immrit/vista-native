@@ -2,5 +2,6 @@
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
     <cache-path name="chat_media_cache" path="chat_media/" />
     <cache-path name="chat_voice_cache" path="chat_voice/" />
+    <cache-path name="camera_photos" path="camera/" />
     <cache-path name="updates" path="updates/" />
 </paths>

@@ -58,10 +58,12 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -90,26 +92,47 @@ fun EditProfileScreen(
     onAvatarRemoved: suspend () -> Outcome<Unit>,
     modifier: Modifier = Modifier,
 ) {
-    var username by remember { mutableStateOf(profile?.username.orEmpty()) }
-    var fullName by remember { mutableStateOf(profile?.fullName ?: "") }
-    var bio by remember { mutableStateOf(profile?.bio ?: "") }
-    var email by remember { mutableStateOf(profile?.email.orEmpty()) }
-    var phone by remember { mutableStateOf(profile?.phoneNumber.orEmpty()) }
-    var website by remember { mutableStateOf(profile?.websiteUrl.orEmpty()) }
-    var birthDate by remember {
+    var username by rememberSaveable { mutableStateOf(profile?.username.orEmpty()) }
+    var fullName by rememberSaveable { mutableStateOf(profile?.fullName ?: "") }
+    var bio by rememberSaveable { mutableStateOf(profile?.bio ?: "") }
+    var email by rememberSaveable { mutableStateOf(profile?.email.orEmpty()) }
+    var phone by rememberSaveable { mutableStateOf(profile?.phoneNumber.orEmpty()) }
+    var website by rememberSaveable { mutableStateOf(profile?.websiteUrl.orEmpty()) }
+    var birthDate by rememberSaveable {
         mutableStateOf(
             profile?.birthDate?.let(::gregorianIsoToJalaliDisplay) ?: profile?.birthDate.orEmpty()
         )
     }
-    var showBirthDatePicker by remember { mutableStateOf(false) }
-    var gender by remember { mutableStateOf(profile?.gender.orEmpty()) }
-    var maritalStatus by remember { mutableStateOf(profile?.maritalStatus.orEmpty()) }
+    var showBirthDatePicker by rememberSaveable { mutableStateOf(false) }
+    var gender by rememberSaveable { mutableStateOf(profile?.gender.orEmpty()) }
+    var maritalStatus by rememberSaveable { mutableStateOf(profile?.maritalStatus.orEmpty()) }
     var expandedGender by remember { mutableStateOf(false) }
     var expandedMaritalStatus by remember { mutableStateOf(false) }
-    var showEmail by remember { mutableStateOf(profile?.showEmail ?: false) }
-    var showBirthDate by remember { mutableStateOf(profile?.showBirthDate ?: false) }
-    var showGender by remember { mutableStateOf(profile?.showGender ?: false) }
-    var showMaritalStatus by remember { mutableStateOf(profile?.showMaritalStatus ?: false) }
+    var showEmail by rememberSaveable { mutableStateOf(profile?.showEmail ?: false) }
+    var showBirthDate by rememberSaveable { mutableStateOf(profile?.showBirthDate ?: false) }
+    var showGender by rememberSaveable { mutableStateOf(profile?.showGender ?: false) }
+    var showMaritalStatus by rememberSaveable { mutableStateOf(profile?.showMaritalStatus ?: false) }
+
+    var hasInitialized by rememberSaveable { mutableStateOf(profile != null) }
+
+    LaunchedEffect(profile) {
+        if (profile != null && !hasInitialized) {
+            username = profile.username.orEmpty()
+            fullName = profile.fullName
+            bio = profile.bio.orEmpty()
+            email = profile.email.orEmpty()
+            phone = profile.phoneNumber.orEmpty()
+            website = profile.websiteUrl.orEmpty()
+            birthDate = profile.birthDate?.let(::gregorianIsoToJalaliDisplay) ?: profile.birthDate.orEmpty()
+            gender = profile.gender.orEmpty()
+            maritalStatus = profile.maritalStatus.orEmpty()
+            showEmail = profile.showEmail
+            showBirthDate = profile.showBirthDate
+            showGender = profile.showGender
+            showMaritalStatus = profile.showMaritalStatus
+            hasInitialized = true
+        }
+    }
 
     var isSaving by remember { mutableStateOf(false) }
     var isUploadingAvatar by remember { mutableStateOf(false) }
@@ -262,24 +285,6 @@ fun EditProfileScreen(
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // Bio
-                OutlinedTextField(
-                    value = bio,
-                    onValueChange = { bio = it },
-                    label = { Text("بیوگرافی") },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(100.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = MaterialTheme.colorScheme.surface,
-                        unfocusedContainerColor = MaterialTheme.colorScheme.surface,
-                    ),
-                    maxLines = 4,
-                )
-
-                Spacer(modifier = Modifier.height(14.dp))
-
                 // Email
                 OutlinedTextField(
                     value = email,
@@ -302,23 +307,6 @@ fun EditProfileScreen(
                     onValueChange = { phone = it },
                     label = { Text("شماره تلفن") },
                     leadingIcon = { Icon(Icons.Outlined.Phone, contentDescription = null) },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = MaterialTheme.colorScheme.surface,
-                        unfocusedContainerColor = MaterialTheme.colorScheme.surface,
-                    ),
-                    singleLine = true,
-                )
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                // Website
-                OutlinedTextField(
-                    value = website,
-                    onValueChange = { website = it },
-                    label = { Text("وب‌سایت / لینک") },
-                    leadingIcon = { Icon(Icons.Outlined.Language, contentDescription = null) },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
                     colors = OutlinedTextFieldDefaults.colors(
@@ -371,23 +359,32 @@ fun EditProfileScreen(
                 Spacer(modifier = Modifier.height(14.dp))
 
                 // Birth date (Jalali)
-                OutlinedTextField(
-                    value = birthDate,
-                    onValueChange = {},
-                    readOnly = true,
-                    label = { Text("تاریخ تولد (شمسی)") },
-                    leadingIcon = { Icon(Icons.Outlined.Cake, contentDescription = null) },
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable { showBirthDatePicker = true },
-                    shape = RoundedCornerShape(12.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = MaterialTheme.colorScheme.surface,
-                        unfocusedContainerColor = MaterialTheme.colorScheme.surface,
-                    ),
-                    singleLine = true,
-                    enabled = true,
-                )
+                ) {
+                    OutlinedTextField(
+                        value = birthDate,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("تاریخ تولد (شمسی)") },
+                        leadingIcon = { Icon(Icons.Outlined.Cake, contentDescription = null) },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = MaterialTheme.colorScheme.surface,
+                            unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                        ),
+                        singleLine = true,
+                        enabled = true,
+                    )
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .clickable { showBirthDatePicker = true },
+                    )
+                }
 
                 Spacer(modifier = Modifier.height(14.dp))
 
@@ -443,8 +440,20 @@ fun EditProfileScreen(
                 Button(
                     onClick = {
                         scope.launch {
-                            if (username.isBlank() || fullName.isBlank() || birthDate.isBlank() || gender.isBlank()) {
-                                snackbarHostState.showSnackbar("لطفاً فیلدهای ضروری را تکمیل کنید")
+                            if (username.isBlank()) {
+                                snackbarHostState.showSnackbar("نام کاربری نمی‌تواند خالی باشد")
+                                return@launch
+                            }
+                            if (fullName.isBlank()) {
+                                snackbarHostState.showSnackbar("نام و نام خانوادگی نمی‌تواند خالی باشد")
+                                return@launch
+                            }
+                            if (birthDate.isBlank()) {
+                                snackbarHostState.showSnackbar("تاریخ تولد را وارد کنید")
+                                return@launch
+                            }
+                            if (gender.isBlank()) {
+                                snackbarHostState.showSnackbar("جنسیت را انتخاب کنید")
                                 return@launch
                             }
                             isSaving = true

@@ -137,21 +137,6 @@ fun NotificationSettingsScreen(
                 // Section 1: Notifications
                 VistaSettingsSection(title = "اعلان‌ها")
                 VistaSettingsGroup {
-                    VistaSettingsTile(
-                        icon = Icons.Outlined.NotificationsActive,
-                        title = "مجوز اعلان اندروید",
-                        subtitle = if (systemNotificationsEnabled) "فعال" else "غیرفعال؛ برای دریافت اعلان آن را فعال کنید",
-                        onClick = {
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-                                context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-                            ) {
-                                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                            } else if (!context.openNotificationSettings()) {
-                                Toast.makeText(context, "امکان باز کردن تنظیمات اعلان وجود ندارد", Toast.LENGTH_SHORT).show()
-                            }
-                        },
-                    )
-                    VistaSettingsDivider()
                     VistaSettingsSwitch(
                         icon = Icons.Outlined.NotificationsActive,
                         title = "اعلان‌های پوش",

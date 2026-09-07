@@ -80,12 +80,14 @@ class ProfileAvatarUploader @Inject constructor(
 
     private fun compressToJpeg(uri: Uri): File {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
-            ?: throw IOException("فایل انتخاب‌شده قابل خواندن نیست")
+        (resolver.openInputStream(uri) ?: throw IOException("فایل انتخاب‌شده قابل خواندن نیست")).use {
+            BitmapFactory.decodeStream(it, null, bounds)
+        }
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) throw IOException("فایل انتخاب‌شده تصویر معتبر نیست")
         val options = BitmapFactory.Options().apply { inSampleSize = sampleSize(bounds.outWidth, bounds.outHeight) }
-        val bitmap = resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, options) }
-            ?: throw IOException("فایل انتخاب‌شده قابل خواندن نیست")
+        val bitmap = (resolver.openInputStream(uri) ?: throw IOException("فایل انتخاب‌شده قابل خواندن نیست")).use {
+            BitmapFactory.decodeStream(it, null, options)
+        } ?: throw IOException("فایل انتخاب‌شده قابل خواندن نیست")
         val file = File.createTempFile("profile-avatar-", ".jpg", cacheDirectory)
         return try {
             file.outputStream().use { output ->

@@ -244,16 +244,6 @@ fun SettingsScreen(
                     VistaSettingsTile(
                         icon = Icons.Outlined.Language,
                         title = copy.language,
-                        trailing = {
-                            Text(
-                                text = if (currentLanguage == "fa") "فارسی" else if (currentLanguage == "en") "English" else "العربية",
-                                style = MaterialTheme.typography.bodySmall.copy(
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    fontSize = 13.sp,
-                                ),
-                                modifier = Modifier.padding(start = 4.dp),
-                            )
-                        },
                         onClick = { showLanguageSheet = true },
                     )
                     VistaSettingsDivider()

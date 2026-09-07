@@ -55,6 +55,7 @@ object InternalNetworkModule {
         val json = Json {
             ignoreUnknownKeys = true
             explicitNulls = false
+            coerceInputValues = true
         }
         return Retrofit.Builder()
             .baseUrl(environment.internalBaseUrl.ensureTrailingSlash())

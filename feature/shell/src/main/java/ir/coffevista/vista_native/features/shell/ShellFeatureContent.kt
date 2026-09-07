@@ -58,6 +58,7 @@ data class ShellFeatureContent(
         onSelfProfile: () -> Unit,
         onPostClick: (String) -> Unit,
         onOpenFollowers: (userId: String, initialTab: Int) -> Unit,
+        onOpenChat: ((userId: String) -> Unit)?,
     ) -> Unit,
     val followersFollowing: (@Composable (userId: String, initialTab: Int, onBack: () -> Unit, onOpenProfile: (String) -> Unit) -> Unit),
     val qrScanner: (@Composable (onBack: () -> Unit, onUserFound: (String) -> Unit) -> Unit),

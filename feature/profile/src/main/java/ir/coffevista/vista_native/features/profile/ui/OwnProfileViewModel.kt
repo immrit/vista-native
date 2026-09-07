@@ -25,7 +25,7 @@ import javax.inject.Inject
 class OwnProfileViewModel @Inject constructor(
     private val repository: OwnProfileRepository,
     private val authStateProvider: AuthenticationStateProvider,
-    private val avatarUploader: ProfileAvatarUploader,
+    private val avatarUploader: ProfileAvatarUploader? = null,
 ) : ViewModel() {
 
     suspend fun updateProfile(request: ProfileUpdateRequestDto): Outcome<Unit> =
@@ -35,18 +35,21 @@ class OwnProfileViewModel @Inject constructor(
         val userId = currentUserId ?: return Outcome.Failure(
             AppError(ErrorKind.UNAUTHORIZED, "برای تغییر تصویر ابتدا وارد حساب شوید"),
         )
+        val uploader = avatarUploader ?: return Outcome.Failure(
+            AppError(ErrorKind.VALIDATION, "امکان آپلود تصویر در دسترس نیست"),
+        )
         val previousUrl = (uiState.value as? OwnProfileUiState.Content)?.profile?.avatarUrl
         return try {
-            val uploaded = avatarUploader.upload(userId, uri)
+            val uploaded = uploader.upload(userId, uri)
             when (val result = repository.updateAvatar(uploaded.url)) {
                 is Outcome.Success -> {
                     previousUrl?.takeIf { it.isNotBlank() && it != uploaded.url }?.let { oldUrl ->
-                        runCatching { avatarUploader.deleteByUrl(oldUrl) }
+                        runCatching { uploader.deleteByUrl(oldUrl) }
                     }
                     result
                 }
                 is Outcome.Failure -> {
-                    runCatching { avatarUploader.deleteByUrl(uploaded.url) }
+                    runCatching { uploader.deleteByUrl(uploaded.url) }
                     result
                 }
             }
@@ -62,7 +65,7 @@ class OwnProfileViewModel @Inject constructor(
         return when (val result = repository.updateAvatar("")) {
             is Outcome.Success -> {
                 // The profile is already correct even if object-storage cleanup is unavailable.
-                runCatching { avatarUploader.deleteByUrl(previousUrl) }
+                runCatching { avatarUploader?.deleteByUrl(previousUrl) }
                 result
             }
             is Outcome.Failure -> result

@@ -229,8 +229,9 @@ class PostMediaUploader @Inject constructor(
 
     private fun compressImageToJpeg(uri: Uri, maxBytes: Long): File {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
-            ?: throw IOException("فایل تصویر قابل خواندن نیست")
+        (resolver.openInputStream(uri) ?: throw IOException("فایل تصویر قابل خواندن نیست")).use {
+            BitmapFactory.decodeStream(it, null, bounds)
+        }
 
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
             throw IOException("فایل انتخاب‌شده تصویر معتبری نیست")
@@ -246,8 +247,9 @@ class PostMediaUploader @Inject constructor(
         }
 
         val options = BitmapFactory.Options().apply { inSampleSize = sampleSize }
-        val bitmap = resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, options) }
-            ?: throw IOException("دیکود تصویر ناموفق بود")
+        val bitmap = (resolver.openInputStream(uri) ?: throw IOException("فایل تصویر قابل خواندن نیست")).use {
+            BitmapFactory.decodeStream(it, null, options)
+        } ?: throw IOException("دیکود تصویر ناموفق بود")
 
         val file = File.createTempFile("post-media-", ".jpg", cacheDir)
         return try {

@@ -549,7 +549,7 @@ private fun GifPickerPage(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
-                        Text(emoji, fontSize = 13.sp)
+                        TelegramEmoji(emoji = emoji, size = 18.dp)
                         Text(
                             text = if (tag == "trending") "داغ‌ترین‌ها" else tag,
                             fontSize = 12.sp,

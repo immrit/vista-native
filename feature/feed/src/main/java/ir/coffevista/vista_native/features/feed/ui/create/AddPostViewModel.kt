@@ -7,6 +7,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import ir.coffevista.vista_native.core.database.profile.OwnProfileDao
 import ir.coffevista.vista_native.core.model.session.AuthenticationState
 import ir.coffevista.vista_native.core.model.session.AuthenticationStateProvider
 import ir.coffevista.vista_native.features.feed.data.CreatePostRequestDto
@@ -32,6 +33,11 @@ enum class PostAspectRatio(val label: String, val ratioValue: String, val floatV
 
 data class AddPostUiState(
     val content: String = "",
+    val authorAvatarUrl: String? = null,
+    val authorUsername: String = "",
+    val authorFullName: String = "",
+    val authorIsVerified: Boolean = false,
+    val authorVerificationType: String? = null,
     val selectedImages: List<Uri> = emptyList(),
     val selectedVideo: File? = null,
     val selectedVideoUri: Uri? = null,
@@ -46,22 +52,24 @@ data class AddPostUiState(
     val isSuccess: Boolean = false,
     val errorMessage: String? = null,
     val isPremium: Boolean = false,
+    val maxCharLength: Int = 500,
     val selectedLocation: String? = null,
     val selectedMusicTitle: String? = null,
     val selectedMusicUrl: String? = null,
     val selectedMusicUri: Uri? = null,
+    val isMusicBackgroundMode: Boolean = false,
     val musicDurationMs: Int = 0,
     val musicStartMs: Int = 0,
     val musicEndMs: Int = 0,
     val hashtagSuggestions: List<HashtagSuggestionDto> = emptyList(),
     val isLoadingHashtagSuggestions: Boolean = false,
+    val mentionedUsernames: List<String> = emptyList(),
 ) {
-    val maxCharLength: Int get() = if (isPremium) 1000 else 500
     val maxGalleryImages: Int get() = if (isPremium) 10 else 3
     val maxUploadBytes: Long get() = if (isPremium) 100L * 1024 * 1024 else 15L * 1024 * 1024
     val maxVideoDurationMs: Long get() = if (isPremium) 120_000L else 60_000L
     val canSubmit: Boolean get() = !isUploading && (
-        content.isNotBlank() || selectedImages.isNotEmpty() || selectedVideo != null || selectedMusicUri != null
+        content.isNotBlank() || selectedImages.isNotEmpty() || selectedVideo != null || selectedMusicUri != null || !selectedMusicUrl.isNullOrBlank()
     )
 }
 
@@ -70,8 +78,16 @@ class AddPostViewModel @Inject constructor(
     private val api: FeedApi,
     private val uploader: PostMediaUploadGateway,
     private val authStateProvider: AuthenticationStateProvider,
-    @ApplicationContext private val appContext: Context,
+    private val ownProfileDao: OwnProfileDao,
+    @ApplicationContext private val appContext: Context?,
 ) : ViewModel() {
+
+    constructor(
+        api: FeedApi,
+        uploader: PostMediaUploadGateway,
+        authStateProvider: AuthenticationStateProvider,
+        ownProfileDao: OwnProfileDao,
+    ) : this(api, uploader, authStateProvider, ownProfileDao, null)
 
     private var hashtagSearchJob: Job? = null
 
@@ -81,9 +97,47 @@ class AddPostViewModel @Inject constructor(
     private val currentUserId: String
         get() = (authStateProvider.state.value as? AuthenticationState.SignedIn)?.context?.userId.orEmpty()
 
+    init {
+        viewModelScope.launch {
+            val userId = currentUserId
+            if (userId.isNotBlank()) {
+                ownProfileDao.getOwnProfile(userId).collect { profile ->
+                    if (profile != null) {
+                        val days = profile.premiumDaysRemaining
+                        val isPrem = profile.subscriptionPlan != null || (days != null && days > 0)
+                        val maxChars = if (profile.verificationType?.lowercase() == "blue") 10000
+                        else if (isPrem || profile.verificationType?.lowercase() in listOf("gold", "black")) 1000
+                        else 500
+                        _uiState.update { current ->
+                            current.copy(
+                                authorAvatarUrl = profile.avatarUrl,
+                                authorUsername = profile.username.orEmpty(),
+                                authorFullName = profile.fullName,
+                                authorIsVerified = profile.isVerified,
+                                authorVerificationType = profile.verificationType,
+                                isPremium = isPrem,
+                                maxCharLength = maxChars,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fun initPreloaded(text: String?, mediaUris: List<Uri> = emptyList()) {
+        if (!text.isNullOrBlank() && _uiState.value.content.isBlank()) {
+            onContentChanged(text)
+        }
+        if (mediaUris.isNotEmpty() && _uiState.value.selectedImages.isEmpty()) {
+            onImagesSelected(mediaUris)
+        }
+    }
+
     fun onContentChanged(newContent: String) {
         if (newContent.length <= _uiState.value.maxCharLength) {
-            _uiState.update { it.copy(content = newContent, errorMessage = null) }
+            val mentions = extractMentions(newContent)
+            _uiState.update { it.copy(content = newContent, mentionedUsernames = mentions, errorMessage = null) }
             loadHashtagSuggestions(activeHashtagQuery(newContent))
         }
     }
@@ -135,6 +189,21 @@ class AddPostViewModel @Inject constructor(
                 isVideo = false,
                 errorMessage = null,
             )
+        }
+    }
+
+    fun onImageCaptured(uri: Uri) {
+        val current = _uiState.value.selectedImages
+        if (current.size < _uiState.value.maxGalleryImages) {
+            _uiState.update {
+                it.copy(
+                    selectedImages = current + uri,
+                    selectedVideo = null,
+                    selectedVideoUri = null,
+                    isVideo = false,
+                    errorMessage = null,
+                )
+            }
         }
     }
 
@@ -217,12 +286,16 @@ class AddPostViewModel @Inject constructor(
     fun onMusicFileSelected(uri: Uri) {
         viewModelScope.launch {
             val durationMs = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                val retriever = MediaMetadataRetriever()
-                try {
-                    retriever.setDataSource(appContext, uri)
-                    retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toIntOrNull() ?: 0
-                } finally {
-                    runCatching { retriever.release() }
+                if (appContext != null) {
+                    val retriever = MediaMetadataRetriever()
+                    try {
+                        retriever.setDataSource(appContext, uri)
+                        retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toIntOrNull() ?: 0
+                    } finally {
+                        runCatching { retriever.release() }
+                    }
+                } else {
+                    15_000
                 }
             }
             if (durationMs <= 0) {
@@ -261,7 +334,10 @@ class AddPostViewModel @Inject constructor(
             _uiState.update { it.copy(errorMessage = "کاربر احراز هویت نشده است") }
             return
         }
-        if (!state.canSubmit) return
+        if (!state.canSubmit) {
+            _uiState.update { it.copy(errorMessage = "لطفاً متن یا تصویری برای پست انتخاب کنید") }
+            return
+        }
 
         viewModelScope.launch {
             _uiState.update {
@@ -374,9 +450,18 @@ class AddPostViewModel @Inject constructor(
         }
     }
 
+    fun toggleMusicBackgroundMode(background: Boolean) {
+        _uiState.update { it.copy(isMusicBackgroundMode = background) }
+    }
+
     private fun extractHashtags(text: String): List<String> {
         val regex = Regex("#[\\p{L}\\p{N}_]+")
         return regex.findAll(text).map { it.value.removePrefix("#") }.toList()
+    }
+
+    private fun extractMentions(text: String): List<String> {
+        val regex = Regex("(?<![^\\s\\n])@([\\p{L}\\p{N}_]+)")
+        return regex.findAll(text).map { it.groupValues[1] }.distinct().toList()
     }
 
     private companion object {

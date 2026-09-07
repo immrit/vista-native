@@ -559,7 +559,25 @@ private fun InitialContent(
             }
         } else {
             item {
-                TrendingChips(state.trending, onHashtag)
+                if (state.trending.isEmpty()) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(top = 32.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        SearchOffGlyph(
+                            modifier = Modifier.size(52.dp),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(Modifier.height(14.dp))
+                        Text(
+                            "هنوز ترندی برای نمایش نداریم",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                } else {
+                    TrendingChips(state.trending, onHashtag)
+                }
             }
         }
     }

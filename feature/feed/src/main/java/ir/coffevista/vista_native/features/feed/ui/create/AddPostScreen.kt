@@ -5,8 +5,13 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -17,21 +22,27 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.Image
@@ -43,6 +54,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -52,41 +64,53 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.RangeSlider
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Switch
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaBrandColors
+import ir.coffevista.vista_native.features.feed.ui.VerifiedMark
+import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -95,12 +119,44 @@ fun AddPostScreen(
     onNavigateToTrimmer: (Uri) -> Unit,
     onPostCreated: () -> Unit,
     modifier: Modifier = Modifier,
+    preloadedText: String? = null,
+    preloadedMediaUris: List<Uri> = emptyList(),
     viewModel: AddPostViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+    val context = LocalContext.current
+
     var showLocationDialog by remember { mutableStateOf(false) }
     var showMusicTrimSheet by remember { mutableStateOf(false) }
+    var selectedImageIndex by remember { mutableIntStateOf(0) }
+
+    // Share intent / preloaded media
+    LaunchedEffect(preloadedText, preloadedMediaUris) {
+        viewModel.initPreloaded(preloadedText, preloadedMediaUris)
+    }
+
+    // Camera launcher setup
+    var tempCameraImageUri by remember { mutableStateOf<Uri?>(null) }
+    val cameraLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicture(),
+    ) { success ->
+        if (success && tempCameraImageUri != null) {
+            viewModel.onImageCaptured(tempCameraImageUri!!)
+        }
+    }
+
+    fun launchCamera() {
+        val cacheDir = File(context.cacheDir, "camera").apply { mkdirs() }
+        val file = File(cacheDir, "post_${System.currentTimeMillis()}.jpg")
+        val uri = FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.files",
+            file,
+        )
+        tempCameraImageUri = uri
+        cameraLauncher.launch(uri)
+    }
 
     // Launcher for Images (multi-selection)
     val imagePickerLauncher = rememberLauncherForActivityResult(
@@ -121,6 +177,7 @@ fun AddPostScreen(
         }
     }
 
+    // Launcher for Music
     val musicPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent(),
     ) { uri ->
@@ -137,16 +194,16 @@ fun AddPostScreen(
         if (uiState.selectedMusicUri != null) showMusicTrimSheet = true
     }
 
-    uiState.errorMessage?.let { msg ->
-        LaunchedEffect(msg) {
-            snackbarHostState.showSnackbar(msg)
-            viewModel.clearError()
-        }
+    LaunchedEffect(uiState.errorMessage) {
+        val msg = uiState.errorMessage ?: return@LaunchedEffect
+        snackbarHostState.showSnackbar(msg)
+        viewModel.clearError()
     }
 
-    val brandGradient = Brush.linearGradient(
-        colors = listOf(VistaBrandColors.Indigo, VistaBrandColors.Pink),
-    )
+    val isDark = MaterialTheme.colorScheme.surface.let { color ->
+        val luminance = 0.299 * color.red + 0.587 * color.green + 0.114 * color.blue
+        luminance < 0.5
+    }
 
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
         Scaffold(
@@ -154,10 +211,10 @@ fun AddPostScreen(
             snackbarHost = { SnackbarHost(snackbarHostState) },
             containerColor = MaterialTheme.colorScheme.background,
             topBar = {
-                TopAppBar(
+                CenterAlignedTopAppBar(
                     title = {
                         Text(
-                            text = "پست جدید",
+                            text = "افزودن پست جدید",
                             style = MaterialTheme.typography.titleMedium.copy(
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 17.sp,
@@ -172,45 +229,110 @@ fun AddPostScreen(
                             )
                         }
                     },
-                    actions = {
-                        Button(
-                            onClick = viewModel::submitPost,
-                            enabled = uiState.canSubmit,
-                            shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = VistaBrandColors.Indigo,
-                                contentColor = Color.White,
-                            ),
-                            contentPadding = PaddingValues(horizontal = 18.dp, vertical = 8.dp),
-                            modifier = Modifier.padding(end = 8.dp),
-                        ) {
-                            if (uiState.isUploading) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(18.dp),
-                                    color = Color.White,
-                                    strokeWidth = 2.dp,
-                                )
-                            } else {
-                                Text(
-                                    text = "انتشار",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 14.sp,
-                                )
-                            }
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
+                    colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
                         containerColor = MaterialTheme.colorScheme.surface,
                     ),
                 )
             },
+            bottomBar = {
+                // Fixed Bottom Action Bar: Character Counter Ring + Send Post Button
+                Surface(
+                    shadowElevation = 8.dp,
+                    color = if (isDark) Color(0xFF13131E) else Color.White,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .navigationBarsPadding()
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        // Character counter indicator ring + upgrade tooltip
+                        val maxLen = uiState.maxCharLength
+                        val count = uiState.content.length
+                        val progress = (count.toFloat() / maxLen).coerceIn(0f, 1f)
+                        val remaining = maxLen - count
+
+                        val indicatorColor = when {
+                            count > maxLen -> MaterialTheme.colorScheme.error
+                            count > maxLen * 0.8f -> Color(0xFFFFA726)
+                            else -> if (isDark) Color.White.copy(alpha = 0.7f) else Color.Black.copy(alpha = 0.54f)
+                        }
+
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier.size(44.dp),
+                        ) {
+                            CircularProgressIndicator(
+                                progress = { progress },
+                                modifier = Modifier.size(42.dp),
+                                color = indicatorColor,
+                                trackColor = if (isDark) Color.White.copy(alpha = 0.12f) else Color.Black.copy(alpha = 0.12f),
+                                strokeWidth = 3.dp,
+                            )
+                            Text(
+                                text = remaining.toString(),
+                                fontSize = if (remaining.toString().length >= 4) 9.sp else 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = indicatorColor,
+                            )
+                        }
+
+                        // Send Post Button (solid black in light mode, solid white in dark mode)
+                        Button(
+                            onClick = viewModel::submitPost,
+                            enabled = !uiState.isUploading,
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isDark) Color.White else Color.Black,
+                                contentColor = if (isDark) Color.Black else Color.White,
+                                disabledContainerColor = (if (isDark) Color.White else Color.Black).copy(alpha = 0.38f),
+                                disabledContentColor = (if (isDark) Color.Black else Color.White).copy(alpha = 0.38f),
+                            ),
+                            contentPadding = PaddingValues(horizontal = 24.dp, vertical = 12.dp),
+                        ) {
+                            if (uiState.isUploading) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    color = if (isDark) Color.Black else Color.White,
+                                    strokeWidth = 2.dp,
+                                )
+                            } else {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    Text(
+                                        text = "ارسال پست",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 15.sp,
+                                        color = if (isDark) Color.Black else Color.White,
+                                    )
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.Send,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp),
+                                        tint = if (isDark) Color.Black else Color.White,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            },
         ) { padding ->
-            Column(
+            Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(padding)
-                    .verticalScroll(rememberScrollState()),
+                    .padding(padding),
             ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState()),
+                ) {
                 // Upload Progress Banner
                 AnimatedVisibility(visible = uiState.isUploading) {
                     Column(
@@ -245,11 +367,63 @@ fun AddPostScreen(
                     }
                 }
 
-                // Media Preview / Pickers
+                // 1. Author Card
+                AddPostAuthorCard(
+                    avatarUrl = uiState.authorAvatarUrl,
+                    username = uiState.authorUsername,
+                    fullName = uiState.authorFullName,
+                    isVerified = uiState.authorIsVerified,
+                    isDark = isDark,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                )
+
+                // 2. Caption Text Field - styled with Card matching Flutter HashtagAutocompleteField
+                val cardBgColor = if (isDark) Color(0xFF13131E) else Color(0xFFF3F4FF)
+                val primaryTextColor = if (isDark) Color.White else Color.Black
+                val hintTextColor = if (isDark) Color.White.copy(alpha = 0.7f) else Color.Black.copy(alpha = 0.54f)
+
+                Card(
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = cardBgColor),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp),
+                ) {
+                    androidx.compose.material3.TextField(
+                        value = uiState.content,
+                        onValueChange = viewModel::onContentChanged,
+                        placeholder = {
+                            Text(
+                                text = "چیزی بنویسید...",
+                                fontSize = 16.sp,
+                                color = hintTextColor,
+                            )
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 120.dp, max = 200.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = androidx.compose.material3.TextFieldDefaults.colors(
+                            focusedContainerColor = Color.Transparent,
+                            unfocusedContainerColor = Color.Transparent,
+                            disabledContainerColor = Color.Transparent,
+                            focusedIndicatorColor = Color.Transparent,
+                            unfocusedIndicatorColor = Color.Transparent,
+                            disabledIndicatorColor = Color.Transparent,
+                            focusedTextColor = primaryTextColor,
+                            unfocusedTextColor = primaryTextColor,
+                        ),
+                        maxLines = 7,
+                        minLines = 3,
+                    )
+                }
+
+                // 2. Media Preview / Pickers
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp),
+                        .padding(horizontal = 16.dp, vertical = 6.dp),
                 ) {
                     when {
                         // Video Selected
@@ -315,12 +489,12 @@ fun AddPostScreen(
 
                         // Images Selected
                         uiState.selectedImages.isNotEmpty() -> {
-                            Column {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 LazyRow(
                                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                                     modifier = Modifier.fillMaxWidth(),
                                 ) {
-                                    items(uiState.selectedImages) { imageUri ->
+                                    itemsIndexed(uiState.selectedImages) { idx, imageUri ->
                                         Box(
                                             modifier = Modifier
                                                 .size(140.dp)
@@ -329,7 +503,8 @@ fun AddPostScreen(
                                                     width = 1.dp,
                                                     color = MaterialTheme.colorScheme.outlineVariant,
                                                     shape = RoundedCornerShape(14.dp),
-                                                ),
+                                                )
+                                                .clickable { selectedImageIndex = idx },
                                         ) {
                                             AsyncImage(
                                                 model = imageUri,
@@ -337,11 +512,20 @@ fun AddPostScreen(
                                                 modifier = Modifier.fillMaxSize(),
                                                 contentScale = ContentScale.Crop,
                                             )
+
+                                            // Scrim on top
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .height(36.dp)
+                                                    .background(Color.Black.copy(alpha = 0.25f)),
+                                            )
+
                                             IconButton(
                                                 onClick = { viewModel.removeImage(imageUri) },
                                                 modifier = Modifier
                                                     .align(Alignment.TopEnd)
-                                                    .padding(6.dp)
+                                                    .padding(4.dp)
                                                     .size(24.dp)
                                                     .clip(CircleShape)
                                                     .background(Color.Black.copy(alpha = 0.6f)),
@@ -353,6 +537,17 @@ fun AddPostScreen(
                                                     modifier = Modifier.size(14.dp),
                                                 )
                                             }
+
+                                            // Counter badge
+                                            Text(
+                                                text = "${idx + 1}/${uiState.selectedImages.size}",
+                                                color = Color.White,
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier
+                                                    .align(Alignment.TopStart)
+                                                    .padding(6.dp),
+                                            )
                                         }
                                     }
 
@@ -380,100 +575,45 @@ fun AddPostScreen(
                                         }
                                     }
                                 }
+
+                                // Instagram-Style Floating Music Overlay on Photos
+                                if (uiState.selectedMusicUri != null || uiState.selectedMusicTitle != null) {
+                                    MusicOverlayPill(
+                                        title = uiState.selectedMusicTitle ?: "موسیقی انتخاب‌شده",
+                                        onTap = { showMusicTrimSheet = true },
+                                        onRemove = { viewModel.onMusicSelected(null, null) },
+                                        modifier = Modifier.padding(top = 4.dp),
+                                    )
+                                }
                             }
                         }
 
-                        // Empty State: Show Media Picker Cards
+                        // Empty State: DottedBorder container with 4 action buttons
                         else -> {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            ) {
-                                Card(
-                                    onClick = {
-                                        imagePickerLauncher.launch(
-                                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
-                                        )
-                                    },
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .height(110.dp),
-                                    shape = RoundedCornerShape(16.dp),
-                                    colors = CardDefaults.cardColors(
-                                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                                    ),
-                                ) {
-                                    Column(
-                                        modifier = Modifier.fillMaxSize(),
-                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                        verticalArrangement = Arrangement.Center,
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Image,
-                                            contentDescription = null,
-                                            tint = VistaBrandColors.Indigo,
-                                            modifier = Modifier.size(32.dp),
-                                        )
-                                        Spacer(modifier = Modifier.height(8.dp))
-                                        Text(
-                                            text = "انتخاب تصویر",
-                                            fontSize = 13.sp,
-                                            fontWeight = FontWeight.Bold,
-                                        )
-                                        Text(
-                                            text = "تا ${uiState.maxGalleryImages} عکس",
-                                            fontSize = 11.sp,
-                                            color = Color.Gray,
-                                        )
-                                    }
-                                }
-
-                                Card(
-                                    onClick = {
-                                        videoPickerLauncher.launch(
-                                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly),
-                                        )
-                                    },
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .height(110.dp),
-                                    shape = RoundedCornerShape(16.dp),
-                                    colors = CardDefaults.cardColors(
-                                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                                    ),
-                                ) {
-                                    Column(
-                                        modifier = Modifier.fillMaxSize(),
-                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                        verticalArrangement = Arrangement.Center,
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Videocam,
-                                            contentDescription = null,
-                                            tint = VistaBrandColors.Pink,
-                                            modifier = Modifier.size(32.dp),
-                                        )
-                                        Spacer(modifier = Modifier.height(8.dp))
-                                        Text(
-                                            text = "انتخاب ویدیو",
-                                            fontSize = 13.sp,
-                                            fontWeight = FontWeight.Bold,
-                                        )
-                                        Text(
-                                            text = "تا ${uiState.maxVideoDurationMs / 1000} ثانیه",
-                                            fontSize = 11.sp,
-                                            color = Color.Gray,
-                                        )
-                                    }
-                                }
-                            }
+                            MediaUploadSection(
+                                isDark = isDark,
+                                onPickImages = {
+                                    imagePickerLauncher.launch(
+                                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                                    )
+                                },
+                                onCaptureCamera = ::launchCamera,
+                                onPickVideo = {
+                                    videoPickerLauncher.launch(
+                                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly),
+                                    )
+                                },
+                                onPickMusic = {
+                                    musicPickerLauncher.launch("audio/*")
+                                },
+                            )
                         }
                     }
                 }
 
                 // Aspect Ratio Selector
                 if (uiState.selectedImages.isNotEmpty() || uiState.selectedVideo != null) {
-                    Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+                    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
                         Text(
                             text = "نسبت تصویر:",
                             fontSize = 13.sp,
@@ -497,31 +637,9 @@ fun AddPostScreen(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
-                // Caption TextField
-                OutlinedTextField(
-                    value = uiState.content,
-                    onValueChange = viewModel::onContentChanged,
-                    placeholder = {
-                        Text(
-                            text = "درباره این پست بنویسید… (از #هشتگ‌ها برای دیده شدن بیشتر استفاده کنید)",
-                            fontSize = 14.sp,
-                            color = Color.Gray,
-                        )
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp)
-                        .height(140.dp),
-                    shape = RoundedCornerShape(14.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = MaterialTheme.colorScheme.primary,
-                        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
-                    ),
-                    maxLines = 6,
-                )
-
+                // Hashtags Autocomplete Card
                 AnimatedVisibility(
                     visible = uiState.isLoadingHashtagSuggestions || uiState.hashtagSuggestions.isNotEmpty(),
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
@@ -559,20 +677,10 @@ fun AddPostScreen(
                     }
                 }
 
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.End,
-                ) {
-                    Text(
-                        text = "${uiState.content.length}/${uiState.maxCharLength}",
-                        fontSize = 12.sp,
-                        color = if (uiState.content.length >= uiState.maxCharLength) MaterialTheme.colorScheme.error else Color.Gray,
-                    )
-                }
-
-                // Location & Music Attachment Chips
+                // Keep secondary controls out of the empty composer. The Flutter
+                // reference exposes the caption and media picker first; these
+                // controls belong to the post-editing state once media exists.
+                if (uiState.selectedImages.isNotEmpty() || uiState.selectedVideo != null) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -622,7 +730,7 @@ fun AddPostScreen(
                     color = MaterialTheme.colorScheme.outlineVariant,
                 )
 
-                // Post Settings
+                // Advanced Post Settings
                 Column(modifier = Modifier.padding(horizontal = 16.dp)) {
                     Text(
                         text = "تنظیمات پیشرفته پست",
@@ -668,11 +776,54 @@ fun AddPostScreen(
                         )
                     }
                 }
+                }
 
-                Spacer(modifier = Modifier.height(40.dp))
+                Spacer(modifier = Modifier.height(30.dp))
+            }
+
+            // Promotional upgrade tooltip for standard users (max 500 chars)
+            if (uiState.maxCharLength == 500) {
+                Column(
+                    horizontalAlignment = Alignment.Start,
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(bottom = 6.dp, start = 14.dp),
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color(0xFF4A90E2),
+                        shadowElevation = 4.dp,
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                            horizontalAlignment = Alignment.End,
+                        ) {
+                            Text(
+                                text = "ارتقا به پریمیوم",
+                                color = Color.White,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                            )
+                            Text(
+                                text = "۴۰۰ کاراکتر بنویسید",
+                                color = Color.White.copy(alpha = 0.75f),
+                                fontSize = 10.sp,
+                            )
+                        }
+                    }
+                    Box(
+                        modifier = Modifier
+                            .padding(start = 20.dp)
+                            .size(9.dp)
+                            .graphicsLayer { rotationZ = 45f }
+                            .background(Color(0xFF4A90E2)),
+                    )
+                }
             }
         }
+    }
 
+        // Location Dialog
         if (showLocationDialog) {
             var customCity by remember { mutableStateOf(uiState.selectedLocation.orEmpty()) }
             val quickCities = listOf("تهران، ایران", "شیراز، فارس", "اصفهان", "مشهد، خراسان", "تبریز، آذربایجان", "کیش، هرمزگان")
@@ -725,6 +876,7 @@ fun AddPostScreen(
             )
         }
 
+        // Music Trim Bottom Sheet
         if (showMusicTrimSheet && uiState.selectedMusicUri != null && uiState.musicDurationMs > 0) {
             val maxClipMs = if (uiState.isPremium) 60_000 else 15_000
             var trimRange by remember(uiState.selectedMusicUri) {
@@ -770,4 +922,347 @@ fun AddPostScreen(
             }
         }
     }
+}
+
+@Composable
+private fun AddPostAuthorCard(
+    avatarUrl: String?,
+    username: String,
+    fullName: String,
+    isVerified: Boolean,
+    isDark: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val cardBgColor = if (isDark) Color(0xFF13131E) else Color(0xFFF3F4FF)
+    val textColor = if (isDark) Color.White else Color.Black
+    val secondaryTextColor = if (isDark) Color.White.copy(alpha = 0.7f) else Color.Black.copy(alpha = 0.54f)
+
+    Card(
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = cardBgColor),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        modifier = modifier.fillMaxWidth(),
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(if (isDark) Color(0xFF2A2A3E) else Color(0xFFE5E7EB)),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (!avatarUrl.isNullOrBlank()) {
+                    AsyncImage(
+                        model = avatarUrl,
+                        contentDescription = "تصویر نمایه $username",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop,
+                    )
+                } else {
+                    Text(
+                        text = (username.firstOrNull() ?: fullName.firstOrNull() ?: 'V').uppercase(),
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp,
+                        color = textColor,
+                    )
+                }
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text(
+                        text = username.ifBlank { fullName.ifBlank { "کاربر ویستا" } },
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        color = textColor,
+                    )
+                    if (isVerified) {
+                        VerifiedMark(modifier = Modifier.size(16.dp))
+                    }
+                }
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = "در حال ایجاد پست جدید...",
+                    fontSize = 12.sp,
+                    color = secondaryTextColor,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun MediaUploadSection(
+    isDark: Boolean,
+    onPickImages: () -> Unit,
+    onCaptureCamera: () -> Unit,
+    onPickVideo: () -> Unit,
+    onPickMusic: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val borderColor = if (isDark) Color.White.copy(alpha = 0.25f) else Color.Black.copy(alpha = 0.22f)
+    val bgColor = if (isDark) Color.White.copy(alpha = 0.04f) else Color.Black.copy(alpha = 0.02f)
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(bgColor)
+            .dashedBorder(
+                width = 1.dp,
+                color = borderColor,
+                cornerRadius = 12.dp,
+                dashLength = 6.dp,
+                gapLength = 4.dp,
+            )
+            .padding(vertical = 18.dp, horizontal = 12.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Text(
+                text = "محتوای چندرسانه‌ای اضافه کنید",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium,
+                color = if (isDark) Color.White.copy(alpha = 0.7f) else Color.Black.copy(alpha = 0.54f),
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                MediaOptionButton(
+                    icon = Icons.Default.Image,
+                    label = "تصویر",
+                    tintColor = Color(0xFF3897F0),
+                    isDark = isDark,
+                    onClick = onPickImages,
+                )
+                MediaOptionButton(
+                    icon = Icons.Default.CameraAlt,
+                    label = "دوربین",
+                    tintColor = Color(0xFF8B5CF6),
+                    isDark = isDark,
+                    onClick = onCaptureCamera,
+                )
+                MediaOptionButton(
+                    icon = Icons.Default.Videocam,
+                    label = "ویدیو",
+                    tintColor = Color(0xFFE0457B),
+                    isDark = isDark,
+                    onClick = onPickVideo,
+                )
+                MediaOptionButton(
+                    icon = Icons.Default.MusicNote,
+                    label = "موزیک",
+                    tintColor = Color(0xFF1DB954),
+                    isDark = isDark,
+                    onClick = onPickMusic,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun MediaOptionButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    tintColor: Color,
+    isDark: Boolean,
+    onClick: () -> Unit,
+) {
+    val buttonBg = tintColor.copy(alpha = if (isDark) 0.22f else 0.12f)
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .clickable(onClick = onClick)
+            .padding(4.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(52.dp)
+                .clip(CircleShape)
+                .background(buttonBg),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                tint = tintColor,
+                modifier = Modifier.size(26.dp),
+            )
+        }
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text = label,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun MusicOverlayPill(
+    title: String,
+    onTap: () -> Unit,
+    onRemove: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        onClick = onTap,
+        shape = RoundedCornerShape(22.dp),
+        color = Color.Black.copy(alpha = 0.65f),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
+        modifier = modifier,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            RotatingVinylDisc(size = 24.dp)
+            Text(
+                text = title,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+                color = Color.White,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.widthIn(max = 130.dp),
+            )
+            AnimatedEqualizerBars(
+                barCount = 3,
+                height = 14.dp,
+                color = Color.White,
+            )
+            Box(
+                modifier = Modifier
+                    .size(20.dp)
+                    .clip(CircleShape)
+                    .clickable(onClick = onRemove),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Close,
+                    contentDescription = "حذف موسیقی",
+                    tint = Color.White.copy(alpha = 0.7f),
+                    modifier = Modifier.size(14.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun RotatingVinylDisc(size: Dp = 28.dp, isPlaying: Boolean = true) {
+    val infiniteTransition = rememberInfiniteTransition(label = "vinyl")
+    val angle by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 3000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "vinylAngle",
+    )
+    Box(
+        modifier = Modifier
+            .size(size)
+            .graphicsLayer { rotationZ = if (isPlaying) angle else 0f }
+            .clip(CircleShape)
+            .background(Color(0xFF1E1E1E)),
+        contentAlignment = Alignment.Center,
+    ) {
+        // Grooves
+        Box(
+            modifier = Modifier
+                .size(size * 0.65f)
+                .border(1.dp, Color(0xFF383838), CircleShape),
+        )
+        // Center label
+        Box(
+            modifier = Modifier
+                .size(size * 0.35f)
+                .clip(CircleShape)
+                .background(Color(0xFFE91E63)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(size * 0.12f)
+                    .clip(CircleShape)
+                    .background(Color.White),
+            )
+        }
+    }
+}
+
+@Composable
+fun AnimatedEqualizerBars(
+    modifier: Modifier = Modifier,
+    color: Color = Color.White,
+    barCount: Int = 3,
+    height: Dp = 14.dp,
+) {
+    val infiniteTransition = rememberInfiniteTransition(label = "equalizer")
+    Row(
+        modifier = modifier.height(height),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        verticalAlignment = Alignment.Bottom,
+    ) {
+        repeat(barCount) { index ->
+            val duration = 400 + index * 150
+            val barHeightFraction by infiniteTransition.animateFloat(
+                initialValue = 0.3f,
+                targetValue = 1.0f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(duration, easing = FastOutSlowInEasing),
+                    repeatMode = RepeatMode.Reverse,
+                ),
+                label = "bar_$index",
+            )
+            Box(
+                modifier = Modifier
+                    .width(2.5.dp)
+                    .fillMaxHeight(barHeightFraction)
+                    .clip(RoundedCornerShape(1.dp))
+                    .background(color),
+            )
+        }
+    }
+}
+
+fun Modifier.dashedBorder(
+    width: Dp,
+    color: Color,
+    cornerRadius: Dp,
+    dashLength: Dp = 6.dp,
+    gapLength: Dp = 4.dp,
+): Modifier = this.drawWithContent {
+    drawContent()
+    val stroke = Stroke(
+        width = width.toPx(),
+        pathEffect = PathEffect.dashPathEffect(
+            floatArrayOf(dashLength.toPx(), gapLength.toPx()),
+            0f,
+        ),
+    )
+    val r = cornerRadius.toPx()
+    drawRoundRect(
+        color = color,
+        topLeft = Offset(width.toPx() / 2f, width.toPx() / 2f),
+        size = Size(size.width - width.toPx(), size.height - width.toPx()),
+        cornerRadius = CornerRadius(r, r),
+        style = stroke,
+    )
 }
