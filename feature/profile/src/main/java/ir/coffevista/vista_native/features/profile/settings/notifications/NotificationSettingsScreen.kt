@@ -78,6 +78,9 @@ fun NotificationSettingsScreen(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     var systemNotificationsEnabled by remember(context) { mutableStateOf(context.canDisplayNotifications()) }
+    // System permission controls delivery, not the user's stored notification preferences.
+    // Flutter keeps these choices available while Android notifications are disabled.
+    val canManagePush = canEdit
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { systemNotificationsEnabled = context.canDisplayNotifications() }
@@ -137,11 +140,30 @@ fun NotificationSettingsScreen(
                 // Section 1: Notifications
                 VistaSettingsSection(title = "اعلان‌ها")
                 VistaSettingsGroup {
+                    VistaSettingsTile(
+                        icon = Icons.Outlined.NotificationsActive,
+                        title = "مجوز اعلان اندروید",
+                        subtitle = if (systemNotificationsEnabled) {
+                            "فعال"
+                        } else {
+                            "غیرفعال؛ برای دریافت اعلان آن را فعال کنید"
+                        },
+                        onClick = {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                                context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                            ) {
+                                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                            } else {
+                                context.openNotificationSettings()
+                            }
+                        },
+                    )
+                    VistaSettingsDivider()
                     VistaSettingsSwitch(
                         icon = Icons.Outlined.NotificationsActive,
                         title = "اعلان‌های پوش",
                         value = settings.push_notifications,
-                        enabled = canEdit,
+                        enabled = canManagePush,
                         onChanged = { value -> viewModel.update { it.copy(push_notifications = value) } },
                     )
                     VistaSettingsDivider()
@@ -149,7 +171,7 @@ fun NotificationSettingsScreen(
                         icon = Icons.Outlined.Message,
                         title = "پیام‌ها",
                         value = settings.message_notifications,
-                        enabled = canEdit && settings.push_notifications,
+                        enabled = canManagePush && settings.push_notifications,
                         onChanged = { value -> viewModel.update { it.copy(message_notifications = value) } },
                     )
                     VistaSettingsDivider()
@@ -157,7 +179,7 @@ fun NotificationSettingsScreen(
                         icon = Icons.Outlined.AlternateEmail,
                         title = "منشن‌ها",
                         value = settings.mention_notifications,
-                        enabled = canEdit && settings.push_notifications,
+                        enabled = canManagePush && settings.push_notifications,
                         onChanged = { value -> viewModel.update { it.copy(mention_notifications = value) } },
                     )
                     VistaSettingsDivider()
@@ -166,7 +188,7 @@ fun NotificationSettingsScreen(
                         title = "تعاملات اجتماعی",
                         subtitle = "لایک، کامنت، فالو و استوری",
                         value = settings.socialEnabled,
-                        enabled = canEdit && settings.push_notifications,
+                        enabled = canManagePush && settings.push_notifications,
                         onChanged = { value -> viewModel.update { it.withSocialEnabled(value) } },
                     )
                     VistaSettingsDivider()
@@ -174,7 +196,7 @@ fun NotificationSettingsScreen(
                         icon = Icons.Outlined.Lightbulb,
                         title = "پیشنهادها",
                         value = settings.suggest_notifications,
-                        enabled = canEdit && settings.push_notifications,
+                        enabled = canManagePush && settings.push_notifications,
                         onChanged = { value -> viewModel.update { it.copy(suggest_notifications = value) } },
                     )
                     VistaSettingsDivider()
@@ -182,7 +204,7 @@ fun NotificationSettingsScreen(
                         icon = Icons.Outlined.Preview,
                         title = "پیش‌نمایش پیام",
                         value = settings.show_message_preview,
-                        enabled = canEdit && settings.push_notifications,
+                        enabled = canManagePush && settings.push_notifications,
                         onChanged = { value -> viewModel.update { it.copy(show_message_preview = value) } },
                     )
                 }
@@ -196,7 +218,7 @@ fun NotificationSettingsScreen(
                         icon = Icons.Outlined.VolumeUp,
                         title = "صدای پیام درون برنامه",
                         value = settings.in_app_chat_sounds,
-                        enabled = canEdit,
+                        enabled = canManagePush,
                         onChanged = { value -> viewModel.update { it.copy(in_app_chat_sounds = value) } },
                     )
                     VistaSettingsDivider()
@@ -204,7 +226,7 @@ fun NotificationSettingsScreen(
                         icon = Icons.Outlined.VolumeUp,
                         title = "صدای اعلان",
                         value = settings.sound_enabled,
-                        enabled = canEdit && settings.push_notifications,
+                        enabled = canManagePush && settings.push_notifications,
                         onChanged = { value -> viewModel.update { it.copy(sound_enabled = value) } },
                     )
                     VistaSettingsDivider()
@@ -212,7 +234,7 @@ fun NotificationSettingsScreen(
                         icon = Icons.Outlined.Vibration,
                         title = "لرزش",
                         value = settings.vibration_enabled,
-                        enabled = canEdit && settings.push_notifications,
+                        enabled = canManagePush && settings.push_notifications,
                         onChanged = { value -> viewModel.update { it.copy(vibration_enabled = value) } },
                     )
                 }
@@ -227,7 +249,7 @@ fun NotificationSettingsScreen(
                         title = "فعال‌سازی ساعات سکوت",
                         subtitle = "${settings.quiet_hours_start} تا ${settings.quiet_hours_end}",
                         value = settings.quiet_hours_enabled,
-                        enabled = canEdit && settings.push_notifications,
+                        enabled = canManagePush && settings.push_notifications,
                         onChanged = { value -> viewModel.update { it.copy(quiet_hours_enabled = value) } },
                     )
                     if (settings.quiet_hours_enabled) {

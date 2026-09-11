@@ -179,6 +179,18 @@ class MessagesViewModel @Inject constructor(
         }
     }
 
+    fun startSecretChat(onOpened: (Conversation) -> Unit = {}) {
+        val current = mutableState.value
+        val peerId = current.conversation?.peerId?.trim().orEmpty()
+        if (peerId.isEmpty() || current.conversation?.type != ConversationType.PRIVATE) return
+        viewModelScope.launch {
+            when (val result = repository.createConversation(peerId, isSecret = true)) {
+                is ChatResult.Success -> onOpened(result.value)
+                is ChatResult.Failure -> mutableState.update { it.copy(error = result.message) }
+            }
+        }
+    }
+
     fun refresh() {
         val conversationId = mutableState.value.conversationId ?: return
         if (mutableState.value.isRefreshing) return

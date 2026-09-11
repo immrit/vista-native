@@ -7,7 +7,7 @@ import kotlinx.coroutines.flow.map
 
 data class SettingsPreferences(
     val locale: String = "fa",
-    val themeMode: String = "light",
+    val themeMode: String = "system",
     val reduceMotion: Boolean = false,
     val chatEntryMode: String = "adaptive",
     val emojiStyle: String = "custom",
@@ -46,7 +46,7 @@ class ProtoSettingsPreferenceStore(
 
 internal fun AppPreferences.toSettingsPreferences() = SettingsPreferences(
     locale = appLocale.ifBlank { "fa" },
-    themeMode = themeMode.ifBlank { "light" },
+    themeMode = themeMode.ifBlank { "system" },
     reduceMotion = reduceMotion,
     chatEntryMode = chatEntryMode.takeIf { it in setOf("adaptive", "minimal", "off") } ?: "adaptive",
     emojiStyle = emojiStyle.takeIf { it in setOf("custom", "system") } ?: "custom",

@@ -35,6 +35,21 @@ import java.io.File
 import java.util.UUID
 import javax.inject.Inject
 
+internal object StoryVideoUploadPolicy {
+    const val MaxBytes: Long = 100L * 1024 * 1024
+    const val MaxDurationMs: Long = 60_000L
+
+    fun validateByteCount(byteCount: Long) {
+        require(byteCount > 0) { "فایل ویدیو خالی است" }
+        require(byteCount <= MaxBytes) { "حجم ویدیو بیش از حد مجاز است (حداکثر ۱۰۰ مگابایت)" }
+    }
+
+    fun validateDuration(durationMs: Long?) {
+        require(durationMs != null && durationMs > 0) { "مدت ویدیو قابل تشخیص نیست" }
+        require(durationMs <= MaxDurationMs) { "مدت ویدیو بیش از حد مجاز است (حداکثر ۶۰ ثانیه)" }
+    }
+}
+
 data class StoryEditorUiState(
     val mediaUri: Uri? = null,
     val isVideo: Boolean = false,
@@ -289,7 +304,7 @@ class StoryEditorViewModel @Inject constructor(
         uri: Uri,
         onProgress: (Float) -> Unit,
     ) = withContext(Dispatchers.IO) {
-        val maxBytes = 100L * 1024 * 1024
+        val maxBytes = StoryVideoUploadPolicy.MaxBytes
         val temporaryVideo = File.createTempFile("story-video-", ".mp4", context.cacheDir)
         try {
             val input = context.contentResolver.openInputStream(uri)
@@ -303,10 +318,10 @@ class StoryEditorViewModel @Inject constructor(
                         val count = source.read(buffer)
                         if (count < 0) break
                         total += count
-                        require(total <= maxBytes) { "حجم ویدیو بیش از حد مجاز است (حداکثر ۱۰۰ مگابایت)" }
+                        StoryVideoUploadPolicy.validateByteCount(total)
                         target.write(buffer, 0, count)
                     }
-                    require(total > 0) { "فایل ویدیو خالی است" }
+                    StoryVideoUploadPolicy.validateByteCount(total)
                 }
             }
             val retriever = MediaMetadataRetriever()
@@ -319,8 +334,7 @@ class StoryEditorViewModel @Inject constructor(
             } finally {
                 retriever.release()
             }
-            require(durationMs != null && durationMs > 0) { "مدت ویدیو قابل تشخیص نیست" }
-            require(durationMs <= 60_000) { "مدت ویدیو بیش از حد مجاز است (حداکثر ۶۰ ثانیه)" }
+            StoryVideoUploadPolicy.validateDuration(durationMs)
             currentCoroutineContext().ensureActive()
             uploader.uploadVideo(userId, temporaryVideo, maxBytes, onProgress)
         } finally {

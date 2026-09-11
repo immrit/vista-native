@@ -5,6 +5,7 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -242,7 +243,7 @@ internal fun MessageContextMenu(
                 }
 
                     if (policy.canReact) Surface(
-                        shape = RoundedCornerShape(22.dp),
+                        shape = RoundedCornerShape(23.dp),
                         color = colors.surface,
                         shadowElevation = 8.dp,
                         tonalElevation = 4.dp,
@@ -291,7 +292,7 @@ internal fun MessageContextMenu(
 
                     // ۲. کارت دستورات پیام (Action Menu Card)
                     Surface(
-                        shape = RoundedCornerShape(14.dp),
+                        shape = RoundedCornerShape(12.dp),
                         color = colors.surface,
                         shadowElevation = 10.dp,
                         tonalElevation = 6.dp,
@@ -339,7 +340,7 @@ internal fun MessageContextMenu(
                         contentAlignment = Alignment.Center,
                     ) {
                         Surface(
-                            shape = RoundedCornerShape(14.dp),
+                            shape = RoundedCornerShape(12.dp),
                             color = colors.surface,
                             shadowElevation = 10.dp,
                             modifier = Modifier
@@ -388,12 +389,13 @@ private data class MessageContextMenuColors(
 
 @Composable
 private fun messageContextMenuColors(): MessageContextMenuColors {
+    val isDark = isSystemInDarkTheme()
     val scheme = MaterialTheme.colorScheme
     return MessageContextMenuColors(
-        surface = scheme.surfaceContainerHigh,
-        text = scheme.onSurface,
-        icon = scheme.onSurfaceVariant,
-        divider = scheme.outlineVariant,
+        surface = if (isDark) Color(0xFF252525) else Color.White,
+        text = if (isDark) Color.White else Color(0xFF1E293B),
+        icon = if (isDark) Color.White.copy(alpha = 0.70f) else Color.Black.copy(alpha = 0.54f),
+        divider = if (isDark) Color.White.copy(alpha = 0.12f) else Color(0xFFE2E8F0),
         delete = scheme.error,
         scrim = scheme.scrim.copy(alpha = 0.45f),
     )
@@ -429,7 +431,7 @@ private fun MessageContextMenuActions(
         if (policy.canCopy) {
             TelegramContextMenuItem(
                 icon = Icons.Default.ContentCopy,
-                label = "کپی",
+                label = "کپی متن",
                 iconColor = iconPrimaryColor,
                 textColor = textPrimaryColor,
                 onClick = onCopy,
@@ -438,7 +440,7 @@ private fun MessageContextMenuActions(
         if (policy.canForward) {
             TelegramContextMenuItem(
                 icon = Icons.AutoMirrored.Filled.Forward,
-                label = "فوروارد",
+                label = "هدایت پیام",
                 iconColor = iconPrimaryColor,
                 textColor = textPrimaryColor,
                 onClick = onForward,
@@ -465,7 +467,7 @@ private fun MessageContextMenuActions(
         if (policy.canSelect) {
             TelegramContextMenuItem(
                 icon = Icons.Default.CheckCircleOutline,
-                label = "انتخاب",
+                label = "انتخاب پیام",
                 iconColor = iconPrimaryColor,
                 textColor = textPrimaryColor,
                 onClick = onSelect,
@@ -474,7 +476,7 @@ private fun MessageContextMenuActions(
         if (policy.canViewInfo) {
             TelegramContextMenuItem(
                 icon = Icons.Default.Info,
-                label = "جزئیات",
+                label = "جزئیات پیام",
                 iconColor = iconPrimaryColor,
                 textColor = textPrimaryColor,
                 onClick = onInfo,
@@ -490,7 +492,7 @@ private fun MessageContextMenuActions(
         if (policy.canDelete) {
             TelegramContextMenuItem(
                 icon = Icons.Default.Delete,
-                label = "حذف",
+                label = "حذف پیام",
                 iconColor = deleteColor,
                 textColor = deleteColor,
                 onClick = onDelete,
@@ -514,23 +516,22 @@ private fun TelegramContextMenuItem(
             .fillMaxWidth()
             .semantics { contentDescription = label }
             .clickable(role = Role.Button, onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 9.dp),
+            .padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Start,
+        horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = iconColor,
-            modifier = Modifier.size(19.dp),
-        )
-        Spacer(Modifier.width(12.dp))
         Text(
             text = label,
             color = textColor,
             fontSize = 14.sp,
             fontWeight = if (isDestructive) FontWeight.Medium else FontWeight.Normal,
             maxLines = 1,
+        )
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = iconColor,
+            modifier = Modifier.size(19.dp),
         )
     }
 }

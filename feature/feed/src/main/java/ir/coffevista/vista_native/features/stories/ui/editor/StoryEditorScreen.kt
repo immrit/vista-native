@@ -188,90 +188,42 @@ fun StoryEditorScreen(
                         .padding(padding)
                         .background(MaterialTheme.colorScheme.background),
                 ) {
-                    // Top App Bar
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .statusBarsPadding()
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                        IconButton(onClick = onClose) {
-                            Icon(
-                                imageVector = Icons.Default.Close,
-                                contentDescription = "بستن",
-                                tint = MaterialTheme.colorScheme.onSurface,
-                            )
-                        }
-                        Text(
-                            text = "ایجاد استوری جدید",
-                            fontSize = 17.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
-                        Spacer(modifier = Modifier.size(40.dp))
-                    }
-
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center,
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(horizontal = 24.dp),
+                            .padding(horizontal = 28.dp),
                     ) {
                         Text(
-                            text = "انتخاب رسانه استوری",
-                            fontSize = 20.sp,
+                            text = "ایجاد استوری جدید",
+                            fontSize = 22.sp,
                             fontWeight = FontWeight.Bold,
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "برای استوری خود یک عکس، ویدیو یا تصویر از دوربین انتخاب کنید",
-                            fontSize = 13.sp,
+                            text = "یک عکس یا ویدیو برای استوری خود انتخاب کنید",
+                            fontSize = 16.sp,
                             color = Color.Gray,
                             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                         )
 
-                        Spacer(modifier = Modifier.height(36.dp))
+                        Spacer(modifier = Modifier.height(42.dp))
 
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(18.dp),
                         ) {
-                            // Camera Option
-                            Card(
-                                onClick = ::launchCamera,
-                                modifier = Modifier.weight(1f).height(130.dp),
-                                shape = RoundedCornerShape(20.dp),
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                            ) {
-                                Column(
-                                    modifier = Modifier.fillMaxSize(),
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.Center,
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.CameraAlt,
-                                        contentDescription = null,
-                                        tint = Color(0xFFFFA726),
-                                        modifier = Modifier.size(36.dp),
-                                    )
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    Text("دوربین", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                                }
-                            }
-
-                            // Gallery Photo Option
+                            // In RTL this first card renders on the right, matching Flutter's image action.
                             Card(
                                 onClick = {
                                     photoPickerLauncher.launch(
                                         PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
                                     )
                                 },
-                                modifier = Modifier.weight(1f).height(130.dp),
-                                shape = RoundedCornerShape(20.dp),
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                                modifier = Modifier.weight(1f).height(156.dp),
+                                shape = RoundedCornerShape(24.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f)),
                             ) {
                                 Column(
                                     modifier = Modifier.fillMaxSize(),
@@ -280,25 +232,25 @@ fun StoryEditorScreen(
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.Image,
-                                        contentDescription = null,
+                                        contentDescription = "عکس از گالری",
                                         tint = VistaBrandColors.Indigo,
-                                        modifier = Modifier.size(36.dp),
+                                        modifier = Modifier.size(48.dp),
                                     )
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    Text("تصویر", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    Text("عکس از گالری", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                                 }
                             }
 
-                            // Gallery Video Option
+                            // In RTL this second card renders on the left, matching Flutter's video action.
                             Card(
                                 onClick = {
                                     videoPickerLauncher.launch(
                                         PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly),
                                     )
                                 },
-                                modifier = Modifier.weight(1f).height(130.dp),
-                                shape = RoundedCornerShape(20.dp),
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                                modifier = Modifier.weight(1f).height(156.dp),
+                                shape = RoundedCornerShape(24.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f)),
                             ) {
                                 Column(
                                     modifier = Modifier.fillMaxSize(),
@@ -307,17 +259,32 @@ fun StoryEditorScreen(
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.Videocam,
-                                        contentDescription = null,
+                                        contentDescription = "ویدیو از گالری",
                                         tint = VistaBrandColors.Pink,
-                                        modifier = Modifier.size(36.dp),
+                                        modifier = Modifier.size(48.dp),
                                     )
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    Text("ویدیو", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    Text("ویدیو از گالری", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                                 }
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(32.dp))
+                        Spacer(modifier = Modifier.height(20.dp))
+
+                        // Native-only improvement: direct camera capture without changing
+                        // the two primary Flutter-equivalent gallery actions.
+                        TextButton(onClick = ::launchCamera) {
+                            Icon(
+                                imageVector = Icons.Default.CameraAlt,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("ثبت عکس با دوربین", color = MaterialTheme.colorScheme.primary)
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
 
                         TextButton(onClick = onClose) {
                             Text("انصراف و بازگشت", color = MaterialTheme.colorScheme.primary)

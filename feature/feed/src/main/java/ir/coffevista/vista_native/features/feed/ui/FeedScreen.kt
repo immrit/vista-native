@@ -1,6 +1,5 @@
 package ir.coffevista.vista_native.features.feed.ui
 
-import android.content.res.Configuration
 import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
@@ -93,7 +92,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -350,8 +348,10 @@ private fun FeedAppBar(
     onNotificationClick: () -> Unit,
     unreadNotificationCount: Int = 0,
 ) {
-    val dark = (LocalConfiguration.current.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
-        Configuration.UI_MODE_NIGHT_YES
+    // Use the active Compose palette, which also respects Vista's in-app theme setting.
+    // Reading the system configuration here previously selected the black asset when
+    // the app was dark while Android itself was still in light mode.
+    val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val logoId = if (dark) {
         DesignSystemR.drawable.vista_auth_logo_dark
     } else {

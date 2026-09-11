@@ -377,49 +377,7 @@ fun AddPostScreen(
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                 )
 
-                // 2. Caption Text Field - styled with Card matching Flutter HashtagAutocompleteField
-                val cardBgColor = if (isDark) Color(0xFF13131E) else Color(0xFFF3F4FF)
-                val primaryTextColor = if (isDark) Color.White else Color.Black
-                val hintTextColor = if (isDark) Color.White.copy(alpha = 0.7f) else Color.Black.copy(alpha = 0.54f)
-
-                Card(
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = cardBgColor),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp),
-                ) {
-                    androidx.compose.material3.TextField(
-                        value = uiState.content,
-                        onValueChange = viewModel::onContentChanged,
-                        placeholder = {
-                            Text(
-                                text = "چیزی بنویسید...",
-                                fontSize = 16.sp,
-                                color = hintTextColor,
-                            )
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 120.dp, max = 200.dp),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = androidx.compose.material3.TextFieldDefaults.colors(
-                            focusedContainerColor = Color.Transparent,
-                            unfocusedContainerColor = Color.Transparent,
-                            disabledContainerColor = Color.Transparent,
-                            focusedIndicatorColor = Color.Transparent,
-                            unfocusedIndicatorColor = Color.Transparent,
-                            disabledIndicatorColor = Color.Transparent,
-                            focusedTextColor = primaryTextColor,
-                            unfocusedTextColor = primaryTextColor,
-                        ),
-                        maxLines = 7,
-                        minLines = 3,
-                    )
-                }
-
-                // 2. Media Preview / Pickers
+                // 2. Media Preview / Pickers — runtime Flutter places media first.
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -611,6 +569,13 @@ fun AddPostScreen(
                     }
                 }
 
+                // 3. Caption follows the media chooser, matching the Flutter journey.
+                AddPostCaptionField(
+                    content = uiState.content,
+                    onContentChanged = viewModel::onContentChanged,
+                    isDark = isDark,
+                )
+
                 // Aspect Ratio Selector
                 if (uiState.selectedImages.isNotEmpty() || uiState.selectedVideo != null) {
                     Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
@@ -678,8 +643,8 @@ fun AddPostScreen(
                 }
 
                 // Keep secondary controls out of the empty composer. The Flutter
-                // reference exposes the caption and media picker first; these
-                // controls belong to the post-editing state once media exists.
+                // reference exposes the media picker then caption; these controls
+                // belong to the post-editing state once media exists.
                 if (uiState.selectedImages.isNotEmpty() || uiState.selectedVideo != null) {
                 Row(
                     modifier = Modifier
@@ -921,6 +886,50 @@ fun AddPostScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun AddPostCaptionField(
+    content: String,
+    onContentChanged: (String) -> Unit,
+    isDark: Boolean,
+) {
+    val cardBgColor = if (isDark) Color(0xFF13131E) else Color(0xFFF3F4FF)
+    val primaryTextColor = if (isDark) Color.White else Color.Black
+    val hintTextColor = if (isDark) Color.White.copy(alpha = 0.7f) else Color.Black.copy(alpha = 0.54f)
+
+    Card(
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = cardBgColor),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+    ) {
+        androidx.compose.material3.TextField(
+            value = content,
+            onValueChange = onContentChanged,
+            placeholder = {
+                Text(
+                    text = "چیزی بنویسید...",
+                    fontSize = 16.sp,
+                    color = hintTextColor,
+                )
+            },
+            modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp, max = 200.dp),
+            shape = RoundedCornerShape(12.dp),
+            colors = androidx.compose.material3.TextFieldDefaults.colors(
+                focusedContainerColor = Color.Transparent,
+                unfocusedContainerColor = Color.Transparent,
+                disabledContainerColor = Color.Transparent,
+                focusedIndicatorColor = Color.Transparent,
+                unfocusedIndicatorColor = Color.Transparent,
+                disabledIndicatorColor = Color.Transparent,
+                focusedTextColor = primaryTextColor,
+                unfocusedTextColor = primaryTextColor,
+            ),
+            maxLines = 7,
+            minLines = 3,
+        )
     }
 }
 

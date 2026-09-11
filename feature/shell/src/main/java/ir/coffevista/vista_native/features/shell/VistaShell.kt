@@ -487,6 +487,9 @@ fun VistaShell(
                         {
                             navController.navigate(ShellRoutes.EditProfile)
                         },
+                        {
+                            navController.navigate(ShellRoutes.StoryCreate)
+                        },
                     )
                 }
                 composable(ShellRoutes.SettingsRoot) {
@@ -638,6 +641,9 @@ fun VistaShell(
                     },
                     {
                         navController.navigate(ShellRoutes.EditProfile)
+                    },
+                    {
+                        navController.navigate(ShellRoutes.StoryCreate)
                     },
                 )
             }

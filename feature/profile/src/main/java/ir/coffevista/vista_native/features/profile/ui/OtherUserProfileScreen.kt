@@ -365,6 +365,7 @@ private fun PublicProfile.headerModel() = ProfileHeaderModel(
     followerCount = followersCount,
     followingCount = followingCount,
     joinOrder = joinOrder,
+    createdAt = createdAt,
 )
 
 internal object OtherProfileTestTags {

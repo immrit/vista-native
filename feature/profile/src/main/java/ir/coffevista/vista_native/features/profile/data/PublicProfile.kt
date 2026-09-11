@@ -40,6 +40,7 @@ data class PublicProfile(
     val messagePrivacy: String = "everyone",
     val allowProfileZoom: Boolean = true,
     val updatedAt: String,
+    val createdAt: String? = null,
     val lastSyncedEpochMillis: Long,
 )
 
@@ -74,6 +75,7 @@ internal fun PublicProfileDto.toEntity(
         messagePrivacy = messagePrivacy,
         allowProfileZoom = allowProfileZoom,
         updatedAt = updatedAt,
+        createdAt = createdAt,
         lastSyncedEpochMillis = syncedAtEpochMillis,
     )
 }
@@ -100,5 +102,6 @@ internal fun PublicProfileEntity.toDomain(): PublicProfile = PublicProfile(
     messagePrivacy = messagePrivacy,
     allowProfileZoom = allowProfileZoom,
     updatedAt = updatedAt,
+    createdAt = createdAt,
     lastSyncedEpochMillis = lastSyncedEpochMillis,
 )

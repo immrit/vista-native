@@ -61,6 +61,9 @@ data class OwnProfileEntity(
     @ColumnInfo(name = "updated_at")
     val updatedAt: String?,
 
+    @ColumnInfo(name = "created_at")
+    val createdAt: String? = null,
+
     @ColumnInfo(name = "email")
     val email: String? = null,
 

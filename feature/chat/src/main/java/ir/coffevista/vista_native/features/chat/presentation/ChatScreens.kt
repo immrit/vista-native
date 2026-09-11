@@ -1305,6 +1305,7 @@ fun MessageDetailRoute(
     viewModel: MessagesViewModel,
     onBack: () -> Unit,
     onOpenProfile: (String) -> Unit = {},
+    onStartSecretChat: (Conversation) -> Unit = {},
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -1361,6 +1362,7 @@ fun MessageDetailRoute(
         onCancelDownload = viewModel::cancelDownload,
         onOpenProfile = onOpenProfile,
         onLoadPartnerProfile = viewModel::loadPartnerProfile,
+        onStartSecretChat = { viewModel.startSecretChat(onStartSecretChat) },
     )
 }
 
@@ -1409,8 +1411,22 @@ fun MessageDetailScreen(
     onCancelDownload: (String) -> Unit = {},
     onOpenProfile: (String) -> Unit = {},
     onLoadPartnerProfile: (String) -> Unit = {},
+    onStartSecretChat: () -> Unit = {},
 ) = CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
     val context = LocalContext.current
+    val localView = LocalView.current
+    val isSecretConversation = state.conversation?.type == ConversationType.SECRET
+    DisposableEffect(localView, isSecretConversation) {
+        val window = (localView.context as? android.app.Activity)?.window
+        if (isSecretConversation) {
+            window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+        }
+        onDispose {
+            if (isSecretConversation) {
+                window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+            }
+        }
+    }
     var hasRecordAudioPermission by remember {
         mutableStateOf(
             context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
@@ -1807,6 +1823,24 @@ fun MessageDetailScreen(
                                     fontSize = 17.sp,
                                     fontWeight = FontWeight.Bold,
                                 )
+                                if (isSecretConversation) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            Icons.Default.Lock,
+                                            contentDescription = null,
+                                            tint = Color(0xFF43A047),
+                                            modifier = Modifier.size(13.dp),
+                                        )
+                                        Spacer(Modifier.width(3.dp))
+                                        Text(
+                                            "گفتگوی محرمانه • رمزگذاری سراسری فعال",
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            color = Color(0xFF43A047),
+                                            fontSize = 11.sp,
+                                        )
+                                    }
+                                }
                                 val subtitle = when {
                                     state.conversation?.typingUserIds?.isNotEmpty() == true -> "در حال نوشتن..."
                                     state.presence?.isOnline == true -> "آنلاین"
@@ -1856,6 +1890,16 @@ fun MessageDetailScreen(
                                         },
                                     )
                                 } else {
+                                    if (state.conversation?.type == ConversationType.PRIVATE) {
+                                        DropdownMenuItem(
+                                            text = { Text("شروع گفتگوی محرمانه") },
+                                            leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
+                                            onClick = {
+                                                menuVisible = false
+                                                onStartSecretChat()
+                                            },
+                                        )
+                                    }
                                     DropdownMenuItem(
                                         text = { Text("اطلاعات کاربر") },
                                         leadingIcon = { Icon(Icons.Default.Info, contentDescription = null) },
@@ -2143,7 +2187,7 @@ fun MessageDetailScreen(
                     }
                 },
                 focusRequester = focusRequester,
-                onAttach = { attachmentSheetVisible = true },
+                onAttach = { if (!isSecretConversation) attachmentSheetVisible = true },
                 onEmoji = {
                     if (emojiPanelVisible) {
                         isSwitchingToKeyboard = true
@@ -2165,9 +2209,10 @@ fun MessageDetailScreen(
                         emojiPanelVisible = false
                     }
                 },
-                onSendVoice = onSendVoice,
+                onSendVoice = { draft -> if (!isSecretConversation) onSendVoice(draft) },
                 hasRecordPermission = hasRecordAudioPermission,
                 onPermissionRequired = { recordAudioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO) },
+                attachmentsEnabled = !isSecretConversation,
             )
             if (attachmentSheetVisible) {
                 ChatAttachmentBottomSheet(
@@ -3743,6 +3788,7 @@ private fun Composer(
     onSendVoice: (ir.coffevista.vista_native.features.chat.domain.model.ChatAttachmentDraft) -> Unit,
     hasRecordPermission: Boolean,
     onPermissionRequired: () -> Unit,
+    attachmentsEnabled: Boolean,
 ) {
     val attachmentRotation = remember { Animatable(0f) }
     val composerScope = rememberCoroutineScope()
@@ -3771,7 +3817,7 @@ private fun Composer(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     AnimatedVisibility(
-                        visible = isBlank,
+                        visible = isBlank && attachmentsEnabled,
                         enter = scaleIn(tween(200, easing = FastOutSlowInEasing)) + fadeIn(tween(160)),
                         exit = scaleOut(tween(180, easing = FastOutSlowInEasing)) + fadeOut(tween(140)),
                     ) {
@@ -3821,34 +3867,36 @@ private fun Composer(
                 }
             }
 
-            AnimatedContent(
-                targetState = isNotBlank,
-                transitionSpec = {
-                    (fadeIn(tween(220)) + scaleIn(tween(300, easing = FastOutSlowInEasing), initialScale = 0.6f))
-                        .togetherWith(fadeOut(tween(160)) + scaleOut(tween(200), targetScale = 0.7f))
-                },
-                label = "composer-send-voice",
-                modifier = if (isVoiceHolding) Modifier.weight(1f) else Modifier
-            ) { hasText ->
-                if (!hasText) {
-                    VoiceRecorderDock(
-                        modifier = if (isVoiceHolding) Modifier.fillMaxWidth() else Modifier,
-                        onSendVoice = onSendVoice,
-                        onPermissionRequired = onPermissionRequired,
-                        hasRecordPermission = hasRecordPermission,
-                        onHoldingStateChange = { isVoiceHolding = it },
-                    )
-                } else {
-                    Box(
-                        Modifier
-                            .size(40.dp)
-                            .clip(CircleShape)
-                            .background(Brush.linearGradient(listOf(VistaBrandColors.Indigo, VistaBrandColors.VioletDeep)))
-                            .clickable(role = Role.Button, onClick = onSend)
-                            .semantics { contentDescription = "ارسال پیام" },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+            if (attachmentsEnabled || isNotBlank) {
+                AnimatedContent(
+                    targetState = isNotBlank,
+                    transitionSpec = {
+                        (fadeIn(tween(220)) + scaleIn(tween(300, easing = FastOutSlowInEasing), initialScale = 0.6f))
+                            .togetherWith(fadeOut(tween(160)) + scaleOut(tween(200), targetScale = 0.7f))
+                    },
+                    label = "composer-send-voice",
+                    modifier = if (isVoiceHolding) Modifier.weight(1f) else Modifier,
+                ) { hasText ->
+                    if (!hasText) {
+                        VoiceRecorderDock(
+                            modifier = if (isVoiceHolding) Modifier.fillMaxWidth() else Modifier,
+                            onSendVoice = onSendVoice,
+                            onPermissionRequired = onPermissionRequired,
+                            hasRecordPermission = hasRecordPermission,
+                            onHoldingStateChange = { isVoiceHolding = it },
+                        )
+                    } else {
+                        Box(
+                            Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(Brush.linearGradient(listOf(VistaBrandColors.Indigo, VistaBrandColors.VioletDeep)))
+                                .clickable(role = Role.Button, onClick = onSend)
+                                .semantics { contentDescription = "ارسال پیام" },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                        }
                     }
                 }
             }

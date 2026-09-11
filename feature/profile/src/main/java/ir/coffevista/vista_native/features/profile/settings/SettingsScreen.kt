@@ -152,6 +152,11 @@ fun SettingsScreen(
     var showLanguageSheet by remember { mutableStateOf(false) }
     val appearancePreferences by appearanceViewModel.preferences.collectAsStateWithLifecycle()
     val currentLanguage = appearancePreferences.locale
+    val currentLanguageLabel = when (currentLanguage) {
+        "en" -> "English"
+        "ar" -> "العربية"
+        else -> "فارسی"
+    }
     val settingsLayoutDirection = if (currentLanguage == "en") LayoutDirection.Ltr else LayoutDirection.Rtl
     val copy = settingsCopy(currentLanguage)
     val context = LocalContext.current
@@ -244,6 +249,13 @@ fun SettingsScreen(
                     VistaSettingsTile(
                         icon = Icons.Outlined.Language,
                         title = copy.language,
+                        trailing = {
+                            Text(
+                                text = currentLanguageLabel,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        },
                         onClick = { showLanguageSheet = true },
                     )
                     VistaSettingsDivider()

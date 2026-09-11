@@ -852,6 +852,12 @@ class OfflineFirstChatRepository(
         sessionProvider.synchronize()
         val account = sessionProvider.account.value ?: return loggedOut()
         val conversation = dao.conversation(account.accountId, conversationId)
+        if (conversation?.type == ConversationType.SECRET.name) {
+            return ChatResult.Failure(
+                "ارسال رسانه در گفتگوی محرمانه تا آماده‌شدن رمزنگاری فایل در دسترس نیست",
+                retryable = false,
+            )
+        }
         if (draft.uri.isBlank() || draft.fileName.isBlank() || draft.mimeType.isBlank() || draft.sizeBytes <= 0L) {
             return ChatResult.Failure("فایل انتخاب‌شده معتبر نیست", retryable = false)
         }
@@ -1056,6 +1062,47 @@ class OfflineFirstChatRepository(
 
     private suspend fun sendPending(local: Message, payload: PendingTextPayload): ChatResult<Message> {
         val generation = sessionGeneration.snapshot()
+        val conversation = dao.conversation(local.accountId, local.conversationId)
+        val isSecretTarget = conversation?.type == ConversationType.SECRET.name
+        val peerPub = e2eeService.getPeerPublicKey(local.conversationId)
+        if (isSecretTarget && peerPub == null) {
+            val localKey = e2eeService.getOrGenerateKeyPair(local.accountId)
+            val exchange = remoteCall {
+                api.sendMessage(
+                    local.conversationId,
+                    SendMessageRequest(
+                        id = newId(),
+                        content = localKey.publicKeyB64,
+                        messageType = "exchange_key",
+                    ),
+                )
+            }
+            if (sessionGeneration.isCurrent(generation)) {
+                mergeAndPersist(local.copy(status = MessageStatus.FAILED), MergeSource.OPTIMISTIC)
+            }
+            return ChatResult.Failure(
+                if (exchange is ChatResult.Success) {
+                    "کلید رمزنگاری در حال تبادل است؛ پس از تأیید دوباره تلاش کنید"
+                } else {
+                    "تبادل کلید رمزنگاری انجام نشد؛ دوباره تلاش کنید"
+                },
+                retryable = true,
+            )
+        }
+
+        val secretSharedKey = if (isSecretTarget) {
+            val localKey = e2eeService.getOrGenerateKeyPair(local.accountId)
+            runCatching { e2eeService.computeSharedSecret(localKey.privateKey, requireNotNull(peerPub)) }.getOrNull()
+                ?: run {
+                    if (sessionGeneration.isCurrent(generation)) {
+                        mergeAndPersist(local.copy(status = MessageStatus.FAILED), MergeSource.OPTIMISTIC)
+                    }
+                    return ChatResult.Failure("کلید رمزنگاری گفتگو معتبر نیست", retryable = true)
+                }
+        } else {
+            null
+        }
+
         return remoteCall(
             onFailure = {
                 if (sessionGeneration.isCurrent(generation)) {
@@ -1063,36 +1110,14 @@ class OfflineFirstChatRepository(
                 }
             },
         ) {
-            val conversation = dao.conversation(local.accountId, local.conversationId)
             var contentToSend = payload.text
             var replyContentToSend = payload.reply?.content
 
-            val peerPub = e2eeService.getPeerPublicKey(local.conversationId)
-            val isEncryptedTarget = conversation?.type == ConversationType.SECRET.name ||
-                conversation?.type == ConversationType.PRIVATE.name
-            if (peerPub != null && isEncryptedTarget) {
-                val myKeyPair = e2eeService.getOrGenerateKeyPair(local.accountId)
-                val sharedSecret = runCatching { e2eeService.computeSharedSecret(myKeyPair.privateKey, peerPub) }.getOrNull()
-                if (sharedSecret != null) {
-                    val binding = ir.coffevista.vista_native.features.chat.data.security.ChatE2EEService.messageBinding(local.conversationId, local.accountId, local.clientId)
-                    contentToSend = e2eeService.encryptMessage(payload.text, sharedSecret, binding)
-                    if (replyContentToSend != null) {
-                        replyContentToSend = e2eeService.encryptMessage(replyContentToSend, sharedSecret, binding)
-                    }
-                }
-            } else if (peerPub == null && isEncryptedTarget) {
-                scope.launch {
-                    val myKeyPair = e2eeService.getOrGenerateKeyPair(local.accountId)
-                    runCatching {
-                        api.sendMessage(
-                            local.conversationId,
-                            SendMessageRequest(
-                                id = newId(),
-                                content = myKeyPair.publicKeyB64,
-                                messageType = "exchange_key",
-                            ),
-                        )
-                    }
+            if (secretSharedKey != null) {
+                val binding = ir.coffevista.vista_native.features.chat.data.security.ChatE2EEService.messageBinding(local.conversationId, local.accountId, local.clientId)
+                contentToSend = e2eeService.encryptMessage(payload.text, secretSharedKey, binding)
+                if (replyContentToSend != null) {
+                    replyContentToSend = e2eeService.encryptMessage(replyContentToSend, secretSharedKey, binding)
                 }
             }
 

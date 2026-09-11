@@ -127,5 +127,6 @@ class OfflineFirstOwnProfileRepository @Inject constructor(
         messagePrivacy = messagePrivacy,
         allowProfileZoom = allowProfileZoom,
         updatedAt = updatedAt,
+        createdAt = createdAt,
     )
 }

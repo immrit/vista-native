@@ -95,6 +95,7 @@ internal data class ProfileHeaderModel(
     val followerCount: Long,
     val followingCount: Long,
     val joinOrder: Long,
+    val createdAt: String? = null,
     val isOwnProfile: Boolean = false,
 )
 

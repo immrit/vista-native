@@ -434,7 +434,8 @@ fun VoiceRecorderDock(
                         if (interaction.phase == VoiceCapturePhase.HOLDING)
                             Brush.linearGradient(listOf(Color(0xFFE53935), Color(0xFFC62828)))
                         else
-                            Brush.linearGradient(listOf(VistaBrandColors.Indigo.copy(alpha = 0.15f), VistaBrandColors.VioletDeep.copy(alpha = 0.15f)))
+                            // An opaque brand surface keeps the mic distinct from both chat wallpapers.
+                            Brush.linearGradient(listOf(VistaBrandColors.Indigo, VistaBrandColors.VioletDeep))
                     )
                     .pointerInput(hasRecordPermission) {
                         awaitPointerEventScope {
@@ -481,7 +482,7 @@ fun VoiceRecorderDock(
                 Icon(
                     imageVector = Icons.Default.Mic,
                     contentDescription = "نگه‌داشتن برای ضبط صدا",
-                    tint = if (interaction.phase == VoiceCapturePhase.HOLDING) Color.White else MaterialTheme.colorScheme.primary,
+                    tint = Color.White,
                     modifier = Modifier.size(22.dp)
                 )
             }

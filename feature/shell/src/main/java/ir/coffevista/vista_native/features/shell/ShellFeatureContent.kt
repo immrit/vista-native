@@ -45,6 +45,7 @@ data class ShellFeatureContent(
         onOpenFollowers: (userId: String, initialTab: Int) -> Unit,
         onOpenQrScanner: () -> Unit,
         onEditProfile: () -> Unit,
+        onAddStory: () -> Unit,
     ) -> Unit,
     val postDetail: @Composable (
         onBack: () -> Unit,

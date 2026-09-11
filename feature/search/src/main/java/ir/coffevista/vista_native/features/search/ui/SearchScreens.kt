@@ -161,7 +161,7 @@ fun SearchWorkspaceScreen(
     onUserClick: (SearchUser) -> Unit,
     onPostClick: (SearchPost) -> Unit,
     onHashtagClick: (String) -> Unit = {},
-    autoFocus: Boolean = true,
+    autoFocus: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()

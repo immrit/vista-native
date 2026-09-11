@@ -48,6 +48,8 @@ data class PublicProfileEntity(
     val allowProfileZoom: Boolean = true,
     @ColumnInfo(name = "updated_at")
     val updatedAt: String,
+    @ColumnInfo(name = "created_at")
+    val createdAt: String? = null,
     @ColumnInfo(name = "last_synced_epoch_millis")
     val lastSyncedEpochMillis: Long,
 )

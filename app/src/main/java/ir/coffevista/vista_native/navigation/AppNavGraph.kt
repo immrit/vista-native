@@ -67,6 +67,7 @@ import ir.coffevista.vista_native.features.shell.ShellDeepLinkRequest
 import ir.coffevista.vista_native.features.shell.ShellDeferredKind
 import ir.coffevista.vista_native.features.shell.ShellFeatureContent
 import ir.coffevista.vista_native.features.shell.VistaShell
+import ir.coffevista.vista_native.features.shell.ShellRoutes
 import ir.coffevista.vista_native.features.onboarding.OnboardingSlide
 import ir.coffevista.vista_native.features.onboarding.OnboardingScreen
 import ir.coffevista.vista_native.features.onboarding.OnboardingViewModel
@@ -513,7 +514,7 @@ fun VistaApp(
                                 onHashtagClick = onHashtagClick,
                             )
                         },
-                        ownProfile = { onPostClick, onSettingsClick, logout, onOpenFollowers, onOpenQrScanner, onEditProfile ->
+                        ownProfile = { onPostClick, onSettingsClick, logout, onOpenFollowers, onOpenQrScanner, onEditProfile, onAddStory ->
                             val postsViewModel = hiltViewModel<ProfilePostsViewModel>()
                             val postsState by postsViewModel.uiState.collectAsStateWithLifecycle()
                             LaunchedEffect(signedIn.context.userId) {
@@ -526,6 +527,7 @@ fun VistaApp(
                                 onOpenFollowers = onOpenFollowers,
                                 onOpenQrScanner = onOpenQrScanner,
                                 onEditProfile = onEditProfile,
+                                onAddStory = onAddStory,
                                 postsState = postsState.toPresentationState(),
                                 onPostsRefresh = postsViewModel::refresh,
                                 onPostsLoadMore = postsViewModel::loadMore,
@@ -772,6 +774,9 @@ fun VistaApp(
                                 viewModel = hiltViewModel(),
                                 onBack = onBack,
                                 onOpenProfile = onOpenProfile,
+                                onStartSecretChat = {
+                                    navController.navigate(ShellRoutes.chatDetail(conversationId))
+                                },
                             )
                         },
                     ),

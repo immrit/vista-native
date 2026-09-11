@@ -285,6 +285,23 @@ fun EditProfileScreen(
 
                 Spacer(modifier = Modifier.height(14.dp))
 
+                // Bio — Flutter exposes this directly below the display name.
+                OutlinedTextField(
+                    value = bio,
+                    onValueChange = { bio = it },
+                    label = { Text("بیوگرافی") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = MaterialTheme.colorScheme.surface,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                    ),
+                    minLines = 4,
+                    maxLines = 5,
+                )
+
+                Spacer(modifier = Modifier.height(14.dp))
+
                 // Email
                 OutlinedTextField(
                     value = email,
@@ -307,6 +324,23 @@ fun EditProfileScreen(
                     onValueChange = { phone = it },
                     label = { Text("شماره تلفن") },
                     leadingIcon = { Icon(Icons.Outlined.Phone, contentDescription = null) },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = MaterialTheme.colorScheme.surface,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                    ),
+                    singleLine = true,
+                )
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Website / link — persisted already, but previously had no editable field.
+                OutlinedTextField(
+                    value = website,
+                    onValueChange = { website = it },
+                    label = { Text("وب‌سایت / لینک") },
+                    leadingIcon = { Icon(Icons.Outlined.Language, contentDescription = null) },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
                     colors = OutlinedTextFieldDefaults.colors(

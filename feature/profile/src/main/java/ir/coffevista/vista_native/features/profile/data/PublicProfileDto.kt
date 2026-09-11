@@ -25,6 +25,7 @@ data class PublicProfileDto(
     @SerialName("join_order") val joinOrder: Long = 0,
     @SerialName("message_privacy") val messagePrivacy: String = "everyone",
     @SerialName("allow_profile_zoom") val allowProfileZoom: Boolean = true,
+    @SerialName("created_at") val createdAt: String? = null,
     @SerialName("updated_at") val updatedAt: String,
 )
 

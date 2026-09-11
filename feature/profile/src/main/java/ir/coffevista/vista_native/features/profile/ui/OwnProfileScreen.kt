@@ -65,6 +65,7 @@ fun OwnProfileScreen(
     onEditProfile: (() -> Unit)? = null,
     onShareProfile: (() -> Unit)? = null,
     onAddPost: (() -> Unit)? = null,
+    onAddStory: (() -> Unit)? = null,
     onSettingsClick: (() -> Unit)? = null,
     onOpenFollowers: ((userId: String, initialTab: Int) -> Unit)? = null,
     onOpenQrScanner: (() -> Unit)? = null,
@@ -104,6 +105,7 @@ fun OwnProfileScreen(
                     followerCount = profile.followerCount,
                     followingCount = profile.followingCount,
                     joinOrder = profile.joinOrder,
+                    createdAt = profile.createdAt,
                     isOwnProfile = true,
                 ),
                 userId = profile.userId,
@@ -165,6 +167,7 @@ fun OwnProfileScreen(
                                 followerCount = profile.followerCount,
                                 followingCount = profile.followingCount,
                                 joinOrder = profile.joinOrder,
+                                createdAt = profile.createdAt,
                                 isOwnProfile = true,
                             )
 
@@ -178,8 +181,8 @@ fun OwnProfileScreen(
                                 onLikeClick = onLikeClick,
                                 onSaveClick = onSaveClick,
                                 onLoadMore = onPostsLoadMore,
-                                onAvatarAddClick = {
-                                    Toast.makeText(context, "افزودن استوری به زودی", Toast.LENGTH_SHORT).show()
+                                onAvatarAddClick = onAddStory ?: {
+                                    Toast.makeText(context, "افزودن استوری در دسترس نیست", Toast.LENGTH_SHORT).show()
                                 },
                                 onMemberBadgeClick = {
                                     showAccountDetails = true
@@ -273,6 +276,7 @@ fun OwnProfileScreen(
                             followerCount = profile.followerCount,
                             followingCount = profile.followingCount,
                             joinOrder = profile.joinOrder,
+                            createdAt = profile.createdAt,
                             isOwnProfile = true,
                         ),
                         userId = profile.userId,
@@ -326,12 +330,25 @@ private fun OwnProfileAppBar(
             }
         }
 
-        // End in RTL (Left side of screen): More options + Settings.
-        // The Flutter profile header does not expose a QR affordance here.
+        // End in RTL (Left side of screen): QR, more options, then settings.
+        // This matches Flutter's three affordances in the profile header.
         Row(
             modifier = Modifier.align(Alignment.CenterEnd),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            IconButton(
+                onClick = { onQrClick?.invoke() },
+                enabled = onQrClick != null,
+                modifier = Modifier.size(40.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.QrCodeScanner,
+                    contentDescription = "کد QR پروفایل",
+                    modifier = Modifier.size(24.dp),
+                    tint = MaterialTheme.colorScheme.onBackground,
+                )
+            }
+            Spacer(Modifier.width(4.dp))
             IconButton(
                 onClick = onOptionsClick,
                 modifier = Modifier.size(40.dp),

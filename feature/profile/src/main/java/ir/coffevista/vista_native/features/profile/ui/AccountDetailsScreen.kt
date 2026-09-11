@@ -56,6 +56,7 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import ir.coffevista.vista_native.core.designsystem.R as DesignSystemR
 import ir.coffevista.vista_native.features.profile.R
+import ir.coffevista.vista_native.features.profile.ui.components.gregorianIsoToJalaliDisplay
 
 /**
  * Account Details Screen - Complete Flutter parity implementation
@@ -330,13 +331,19 @@ private fun AccountTypeCard(profile: ProfileHeaderModel) {
 
 @Composable
 private fun MembershipCard(profile: ProfileHeaderModel) {
-    if (profile.joinOrder <= 0) return
+    val joinOrder = profile.joinOrder.takeIf { it > 0 }
+    val joinedAt = profile.createdAt
+        ?.take(10)
+        ?.let(::gregorianIsoToJalaliDisplay)
+    if (joinOrder == null && joinedAt == null) return
 
-    val (tierLabel, tierColor, tierBgColor, tierIconRes) = when {
-        profile.joinOrder <= 100 -> Tuple4("عضو بنیان‌گذار  #${profile.joinOrder}", Color(0xFFB45309), Color(0xFFFEF3C7), R.drawable.ic_badge_founder)
-        profile.joinOrder <= 1000 -> Tuple4("از اولین هزار نفر  #${profile.joinOrder}", Color(0xFF1D4ED8), Color(0xFFDBEAFE), R.drawable.ic_badge_rocket)
-        profile.joinOrder <= 10000 -> Tuple4("عضو پیشگام  #${profile.joinOrder}", Color(0xFF6D28D9), Color(0xFFF3E8FF), R.drawable.ic_badge_bolt)
-        else -> Tuple4("عضو شماره  #${profile.joinOrder}", Color(0xFF475569), Color(0xFFF1F5F9), R.drawable.ic_badge_star)
+    val tier = joinOrder?.let { order ->
+        when {
+            order <= 100 -> Tuple4("عضو بنیان‌گذار  #$order", Color(0xFFB45309), Color(0xFFFEF3C7), R.drawable.ic_badge_founder)
+            order <= 1000 -> Tuple4("از اولین هزار نفر  #$order", Color(0xFF1D4ED8), Color(0xFFDBEAFE), R.drawable.ic_badge_rocket)
+            order <= 10000 -> Tuple4("عضو پیشگام  #$order", Color(0xFF6D28D9), Color(0xFFF3E8FF), R.drawable.ic_badge_bolt)
+            else -> Tuple4("عضو شماره  #$order", Color(0xFF475569), Color(0xFFF1F5F9), R.drawable.ic_badge_star)
+        }
     }
 
     Surface(
@@ -353,31 +360,34 @@ private fun MembershipCard(profile: ProfileHeaderModel) {
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
             )
 
-            // Row 1: Join Order
-            DetailRow(
-                iconResId = tierIconRes,
-                iconTint = tierColor,
-                label = "ترتیب عضویت",
-                value = tierLabel,
-                valueColor = tierColor,
-                iconBg = tierBgColor,
-            )
+            tier?.let { (tierLabel, tierColor, tierBgColor, tierIconRes) ->
+                DetailRow(
+                    iconResId = tierIconRes,
+                    iconTint = tierColor,
+                    label = "ترتیب عضویت",
+                    value = tierLabel,
+                    valueColor = tierColor,
+                    iconBg = tierBgColor,
+                )
+            }
+            if (tier != null && joinedAt != null) {
+                HorizontalDivider(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    thickness = 0.5.dp,
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                )
+            }
+            joinedAt?.let { date ->
+                DetailRow(
+                    iconResId = R.drawable.ic_detail_calendar,
+                    iconTint = MaterialTheme.colorScheme.primary,
+                    label = "تاریخ عضویت",
+                    value = date,
+                    valueColor = MaterialTheme.colorScheme.onBackground,
+                    iconBg = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                )
+            }
 
-            HorizontalDivider(
-                modifier = Modifier.padding(horizontal = 16.dp),
-                thickness = 0.5.dp,
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
-            )
-
-            // Row 2: Join Date
-            DetailRow(
-                iconResId = R.drawable.ic_detail_calendar,
-                iconTint = MaterialTheme.colorScheme.primary,
-                label = "تاریخ عضویت",
-                value = "مرداد ۱۴۰۳",
-                valueColor = MaterialTheme.colorScheme.onBackground,
-                iconBg = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
-            )
 
             Spacer(Modifier.height(4.dp))
         }

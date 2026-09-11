@@ -143,7 +143,13 @@ fun ChatComposerField(
         val hintColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f).toArgb()
         AndroidView(
             factory = { context ->
-                EditText(context).apply {
+                // Override focusSearch to prevent ANR: when EditText inside a LazyColumn
+                // gets focus, TwoDimensionalFocusSearchKt tries to scan all list items
+                // via LazyLayoutBeyondBoundsModifierLocal, causing an infinite loop on main thread.
+                // By returning `this` from focusSearch, we break the traversal cycle.
+                object : EditText(context) {
+                    override fun focusSearch(direction: Int): android.view.View = this
+                }.apply {
                     background = null
                     setPadding(0, 0, 0, 0)
                     inputType = InputType.TYPE_CLASS_TEXT or

@@ -34,5 +34,6 @@ data class ProfileDto(
     @SerialName("premium_days_remaining") val premiumDaysRemaining: Int? = null,
     @SerialName("message_privacy") val messagePrivacy: String = "everyone",
     @SerialName("allow_profile_zoom") val allowProfileZoom: Boolean = true,
+    @SerialName("created_at") val createdAt: String? = null,
     @SerialName("updated_at") val updatedAt: String? = null
 )

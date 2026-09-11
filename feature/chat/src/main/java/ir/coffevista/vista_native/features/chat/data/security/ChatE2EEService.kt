@@ -2,13 +2,18 @@ package ir.coffevista.vista_native.features.chat.data.security
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyProperties
 import android.util.Base64
 import java.math.BigInteger
 import java.nio.ByteBuffer
 import java.security.MessageDigest
+import java.security.KeyStore
 import java.security.SecureRandom
 import javax.crypto.Cipher
+import javax.crypto.KeyGenerator
 import javax.crypto.Mac
+import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
 
@@ -32,14 +37,14 @@ class ChatE2EEService(
      */
     @Synchronized
     fun getOrGenerateKeyPair(userId: String): KeyPair {
-        val privB64 = prefs.getString("e2e_priv_$userId", null)
         val pubB64 = prefs.getString("e2e_pub_$userId", null)
-        if (!privB64.isNullOrBlank() && !pubB64.isNullOrBlank()) {
+        val privateKey = readPrivateKey(userId)
+        if (privateKey != null && !pubB64.isNullOrBlank()) {
             return try {
                 KeyPair(
-                    privateKey = Base64.decode(privB64, Base64.NO_WRAP),
+                    privateKey = privateKey,
                     publicKey = Base64.decode(pubB64, Base64.NO_WRAP),
-                )
+                ).also { require(it.publicKey.size == X25519_KEY_LENGTH) }
             } catch (_: Exception) {
                 generateAndSaveKeyPair(userId)
             }
@@ -56,13 +61,10 @@ class ChatE2EEService(
         privateKey[31] = (privateKey[31].toInt() or 64).toByte()
 
         val publicKey = X25519.scalarMultBase(privateKey)
-        val privB64 = Base64.encodeToString(privateKey, Base64.NO_WRAP)
         val pubB64 = Base64.encodeToString(publicKey, Base64.NO_WRAP)
 
-        prefs.edit()
-            .putString("e2e_priv_$userId", privB64)
-            .putString("e2e_pub_$userId", pubB64)
-            .apply()
+        writePrivateKey(userId, privateKey)
+        prefs.edit().putString("e2e_pub_$userId", pubB64).apply()
 
         return KeyPair(privateKey, publicKey)
     }
@@ -93,6 +95,94 @@ class ChatE2EEService(
         val b64 = Base64.encodeToString(peerPublicKeyBytes, Base64.NO_WRAP)
         savePeerPublicKey(conversationId, b64)
     }
+
+    /**
+     * Private X25519 material must never be persisted as a plain SharedPreferences value.
+     * Public keys remain readable by design. Existing plaintext installs are migrated only
+     * after their encrypted replacement has been durably written.
+     */
+    private fun readPrivateKey(userId: String): ByteArray? {
+        prefs.getString("e2e_priv_enc_$userId", null)?.let { encrypted ->
+            return runCatching { decryptPrivateKey(userId, encrypted) }
+                .getOrElse {
+                    prefs.edit().remove("e2e_priv_enc_$userId").apply()
+                    null
+                }
+        }
+
+        val legacy = prefs.getString("e2e_priv_$userId", null) ?: return null
+        val legacyKey = runCatching { Base64.decode(legacy, Base64.NO_WRAP) }.getOrNull()
+            ?.takeIf { it.size == X25519_KEY_LENGTH }
+            ?: run {
+                prefs.edit().remove("e2e_priv_$userId").apply()
+                return null
+            }
+        writePrivateKey(userId, legacyKey)
+        prefs.edit().remove("e2e_priv_$userId").apply()
+        return legacyKey
+    }
+
+    private fun writePrivateKey(userId: String, privateKey: ByteArray) {
+        require(privateKey.size == X25519_KEY_LENGTH) { "Invalid X25519 private key" }
+        prefs.edit()
+            .putString("e2e_priv_enc_$userId", encryptPrivateKey(userId, privateKey))
+            .remove("e2e_priv_$userId")
+            .apply()
+    }
+
+    private fun encryptPrivateKey(userId: String, privateKey: ByteArray): String {
+        val cipher = Cipher.getInstance(KEYSTORE_TRANSFORMATION)
+        cipher.init(Cipher.ENCRYPT_MODE, privateKeyEncryptionKey())
+        cipher.updateAAD(privateKeyAad(userId))
+        val encrypted = cipher.doFinal(privateKey)
+        return Base64.encodeToString(
+            ByteBuffer.allocate(2 + cipher.iv.size + encrypted.size)
+                .put(PRIVATE_KEY_ENVELOPE_VERSION)
+                .put(cipher.iv.size.toByte())
+                .put(cipher.iv)
+                .put(encrypted)
+                .array(),
+            Base64.NO_WRAP,
+        )
+    }
+
+    private fun decryptPrivateKey(userId: String, encoded: String): ByteArray {
+        val buffer = ByteBuffer.wrap(Base64.decode(encoded, Base64.NO_WRAP))
+        require(buffer.remaining() > 2) { "Malformed encrypted private key" }
+        require(buffer.get() == PRIVATE_KEY_ENVELOPE_VERSION) { "Unsupported encrypted private key" }
+        val ivSize = buffer.get().toInt() and 0xFF
+        require(ivSize in 12..16 && buffer.remaining() > ivSize) { "Malformed encrypted private key IV" }
+        val iv = ByteArray(ivSize).also(buffer::get)
+        val encrypted = ByteArray(buffer.remaining()).also(buffer::get)
+        val cipher = Cipher.getInstance(KEYSTORE_TRANSFORMATION)
+        cipher.init(Cipher.DECRYPT_MODE, privateKeyEncryptionKey(), GCMParameterSpec(GCM_TAG_BITS, iv))
+        cipher.updateAAD(privateKeyAad(userId))
+        return cipher.doFinal(encrypted).also {
+            require(it.size == X25519_KEY_LENGTH) { "Invalid decrypted X25519 private key" }
+        }
+    }
+
+    @Synchronized
+    private fun privateKeyEncryptionKey(): SecretKey {
+        val keyStore = KeyStore.getInstance(KEYSTORE_PROVIDER).apply { load(null) }
+        (keyStore.getKey(PRIVATE_KEYSTORE_ALIAS, null) as? SecretKey)?.let { return it }
+        return KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, KEYSTORE_PROVIDER).run {
+            init(
+                KeyGenParameterSpec.Builder(
+                    PRIVATE_KEYSTORE_ALIAS,
+                    KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT,
+                )
+                    .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                    .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                    .setRandomizedEncryptionRequired(true)
+                    .build(),
+            )
+            generateKey()
+        }
+    }
+
+    private fun privateKeyAad(userId: String): ByteArray =
+        "vista-e2ee-private-key-v1|$userId".toByteArray(Charsets.UTF_8)
 
     /**
      * Computes the raw 32-byte X25519 shared secret between own private key and peer's public key.
@@ -347,6 +437,12 @@ class ChatE2EEService(
         const val PREFIX_LEGACY_V1 = "e2ee:v1:"
         const val HKDF_INFO = "vista-e2e-msg-v1"
         const val SALT_LENGTH = 16
+        private const val X25519_KEY_LENGTH = 32
+        private const val KEYSTORE_PROVIDER = "AndroidKeyStore"
+        private const val PRIVATE_KEYSTORE_ALIAS = "vista_native_e2ee_private_key_v1"
+        private const val KEYSTORE_TRANSFORMATION = "AES/GCM/NoPadding"
+        private const val GCM_TAG_BITS = 128
+        private const val PRIVATE_KEY_ENVELOPE_VERSION: Byte = 1
 
         fun messageBinding(
             conversationId: String,

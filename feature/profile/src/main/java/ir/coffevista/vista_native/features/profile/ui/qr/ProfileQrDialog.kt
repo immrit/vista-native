@@ -73,8 +73,7 @@ fun ProfileQrDialog(
     Dialog(onDismissRequest = onDismiss) {
         Card(
             modifier = modifier
-                .fillMaxWidth()
-                .padding(16.dp),
+                .width(280.dp),
             shape = RoundedCornerShape(28.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         ) {
@@ -97,7 +96,7 @@ fun ProfileQrDialog(
                 // Avatar with gradient border
                 Box(
                     modifier = Modifier
-                        .size(72.dp)
+                        .size(64.dp)
                         .clip(CircleShape)
                         .background(brandGradient)
                         .padding(3.dp)
@@ -109,7 +108,7 @@ fun ProfileQrDialog(
                         AsyncImage(
                             model = avatarUrl,
                             contentDescription = fullName,
-                            modifier = Modifier.size(72.dp).clip(CircleShape),
+                            modifier = Modifier.size(64.dp).clip(CircleShape),
                             contentScale = ContentScale.Crop,
                         )
                     } else {
@@ -137,7 +136,7 @@ fun ProfileQrDialog(
                 // QR Code Image in white container
                 Surface(
                     modifier = Modifier
-                        .size(200.dp)
+                        .size(160.dp)
                         .clip(RoundedCornerShape(20.dp)),
                     color = Color.White,
                     shadowElevation = 4.dp,

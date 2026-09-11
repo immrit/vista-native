@@ -390,6 +390,60 @@ class VistaFoundationDatabaseTest {
     }
 
     @Test
+    fun migrationFromV10ToV11AddsProfileCreatedAtWithoutLosingCachedProfiles() {
+        migrationHelper.createDatabase(TEST_DATABASE, 10).apply {
+            execSQL(
+                """
+                INSERT INTO own_profile (
+                    user_id, username, full_name, bio, avatar_url, is_verified,
+                    account_type, post_count, follower_count, following_count, updated_at
+                ) VALUES ('self', 'vista', 'Vista', NULL, NULL, 0, NULL, 1, 2, 3, NULL)
+                """.trimIndent(),
+            )
+            execSQL(
+                """
+                INSERT INTO public_profile (
+                    viewer_account_id, profile_user_id, username, full_name, bio, avatar_url,
+                    is_verified, verification_type, is_private, is_blocked, subscription_plan,
+                    premium_days_remaining, post_count, follower_count, following_count,
+                    follow_status, join_order, message_privacy, allow_profile_zoom, updated_at,
+                    last_synced_epoch_millis
+                ) VALUES (
+                    'viewer', 'other', 'other', 'Other', NULL, NULL,
+                    0, NULL, 0, 0, NULL,
+                    NULL, 4, 5, 6,
+                    'none', 0, 'everyone', 1, '2026-01-01T00:00:00Z',
+                    123
+                )
+                """.trimIndent(),
+            )
+            close()
+        }
+
+        migrationHelper.runMigrationsAndValidate(
+            TEST_DATABASE,
+            11,
+            true,
+            VistaFoundationDatabase.MIGRATION_10_11,
+        ).use { database ->
+            database.query(
+                "SELECT full_name, created_at FROM own_profile WHERE user_id = 'self'",
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("Vista", cursor.getString(0))
+                assertNull(cursor.getString(1))
+            }
+            database.query(
+                "SELECT full_name, created_at FROM public_profile WHERE profile_user_id = 'other'",
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("Other", cursor.getString(0))
+                assertNull(cursor.getString(1))
+            }
+        }
+    }
+
+    @Test
     fun migrationFromV5ToV7BuildsCombinedFeatureSchemaWithSafeDefaults() {
         migrationHelper.createDatabase(TEST_DATABASE, 5).apply {
             execSQL(

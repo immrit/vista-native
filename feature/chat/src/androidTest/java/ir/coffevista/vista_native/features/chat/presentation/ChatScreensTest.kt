@@ -40,6 +40,8 @@ import ir.coffevista.vista_native.features.chat.domain.model.DownloadState
 import ir.coffevista.vista_native.features.chat.domain.model.DownloadTask
 import ir.coffevista.vista_native.features.chat.presentation.conversations.ConversationsUiState
 import ir.coffevista.vista_native.features.chat.presentation.messages.MessagesUiState
+import ir.coffevista.vista_native.features.chat.presentation.newmessage.NewMessageScreen
+import ir.coffevista.vista_native.features.chat.presentation.newmessage.NewMessageUiState
 import ir.coffevista.vista_native.features.chat.presentation.components.SwipeToReplyLayout
 import org.junit.Rule
 import org.junit.Test
@@ -85,6 +87,45 @@ class ChatScreensTest {
         }
         compose.onNodeWithContentDescription("گفتگو با کاربر نمونه", substring = true).assertExists()
         compose.onNodeWithText("در حال نوشتن...", substring = true).assertExists()
+    }
+
+    @Test
+    fun conversationsMenuOffersSecretChatEntryPoint() {
+        var newMessageRequested = false
+        compose.setContent {
+            VistaTheme {
+                ConversationListScreen(
+                    state = ConversationsUiState(isInitialLoading = false),
+                    onRefresh = {},
+                    onLoadMore = {},
+                    onOpenConversation = {},
+                    onNewMessage = { newMessageRequested = true },
+                )
+            }
+        }
+
+        compose.onNodeWithContentDescription("گزینه‌های پیام‌ها").performClick()
+        compose.onNodeWithText("گفتگوی محرمانه جدید").performClick()
+        compose.runOnIdle { assertTrue(newMessageRequested) }
+    }
+
+    @Test
+    fun newMessageSecretModeChangesTheEntryScreen() {
+        var screenState by mutableStateOf(NewMessageUiState())
+        compose.setContent {
+            VistaTheme {
+                NewMessageScreen(
+                    state = screenState,
+                    onBack = {},
+                    onQueryChanged = {},
+                    onSecretModeChanged = { enabled -> screenState = screenState.copy(isSecretMode = enabled) },
+                    onUser = {},
+                )
+            }
+        }
+
+        compose.onNodeWithText("گفتگوی محرمانه جدید").performClick()
+        compose.onNodeWithText("گفتگوی محرمانه").assertIsDisplayed()
     }
 
     @Test
@@ -1109,6 +1150,35 @@ class ChatScreensTest {
     }
 
     @Test
+    fun secretConversationHidesUnencryptedMediaControls() {
+        compose.setContent {
+            VistaTheme {
+                MessageDetailScreen(
+                    state = MessagesUiState(
+                        conversationId = "secret-conversation",
+                        conversation = conversationFixture().copy(
+                            id = "secret-conversation",
+                            type = ConversationType.SECRET,
+                        ),
+                        isInitialLoading = false,
+                        hasMore = false,
+                    ),
+                    title = "کاربر نمونه",
+                    onBack = {},
+                    onRefresh = {},
+                    onLoadOlder = {},
+                    onSend = { _, _ -> },
+                    onRetry = {},
+                )
+            }
+        }
+
+        compose.onNodeWithText("گفتگوی محرمانه • رمزگذاری سراسری فعال").assertExists()
+        compose.onAllNodesWithContentDescription("پیوست فایل").assertCountEquals(0)
+        compose.onAllNodesWithContentDescription("نگه‌داشتن برای ضبط صدا").assertCountEquals(0)
+    }
+
+    @Test
     fun chatMenuOpensMessageSearchBar() {
         compose.setContent {
             VistaTheme {
@@ -1133,6 +1203,34 @@ class ChatScreensTest {
         compose.onNodeWithText("جستجو").performClick()
         compose.onNodeWithText("جستجو در پیام‌ها...").assertExists()
         compose.onNodeWithContentDescription("بستن جستجوی پیام‌ها").assertExists()
+    }
+
+    @Test
+    fun privateConversationMenuOffersSecretChatEntryPoint() {
+        var secretRequested = false
+        compose.setContent {
+            VistaTheme {
+                MessageDetailScreen(
+                    state = MessagesUiState(
+                        conversationId = "conversation",
+                        conversation = conversationFixture(),
+                        isInitialLoading = false,
+                        hasMore = false,
+                    ),
+                    title = "کاربر نمونه",
+                    onBack = {},
+                    onRefresh = {},
+                    onLoadOlder = {},
+                    onSend = { _, _ -> },
+                    onRetry = {},
+                    onStartSecretChat = { secretRequested = true },
+                )
+            }
+        }
+
+        compose.onNodeWithContentDescription("گزینه‌های گفتگو").performClick()
+        compose.onNodeWithText("شروع گفتگوی محرمانه").performClick()
+        compose.runOnIdle { assertTrue(secretRequested) }
     }
 
     private fun conversationFixture() = Conversation(
