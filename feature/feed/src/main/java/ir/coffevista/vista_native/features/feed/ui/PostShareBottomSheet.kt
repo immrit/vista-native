@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -82,12 +83,15 @@ fun PostShareBottomSheet(
     onShared: () -> Unit,
     onSendDirectMessage: ((FeedPost) -> Unit)? = null,
     onAddToStory: ((FeedPost, String) -> Unit)? = null,
+    onNavigateToStoryEditor: ((Uri) -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
+    val coroutineScope = androidx.compose.runtime.rememberCoroutineScope()
     val text = remember(post) { postShareText(post) }
     val url = remember(post.id) { postShareUrl(post.id) }
     var showStoryThemeDialog by remember { mutableStateOf(false) }
+    var isGeneratingStory by remember { mutableStateOf(false) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -272,9 +276,38 @@ fun PostShareBottomSheet(
         }
     }
 
+    fun handleStoryThemeSelection(theme: String) {
+        if (isGeneratingStory) return
+        showStoryThemeDialog = false
+        if (onNavigateToStoryEditor != null) {
+            isGeneratingStory = true
+            Toast.makeText(context, "در حال آماده‌سازی تصویر استوری...", Toast.LENGTH_SHORT).show()
+            coroutineScope.launch {
+                try {
+                    val file = PostStoryTemplateGenerator.generateTemplate(context, post, theme)
+                    onShared()
+                    onDismiss()
+                    onNavigateToStoryEditor(Uri.fromFile(file))
+                } catch (e: Throwable) {
+                    isGeneratingStory = false
+                    Toast.makeText(context, "خطا در ساخت قالب استوری", Toast.LENGTH_SHORT).show()
+                    onAddToStory?.invoke(post, theme) ?: shareExternal(context, text)
+                }
+            }
+        } else if (onAddToStory != null) {
+            onShared()
+            onDismiss()
+            onAddToStory.invoke(post, theme)
+        } else {
+            onShared()
+            onDismiss()
+            shareExternal(context, text)
+        }
+    }
+
     if (showStoryThemeDialog) {
         AlertDialog(
-            onDismissRequest = { showStoryThemeDialog = false },
+            onDismissRequest = { if (!isGeneratingStory) showStoryThemeDialog = false },
             title = {
                 Text(
                     text = "انتخاب قالب استوری",
@@ -287,38 +320,23 @@ fun PostShareBottomSheet(
                     StoryThemeOption(
                         icon = Icons.Outlined.DarkMode,
                         label = "قالب تیره",
-                        onClick = {
-                            showStoryThemeDialog = false
-                            onShared()
-                            onDismiss()
-                            onAddToStory?.invoke(post, "dark") ?: shareExternal(context, text)
-                        },
+                        onClick = { handleStoryThemeSelection("dark") },
                     )
                     StoryThemeOption(
                         icon = Icons.Outlined.LightMode,
                         label = "قالب روشن",
-                        onClick = {
-                            showStoryThemeDialog = false
-                            onShared()
-                            onDismiss()
-                            onAddToStory?.invoke(post, "light") ?: shareExternal(context, text)
-                        },
+                        onClick = { handleStoryThemeSelection("light") },
                     )
                     StoryThemeOption(
                         icon = Icons.Outlined.AutoAwesome,
                         label = "قالب ویستا",
-                        onClick = {
-                            showStoryThemeDialog = false
-                            onShared()
-                            onDismiss()
-                            onAddToStory?.invoke(post, "vista") ?: shareExternal(context, text)
-                        },
+                        onClick = { handleStoryThemeSelection("vista") },
                     )
                 }
             },
             confirmButton = {},
             dismissButton = {
-                TextButton(onClick = { showStoryThemeDialog = false }) {
+                TextButton(onClick = { if (!isGeneratingStory) showStoryThemeDialog = false }) {
                     Text("انصراف")
                 }
             },

@@ -90,10 +90,29 @@ internal suspend fun ConversationDto.toEntity(
     isArchived = isArchived,
     isPinned = isPinned,
     isMuted = isMuted,
-    requestStatus = requestStatus ?: status,
+    requestStatus = status ?: messageRequestStatus ?: requestStatus,
     lastSyncedAtEpochMillis = now,
+    isMessageRequest = isMessageRequest || messageRequest,
+    lastMessageType = lastMessageType,
+    lastMessageIsMine = isLastMessageFromMe ?: (lastMessageSenderId?.trim() == accountId),
+    lastMessageStatus = resolvedLastMessageStatus.name,
 )
 }
+
+private val ConversationDto.resolvedLastMessageStatus: MessageStatus
+    get() = when (lastMessageDeliveryStatus?.trim()?.lowercase()) {
+        "failed" -> MessageStatus.FAILED
+        "read", "seen" -> MessageStatus.READ
+        "delivered" -> MessageStatus.DELIVERED
+        "sent" -> MessageStatus.SENT
+        "pending" -> MessageStatus.PENDING
+        else -> when {
+            lastMessageIsRead || lastMessageIsSeen -> MessageStatus.READ
+            lastMessageIsDelivered -> MessageStatus.DELIVERED
+            lastMessageIsSent -> MessageStatus.SENT
+            else -> MessageStatus.PENDING
+        }
+    }
 
 private data class ParticipantPeerIdentity(
     val userId: String,
@@ -189,6 +208,11 @@ internal suspend fun ConversationEntity.toDomain(cipher: ChatContentCipher): Con
     isPinned = isPinned,
     isMuted = isMuted,
     requestStatus = requestStatus,
+    isMessageRequest = isMessageRequest,
+    lastMessageType = lastMessageType,
+    isLastMessageFromMe = lastMessageIsMine,
+    lastMessageStatus = runCatching { MessageStatus.valueOf(lastMessageStatus) }
+        .getOrDefault(MessageStatus.SENT),
 )
 
 internal fun MessageDto.toDomain(accountId: String): Message {

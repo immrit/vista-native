@@ -52,6 +52,7 @@ fun PostDetailScreen(
     onMentionClick: (String) -> Unit = {},
     onAppealClick: (String) -> Unit = {},
     onSendDirectMessage: (FeedPost) -> Unit = {},
+    onNavigateToStoryEditor: (android.net.Uri) -> Unit = {},
     viewModel: PostDetailViewModel,
     commentsViewModel: CommentsViewModel,
 ) {
@@ -110,6 +111,7 @@ fun PostDetailScreen(
             onDismiss = { showShareSheet = false },
             onShared = viewModel::trackShare,
             onSendDirectMessage = onSendDirectMessage,
+            onNavigateToStoryEditor = onNavigateToStoryEditor,
         )
     }
     if (showReportDialog) {

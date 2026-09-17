@@ -195,14 +195,15 @@ fun VistaShell(
                         { userIndex ->
                             navController.navigate(ShellRoutes.storyPlayer(userIndex))
                         },
-                        {
-                            navController.navigate(ShellRoutes.StoryCreate)
+                        { uri ->
+                            navController.navigate(ShellRoutes.storyCreate(uri?.toString()))
                         },
                         {
                             navController.navigate(ShellRoutes.Notifications)
                         },
                         { postId -> navController.navigate(ShellRoutes.appeal(postId)) },
                         { tag -> navController.navigate(ShellRoutes.hashtag(tag)) },
+                        { postId -> navController.navigate(ShellRoutes.reels(postId)) },
                     )
                 }
                 composable(ShellRoutes.Notifications) {
@@ -247,30 +248,6 @@ fun VistaShell(
                     )
                 }
                 composable(
-                    route = ShellRoutes.ReelsRoute,
-                    arguments = listOf(
-                        navArgument("postId") {
-                            type = NavType.StringType
-                            nullable = true
-                            defaultValue = null
-                        },
-                    ),
-                ) { backStackEntry ->
-                    val postId = backStackEntry.arguments?.getString("postId")
-                    val reels = content.reels
-                    if (reels != null) {
-                        reels(
-                            postId,
-                            { navController.popBackStack() },
-                            { userId -> navController.navigate(ShellRoutes.userProfile(userId)) },
-                            { pId -> navController.navigate(ShellRoutes.postDetail(pId)) },
-                            { _ -> },
-                        )
-                    } else {
-                        navController.popBackStack()
-                    }
-                }
-                composable(
                     route = ShellRoutes.StoryPlayerRoute,
                     arguments = listOf(
                         androidx.navigation.navArgument("userIndex") { type = androidx.navigation.NavType.IntType }
@@ -287,10 +264,24 @@ fun VistaShell(
                         )
                     }
                 }
-                composable(ShellRoutes.StoryCreate) {
+                composable(
+                    route = ShellRoutes.StoryCreateRoute,
+                    arguments = listOf(
+                        navArgument("uri") {
+                            type = NavType.StringType
+                            nullable = true
+                            defaultValue = null
+                        }
+                    ),
+                ) { backStackEntry ->
                     val storyCreate = content.storyCreate
+                    val rawUri = backStackEntry.arguments?.getString("uri")
+                    val initialUri = rawUri?.takeIf { it.isNotBlank() }?.let {
+                        android.net.Uri.parse(java.net.URLDecoder.decode(it, "UTF-8"))
+                    }
                     if (storyCreate != null) {
                         storyCreate(
+                            initialUri,
                             { navController.popBackStack() },
                             { navController.popBackStack() },
                         )
@@ -490,6 +481,9 @@ fun VistaShell(
                         {
                             navController.navigate(ShellRoutes.StoryCreate)
                         },
+                        { postId ->
+                            navController.navigate(ShellRoutes.reels(postId))
+                        },
                     )
                 }
                 composable(ShellRoutes.SettingsRoot) {
@@ -584,6 +578,30 @@ fun VistaShell(
                 }
             }
             composable(
+                route = ShellRoutes.ReelsRoute,
+                arguments = listOf(
+                    navArgument("postId") {
+                        type = NavType.StringType
+                        nullable = true
+                        defaultValue = null
+                    },
+                ),
+            ) { backStackEntry ->
+                val postId = backStackEntry.arguments?.getString("postId")
+                val reels = content.reels
+                if (reels != null) {
+                    reels(
+                        postId,
+                        { navController.popBackStack() },
+                        { userId -> navController.navigate(ShellRoutes.userProfile(userId)) },
+                        { pId -> navController.navigate(ShellRoutes.postDetail(pId)) },
+                        { _ -> },
+                    )
+                } else {
+                    navController.popBackStack()
+                }
+            }
+            composable(
                 route = ShellRoutes.PostDetailRoute,
                 arguments = listOf(navArgument("reference") { type = NavType.StringType }),
             ) {
@@ -600,6 +618,7 @@ fun VistaShell(
                     },
                     { tag -> navController.navigate(ShellRoutes.hashtag(tag)) },
                     { postId -> navController.navigate(ShellRoutes.appeal(postId)) },
+                    { uri -> navController.navigate(ShellRoutes.storyCreate(uri.toString())) },
                 )
             }
             composable(
@@ -621,6 +640,9 @@ fun VistaShell(
                     },
                     { chatUserId ->
                         navController.navigate(ShellRoutes.chatDetail(chatUserId))
+                    },
+                    { postId ->
+                        navController.navigate(ShellRoutes.reels(postId))
                     },
                 )
             }
@@ -644,6 +666,9 @@ fun VistaShell(
                     },
                     {
                         navController.navigate(ShellRoutes.StoryCreate)
+                    },
+                    { postId ->
+                        navController.navigate(ShellRoutes.reels(postId))
                     },
                 )
             }

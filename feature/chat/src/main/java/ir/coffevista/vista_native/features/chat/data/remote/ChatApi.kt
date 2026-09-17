@@ -205,6 +205,20 @@ interface ChatApi {
         @Query("limit") limit: Int = 50,
     ): ProfileBatchResponse
 
+    @GET("v1/profiles/following/{userId}")
+    suspend fun followingProfiles(
+        @Path("userId") userId: String,
+        @Query("limit") limit: Int = 50,
+        @Query("offset") offset: Int = 0,
+    ): ProfileBatchResponse
+
+    @GET("v1/profiles/followers/{userId}")
+    suspend fun followerProfiles(
+        @Path("userId") userId: String,
+        @Query("limit") limit: Int = 50,
+        @Query("offset") offset: Int = 0,
+    ): ProfileBatchResponse
+
     @GET("v1/me/note")
     suspend fun ownProfileNote(): ProfileNoteDto
 
@@ -260,6 +274,13 @@ data class ConversationDto(
     @SerialName("last_message_text") val lastMessageText: String? = null,
     @SerialName("last_message") val lastMessage: String? = null,
     @SerialName("last_message_type") val lastMessageType: String? = null,
+    @SerialName("last_message_sender_id") val lastMessageSenderId: String? = null,
+    @SerialName("is_last_message_from_me") val isLastMessageFromMe: Boolean? = null,
+    @SerialName("last_message_delivery_status") val lastMessageDeliveryStatus: String? = null,
+    @SerialName("last_message_is_sent") val lastMessageIsSent: Boolean = true,
+    @SerialName("last_message_is_delivered") val lastMessageIsDelivered: Boolean = false,
+    @SerialName("last_message_is_seen") val lastMessageIsSeen: Boolean = false,
+    @SerialName("last_message_is_read") val lastMessageIsRead: Boolean = false,
     @SerialName("unread_count") val unreadCount: Int = 0,
     @SerialName("is_archived") val isArchived: Boolean = false,
     @SerialName("is_pinned") val isPinned: Boolean = false,
@@ -267,6 +288,9 @@ data class ConversationDto(
     @SerialName("is_secret") val isSecret: Boolean = false,
     val status: String? = null,
     @SerialName("request_status") val requestStatus: String? = null,
+    @SerialName("message_request_status") val messageRequestStatus: String? = null,
+    @SerialName("is_message_request") val isMessageRequest: Boolean = false,
+    @SerialName("message_request") val messageRequest: Boolean = false,
 )
 
 @Serializable
@@ -459,7 +483,17 @@ data class UploadPrivilegeProfileDto(
 data class ProfileBatchRequest(@SerialName("user_ids") val userIds: List<String>)
 
 @Serializable
-data class ProfileBatchResponse(val profiles: List<ProfileDto> = emptyList())
+data class ProfileBatchResponse(
+    val profiles: List<ProfileDto> = emptyList(),
+    val users: List<ProfileDto> = emptyList(),
+) {
+    /**
+     * Search/batch endpoints use `profiles`, while follow-list responses use `users`.
+     * Accept both without weakening either deployed contract.
+     */
+    val resolvedProfiles: List<ProfileDto>
+        get() = profiles.ifEmpty { users }
+}
 
 @Serializable
 data class ProfileDto(

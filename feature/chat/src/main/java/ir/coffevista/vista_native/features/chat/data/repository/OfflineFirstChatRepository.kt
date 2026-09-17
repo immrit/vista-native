@@ -26,6 +26,7 @@ import ir.coffevista.vista_native.features.chat.data.remote.CreateGroupRequest
 import ir.coffevista.vista_native.features.chat.data.remote.EditMessageRequest
 import ir.coffevista.vista_native.features.chat.data.remote.ForwardMessageRequest
 import ir.coffevista.vista_native.features.chat.data.remote.GroupInviteRequest
+import ir.coffevista.vista_native.features.chat.data.remote.GroupInviteDto
 import ir.coffevista.vista_native.features.chat.data.remote.GroupInfoDto
 import ir.coffevista.vista_native.features.chat.data.remote.GroupMembersRequest
 import ir.coffevista.vista_native.features.chat.data.remote.hasMoreForPagination
@@ -33,6 +34,7 @@ import ir.coffevista.vista_native.features.chat.data.remote.isAdminFor
 import ir.coffevista.vista_native.features.chat.data.remote.ReactionRequest
 import ir.coffevista.vista_native.features.chat.data.remote.ReportUserRequest
 import ir.coffevista.vista_native.features.chat.data.remote.ProfileBatchRequest
+import ir.coffevista.vista_native.features.chat.data.remote.ProfileDto
 import ir.coffevista.vista_native.features.chat.data.remote.ProfileNoteDto
 import ir.coffevista.vista_native.features.chat.data.remote.ReactionUpdateDto
 import ir.coffevista.vista_native.features.chat.data.remote.SendMessageRequest
@@ -126,64 +128,6 @@ class OfflineFirstChatRepository(
         sessionProvider.account.value?.accountId?.let(mediaDownloader::recover)
         realtime.start()
         scope.launch { realtime.events.collect(::applyRealtimeEvent) }
-        scope.launch(Dispatchers.IO) {
-            val accountId = sessionProvider.account.value?.accountId ?: return@launch
-            if (dao.conversations(accountId).isEmpty()) {
-                val convId = "conv-fixture-1"
-                val conv = ConversationEntity(
-                    accountId = accountId,
-                    id = convId,
-                    type = ConversationType.PRIVATE.name,
-                    title = "مهندس ویستا 🚀",
-                    avatarUrl = null,
-                    peerId = "fixture_author",
-                    lastMessageCiphertext = cipher.encrypt(accountId, convId, "conversation-preview", "سلام! چطوری؟ 😊🔥"),
-                    lastMessageAtEpochMillis = now(),
-                    unreadCount = 0,
-                    isArchived = false,
-                    isPinned = false,
-                    isMuted = false,
-                    requestStatus = null,
-                    lastSyncedAtEpochMillis = now(),
-                )
-                dao.upsertConversations(listOf(conv))
-                val msg1 = MessageEntity(
-                    accountId = accountId,
-                    conversationId = convId,
-                    clientId = "msg-1",
-                    serverId = "msg-1",
-                    senderId = "fixture_author",
-                    contentCiphertext = cipher.encrypt(accountId, convId, "msg-1", "سلام! سیستم ایموجی‌های محلی ویستا و سوییچ کیبورد تست شد؟ 🔥😍👏"),
-                    contentKind = "text",
-                    createdAtEpochMillis = now() - 60000,
-                    editedAtEpochMillis = null,
-                    deletedAtEpochMillis = null,
-                    status = MessageStatus.DELIVERED.name,
-                    replyToMessageId = null,
-                    replyToContentCiphertext = null,
-                    isMine = false,
-                    lastMutationAtEpochMillis = now() - 60000,
-                )
-                val msg2 = MessageEntity(
-                    accountId = accountId,
-                    conversationId = convId,
-                    clientId = "msg-2",
-                    serverId = "msg-2",
-                    senderId = accountId,
-                    contentCiphertext = cipher.encrypt(accountId, convId, "msg-2", "در حال اجرای تست‌های دقیق بدون جابجایی پیکسل هستیم! 🚀✨"),
-                    contentKind = "text",
-                    createdAtEpochMillis = now() - 30000,
-                    editedAtEpochMillis = null,
-                    deletedAtEpochMillis = null,
-                    status = MessageStatus.READ.name,
-                    replyToMessageId = null,
-                    replyToContentCiphertext = null,
-                    isMine = true,
-                    lastMutationAtEpochMillis = now() - 30000,
-                )
-                dao.upsertMessages(listOf(msg1, msg2))
-            }
-        }
     }
 
     override fun observeConversations(includeArchived: Boolean): Flow<List<Conversation>> {
@@ -275,20 +219,49 @@ class OfflineFirstChatRepository(
         sessionProvider.synchronize()
         val accountId = requireAccount().accountId
         return dao.observeConversations(accountId, includeArchived = true).map { rows ->
-            rows.asSequence()
-                .filter { it.type != ConversationType.GROUP.name && !it.peerId.isNullOrBlank() }
-                .distinctBy { it.peerId }
-                .map { row ->
-                    ChatUser(
-                        id = row.peerId.orEmpty(),
-                        username = row.title,
-                        fullName = row.title,
-                        avatarUrl = row.avatarUrl,
-                        conversationId = row.id,
-                    )
-                }
-                .toList()
+            rows.toSuggestedUsers(accountId)
         }
+    }
+
+    override suspend fun refreshSuggestedUsers(): ChatResult<List<ChatUser>> {
+        sessionProvider.synchronize()
+        val account = sessionProvider.account.value ?: return loggedOut()
+        val cached = dao.conversations(account.accountId).toSuggestedUsers(account.accountId)
+        val conversationCandidates = remoteCall {
+            val timestamp = now()
+            val rows = api.conversations(SUGGESTED_USERS_CONVERSATION_LIMIT, null).conversations
+                .map { it.toEntity(account.accountId, cipher, timestamp) }
+                .let { enrichMissingProfiles(it) }
+            dao.upsertConversations(rows)
+            rows.toSuggestedUsers(account.accountId)
+        }
+        if (conversationCandidates is ChatResult.Success && conversationCandidates.value.isNotEmpty()) {
+            return conversationCandidates
+        }
+        if (conversationCandidates is ChatResult.Failure && cached.isNotEmpty()) {
+            return ChatResult.Success(cached)
+        }
+
+        val following = remoteCall { api.followingProfiles(account.accountId).resolvedProfiles }
+        val followers = remoteCall { api.followerProfiles(account.accountId).resolvedProfiles }
+        val merged = linkedMapOf<String, ChatUser>()
+        var fallbackSucceeded = false
+        var fallbackFailure: ChatResult.Failure? = null
+        listOf(following, followers).forEach { result ->
+            when (result) {
+                is ChatResult.Success -> {
+                    fallbackSucceeded = true
+                    result.value.asSequence()
+                        .mapNotNull { it.toChatUserOrNull(account.accountId) }
+                        .forEach { user -> merged[user.id] = user }
+                }
+                is ChatResult.Failure -> if (fallbackFailure == null) fallbackFailure = result
+            }
+        }
+        if (fallbackSucceeded) return ChatResult.Success(merged.values.toList())
+        return (conversationCandidates as? ChatResult.Failure)
+            ?: fallbackFailure
+            ?: ChatResult.Failure("بارگذاری کاربران پیشنهادی انجام نشد", retryable = true)
     }
 
     override suspend fun searchUsers(query: String): ChatResult<List<ChatUser>> {
@@ -297,17 +270,9 @@ class OfflineFirstChatRepository(
         val normalized = query.trim()
         if (normalized.isEmpty()) return ChatResult.Success(emptyList())
         return remoteCall {
-            api.searchProfiles(normalized).profiles
+            api.searchProfiles(normalized).resolvedProfiles
                 .asSequence()
-                .filter { it.resolvedUserId.isNotBlank() && it.resolvedUserId != account.accountId }
-                .map { profile ->
-                    ChatUser(
-                        id = profile.resolvedUserId,
-                        username = profile.username.orEmpty(),
-                        fullName = profile.fullName,
-                          avatarUrl = profile.avatarUrl.resolvedAvatarUrl(),
-                    )
-                }
+                .mapNotNull { it.toChatUserOrNull(account.accountId) }
                 .toList()
         }
     }
@@ -644,12 +609,14 @@ class OfflineFirstChatRepository(
         }
         return remoteCall {
             val created = api.createGroup(CreateGroupRequest(normalizedName, normalizedMembers, imageUrl))
-            val info = api.group(created.id)
+            // POST success is authoritative. A transient enrichment failure must not
+            // surface as "create failed" and invite a duplicate retry.
+            val info = fetchCreatedGroupInfoBestEffort { api.group(created.id) }
             val entity = ir.coffevista.vista_native.features.chat.data.remote.ConversationDto(
                 id = created.id,
                 conversationType = "group",
-                name = info.name,
-                image = info.image,
+                name = info?.name?.takeIf(String::isNotBlank) ?: normalizedName,
+                image = info?.image?.takeIf(String::isNotBlank) ?: imageUrl,
             ).toEntity(account.accountId, cipher, now())
             dao.upsertConversations(listOf(entity))
             entity.toDomain(cipher)
@@ -662,14 +629,20 @@ class OfflineFirstChatRepository(
         return remoteCall {
             val info = api.group(conversationId)
             val members = api.groupMembers(conversationId).members
-            info.toDomainGroupInfo(isAdminOverride = info.isAdminFor(account.accountId, members))
+            val invite = fetchGroupInviteBestEffort { api.groupInvite(conversationId) }
+            info.toDomainGroupInfo(
+                isAdminOverride = info.isAdminFor(account.accountId, members),
+                currentUserId = account.accountId,
+                memberCountOverride = info.memberCount.takeIf { it > 0 } ?: members.size,
+                inviteOverride = invite,
+            )
         }
     }
 
     override suspend fun groupMembers(conversationId: String): ChatResult<List<GroupMember>> = remoteCall {
         val members = api.groupMembers(conversationId).members
         val profiles = members.map { it.userId }.filter(String::isNotBlank).chunked(PROFILE_BATCH_SIZE)
-            .flatMap { api.profilesBatch(ProfileBatchRequest(it)).profiles }
+            .flatMap { api.profilesBatch(ProfileBatchRequest(it)).resolvedProfiles }
             .associateBy { it.resolvedUserId }
         members.map { member ->
             val profile = profiles[member.userId]
@@ -699,7 +672,10 @@ class OfflineFirstChatRepository(
             if (existing != null) dao.upsertConversations(
                 listOf(existing.copy(title = info.name, avatarUrl = info.image.resolvedAvatarUrl(), lastSyncedAtEpochMillis = now())),
             )
-            info.toDomainGroupInfo()
+            info.toDomainGroupInfo(
+                isAdminOverride = info.isAdminFor(account.accountId, emptyList()),
+                currentUserId = account.accountId,
+            )
         }
     }
 
@@ -894,6 +870,7 @@ class OfflineFirstChatRepository(
                 sizeBytes = validatedDraft.sizeBytes,
                 durationSeconds = validatedDraft.durationSeconds,
                 progress = 0f,
+                mediaGroupId = validatedDraft.mediaGroupId,
                 transferState = TransferState.QUEUED,
             ),
             isMine = true,
@@ -911,6 +888,7 @@ class OfflineFirstChatRepository(
                 sizeBytes = validatedDraft.sizeBytes,
                 kind = validatedDraft.kind.name,
                 durationSeconds = validatedDraft.durationSeconds,
+                mediaGroupId = validatedDraft.mediaGroupId,
                 captionCiphertext = cipher.encrypt(
                     account.accountId,
                     conversationId,
@@ -1014,6 +992,7 @@ class OfflineFirstChatRepository(
                         .getOrDefault(AttachmentKind.UNKNOWN),
                     durationSeconds = transfer.durationSeconds,
                     caption = caption,
+                    mediaGroupId = transfer.mediaGroupId,
                 ),
                 )
             } catch (error: Throwable) {
@@ -1254,6 +1233,7 @@ class OfflineFirstChatRepository(
                 attachmentMimeType = draft.mimeType,
                 attachmentSizeBytes = draft.sizeBytes,
                 duration = draft.durationSeconds,
+                mediaGroupId = draft.mediaGroupId,
             ),
         )
         check(sessionGeneration.isCurrent(generation)) { "نشست کاربر تغییر کرده است" }
@@ -1329,12 +1309,26 @@ class OfflineFirstChatRepository(
         }
     }
 
-    override suspend fun acceptMessageRequest(conversationId: String): ChatResult<Unit> = remoteCall {
-        api.acceptMessageRequest(conversationId)
+    override suspend fun acceptMessageRequest(conversationId: String): ChatResult<Unit> {
+        sessionProvider.synchronize()
+        val account = sessionProvider.account.value ?: return loggedOut()
+        val normalizedId = conversationId.trim()
+        if (normalizedId.isEmpty()) return ChatResult.Failure("گفتگو معتبر نیست", retryable = false)
+        return remoteCall {
+            api.acceptMessageRequest(normalizedId)
+            dao.resolveMessageRequest(account.accountId, normalizedId, "accepted")
+        }
     }
 
-    override suspend fun rejectMessageRequest(conversationId: String): ChatResult<Unit> = remoteCall {
-        api.rejectMessageRequest(conversationId)
+    override suspend fun rejectMessageRequest(conversationId: String): ChatResult<Unit> {
+        sessionProvider.synchronize()
+        val account = sessionProvider.account.value ?: return loggedOut()
+        val normalizedId = conversationId.trim()
+        if (normalizedId.isEmpty()) return ChatResult.Failure("گفتگو معتبر نیست", retryable = false)
+        return remoteCall {
+            api.rejectMessageRequest(normalizedId)
+            dao.deleteConversationWithMessages(account.accountId, normalizedId)
+        }
     }
 
     override suspend fun editMessage(message: Message, content: String): ChatResult<Unit> {
@@ -1499,6 +1493,7 @@ class OfflineFirstChatRepository(
                     kind = runCatching { AttachmentKind.valueOf(transfer.kind) }.getOrDefault(AttachmentKind.UNKNOWN),
                     durationSeconds = transfer.durationSeconds,
                     caption = caption,
+                    mediaGroupId = transfer.mediaGroupId,
                 )
             val prepared = runCatching {
                 mediaUploader.prepare(
@@ -1624,7 +1619,7 @@ class OfflineFirstChatRepository(
             .take(PROFILE_BATCH_SIZE)
             .toList()
         if (missingIds.isEmpty()) return conversations
-        val batchProfiles = runCatching { api.profilesBatch(ProfileBatchRequest(missingIds)).profiles }
+        val batchProfiles = runCatching { api.profilesBatch(ProfileBatchRequest(missingIds)).resolvedProfiles }
               .getOrDefault(emptyList())
               .associateBy { it.resolvedUserId }
             .toMutableMap()
@@ -1941,20 +1936,28 @@ class OfflineFirstChatRepository(
         blockedByAtEpochMillis = blockedByAt.epochMillisOrNull(),
     )
 
-      private fun GroupInfoDto.toDomainGroupInfo(isAdminOverride: Boolean = isAdmin) = GroupInfo(
+      private fun GroupInfoDto.toDomainGroupInfo(
+          isAdminOverride: Boolean = isAdmin,
+          currentUserId: String? = null,
+          memberCountOverride: Int = memberCount,
+          inviteOverride: GroupInviteDto? = null,
+      ) = GroupInfo(
           id = id,
           name = name,
           imageUrl = image.resolvedAvatarUrl(),
-          memberCount = memberCount,
-          maxMembers = maxMembers,
-          inviteCode = inviteCode,
-          inviteEnabled = inviteEnabled,
+          memberCount = memberCountOverride,
+          maxMembers = maxMembers.takeIf { it > 0 } ?: 20,
+          inviteCode = inviteOverride?.inviteCode ?: inviteCode,
+          inviteEnabled = inviteOverride?.inviteEnabled ?: inviteOverride?.enabled ?: inviteEnabled,
           isAdmin = isAdminOverride,
+          createdByUserId = createdBy?.trim()?.takeIf(String::isNotEmpty),
+          currentUserId = currentUserId?.trim()?.takeIf(String::isNotEmpty),
       )
 
       private companion object {
         const val CONVERSATIONS = "conversations"
         const val PAGE_SIZE_CONVERSATIONS = 50
+        const val SUGGESTED_USERS_CONVERSATION_LIMIT = 100
         const val MAX_CONVERSATION_PAGES_PER_REFRESH = 20
         const val PAGE_SIZE_MESSAGES = 50
         const val MAX_TEXT_LENGTH = 16_000
@@ -1971,6 +1974,59 @@ class OfflineFirstChatRepository(
         const val BLOCK_STATUS_CACHE_MILLIS = 5 * 60 * 1_000L
     }
 }
+internal suspend fun fetchCreatedGroupInfoBestEffort(
+    fetch: suspend () -> GroupInfoDto,
+): GroupInfoDto? = try {
+    fetch()
+} catch (cancelled: CancellationException) {
+    throw cancelled
+} catch (_: Exception) {
+    null
+}
+
+internal suspend fun fetchGroupInviteBestEffort(
+    fetch: suspend () -> GroupInviteDto,
+): GroupInviteDto? = try {
+    fetch()
+} catch (cancelled: CancellationException) {
+    throw cancelled
+} catch (_: Exception) {
+    null
+}
+
+
+private fun List<ConversationEntity>.toSuggestedUsers(accountId: String): List<ChatUser> =
+    asSequence()
+        .filter { row ->
+            row.type != ConversationType.GROUP.name &&
+                !row.peerId.isNullOrBlank() &&
+                row.peerId != accountId &&
+                row.peerId != NIL_USER_ID
+        }
+        .distinctBy(ConversationEntity::peerId)
+        .map { row ->
+            ChatUser(
+                id = row.peerId.orEmpty(),
+                username = row.title,
+                fullName = row.title,
+                avatarUrl = row.avatarUrl,
+                conversationId = row.id,
+            )
+        }
+        .toList()
+
+private fun ProfileDto.toChatUserOrNull(accountId: String): ChatUser? {
+    val userId = resolvedUserId
+    if (userId.isBlank() || userId == accountId || userId == NIL_USER_ID) return null
+    return ChatUser(
+        id = userId,
+        username = username.orEmpty(),
+        fullName = fullName,
+        avatarUrl = avatarUrl.resolvedAvatarUrl(),
+    )
+}
+
+private const val NIL_USER_ID = "00000000-0000-0000-0000-000000000000"
 
 internal class SessionGenerationGuard {
     private val generation = AtomicLong(0L)

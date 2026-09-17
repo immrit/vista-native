@@ -141,6 +141,50 @@ class ChatMappersTest {
     }
 
     @Test
+    fun `Flutter message request aliases survive cache and domain mapping`() = runTest {
+        val canonical = ConversationDto(
+            id = "request-canonical",
+            isMessageRequest = true,
+            messageRequestStatus = "pending",
+        ).toEntity("account", cipher, 10).toDomain(cipher)
+        val legacy = ConversationDto(
+            id = "request-legacy",
+            messageRequest = true,
+            requestStatus = "pending",
+        ).toEntity("account", cipher, 10).toDomain(cipher)
+
+        assertTrue(canonical.isMessageRequest)
+        assertEquals("pending", canonical.requestStatus)
+        assertTrue(legacy.isMessageRequest)
+        assertEquals("pending", legacy.requestStatus)
+    }
+
+    @Test
+    fun `inbox delivery metadata survives cache and uses sender fallback`() = runTest {
+        val direct = ConversationDto(
+            id = "delivery-direct",
+            lastMessageText = "سلام",
+            lastMessageType = "text",
+            isLastMessageFromMe = true,
+            lastMessageDeliveryStatus = "seen",
+        ).toEntity("account", cipher, 10).toDomain(cipher)
+        val fallback = ConversationDto(
+            id = "delivery-fallback",
+            lastMessageText = "تصویر",
+            lastMessageType = "image",
+            lastMessageSenderId = "account",
+            lastMessageIsDelivered = true,
+        ).toEntity("account", cipher, 10).toDomain(cipher)
+
+        assertTrue(direct.isLastMessageFromMe)
+        assertEquals(MessageStatus.READ, direct.lastMessageStatus)
+        assertEquals("text", direct.lastMessageType)
+        assertTrue(fallback.isLastMessageFromMe)
+        assertEquals(MessageStatus.DELIVERED, fallback.lastMessageStatus)
+        assertEquals("image", fallback.lastMessageType)
+    }
+
+    @Test
     fun `Flutter participant profile aliases hydrate direct peer identity`() = runTest {
         val entity = ConversationDto(
             id = "conversation-service",

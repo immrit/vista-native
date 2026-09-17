@@ -39,7 +39,7 @@ class ChatViewModelsTest {
     @get:Rule val mainDispatcherRule = MainDispatcherRule()
 
     @Test
-    fun `conversation cache is visible and realtime failure becomes offline`() = runTest(mainDispatcherRule.dispatcher) {
+    fun `realtime failure does not mislabel a successful REST cache as offline`() = runTest(mainDispatcherRule.dispatcher) {
         val repository = FakeChatRepository().apply { conversations.value = listOf(conversation()) }
         val viewModel = ConversationsViewModel(repository)
         advanceUntilIdle()
@@ -49,9 +49,31 @@ class ChatViewModelsTest {
 
         repository.mutableRealtime.value = RealtimeConnectionState.FAILED
         advanceUntilIdle()
-        assertTrue(viewModel.state.value.isOffline)
+        assertFalse(viewModel.state.value.isOffline)
         assertEquals(RealtimeConnectionState.FAILED, viewModel.state.value.connectionState)
     }
+
+    @Test
+    fun `retryable refresh failure exposes cached mode and a successful retry clears it`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val cached = conversation()
+            val repository = FakeChatRepository().apply {
+                conversations.value = listOf(cached)
+                refreshConversationsResult = ChatResult.Failure("fixture-offline", retryable = true)
+            }
+            val viewModel = ConversationsViewModel(repository)
+            advanceUntilIdle()
+
+            assertEquals(cached.id, viewModel.state.value.conversations.single().id)
+            assertTrue(viewModel.state.value.isOffline)
+
+            repository.refreshConversationsResult = ChatResult.Success(page(listOf(cached), hasMore = false))
+            viewModel.refresh()
+            advanceUntilIdle()
+
+            assertFalse(viewModel.state.value.isOffline)
+            assertFalse(viewModel.state.value.hasMore)
+        }
 
     @Test
     fun `pagination failure resets loading and exposes retryable state`() = runTest(mainDispatcherRule.dispatcher) {
@@ -68,6 +90,110 @@ class ChatViewModelsTest {
 
         assertFalse(viewModel.state.value.isAppending)
         assertEquals("fixture-error", viewModel.state.value.error)
+    }
+
+    @Test
+    fun `archived folder never leaks active conversations`() = runTest(mainDispatcherRule.dispatcher) {
+        val active = conversation()
+        val archived = conversation().copy(id = "archived-conversation", isArchived = true)
+        val repository = FakeChatRepository().apply {
+            // Mirrors the real DAO contract: includeArchived=true returns both folders.
+            conversations.value = listOf(active, archived)
+        }
+        val viewModel = ConversationsViewModel(repository)
+        advanceUntilIdle()
+
+        assertEquals(listOf(active.id), viewModel.state.value.conversations.map { it.id })
+
+        viewModel.showArchived(true)
+        advanceUntilIdle()
+
+        assertTrue(viewModel.state.value.includeArchived)
+        assertEquals(listOf(archived.id), viewModel.state.value.conversations.map { it.id })
+    }
+
+    @Test
+    fun `unarchive reports success and a failed archive action remains visible`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val archived = conversation().copy(isArchived = true)
+            val repository = FakeChatRepository().apply {
+                conversations.value = listOf(archived)
+                toggleConversationFlagResult = ChatResult.Success(archived.copy(isArchived = false))
+            }
+            val viewModel = ConversationsViewModel(repository)
+            advanceUntilIdle()
+
+            viewModel.toggleFlag(archived.id, "archive")
+            advanceUntilIdle()
+
+            assertEquals(listOf(archived.id to "archive"), repository.toggledConversationFlags)
+            assertEquals("گفتگو از بایگانی خارج شد", viewModel.state.value.actionFeedback)
+
+            repository.toggleConversationFlagResult = ChatResult.Failure("خروج از بایگانی انجام نشد", true)
+            viewModel.toggleFlag(archived.id, "archive")
+            advanceUntilIdle()
+
+            assertEquals("خروج از بایگانی انجام نشد", viewModel.state.value.actionFeedback)
+        }
+
+    @Test
+    fun `accepted message request becomes a normal conversation and refreshes once`() = runTest(mainDispatcherRule.dispatcher) {
+        val request = conversation().copy(isMessageRequest = true, requestStatus = "pending")
+        val repository = FakeChatRepository().apply { conversations.value = listOf(request) }
+        val viewModel = ConversationsViewModel(repository)
+        advanceUntilIdle()
+        val refreshesBeforeAction = repository.refreshConversationsCalls
+
+        viewModel.acceptRequest(request.id)
+        advanceUntilIdle()
+
+        assertEquals(listOf(request.id), repository.acceptedMessageRequests)
+        assertEquals(listOf(request.id), viewModel.state.value.conversations.map { it.id })
+        assertFalse(viewModel.state.value.conversations.single().isMessageRequest)
+        assertEquals("accepted", viewModel.state.value.conversations.single().requestStatus)
+        assertTrue(viewModel.state.value.requestActionConversationIds.isEmpty())
+        assertEquals("درخواست پیام پذیرفته شد", viewModel.state.value.actionFeedback)
+        assertEquals(refreshesBeforeAction + 1, repository.refreshConversationsCalls)
+    }
+
+    @Test
+    fun `failed message request response remains visible and retryable`() = runTest(mainDispatcherRule.dispatcher) {
+        val request = conversation().copy(isMessageRequest = true, requestStatus = "pending")
+        val repository = FakeChatRepository().apply {
+            conversations.value = listOf(request)
+            rejectMessageRequestResult = ChatResult.Failure("request failed", retryable = true)
+        }
+        val viewModel = ConversationsViewModel(repository)
+        advanceUntilIdle()
+
+        viewModel.rejectRequest(request.id)
+        advanceUntilIdle()
+
+        assertEquals(listOf(request.id), repository.rejectedMessageRequests)
+        assertEquals(listOf(request.id), viewModel.state.value.conversations.map { it.id })
+        assertTrue(viewModel.state.value.requestActionConversationIds.isEmpty())
+        assertEquals("request failed", viewModel.state.value.actionFeedback)
+    }
+
+    @Test
+    fun `conversation block action resolves fresh status and toggles safely`() = runTest(mainDispatcherRule.dispatcher) {
+        val repository = FakeChatRepository()
+        val viewModel = ConversationsViewModel(repository)
+        advanceUntilIdle()
+
+        viewModel.prepareBlockStatus("fixture-peer")
+        advanceUntilIdle()
+        assertEquals(listOf("fixture-peer" to true), repository.blockStatusCalls)
+        assertFalse(viewModel.state.value.blockStatusByUserId.getValue("fixture-peer").isBlocked)
+
+        var completed = false
+        viewModel.toggleBlock("fixture-peer") { completed = it }
+        advanceUntilIdle()
+
+        assertTrue(completed)
+        assertEquals(listOf("fixture-peer"), repository.blockedUsers)
+        assertTrue(viewModel.state.value.blockStatusByUserId.getValue("fixture-peer").isBlocked)
+        assertEquals("کاربر مسدود شد", viewModel.state.value.actionFeedback)
     }
 
     @Test
@@ -146,6 +272,34 @@ class ChatViewModelsTest {
         assertEquals("new", viewModel.state.value.searchQuery)
         assertEquals(1, viewModel.state.value.searchResults.size)
     }
+
+    @Test
+    fun `group member search is debounced and multi add uses one server mutation`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val result = ChatUser("new-peer", "new_peer", "عضو تازه", null)
+            val repository = FakeChatRepository().apply {
+                conversations.value = listOf(conversation())
+                searchedUsers = listOf(result)
+            }
+            val viewModel = MessagesViewModel(repository)
+            viewModel.bind("fixture-conversation")
+            advanceUntilIdle()
+
+            viewModel.searchGroupUsers("old")
+            advanceTimeBy(200)
+            viewModel.searchGroupUsers("new")
+            advanceTimeBy(499)
+            assertEquals(0, repository.searchUsersCalls)
+            advanceUntilIdle()
+
+            assertEquals(1, repository.searchUsersCalls)
+            assertEquals("new", viewModel.state.value.groupUserQuery)
+            assertEquals(listOf(result), viewModel.state.value.groupUserResults)
+
+            viewModel.addGroupMembers(listOf("new-peer", "second-peer"))
+            advanceUntilIdle()
+            assertEquals(listOf(listOf("new-peer", "second-peer")), repository.addedGroupMembers)
+        }
 
     @Test
     fun `gif catalog mirrors trending search debounce and remote gif send`() = runTest(mainDispatcherRule.dispatcher) {
@@ -271,14 +425,72 @@ class ChatViewModelsTest {
     }
 
     @Test
+    fun `new message immediately filters cached users while remote search is debounced`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val raha = ChatUser("raha", "raha81", "رها", null, "conversation-raha")
+            val sara = ChatUser("sara", "sara", "سارا", null, "conversation-sara")
+            val repository = FakeChatRepository().apply { suggestedUsers.value = listOf(raha, sara) }
+            val viewModel = NewMessageViewModel(repository)
+            advanceUntilIdle()
+
+            viewModel.queryChanged("@raha")
+
+            assertTrue(viewModel.state.value.isSearching)
+            assertEquals(listOf(raha.id), viewModel.state.value.visibleUsers.map(ChatUser::id))
+            assertEquals(0, repository.searchUsersCalls)
+        }
+
+    @Test
+    fun `new message keeps a cached match visible when remote search fails`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val cached = ChatUser("raha", "raha81", "Raha", null, "conversation-raha")
+            val repository = FakeChatRepository().apply {
+                suggestedUsers.value = listOf(cached)
+                searchUsersResult = ChatResult.Failure("offline", true)
+            }
+            val viewModel = NewMessageViewModel(repository)
+            advanceUntilIdle()
+            viewModel.queryChanged("raha")
+            advanceUntilIdle()
+            assertEquals(listOf(cached.id), viewModel.state.value.visibleUsers.map(ChatUser::id))
+            assertEquals("offline", viewModel.state.value.error)
+            assertTrue(viewModel.state.value.canRetry)
+        }
+
+    @Test
+    fun `new message suggestion failure exposes retry and successful retry restores server users`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val remote = ChatUser("peer", "peer", "Peer", null)
+            val repository = FakeChatRepository().apply {
+                refreshSuggestedUsersResult = ChatResult.Failure("پیشنهادها بارگذاری نشد", true)
+            }
+            val viewModel = NewMessageViewModel(repository)
+            advanceUntilIdle()
+
+            assertTrue(viewModel.state.value.canRetry)
+            assertEquals("پیشنهادها بارگذاری نشد", viewModel.state.value.error)
+
+            repository.refreshSuggestedUsersResult = ChatResult.Success(listOf(remote))
+            viewModel.retry()
+            advanceUntilIdle()
+
+            assertFalse(viewModel.state.value.canRetry)
+            assertEquals(listOf(remote.id), viewModel.state.value.visibleUsers.map(ChatUser::id))
+            assertEquals(2, repository.refreshSuggestedUsersCalls)
+        }
+
+    @Test
     fun `new group requires a name and selected member then opens server conversation`() = runTest(mainDispatcherRule.dispatcher) {
         val user = ChatUser("peer", "peer", "Peer", null)
         val repository = FakeChatRepository().apply { suggestedUsers.value = listOf(user) }
         val viewModel = NewMessageViewModel(repository)
         advanceUntilIdle()
         viewModel.setGroupMode(true)
+        viewModel.groupNameChanged("x".repeat(51))
+        assertEquals(50, viewModel.state.value.groupName.length)
         viewModel.groupNameChanged("گروه نمونه")
         viewModel.toggleGroupUser(user)
+        assertEquals(listOf(user.id), viewModel.state.value.selectedUsers.map(ChatUser::id))
         var opened: Pair<String, String>? = null
 
         viewModel.createGroup { id, title -> opened = id to title }
@@ -348,12 +560,20 @@ class ChatViewModelsTest {
         val retried = mutableListOf<Pair<String, String>>()
         val createdConversations = mutableListOf<Pair<String, Boolean>>()
         val createdGroups = mutableListOf<Pair<String, List<String>>>()
+        val addedGroupMembers = mutableListOf<List<String>>()
         val blockStatusCalls = mutableListOf<Pair<String, Boolean>>()
         val reports = mutableListOf<Triple<String, ModerationReason, String?>>()
+        val blockedUsers = mutableListOf<String>()
+        val unblockedUsers = mutableListOf<String>()
+        val acceptedMessageRequests = mutableListOf<String>()
+        val rejectedMessageRequests = mutableListOf<String>()
+        val toggledConversationFlags = mutableListOf<Pair<String, String>>()
         var blockStatus = BlockStatus(isBlocked = false, isBlockedBy = false)
         var searchedUsers = emptyList<ChatUser>()
+        var searchUsersResult: ChatResult<List<ChatUser>>? = null
         var searchUsersCalls = 0
         var refreshConversationsCalls = 0
+        var refreshSuggestedUsersCalls = 0
         var refreshMessagesCalls = 0
         var getPinnedMessagesCalls = 0
         var pinResult: ChatResult<Unit> = ChatResult.Success(Unit)
@@ -362,6 +582,10 @@ class ChatViewModelsTest {
         var refreshConversationsResult: ChatResult<Page<Conversation>> =
             ChatResult.Success(page(emptyList()))
         var loadMoreConversationsResult: ChatResult<Page<Conversation>> = ChatResult.Success(page(emptyList()))
+        var acceptMessageRequestResult: ChatResult<Unit> = ChatResult.Success(Unit)
+        var rejectMessageRequestResult: ChatResult<Unit> = ChatResult.Success(Unit)
+        var toggleConversationFlagResult: ChatResult<Conversation> = ChatResult.Success(conversation())
+        var refreshSuggestedUsersResult: ChatResult<List<ChatUser>> = ChatResult.Success(emptyList())
 
         override fun observeConversations(includeArchived: Boolean): Flow<List<Conversation>> = conversations
         override suspend fun refreshConversations(reset: Boolean): ChatResult<Page<Conversation>> {
@@ -370,9 +594,13 @@ class ChatViewModelsTest {
         }
         override suspend fun loadMoreConversations() = loadMoreConversationsResult
         override fun observeSuggestedUsers(): Flow<List<ChatUser>> = suggestedUsers
+        override suspend fun refreshSuggestedUsers(): ChatResult<List<ChatUser>> {
+            refreshSuggestedUsersCalls += 1
+            return refreshSuggestedUsersResult
+        }
         override suspend fun searchUsers(query: String): ChatResult<List<ChatUser>> {
             searchUsersCalls += 1
-            return ChatResult.Success(searchedUsers)
+            return searchUsersResult ?: ChatResult.Success(searchedUsers)
         }
         override suspend fun createConversation(peerId: String, isSecret: Boolean): ChatResult<Conversation> {
             createdConversations += peerId to isSecret
@@ -383,6 +611,10 @@ class ChatViewModelsTest {
             return ChatResult.Success(
                 conversation().copy(id = "fixture-group", type = ConversationType.GROUP, title = name),
             )
+        }
+        override suspend fun addGroupMembers(conversationId: String, memberIds: List<String>): ChatResult<Int> {
+            addedGroupMembers += memberIds
+            return ChatResult.Success(memberIds.size)
         }
         override fun observeProfileNotes(): Flow<List<ProfileNote>> = profileNotes
         override suspend fun refreshProfileNotes() = ChatResult.Success(Unit)
@@ -435,10 +667,18 @@ class ChatViewModelsTest {
         override suspend fun markRead(conversationId: String) = ChatResult.Success(Unit)
         override suspend fun sendTyping(conversationId: String) = ChatResult.Success(Unit)
         override suspend fun setConversationActive(conversationId: String, active: Boolean) = ChatResult.Success(Unit)
-        override suspend fun toggleConversationFlag(conversationId: String, flag: String) =
-            ChatResult.Success(conversation())
-        override suspend fun acceptMessageRequest(conversationId: String) = ChatResult.Success(Unit)
-        override suspend fun rejectMessageRequest(conversationId: String) = ChatResult.Success(Unit)
+        override suspend fun toggleConversationFlag(conversationId: String, flag: String): ChatResult<Conversation> {
+            toggledConversationFlags += conversationId to flag
+            return toggleConversationFlagResult
+        }
+        override suspend fun acceptMessageRequest(conversationId: String): ChatResult<Unit> {
+            acceptedMessageRequests += conversationId
+            return acceptMessageRequestResult
+        }
+        override suspend fun rejectMessageRequest(conversationId: String): ChatResult<Unit> {
+            rejectedMessageRequests += conversationId
+            return rejectMessageRequestResult
+        }
         override suspend fun editMessage(message: Message, content: String) = ChatResult.Success(Unit)
         override suspend fun deleteMessage(message: Message, forEveryone: Boolean) = ChatResult.Success(Unit)
         override suspend fun forwardMessage(messageId: String, targetConversationId: String): ChatResult<Message> {
@@ -464,9 +704,11 @@ class ChatViewModelsTest {
             return ChatResult.Success(Unit)
         }
 
-        override suspend fun blockUser(userId: String): ChatResult<Unit> = ChatResult.Success(Unit)
+        override suspend fun blockUser(userId: String): ChatResult<Unit> =
+            ChatResult.Success(Unit).also { blockedUsers += userId }
 
-        override suspend fun unblockUser(userId: String): ChatResult<Unit> = ChatResult.Success(Unit)
+        override suspend fun unblockUser(userId: String): ChatResult<Unit> =
+            ChatResult.Success(Unit).also { unblockedUsers += userId }
 
         override suspend fun getBlockStatus(userId: String, forceRefresh: Boolean): ChatResult<BlockStatus> =
             ChatResult.Success(blockStatus).also { blockStatusCalls += userId to forceRefresh }

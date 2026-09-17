@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import ir.coffevista.vista_native.features.chat.domain.model.ChatAttachmentDraft
 import ir.coffevista.vista_native.features.chat.domain.model.ChatPartnerProfile
+import ir.coffevista.vista_native.features.chat.domain.model.ChatUser
 import ir.coffevista.vista_native.features.chat.domain.model.BlockStatus
 import ir.coffevista.vista_native.features.chat.domain.model.Conversation
 import ir.coffevista.vista_native.features.chat.domain.model.Message
@@ -19,6 +20,7 @@ import ir.coffevista.vista_native.features.chat.domain.repository.ChatRepository
 import ir.coffevista.vista_native.features.chat.domain.repository.ChatResult
 import ir.coffevista.vista_native.features.chat.domain.repository.GifCatalog
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -45,6 +47,10 @@ data class MessagesUiState(
     val error: String? = null,
     val groupInfo: GroupInfo? = null,
     val groupMembers: List<GroupMember> = emptyList(),
+    val groupUserQuery: String = "",
+    val groupUserResults: List<ChatUser>? = null,
+    val isGroupUserSearching: Boolean = false,
+    val groupUserSearchError: String? = null,
     val isGroupLoading: Boolean = false,
     val groupError: String? = null,
     val pinnedMessages: List<Message> = emptyList(),
@@ -73,6 +79,7 @@ class MessagesViewModel @Inject constructor(
     private var conversationObserver: Job? = null
     private var forwardTargetsObserver: Job? = null
     private var searchJob: Job? = null
+    private var groupUserSearchJob: Job? = null
     private var gifSearchJob: Job? = null
     private var sharedMediaObserver: Job? = null
     private var downloadsObserver: Job? = null
@@ -99,6 +106,7 @@ class MessagesViewModel @Inject constructor(
         observer?.cancel()
         conversationObserver?.cancel()
         forwardTargetsObserver?.cancel()
+        groupUserSearchJob?.cancel()
         sharedMediaObserver?.cancel()
         downloadsObserver?.cancel()
         loadedBlockPeerId = null
@@ -432,9 +440,50 @@ class MessagesViewModel @Inject constructor(
         repository.updateGroup(conversationId, name = name)
     }
 
-    fun addGroupMember(userId: String) = groupMutation {
+    fun addGroupMembers(userIds: List<String>) = groupMutation {
         val conversationId = mutableState.value.conversationId ?: return@groupMutation ChatResult.Failure("گروه یافت نشد", false)
-        repository.addGroupMembers(conversationId, listOf(userId))
+        repository.addGroupMembers(conversationId, userIds)
+    }
+
+    fun searchGroupUsers(value: String) {
+        groupUserSearchJob?.cancel()
+        val query = value.trim()
+        mutableState.update {
+            it.copy(
+                groupUserQuery = value,
+                groupUserResults = null,
+                isGroupUserSearching = query.isNotEmpty(),
+                groupUserSearchError = null,
+            )
+        }
+        if (query.isEmpty()) return
+
+        groupUserSearchJob = viewModelScope.launch {
+            delay(GROUP_USER_SEARCH_DEBOUNCE_MILLIS)
+            when (val result = repository.searchUsers(query)) {
+                is ChatResult.Success -> mutableState.update {
+                    if (it.groupUserQuery.trim() == query) {
+                        it.copy(
+                            groupUserResults = result.value,
+                            isGroupUserSearching = false,
+                            groupUserSearchError = null,
+                        )
+                    } else {
+                        it
+                    }
+                }
+                is ChatResult.Failure -> mutableState.update {
+                    if (it.groupUserQuery.trim() == query) {
+                        it.copy(
+                            isGroupUserSearching = false,
+                            groupUserSearchError = result.message,
+                        )
+                    } else {
+                        it
+                    }
+                }
+            }
+        }
     }
 
     fun removeGroupMember(userId: String) = groupMutation {
@@ -605,6 +654,7 @@ class MessagesViewModel @Inject constructor(
 
     private companion object {
         const val TYPING_THROTTLE_MILLIS = 2_000L
+        const val GROUP_USER_SEARCH_DEBOUNCE_MILLIS = 500L
     }
 }
 

@@ -217,6 +217,7 @@ data class CreatePostResponseDto(
     @SerialName("post") val post: FeedPostDto? = null,
     @SerialName("success") val success: Boolean = true,
     @SerialName("message") val message: String? = null,
+    @SerialName("id") val id: String? = null,
 )
 @Serializable
 data class SubmitAppealRequestDto(

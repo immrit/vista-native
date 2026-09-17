@@ -56,7 +56,7 @@ class AddPostViewModelTest {
         override suspend fun createPost(request: CreatePostRequestDto): CreatePostResponseDto {
             lastCreateRequest = request
             return if (shouldSucceed) {
-                CreatePostResponseDto(success = true)
+                CreatePostResponseDto(success = true, id = "created-post")
             } else {
                 CreatePostResponseDto(success = false, message = "سرور در دسترس نیست")
             }
@@ -82,6 +82,7 @@ class AddPostViewModelTest {
     }
 
     private lateinit var fakeApi: FakeFeedApi
+    private val attachedMentions = mutableListOf<Pair<String, List<String>>>()
     private val fakeUploader = object : PostMediaUploadGateway {
         override suspend fun uploadImage(
             userId: String,
@@ -122,6 +123,15 @@ class AddPostViewModelTest {
             uploader = fakeUploader,
             authStateProvider = authStateProvider,
             ownProfileDao = FakeOwnProfileDao(),
+            postMentions = ir.coffevista.vista_native.features.feed.data.PostMentions(
+                object : ir.coffevista.vista_native.features.feed.data.PostMentionsApi {
+                    override suspend fun profile(username: String) =
+                        ir.coffevista.vista_native.features.feed.data.PostMentionProfileDto(userId = "mentioned-id")
+                    override suspend fun add(postId: String, request: ir.coffevista.vista_native.features.feed.data.PostMentionsRequestDto) {
+                        attachedMentions += postId to request.userIds
+                    }
+                },
+            ),
         )
     }
 
@@ -137,6 +147,25 @@ class AddPostViewModelTest {
         assertTrue(state.selectedImages.isEmpty())
         assertFalse(state.isVideo)
         assertFalse(state.canSubmit)
+    }
+
+    @Test
+    fun `successful flat create response attaches mentions to its id`() = runTest {
+        viewModel.onContentChanged("Hello @Alice @ALICE email@example.com")
+        viewModel.submitPost()
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.isSuccess)
+        assertEquals(listOf("created-post" to listOf("mentioned-id")), attachedMentions)
+    }
+
+    @Test
+    fun `failed creation never attaches mentions`() = runTest {
+        fakeApi.shouldSucceed = false
+        viewModel.onContentChanged("Hello @Alice")
+        viewModel.submitPost()
+        advanceUntilIdle()
+        assertFalse(viewModel.uiState.value.isSuccess)
+        assertTrue(attachedMentions.isEmpty())
     }
 
     @Test

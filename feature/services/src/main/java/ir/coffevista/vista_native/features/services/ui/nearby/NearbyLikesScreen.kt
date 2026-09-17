@@ -23,6 +23,8 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.TabRowDefaults
@@ -35,7 +37,9 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -62,8 +66,10 @@ import androidx.compose.material3.Icon
 import ir.coffevista.vista_native.core.designsystem.theme.VistaFontFamily
 import ir.coffevista.vista_native.core.designsystem.theme.vistaColors
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaBrandColors
+import ir.coffevista.vista_native.features.services.data.nearby.NearbyLikeResult
 import ir.coffevista.vista_native.features.services.data.nearby.NearbyMatch
 import ir.coffevista.vista_native.features.services.data.nearby.NearbyReceivedLike
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -75,6 +81,9 @@ fun NearbyLikesScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var selectedTab by remember { mutableIntStateOf(0) }
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    var matchedResult by remember { mutableStateOf<Pair<NearbyReceivedLike, NearbyLikeResult>?>(null) }
 
     LaunchedEffect(Unit) {
         viewModel.loadLikesAndMatches()
@@ -84,6 +93,7 @@ fun NearbyLikesScreen(
         Scaffold(
             modifier = modifier.fillMaxSize(),
             containerColor = MaterialTheme.colorScheme.background,
+            snackbarHost = { SnackbarHost(snackbarHostState) },
             topBar = {
                 TopAppBar(
                     title = {
@@ -171,8 +181,44 @@ fun NearbyLikesScreen(
                     when (selectedTab) {
                         0 -> ReceivedLikesTabContent(
                             likes = state.receivedLikes,
-                            onLike = { viewModel.reportUser(it.userId, "like") },
-                            onPass = { viewModel.reportUser(it.userId, "pass") },
+                            onLike = { like ->
+                                viewModel.respondToReceivedLike(
+                                    like = like,
+                                    action = "like",
+                                    onSuccess = { matched, matchId ->
+                                        if (matched && matchId != null) {
+                                            matchedResult = like to NearbyLikeResult(
+                                                matched = true,
+                                                matchId = matchId,
+                                                match = NearbyMatch(
+                                                    matchId = matchId,
+                                                    userId = like.userId,
+                                                    username = like.username,
+                                                    fullName = like.fullName,
+                                                    avatarUrl = like.avatarUrl,
+                                                    isVerified = like.isVerified,
+                                                    verificationType = like.verificationType,
+                                                    matchedAt = "",
+                                                ),
+                                            )
+                                        } else {
+                                            scope.launch { snackbarHostState.showSnackbar("لایک شد ✓") }
+                                        }
+                                    },
+                                    onError = { msg ->
+                                        scope.launch { snackbarHostState.showSnackbar(msg) }
+                                    },
+                                )
+                            },
+                            onPass = { like ->
+                                viewModel.respondToReceivedLike(
+                                    like = like,
+                                    action = "pass",
+                                    onError = { msg ->
+                                        scope.launch { snackbarHostState.showSnackbar(msg) }
+                                    },
+                                )
+                            },
                         )
                         1 -> MatchesTabContent(
                             matches = state.matches,
@@ -183,6 +229,18 @@ fun NearbyLikesScreen(
                         )
                     }
                 }
+            }
+
+            matchedResult?.let { (like, result) ->
+                NearbyMatchDialog(
+                    matchResult = result,
+                    candidate = null,
+                    onDismiss = { matchedResult = null },
+                    onStartChat = { matchId, otherUserId, username, avatarUrl ->
+                        matchedResult = null
+                        onOpenChat(matchId, otherUserId, username, avatarUrl)
+                    },
+                )
             }
         }
     }

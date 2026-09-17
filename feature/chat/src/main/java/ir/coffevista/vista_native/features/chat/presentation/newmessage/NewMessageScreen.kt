@@ -1,10 +1,12 @@
 package ir.coffevista.vista_native.features.chat.presentation.newmessage
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -14,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -22,6 +25,9 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.GroupAdd
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.PersonSearch
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -30,7 +36,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TextButton
@@ -43,6 +48,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -66,6 +73,7 @@ fun NewMessageRoute(
         onSecretModeChanged = viewModel::setSecretMode,
         onGroupModeChanged = viewModel::setGroupMode,
         onGroupNameChanged = viewModel::groupNameChanged,
+        onRetry = viewModel::retry,
         onUser = { user ->
             if (state.isGroupMode) viewModel.toggleGroupUser(user)
             else viewModel.openUser(user, onOpenConversation)
@@ -83,6 +91,7 @@ fun NewMessageScreen(
     onSecretModeChanged: (Boolean) -> Unit,
     onGroupModeChanged: (Boolean) -> Unit = {},
     onGroupNameChanged: (String) -> Unit = {},
+    onRetry: () -> Unit = {},
     onUser: (ChatUser) -> Unit,
     onCreateGroup: () -> Unit = {},
 ) = CompositionLocalProvider(androidx.compose.ui.platform.LocalLayoutDirection provides LayoutDirection.Rtl) {
@@ -130,10 +139,24 @@ fun NewMessageScreen(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                     singleLine = true,
                     label = { Text("نام گروه") },
-                    supportingText = { Text("${state.selectedUserIds.size + 1} از ۲۰ عضو") },
+                    supportingText = { Text("اعضای انتخاب‌شده: ${state.selectedUserIds.size} از ۱۹") },
                     shape = RoundedCornerShape(12.dp),
                 )
             }
+                if (state.selectedUsers.isNotEmpty()) {
+                    LazyRow(
+                        modifier = Modifier.fillMaxWidth().height(44.dp),
+                        contentPadding = PaddingValues(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        items(state.selectedUsers, key = ChatUser::id) { user ->
+                            SelectedGroupMemberChip(
+                                user = user,
+                                onRemove = { onUser(user) },
+                            )
+                        }
+                    }
+                }
             OutlinedTextField(
                 value = state.query,
                 onValueChange = onQueryChanged,
@@ -141,9 +164,20 @@ fun NewMessageScreen(
                 singleLine = true,
                 placeholder = { Text("جستجو") },
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                trailingIcon = if (state.query.isNotEmpty()) {
+                    {
+                        IconButton(onClick = { onQueryChanged("") }) {
+                            Icon(Icons.Default.Close, contentDescription = "پاک کردن جستجو")
+                        }
+                    }
+                } else {
+                    null
+                },
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 shape = RoundedCornerShape(12.dp),
             )
-            Row(
+            if (!state.isGroupMode) {
+                Row(
                 Modifier.fillMaxWidth().clickable { onGroupModeChanged(!state.isGroupMode) }
                     .padding(horizontal = 16.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -159,7 +193,6 @@ fun NewMessageScreen(
                 }
                 ir.coffevista.vista_native.core.designsystem.component.VistaSwitch(checked = state.isGroupMode, onCheckedChange = onGroupModeChanged)
             }
-            if (!state.isGroupMode) {
                 Row(
                     Modifier.fillMaxWidth().clickable { onSecretModeChanged(!state.isSecretMode) }
                         .padding(horizontal = 16.dp, vertical = 10.dp),
@@ -178,21 +211,34 @@ fun NewMessageScreen(
                 }
             }
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
-            Text(
-                "پیشنهادی",
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold,
-            )
+            if (state.visibleUsers.isNotEmpty()) {
+                Text(
+                    if (state.query.isBlank()) "پیشنهادی" else "نتایج جستجو",
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
             Box(Modifier.fillMaxSize()) {
                 when {
                     state.isLoading -> CircularProgressIndicator(Modifier.align(Alignment.Center))
-                    state.visibleUsers.isEmpty() -> Text(
-                        if (state.query.isBlank()) "هنوز گفتگویی نداشتید" else "نتیجه‌ای یافت نشد",
-                        modifier = Modifier.align(Alignment.Center),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    state.visibleUsers.isEmpty() -> Column(
+                        modifier = Modifier.align(Alignment.Center).padding(horizontal = 32.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Icon(
+                            Icons.Default.PersonSearch,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                            modifier = Modifier.size(48.dp),
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        Text(
+                            if (state.query.isBlank()) "هنوز گفتگویی نداشتید" else "نتیجه‌ای یافت نشد",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     else -> LazyColumn(Modifier.fillMaxSize()) {
                         items(state.visibleUsers, key = ChatUser::id) { user ->
                             NewMessageUserRow(
@@ -206,11 +252,25 @@ fun NewMessageScreen(
                 }
                 if (state.isSearching) CircularProgressIndicator(Modifier.align(Alignment.TopCenter).size(22.dp))
                 state.error?.let { error ->
-                    Text(
-                        error,
-                        modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp),
-                        color = MaterialTheme.colorScheme.error,
-                    )
+                    Row(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(16.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(MaterialTheme.colorScheme.errorContainer)
+                            .padding(horizontal = 14.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            error,
+                            modifier = Modifier.weight(1f),
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            fontSize = 13.sp,
+                        )
+                        if (state.canRetry) {
+                            TextButton(onClick = onRetry) { Text("تلاش مجدد") }
+                        }
+                    }
                 }
             }
         }
@@ -218,8 +278,47 @@ fun NewMessageScreen(
 }
 
 @Composable
+private fun SelectedGroupMemberChip(user: ChatUser, onRemove: () -> Unit) {
+    val fallback = painterResource(R.drawable.vista_default_avatar)
+    Row(
+        modifier = Modifier
+            .height(36.dp)
+            .clip(RoundedCornerShape(18.dp))
+            .background(MaterialTheme.colorScheme.primaryContainer)
+            .clickable(onClick = onRemove)
+            .padding(start = 4.dp, end = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        AsyncImage(
+            model = user.avatarUrl,
+            contentDescription = null,
+            placeholder = fallback,
+            fallback = fallback,
+            error = fallback,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.size(28.dp).clip(CircleShape),
+        )
+        Spacer(Modifier.width(6.dp))
+        Text(
+            user.displayName,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onPrimaryContainer,
+        )
+        Icon(
+            Icons.Default.Close,
+            contentDescription = "حذف ${user.displayName}",
+            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+            modifier = Modifier.size(18.dp),
+        )
+    }
+}
+@Composable
 private fun NewMessageUserRow(user: ChatUser, loading: Boolean, selected: Boolean, onClick: () -> Unit) {
     Row(
+
         Modifier.fillMaxWidth().height(72.dp).clickable(enabled = !loading, onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -246,7 +345,15 @@ private fun NewMessageUserRow(user: ChatUser, loading: Boolean, selected: Boolea
             selected -> Box(
                 Modifier.size(24.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary),
                 contentAlignment = Alignment.Center,
-            ) { Text("✓", color = MaterialTheme.colorScheme.onPrimary, fontSize = 14.sp) }
+            ) {
+                Icon(
+                    Icons.Default.Check,
+                    contentDescription = "انتخاب شده",
+                    tint = MaterialTheme.colorScheme.onPrimary,
+                    modifier = Modifier.size(16.dp),
+                )
+            }
+            else -> Box(Modifier.size(24.dp).border(2.dp, MaterialTheme.colorScheme.outline, CircleShape))
         }
     }
 }

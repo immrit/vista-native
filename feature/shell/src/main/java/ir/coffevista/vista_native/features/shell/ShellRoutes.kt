@@ -9,6 +9,10 @@ object ShellRoutes {
     fun storyPlayer(userIndex: Int) = "story_player/$userIndex"
     const val StoryPlayerRoute = "story_player/{userIndex}"
     const val StoryCreate = "story_create"
+    fun storyCreate(uri: String? = null) =
+        if (!uri.isNullOrBlank()) "story_create?uri=" + java.net.URLEncoder.encode(uri, "UTF-8")
+        else "story_create"
+    const val StoryCreateRoute = "story_create?uri={uri}"
     const val Notifications = "notifications"
     fun appeal(postId: String) = "appeal/$postId"
     const val AppealRoute = "appeal/{postId}"

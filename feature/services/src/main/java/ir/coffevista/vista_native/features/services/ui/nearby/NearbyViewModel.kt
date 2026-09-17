@@ -67,6 +67,21 @@ class NearbyViewModel @Inject constructor(
         }
     }
 
+    fun setLocationError(error: String?) {
+        _uiState.update { it.copy(locationError = error, isLocating = false) }
+    }
+
+    fun onLocationAcquired(lat: Double, lng: Double) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLocating = true, locationError = null) }
+            runCatching {
+                repository.updateLocation(lat = lat, lng = lng)
+            }
+            loadCards(reset = true)
+            loadReceivedLikesBadge()
+        }
+    }
+
     fun loadCards(reset: Boolean = false, setRandomOnline: Boolean? = null) {
         viewModelScope.launch {
             val isRandom = setRandomOnline ?: _uiState.value.isRandomOnline
@@ -134,6 +149,41 @@ class NearbyViewModel @Inject constructor(
                     receivedLikesCount = count,
                     isLoadingLikesMatches = false,
                 )
+            }
+        }
+    }
+
+    fun respondToReceivedLike(
+        like: NearbyReceivedLike,
+        action: String,
+        onSuccess: (matched: Boolean, matchId: String?) -> Unit = { _, _ -> },
+        onError: (String) -> Unit = {},
+    ) {
+        viewModelScope.launch {
+            runCatching {
+                repository.like(like.userId, action = action)
+            }.onSuccess { result ->
+                _uiState.update { current ->
+                    val updatedLikes = current.receivedLikes.filterNot { it.userId == like.userId }
+                    current.copy(
+                        receivedLikes = updatedLikes,
+                        receivedLikesCount = (current.receivedLikesCount - 1).coerceAtLeast(0),
+                    )
+                }
+                if (result.matched) {
+                    val updatedMatches = runCatching { repository.getMatches() }.getOrNull() ?: _uiState.value.matches
+                    _uiState.update { it.copy(matches = updatedMatches) }
+                    onSuccess(true, result.matchId)
+                } else {
+                    onSuccess(false, null)
+                }
+            }.onFailure { error ->
+                val message = when ((error as? ir.coffevista.vista_native.core.network.RemoteFailure)?.code) {
+                    "daily_like_limit" -> "سقف لایک روزانه‌ات پر شد"
+                    "user_blocked" -> "امکان لایک این کاربر نیست"
+                    else -> "خطا، دوباره تلاش کن"
+                }
+                onError(message)
             }
         }
     }

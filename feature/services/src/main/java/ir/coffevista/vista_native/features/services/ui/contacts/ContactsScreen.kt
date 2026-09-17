@@ -31,8 +31,11 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import android.Manifest
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.provider.ContactsContract
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
@@ -166,6 +169,7 @@ fun ContactsScreen(
                                     permissionLauncher.launch(Manifest.permission.READ_CONTACTS)
                                 }
                             },
+                            onOpenAppSettings = { openAppSettings(context) },
                         )
                     }
                     is ContactsRailUiState.Empty -> {
@@ -270,6 +274,7 @@ private fun ContactItemRow(
 @Composable
 private fun PermissionRequiredCard(
     onGrantPermission: () -> Unit,
+    onOpenAppSettings: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Box(
@@ -324,6 +329,15 @@ private fun PermissionRequiredCard(
                         style = MaterialTheme.typography.labelLarge.copy(
                             fontFamily = VistaFontFamily,
                             fontWeight = FontWeight.Bold,
+                        ),
+                    )
+                }
+                TextButton(onClick = onOpenAppSettings) {
+                    Text(
+                        text = "باز کردن تنظیمات برنامه",
+                        style = MaterialTheme.typography.labelLarge.copy(
+                            fontFamily = VistaFontFamily,
+                            color = VistaBrandColors.Indigo,
                         ),
                     )
                 }
@@ -447,3 +461,10 @@ private fun queryDeviceContacts(context: Context): List<String> {
     return phoneNumbers.toList()
 }
 
+private fun openAppSettings(context: Context) {
+    context.startActivity(
+        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+            data = Uri.fromParts("package", context.packageName, null)
+        },
+    )
+}

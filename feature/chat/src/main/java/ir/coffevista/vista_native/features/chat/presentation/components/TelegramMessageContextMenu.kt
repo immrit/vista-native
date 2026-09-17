@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.ime
@@ -27,6 +28,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Forward
 import androidx.compose.material.icons.automirrored.filled.Reply
@@ -197,11 +200,19 @@ internal fun MessageContextMenu(
                     onClick = onDismiss,
                 ),
         ) {
+            val insetPadding = WindowInsets.statusBars
+                .union(WindowInsets.navigationBars)
+                .union(WindowInsets.ime)
+                .asPaddingValues()
+            val menuScrollState = rememberScrollState()
+            val menuMaxHeight = (
+                maxHeight -
+                    insetPadding.calculateTopPadding() -
+                    insetPadding.calculateBottomPadding() -
+                    24.dp -
+                    (if (policy.canReact) 52.dp else 0.dp)
+                ).coerceAtLeast(48.dp)
             if (overlayAnchor != null) {
-                val insetPadding = WindowInsets.statusBars
-                    .union(WindowInsets.navigationBars)
-                    .union(WindowInsets.ime)
-                    .asPaddingValues()
                 val placement = remember(
                     overlayAnchor,
                     constraints.maxWidth,
@@ -318,6 +329,9 @@ internal fun MessageContextMenu(
                             MessageContextMenuActions(
                                 message = message,
                                 policy = policy,
+                                modifier = Modifier
+                                    .heightIn(max = menuMaxHeight)
+                                    .verticalScroll(menuScrollState),
                                 iconPrimaryColor = colors.icon,
                                 textPrimaryColor = colors.text,
                                 dividerColor = colors.divider,
@@ -357,6 +371,9 @@ internal fun MessageContextMenu(
                                 MessageContextMenuActions(
                                     message = message,
                                     policy = policy,
+                                    modifier = Modifier
+                                        .heightIn(max = menuMaxHeight)
+                                        .verticalScroll(menuScrollState),
                                     iconPrimaryColor = colors.icon,
                                     textPrimaryColor = colors.text,
                                     dividerColor = colors.divider,
@@ -405,6 +422,7 @@ private fun messageContextMenuColors(): MessageContextMenuColors {
 private fun MessageContextMenuActions(
     message: Message,
     policy: MessageContextActionPolicy,
+    modifier: Modifier = Modifier,
     iconPrimaryColor: Color,
     textPrimaryColor: Color,
     dividerColor: Color,
@@ -418,7 +436,7 @@ private fun MessageContextMenuActions(
     onEdit: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    Column(modifier = Modifier.padding(vertical = 5.dp)) {
+    Column(modifier = modifier.padding(vertical = 5.dp)) {
         if (policy.canReply) {
             TelegramContextMenuItem(
                 icon = Icons.AutoMirrored.Filled.Reply,

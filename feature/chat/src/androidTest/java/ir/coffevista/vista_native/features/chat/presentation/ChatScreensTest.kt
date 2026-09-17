@@ -1,4 +1,4 @@
-package ir.coffevista.vista_native.features.chat.presentation
+﻿package ir.coffevista.vista_native.features.chat.presentation
 
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -13,6 +13,7 @@ import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.geometry.Offset
@@ -26,7 +27,9 @@ import androidx.compose.runtime.setValue
 import ir.coffevista.vista_native.core.designsystem.theme.VistaTheme
 import ir.coffevista.vista_native.features.chat.domain.model.Conversation
 import ir.coffevista.vista_native.features.chat.domain.model.ConversationType
+import ir.coffevista.vista_native.features.chat.domain.model.BlockStatus
 import ir.coffevista.vista_native.features.chat.domain.model.ChatPartnerProfile
+import ir.coffevista.vista_native.features.chat.domain.model.ChatUser
 import ir.coffevista.vista_native.features.chat.domain.model.Message
 import ir.coffevista.vista_native.features.chat.domain.model.MessageContent
 import ir.coffevista.vista_native.features.chat.domain.model.MessageStatus
@@ -90,6 +93,53 @@ class ChatScreensTest {
     }
 
     @Test
+    fun outgoingInboxPreviewShowsRealReadReceipt() {
+        compose.setContent {
+            VistaTheme {
+                ConversationListScreen(
+                    state = ConversationsUiState(
+                        conversations = listOf(
+                            conversationFixture().copy(
+                                isLastMessageFromMe = true,
+                                lastMessageStatus = MessageStatus.READ,
+                            ),
+                        ),
+                        isInitialLoading = false,
+                    ),
+                    onRefresh = {},
+                    onLoadMore = {},
+                    onOpenConversation = {},
+                )
+            }
+        }
+
+        compose.onNodeWithContentDescription("خوانده شد").assertIsDisplayed()
+    }
+
+    @Test
+    fun cachedConversationBannerOffersARealRetryAction() {
+        var refreshCount = 0
+        compose.setContent {
+            VistaTheme {
+                ConversationListScreen(
+                    state = ConversationsUiState(
+                        conversations = listOf(conversationFixture()),
+                        isInitialLoading = false,
+                        isOffline = true,
+                    ),
+                    onRefresh = { refreshCount += 1 },
+                    onLoadMore = {},
+                    onOpenConversation = {},
+                )
+            }
+        }
+
+        compose.onNodeWithText("نمایش گفتگوهای ذخیره‌شده").assertIsDisplayed()
+        compose.onNodeWithText("تلاش مجدد").performClick()
+        compose.runOnIdle { assertEquals(1, refreshCount) }
+    }
+
+    @Test
     fun conversationsMenuOffersSecretChatEntryPoint() {
         var newMessageRequested = false
         compose.setContent {
@@ -129,6 +179,70 @@ class ChatScreensTest {
     }
 
     @Test
+    fun newMessageSearchCanBeClearedAndRetriedWithoutStaleSuggestions() {
+        var clearedQuery: String? = null
+        var retryCount = 0
+        compose.setContent {
+            VistaTheme {
+                NewMessageScreen(
+                    state = NewMessageUiState(
+                        query = "raha",
+                        searchResults = emptyList(),
+                        isLoading = false,
+                        isSearching = false,
+                        error = "جستجو انجام نشد",
+                        canRetry = true,
+                    ),
+                    onBack = {},
+                    onQueryChanged = { clearedQuery = it },
+                    onSecretModeChanged = {},
+                    onRetry = { retryCount += 1 },
+                    onUser = {},
+                )
+            }
+        }
+
+        compose.onNodeWithText("نتیجه‌ای یافت نشد").assertIsDisplayed()
+        compose.onNodeWithText("جستجو انجام نشد").assertIsDisplayed()
+        compose.onNodeWithContentDescription("پاک کردن جستجو").performClick()
+        compose.onNodeWithText("تلاش مجدد").performClick()
+        compose.runOnIdle {
+            assertEquals("", clearedQuery)
+            assertEquals(1, retryCount)
+        }
+    }
+    @Test
+    fun newGroupShowsRemovableSelectedMemberAndHonestLimit() {
+        val member = ChatUser("peer", "peer", "Raha", null)
+        var removedId: String? = null
+        compose.setContent {
+            VistaTheme {
+                NewMessageScreen(
+                    state = NewMessageUiState(
+                        suggestedUsers = listOf(member),
+                        isLoading = false,
+                        isGroupMode = true,
+                        groupName = "Team",
+                        selectedUserIds = setOf(member.id),
+                        selectedUsers = listOf(member),
+                    ),
+                    onBack = {},
+                    onQueryChanged = {},
+                    onSecretModeChanged = {},
+                    onGroupModeChanged = {},
+                    onGroupNameChanged = {},
+                    onUser = { removedId = it.id },
+                )
+            }
+        }
+
+        compose.onNodeWithText("اعضای انتخاب‌شده: 1 از ۱۹").assertIsDisplayed()
+        compose.onNodeWithContentDescription("حذف Raha").performClick()
+        compose.onAllNodesWithText("گفتگوی محرمانه جدید").assertCountEquals(0)
+        compose.runOnIdle { assertEquals(member.id, removedId) }
+    }
+
+    @Test
     fun conversationLongPressStartsFlutterMultiSelection() {
         compose.setContent {
             VistaTheme {
@@ -150,6 +264,123 @@ class ChatScreensTest {
         compose.onNodeWithContentDescription("بی‌صدا کردن گفتگوهای انتخاب شده").assertExists()
         compose.onNodeWithContentDescription("بایگانی گفتگوهای انتخاب شده").assertExists()
         compose.onNodeWithContentDescription("حذف گفتگوهای انتخاب شده").assertExists()
+    }
+
+    @Test
+    fun archivedFolderHasSpecificEmptyState() {
+        compose.setContent {
+            VistaTheme {
+                ConversationListScreen(
+                    state = ConversationsUiState(
+                        conversations = emptyList(),
+                        isInitialLoading = false,
+                        includeArchived = true,
+                        hasMore = false,
+                    ),
+                    onRefresh = {},
+                    onLoadMore = {},
+                    onOpenConversation = {},
+                )
+            }
+        }
+
+        compose.onNodeWithText("هیچ گفتگوی بایگانی‌شده‌ای وجود ندارد").assertIsDisplayed()
+        compose.onNodeWithText("گفتگوهایی که بایگانی می‌کنید اینجا نمایش داده می‌شوند").assertIsDisplayed()
+    }
+
+    @Test
+    fun archivedConversationExposesBadgeAndUnarchiveSelectionAction() {
+        compose.setContent {
+            VistaTheme {
+                ConversationListScreen(
+                    state = ConversationsUiState(
+                        conversations = listOf(conversationFixture().copy(isArchived = true)),
+                        isInitialLoading = false,
+                        includeArchived = true,
+                        hasMore = false,
+                    ),
+                    onRefresh = {},
+                    onLoadMore = {},
+                    onOpenConversation = {},
+                )
+            }
+        }
+
+        compose.onNodeWithContentDescription("بایگانی‌شده").assertIsDisplayed()
+        compose.onNodeWithContentDescription("گفتگو با کاربر نمونه", substring = true)
+            .performTouchInput { longClick() }
+        compose.onNodeWithContentDescription("خارج کردن گفتگوهای انتخاب شده از بایگانی").assertIsDisplayed()
+    }
+
+    @Test
+    fun messageRequestsAreGroupedAndExposeAcceptRejectActions() {
+        var acceptedId: String? = null
+        var rejectedId: String? = null
+        val request = conversationFixture().copy(
+            id = "request-conversation",
+            isMessageRequest = true,
+            requestStatus = "pending",
+        )
+        compose.setContent {
+            VistaTheme {
+                ConversationListScreen(
+                    state = ConversationsUiState(
+                        conversations = listOf(request, conversationFixture()),
+                        isInitialLoading = false,
+                    ),
+                    onRefresh = {},
+                    onLoadMore = {},
+                    onOpenConversation = {},
+                    onAcceptMessageRequest = { acceptedId = it },
+                    onRejectMessageRequest = { rejectedId = it },
+                )
+            }
+        }
+
+        compose.onNodeWithText("درخواست پیام").assertIsDisplayed()
+        compose.onNodeWithText("قبول").performClick()
+        compose.runOnIdle { assertEquals(request.id, acceptedId) }
+        compose.onNodeWithText("رد").performClick()
+        compose.runOnIdle { assertEquals(request.id, rejectedId) }
+    }
+
+    @Test
+    fun privateConversationSwipeExposesConfirmedBlockAction() {
+        var preparedPeer: String? = null
+        var toggledPeer: String? = null
+        compose.setContent {
+            VistaTheme {
+                ConversationListScreen(
+                    state = ConversationsUiState(
+                        conversations = listOf(conversationFixture()),
+                        isInitialLoading = false,
+                        blockStatusByUserId = mapOf(
+                            "fixture-peer" to BlockStatus(isBlocked = false, isBlockedBy = false),
+                        ),
+                    ),
+                    onRefresh = {},
+                    onLoadMore = {},
+                    onOpenConversation = {},
+                    onPrepareBlockStatus = { preparedPeer = it },
+                    onToggleBlock = { peerId, complete ->
+                        toggledPeer = peerId
+                        complete(true)
+                    },
+                )
+            }
+        }
+
+        compose.onNodeWithContentDescription("گفتگو با کاربر نمونه").performTouchInput {
+            swipe(
+                start = Offset(width - 1f, center.y),
+                end = Offset(1f, center.y),
+                durationMillis = 500,
+            )
+        }
+        compose.onNodeWithText("مسدود").performClick()
+        compose.runOnIdle { assertEquals("fixture-peer", preparedPeer) }
+        compose.onAllNodesWithText("مسدود کردن")[1].performClick()
+        compose.runOnIdle { assertEquals("fixture-peer", toggledPeer) }
     }
 
     @Test
@@ -224,6 +455,62 @@ class ChatScreensTest {
         compose.onNodeWithText("پاسخ").assertExists()
         compose.onNodeWithText("کپی").assertExists()
         compose.onAllNodesWithText("1 انتخاب شده").assertCountEquals(0)
+    }
+
+    @Test
+    fun openingContextMenuWhileImeIsOpenKeepsComposerAndBubbleGeometryStable() {
+        compose.setContent {
+            VistaTheme {
+                MessageDetailScreen(
+                    state = MessagesUiState(
+                        conversationId = "conversation",
+                        messages = listOf(
+                            Message(
+                                accountId = "account",
+                                conversationId = "conversation",
+                                clientId = "client",
+                                serverId = "server",
+                                senderId = "account",
+                                content = MessageContent.Text("متن ثابت برای منوی پیام"),
+                                createdAtEpochMillis = 1,
+                                status = MessageStatus.SENT,
+                                isMine = true,
+                            ),
+                        ),
+                        isInitialLoading = false,
+                        hasMore = false,
+                    ),
+                    title = "گفتگو",
+                    onBack = {},
+                    onRefresh = {},
+                    onLoadOlder = {},
+                    onSend = { _, _ -> },
+                    onRetry = {},
+                )
+            }
+        }
+
+        val composerNode = compose.onNodeWithTag("chat-composer-surface")
+        val messageNode = compose.onNodeWithContentDescription("پیام شما، ارسال شد")
+        val composerBeforeIme = composerNode.fetchSemanticsNode().boundsInRoot
+        compose.onNodeWithContentDescription("پیام...").performClick()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            composerNode.fetchSemanticsNode().boundsInRoot.top < composerBeforeIme.top - 40f
+        }
+        compose.waitForIdle()
+
+        val composerBeforeMenu = composerNode.fetchSemanticsNode().boundsInRoot
+        val bubbleBeforeMenu = messageNode.fetchSemanticsNode().boundsInRoot
+        messageNode.performClick()
+        compose.waitForIdle()
+
+        compose.onNodeWithText("پاسخ").assertExists()
+        val composerAfterMenu = composerNode.fetchSemanticsNode().boundsInRoot
+        val bubbleAfterMenu = messageNode.fetchSemanticsNode().boundsInRoot
+        assertEquals(composerBeforeMenu.top, composerAfterMenu.top, 0.5f)
+        assertEquals(composerBeforeMenu.bottom, composerAfterMenu.bottom, 0.5f)
+        assertEquals(bubbleBeforeMenu.top, bubbleAfterMenu.top, 0.5f)
+        assertEquals(bubbleBeforeMenu.bottom, bubbleAfterMenu.bottom, 0.5f)
     }
 
     @Test
@@ -683,7 +970,164 @@ class ChatScreensTest {
     }
 
     @Test
+    fun groupIncomingMessagesExposeSenderIdentityAtClusterEdges() {
+        var openedProfile = ""
+        compose.setContent {
+            VistaTheme {
+                MessageDetailScreen(
+                    state = MessagesUiState(
+                        conversationId = "group",
+                        conversation = Conversation(
+                            accountId = "account",
+                            id = "group",
+                            type = ConversationType.GROUP,
+                            title = "گروه نمونه",
+                            avatarUrl = null,
+                            peerId = null,
+                            lastMessage = null,
+                            lastMessageAtEpochMillis = 2,
+                            unreadCount = 0,
+                            isArchived = false,
+                            isPinned = false,
+                            isMuted = false,
+                            requestStatus = null,
+                        ),
+                        groupMembers = listOf(
+                            GroupMember("peer", "peer", "فرستنده نمونه", null, false, null),
+                        ),
+                        messages = listOf(
+                            Message(
+                                accountId = "account",
+                                conversationId = "group",
+                                clientId = "newest",
+                                serverId = "newest",
+                                senderId = "peer",
+                                content = MessageContent.Text("دوم"),
+                                createdAtEpochMillis = 2_000,
+                                status = MessageStatus.READ,
+                                isMine = false,
+                            ),
+                            Message(
+                                accountId = "account",
+                                conversationId = "group",
+                                clientId = "oldest",
+                                serverId = "oldest",
+                                senderId = "peer",
+                                content = MessageContent.Text("اول"),
+                                createdAtEpochMillis = 1_000,
+                                status = MessageStatus.READ,
+                                isMine = false,
+                            ),
+                        ),
+                        isInitialLoading = false,
+                        hasMore = false,
+                    ),
+                    title = "گروه نمونه",
+                    onBack = {},
+                    onRefresh = {},
+                    onLoadOlder = {},
+                    onSend = { _, _ -> },
+                    onRetry = {},
+                    onOpenProfile = { openedProfile = it },
+                )
+            }
+        }
+
+        compose.onAllNodesWithTag("group-message-sender:peer").assertCountEquals(1)
+        compose.onAllNodesWithTag("group-message-avatar:peer").assertCountEquals(1)
+        compose.onNodeWithTag("group-message-sender:peer").performClick()
+        assertEquals("peer", openedProfile)
+    }
+
+    @Test
+    fun mediaGroupRendersAsOneAlbumAndSelectsEveryBackingMessage() {
+        val albumMessages = listOf(
+            Message(
+                accountId = "account",
+                conversationId = "conversation",
+                clientId = "newest-image",
+                serverId = "newest-image",
+                senderId = "peer",
+                content = MessageContent.Text("کپشن آلبوم"),
+                createdAtEpochMillis = 2_000,
+                status = MessageStatus.READ,
+                attachment = Attachment(
+                    kind = AttachmentKind.IMAGE,
+                    remoteUrl = "https://example.test/newest.jpg",
+                    fileName = "newest.jpg",
+                    mimeType = "image/jpeg",
+                    sizeBytes = 1L,
+                    mediaGroupId = "album-1",
+                ),
+                isMine = false,
+            ),
+            Message(
+                accountId = "account",
+                conversationId = "conversation",
+                clientId = "older-image",
+                serverId = "older-image",
+                senderId = "peer",
+                content = MessageContent.Text(""),
+                createdAtEpochMillis = 1_000,
+                status = MessageStatus.READ,
+                attachment = Attachment(
+                    kind = AttachmentKind.IMAGE,
+                    remoteUrl = "https://example.test/older.jpg",
+                    fileName = "older.jpg",
+                    mimeType = "image/jpeg",
+                    sizeBytes = 1L,
+                    mediaGroupId = "album-1",
+                ),
+                isMine = false,
+            ),
+        )
+        compose.setContent {
+            VistaTheme {
+                MessageDetailScreen(
+                    state = MessagesUiState(
+                        conversationId = "conversation",
+                        conversation = Conversation(
+                            accountId = "account",
+                            id = "conversation",
+                            type = ConversationType.PRIVATE,
+                            title = "گفتگو",
+                            avatarUrl = null,
+                            peerId = "peer",
+                            lastMessage = null,
+                            lastMessageAtEpochMillis = 2_000,
+                            unreadCount = 0,
+                            isArchived = false,
+                            isPinned = false,
+                            isMuted = false,
+                            requestStatus = null,
+                        ),
+                        messages = albumMessages,
+                        isInitialLoading = false,
+                        hasMore = false,
+                    ),
+                    title = "گفتگو",
+                    onBack = {},
+                    onRefresh = {},
+                    onLoadOlder = {},
+                    onSend = { _, _ -> },
+                    onRetry = {},
+                )
+            }
+        }
+
+        compose.onAllNodesWithTag("media-album").assertCountEquals(1)
+        compose.onNodeWithTag("media-album-tile:newest-image").assertExists()
+        compose.onNodeWithTag("media-album-tile:older-image").assertExists()
+        compose.onNodeWithText("کپشن آلبوم").assertExists()
+        compose.onNodeWithTag("media-album-tile:newest-image").performTouchInput { longClick() }
+        compose.onNodeWithText("2 انتخاب شده").assertExists()
+        compose.onNodeWithTag("media-album-tile:newest-image").performClick()
+        compose.onNodeWithText("2 انتخاب شده").assertDoesNotExist()
+    }
+
+    @Test
     fun groupConversationOpensMemberAndInviteDetails() {
+        var addedIds = emptyList<String>()
         compose.setContent {
             VistaTheme {
                 MessageDetailScreen(
@@ -704,9 +1148,79 @@ class ChatScreensTest {
                             isMuted = false,
                             requestStatus = null,
                         ),
-                        groupInfo = GroupInfo("group", "گروه نمونه", null, 2, 20, "invite-code", true, true),
+                        groupInfo = GroupInfo("group", "گروه نمونه", null, 2, 20, "invite-code", true, true, "account", "account"),
                         groupMembers = listOf(
+                            GroupMember("account", "owner", "سازنده نمونه", null, true, null),
                             GroupMember("peer", "peer", "عضو نمونه", null, false, null),
+                        ),
+                        groupUserResults = listOf(
+                            ChatUser("add-peer", "new_peer", "عضو تازه", null),
+                        ),
+                        isInitialLoading = false,
+                        hasMore = false,
+                    ),
+                    title = "گروه نمونه",
+                    onBack = {},
+                    onRefresh = {},
+                    onLoadOlder = {},
+                    onSend = { _, _ -> },
+                    onRetry = {},
+                    onAddGroupMembers = { addedIds = it },
+                )
+            }
+        }
+
+        compose.onNodeWithText("2 عضو").assertExists()
+        compose.onNodeWithContentDescription("گزینه‌های گفتگو").performClick()
+        compose.onNodeWithText("اطلاعات گروه").performClick()
+        compose.onNodeWithTag("group-details-list").performScrollToNode(hasText("عضو نمونه"))
+        compose.onNodeWithText("عضو نمونه").assertExists()
+        compose.onNodeWithText("سازنده • شما").assertExists()
+        compose.onNodeWithTag("group-admin-action:account").assertDoesNotExist()
+        compose.onNodeWithTag("group-remove-action:account").assertDoesNotExist()
+        compose.onNodeWithTag("group-admin-action:peer").performClick()
+        compose.onNodeWithText("مدیر کردن عضو").assertExists()
+        compose.onNodeWithText("انصراف").performClick()
+        compose.onNodeWithText("کپی لینک").assertExists()
+        compose.onNodeWithTag("group-details-list").performScrollToNode(hasText("انتخاب"))
+        compose.onNodeWithText("انتخاب").performClick()
+        compose.onNodeWithTag("group-details-list").performScrollToNode(hasText("عضو تازه"))
+        compose.onNodeWithTag("group-add-candidate:add-peer").performClick()
+        compose.onNodeWithTag("group-details-list").performScrollToNode(hasText("افزودن 1 عضو"))
+        compose.onNodeWithTag("group-add-submit").performClick()
+        assertEquals(listOf("add-peer"), addedIds)
+        compose.onNodeWithTag("group-details-list").performScrollToNode(hasText("حذف گروه برای همه"))
+        compose.onNodeWithText("حذف گروه برای همه").assertExists()
+        compose.onNodeWithText("ترک گروه").assertDoesNotExist()
+    }
+
+    @Test
+    fun groupAdminCannotManageCreatorOrSelfAndCannotDeleteGroup() {
+        compose.setContent {
+            VistaTheme {
+                MessageDetailScreen(
+                    state = MessagesUiState(
+                        conversationId = "group",
+                        conversation = Conversation(
+                            accountId = "admin",
+                            id = "group",
+                            type = ConversationType.GROUP,
+                            title = "گروه نمونه",
+                            avatarUrl = null,
+                            peerId = null,
+                            lastMessage = null,
+                            lastMessageAtEpochMillis = 1,
+                            unreadCount = 0,
+                            isArchived = false,
+                            isPinned = false,
+                            isMuted = false,
+                            requestStatus = null,
+                        ),
+                        groupInfo = GroupInfo("group", "گروه نمونه", null, 3, 20, "invite-code", true, true, "owner", "admin"),
+                        groupMembers = listOf(
+                            GroupMember("owner", "owner", "سازنده", null, true, null),
+                            GroupMember("admin", "admin", "مدیر فعلی", null, true, null),
+                            GroupMember("regular", "regular", "عضو عادی", null, false, null),
                         ),
                         isInitialLoading = false,
                         hasMore = false,
@@ -723,13 +1237,61 @@ class ChatScreensTest {
 
         compose.onNodeWithContentDescription("گزینه‌های گفتگو").performClick()
         compose.onNodeWithText("اطلاعات گروه").performClick()
-        compose.onNodeWithTag("group-details-list").performScrollToNode(hasText("عضو نمونه"))
-        compose.onNodeWithText("عضو نمونه").assertExists()
-        compose.onNodeWithText("کپی لینک").assertExists()
+        compose.onNodeWithTag("group-details-list").performScrollToNode(hasTestTag("group-admin-action:regular"))
+        compose.onNodeWithTag("group-admin-action:owner").assertDoesNotExist()
+        compose.onNodeWithTag("group-remove-action:owner").assertDoesNotExist()
+        compose.onNodeWithTag("group-admin-action:admin").assertDoesNotExist()
+        compose.onNodeWithTag("group-remove-action:admin").assertDoesNotExist()
+        compose.onNodeWithTag("group-admin-action:regular").assertExists()
+        compose.onNodeWithTag("group-remove-action:regular").performClick()
+        compose.onNodeWithText("حذف عضو").assertExists()
+        compose.onNodeWithText("انصراف").performClick()
         compose.onNodeWithTag("group-details-list").performScrollToNode(hasText("ترک گروه"))
         compose.onNodeWithText("ترک گروه").assertExists()
-        compose.onNodeWithTag("group-details-list").performScrollToNode(hasText("حذف گروه برای همه"))
-        compose.onNodeWithText("حذف گروه برای همه").assertExists()
+        compose.onNodeWithText("حذف گروه برای همه").assertDoesNotExist()
+    }
+
+    @Test
+    fun replyAndForwardHeadersKeepTheirSenderNames() {
+        compose.setContent {
+            VistaTheme {
+                MessageDetailScreen(
+                    state = MessagesUiState(
+                        conversationId = "conversation",
+                        messages = listOf(
+                            Message(
+                                accountId = "account",
+                                conversationId = "conversation",
+                                clientId = "message",
+                                serverId = "message",
+                                senderId = "peer",
+                                content = MessageContent.Text("متن جدید"),
+                                createdAtEpochMillis = 2,
+                                status = MessageStatus.READ,
+                                replyToMessageId = "original",
+                                replyToContent = "خط اول پاسخ\nخط دوم پاسخ",
+                                replyToSenderName = "کاربر پاسخ",
+                                isForwarded = true,
+                                forwardedFromSenderName = "فرستنده اصلی",
+                                isMine = false,
+                            ),
+                        ),
+                        isInitialLoading = false,
+                        hasMore = false,
+                    ),
+                    title = "گفتگو",
+                    onBack = {},
+                    onRefresh = {},
+                    onLoadOlder = {},
+                    onSend = { _, _ -> },
+                    onRetry = {},
+                )
+            }
+        }
+
+        compose.onNodeWithText("فوروارد شده از فرستنده اصلی").assertExists()
+        compose.onNodeWithText("پاسخ به کاربر پاسخ").assertExists()
+        compose.onNodeWithText("خط اول پاسخ\nخط دوم پاسخ").assertExists()
     }
 
     @Test

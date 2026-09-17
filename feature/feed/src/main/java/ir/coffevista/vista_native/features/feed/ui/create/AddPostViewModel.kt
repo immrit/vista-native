@@ -12,6 +12,8 @@ import ir.coffevista.vista_native.core.model.session.AuthenticationState
 import ir.coffevista.vista_native.core.model.session.AuthenticationStateProvider
 import ir.coffevista.vista_native.features.feed.data.CreatePostRequestDto
 import ir.coffevista.vista_native.features.feed.data.FeedApi
+import ir.coffevista.vista_native.features.feed.data.PostMentions
+import kotlinx.coroutines.CancellationException
 import ir.coffevista.vista_native.features.feed.data.HashtagSuggestionDto
 import ir.coffevista.vista_native.features.feed.data.PostMediaUploadGateway
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -79,6 +81,7 @@ class AddPostViewModel @Inject constructor(
     private val uploader: PostMediaUploadGateway,
     private val authStateProvider: AuthenticationStateProvider,
     private val ownProfileDao: OwnProfileDao,
+    private val postMentions: PostMentions,
     @ApplicationContext private val appContext: Context?,
 ) : ViewModel() {
 
@@ -87,7 +90,8 @@ class AddPostViewModel @Inject constructor(
         uploader: PostMediaUploadGateway,
         authStateProvider: AuthenticationStateProvider,
         ownProfileDao: OwnProfileDao,
-    ) : this(api, uploader, authStateProvider, ownProfileDao, null)
+        postMentions: PostMentions,
+    ) : this(api, uploader, authStateProvider, ownProfileDao, postMentions, null)
 
     private var hashtagSearchJob: Job? = null
 
@@ -351,6 +355,7 @@ class AddPostViewModel @Inject constructor(
 
             try {
                 var finalVideoUrl: String? = null
+                val mentionIds = postMentions.resolve(extractMentions(state.content))
                 var finalThumbUrl: String? = null
                 val finalImageUrls = mutableListOf<String>()
                 val finalMusicUrl = state.selectedMusicUri?.let { audioUri ->
@@ -424,6 +429,7 @@ class AddPostViewModel @Inject constructor(
 
                 val response = api.createPost(createReq)
                 if (response.success || response.post != null) {
+                    (response.post?.id ?: response.id)?.let { postMentions.attach(it, mentionIds) }
                     _uiState.update {
                         it.copy(
                             isUploading = false,
@@ -439,6 +445,8 @@ class AddPostViewModel @Inject constructor(
                         )
                     }
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _uiState.update {
                     it.copy(

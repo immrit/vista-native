@@ -54,6 +54,7 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.rounded.EmojiEvents
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.People
+import androidx.compose.material.icons.rounded.SearchOff
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.Verified
 import androidx.compose.material.icons.rounded.WorkspacePremium
@@ -80,8 +81,9 @@ fun TopGroupsScreen(
     modifier: Modifier = Modifier,
 ) {
     var state by remember { mutableStateOf<TopGroupsUiState>(TopGroupsUiState.Loading) }
+    var loadAttempt by remember { mutableStateOf(0) }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(loadAttempt) {
         state = TopGroupsUiState.Loading
         runCatching {
             repository.getTopGroups()
@@ -150,6 +152,7 @@ fun TopGroupsScreen(
                             message = uiState.message,
                             onRetry = {
                                 state = TopGroupsUiState.Loading
+                                loadAttempt += 1
                             },
                         )
                     }
@@ -436,7 +439,7 @@ private fun EmptyTopGroupsState(modifier: Modifier = Modifier) {
         verticalArrangement = Arrangement.Center,
     ) {
         Icon(
-            imageVector = Icons.Rounded.People,
+            imageVector = Icons.Rounded.SearchOff,
             contentDescription = null,
             tint = MaterialTheme.vistaColors.contentSecondary,
             modifier = Modifier.size(64.dp),

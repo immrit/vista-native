@@ -4,6 +4,7 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.FileProvider
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -13,11 +14,15 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Image
-import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -25,31 +30,44 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import ir.coffevista.vista_native.core.designsystem.tokens.VistaBrandColors
+import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatAttachmentBottomSheet(
     onDismiss: () -> Unit,
-    onMediaSelected: (Uri, String) -> Unit,
-    onFileSelected: (Uri) -> Unit,
+    onMediaSelected: (List<Uri>) -> Unit,
+    onFilesSelected: (List<Uri>) -> Unit,
 ) {
+    val context = LocalContext.current
+    var cameraUri by remember { mutableStateOf<Uri?>(null) }
+    val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+        val selected = cameraUri
+        cameraUri = null
+        if (success && selected != null) onMediaSelected(listOf(selected))
+        onDismiss()
+    }
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickMultipleVisualMedia(maxItems = 10)
     ) { uris ->
-        uris.forEach { uri ->
-            onMediaSelected(uri, "image/jpeg")
-        }
+        if (uris.isNotEmpty()) onMediaSelected(uris)
         onDismiss()
     }
 
     val documentPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenMultipleDocuments()
     ) { uris ->
-        uris.forEach { uri ->
-            onFileSelected(uri)
-        }
+        if (uris.isNotEmpty()) onFilesSelected(uris)
         onDismiss()
+    }
+
+    val launchCamera: () -> Unit = {
+        val cacheDir = File(context.cacheDir, "camera").apply { mkdirs() }
+        val file = File(cacheDir, "chat_${System.currentTimeMillis()}.jpg")
+        FileProvider.getUriForFile(context, "${context.packageName}.files", file).also { uri ->
+            cameraUri = uri
+            cameraLauncher.launch(uri)
+        }
     }
 
     ModalBottomSheet(
@@ -101,21 +119,9 @@ fun ChatAttachmentBottomSheet(
                     icon = Icons.Default.CameraAlt,
                     label = "دوربین",
                     gradient = listOf(Color(0xFFFF9800), Color(0xFFF57C00)),
-                    onClick = {
-                        photoPickerLauncher.launch(
-                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                        )
-                    }
+                    onClick = launchCamera
                 )
 
-                AttachmentOptionItem(
-                    icon = Icons.Default.Person,
-                    label = "مخاطب",
-                    gradient = listOf(VistaBrandColors.Indigo, VistaBrandColors.VioletDeep),
-                    onClick = {
-                        onDismiss()
-                    }
-                )
             }
 
             Spacer(Modifier.height(16.dp))

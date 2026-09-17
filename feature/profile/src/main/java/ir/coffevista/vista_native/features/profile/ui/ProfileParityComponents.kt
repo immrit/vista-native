@@ -108,6 +108,7 @@ internal fun ProfileParityList(
     selectedTab: Int,
     onTabSelected: (Int) -> Unit,
     onPostClick: (String) -> Unit,
+    onReelClick: (String) -> Unit = onPostClick,
     onLikeClick: (String, Boolean, Long) -> Unit,
     onSaveClick: (String, Boolean) -> Unit,
     onLoadMore: () -> Unit,
@@ -223,7 +224,7 @@ internal fun ProfileParityList(
                         item(key = "reels-grid") {
                             ProfileReelsInlineGrid(
                                 reels = reels,
-                                onReelClick = onPostClick,
+                                onReelClick = onReelClick,
                             )
                         }
                     }

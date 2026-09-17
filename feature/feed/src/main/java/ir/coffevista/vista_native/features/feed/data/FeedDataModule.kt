@@ -42,6 +42,11 @@ abstract class FeedDataModule {
 object FeedApiModule {
     @Provides
     @Singleton
+    fun providePostMentionsApi(@InternalApi retrofit: Retrofit): PostMentionsApi =
+        retrofit.create(PostMentionsApi::class.java)
+
+    @Provides
+    @Singleton
     fun provideFeedApi(
         @InternalApi retrofit: Retrofit,
         fixtures: Set<@JvmSuppressWildcards FeedApiFixture>,

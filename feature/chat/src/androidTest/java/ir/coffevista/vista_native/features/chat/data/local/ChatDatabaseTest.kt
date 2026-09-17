@@ -51,6 +51,33 @@ class ChatDatabaseTest {
     }
 
     @Test
+    fun messageRequestResolutionIsDurableInLocalCache() = runBlocking {
+        val request = conversation("account-a").copy(
+            requestStatus = "pending",
+            isMessageRequest = true,
+            lastMessageType = "image",
+            lastMessageIsMine = true,
+            lastMessageStatus = "READ",
+        )
+        dao.upsertConversations(listOf(request))
+
+        dao.resolveMessageRequest("account-a", request.id, "accepted")
+
+        val accepted = dao.conversation("account-a", request.id)
+        assertEquals(false, accepted?.isMessageRequest)
+        assertEquals("accepted", accepted?.requestStatus)
+        assertEquals("image", accepted?.lastMessageType)
+        assertEquals(true, accepted?.lastMessageIsMine)
+        assertEquals("READ", accepted?.lastMessageStatus)
+
+        dao.upsertMessage(message("request-message"))
+        dao.deleteConversationWithMessages("account-a", request.id)
+
+        assertEquals(null, dao.conversation("account-a", request.id))
+        assertEquals(emptyList<MessageEntity>(), dao.messages("account-a", request.id))
+    }
+
+    @Test
     fun messageOrderingUsesTimestampThenStableIdentity() = runBlocking {
         val base = message("a")
         dao.upsertMessages(listOf(base, base.copy(clientId = "b", serverId = "b")))
@@ -269,6 +296,122 @@ class ChatDatabaseTest {
             }
         } finally {
             versionFour.close()
+            context.deleteDatabase(name)
+        }
+    }
+
+    @Test
+    fun migrationFourToFivePreservesConversationsAndBackfillsPendingRequests() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val name = "chat-migration-4-5.db"
+        context.deleteDatabase(name)
+        val factory = FrameworkSQLiteOpenHelperFactory()
+        val versionFour = factory.create(
+            SupportSQLiteOpenHelper.Configuration.builder(context)
+                .name(name)
+                .callback(object : SupportSQLiteOpenHelper.Callback(4) {
+                    override fun onCreate(db: SupportSQLiteDatabase) {
+                        db.execSQL("CREATE TABLE chat_conversation (accountId TEXT NOT NULL, id TEXT NOT NULL, title TEXT NOT NULL, requestStatus TEXT, PRIMARY KEY(accountId, id))")
+                        db.execSQL("INSERT INTO chat_conversation (accountId, id, title, requestStatus) VALUES ('account', 'normal', 'normal', NULL)")
+                        db.execSQL("INSERT INTO chat_conversation (accountId, id, title, requestStatus) VALUES ('account', 'request', 'request', 'pending')")
+                    }
+                    override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+                })
+                .build(),
+        )
+        versionFour.writableDatabase
+        versionFour.close()
+
+        val versionFive = factory.create(
+            SupportSQLiteOpenHelper.Configuration.builder(context)
+                .name(name)
+                .callback(object : SupportSQLiteOpenHelper.Callback(5) {
+                    override fun onCreate(db: SupportSQLiteDatabase) = Unit
+                    override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) {
+                        assertEquals(4, oldVersion)
+                        assertEquals(5, newVersion)
+                        ChatDatabase.MIGRATION_4_5.migrate(db)
+                    }
+                })
+                .build(),
+        )
+        try {
+            val db = versionFive.writableDatabase
+            db.query("SELECT id, isMessageRequest, lastMessageType, lastMessageIsMine, lastMessageStatus FROM chat_conversation ORDER BY id").use { cursor ->
+                assertEquals(true, cursor.moveToFirst())
+                assertEquals("normal", cursor.getString(0))
+                assertEquals(0, cursor.getInt(1))
+                assertEquals(null, cursor.getString(2))
+                assertEquals(0, cursor.getInt(3))
+                assertEquals("SENT", cursor.getString(4))
+                assertEquals(true, cursor.moveToNext())
+                assertEquals("request", cursor.getString(0))
+                assertEquals(1, cursor.getInt(1))
+            }
+        } finally {
+            versionFive.close()
+            context.deleteDatabase(name)
+        }
+    }
+
+
+    @Test
+    fun migrationFiveToSixPreservesTransfersAndAddsMediaGroupId() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val name = "chat-migration-5-6.db"
+        context.deleteDatabase(name)
+        val factory = FrameworkSQLiteOpenHelperFactory()
+        val versionFive = factory.create(
+            SupportSQLiteOpenHelper.Configuration.builder(context)
+                .name(name)
+                .callback(object : SupportSQLiteOpenHelper.Callback(5) {
+                    override fun onCreate(db: SupportSQLiteDatabase) {
+                        db.execSQL("CREATE TABLE chat_transfer (accountId TEXT NOT NULL, conversationId TEXT NOT NULL, clientId TEXT NOT NULL, localUri TEXT NOT NULL, objectKey TEXT NOT NULL, mimeType TEXT NOT NULL, fileName TEXT NOT NULL, sizeBytes INTEGER NOT NULL, kind TEXT NOT NULL, durationSeconds INTEGER, captionCiphertext BLOB NOT NULL, progress REAL NOT NULL, state TEXT NOT NULL, attempts INTEGER NOT NULL, createdAtEpochMillis INTEGER NOT NULL, PRIMARY KEY(accountId, clientId))")
+                        db.execSQL("INSERT INTO chat_transfer (accountId, conversationId, clientId, localUri, objectKey, mimeType, fileName, sizeBytes, kind, durationSeconds, captionCiphertext, progress, state, attempts, createdAtEpochMillis) VALUES ('account', 'conversation', 'client', 'content://fixture/image', 'chat/image.jpg', 'image/jpeg', 'image.jpg', 12, 'IMAGE', NULL, X'01', 0, 'QUEUED', 0, 1)")
+                    }
+
+                    override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+                })
+                .build(),
+        )
+        versionFive.writableDatabase
+        versionFive.close()
+
+        val versionSix = factory.create(
+            SupportSQLiteOpenHelper.Configuration.builder(context)
+                .name(name)
+                .callback(object : SupportSQLiteOpenHelper.Callback(6) {
+                    override fun onCreate(db: SupportSQLiteDatabase) = Unit
+
+                    override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) {
+                        assertEquals(5, oldVersion)
+                        assertEquals(6, newVersion)
+                        ChatDatabase.MIGRATION_5_6.migrate(db)
+                    }
+                })
+                .build(),
+        )
+        try {
+            val db = versionSix.writableDatabase
+            db.query("PRAGMA table_info(chat_transfer)").use { cursor ->
+                val columns = mutableSetOf<String>()
+                val nameIndex = cursor.getColumnIndex("name")
+                while (cursor.moveToNext()) columns += cursor.getString(nameIndex)
+                assertEquals(true, "mediaGroupId" in columns)
+            }
+            db.query("SELECT clientId, mediaGroupId, state FROM chat_transfer").use { cursor ->
+                assertEquals(true, cursor.moveToFirst())
+                assertEquals("client", cursor.getString(0))
+                assertEquals(null, cursor.getString(1))
+                assertEquals("QUEUED", cursor.getString(2))
+            }
+            db.execSQL("UPDATE chat_transfer SET mediaGroupId = 'album-1' WHERE clientId = 'client'")
+            db.query("SELECT mediaGroupId FROM chat_transfer WHERE clientId = 'client'").use { cursor ->
+                assertEquals(true, cursor.moveToFirst())
+                assertEquals("album-1", cursor.getString(0))
+            }
+        } finally {
+            versionSix.close()
             context.deleteDatabase(name)
         }
     }

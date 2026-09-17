@@ -388,11 +388,13 @@ private fun mapGameError(e: Throwable): String {
     return when {
         s.contains("not logged in") || s.contains("401") || s.contains("unauthorized") ->
             "برای ورود به بازی باید در ویستا وارد باشید."
-        s.contains("timeout") || s.contains("connection") || s.contains("network") || s.contains("socket") ->
+        s.contains("timeout") || s.contains("connection") || s.contains("network") ||
+            s.contains("socket") || s.contains("failed host lookup") ||
+            s.contains("unable to resolve host") ->
             "اتصال اینترنت را بررسی کنید و دوباره تلاش کنید."
         s.contains("429") || s.contains("rate limit") ->
             "درخواست‌های زیادی ارسال شده، چند ثانیه صبر کنید."
-        s.contains("503") || s.contains("unavailable") ->
+        s.contains("503") || s.contains("unavailable") || s.contains("sso_unavailable") ->
             "سرویس بازی موقتاً در دسترس نیست."
         else -> "ورود به بازی ممکن نشد. دوباره تلاش کنید."
     }

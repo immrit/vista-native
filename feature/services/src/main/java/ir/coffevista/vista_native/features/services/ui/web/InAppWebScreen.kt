@@ -3,6 +3,8 @@ package ir.coffevista.vista_native.features.services.ui.web
 import android.annotation.SuppressLint
 import android.graphics.Bitmap
 import android.net.http.SslError
+import android.webkit.CookieManager
+import androidx.compose.material3.TextButton
 import android.webkit.SslErrorHandler
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
@@ -57,6 +59,7 @@ fun InAppWebScreen(
     title: String,
     onBack: () -> Unit,
     restrictHost: String? = null,
+    allowedPathPrefix: String? = null,
     appBarColor: Color? = null,
     appBarForegroundColor: Color? = null,
     useBackButton: Boolean = false,
@@ -166,14 +169,11 @@ fun InAppWebScreen(
                                 }
 
                                 override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
-                                    val reqUrl = request?.url?.toString() ?: return false
-                                    if (restrictHost != null) {
-                                        val host = request.url.host.orEmpty()
-                                        if (!host.equals(restrictHost, ignoreCase = true)) {
-                                            return true // Block external navigation
-                                        }
-                                    }
-                                    return false
+                                    return !isNavigationAllowed(
+                                        url = request?.url?.toString(),
+                                        restrictHost = restrictHost,
+                                        allowedPathPrefix = allowedPathPrefix,
+                                    )
                                 }
 
                                 override fun onReceivedSslError(
@@ -198,8 +198,17 @@ fun InAppWebScreen(
                                 }
                             }
 
-                            loadUrl(url)
                             webViewInstance = this
+                            val startLoad = { loadUrl(url) }
+                            if (restrictHost == null) {
+                                startLoad()
+                            } else {
+                                // A scoped SSO surface must not inherit a prior broad web session.
+                                CookieManager.getInstance().removeAllCookies {
+                                    CookieManager.getInstance().flush()
+                                    startLoad()
+                                }
+                            }
                         }
                     },
                         update = { view ->
@@ -219,9 +228,45 @@ fun InAppWebScreen(
                                 color = fgColor,
                             ),
                         )
+                        androidx.compose.foundation.layout.Spacer(modifier = Modifier.height(16.dp))
+                        TextButton(
+                            onClick = {
+                                loadError = null
+                                isLoading = true
+                                webViewInstance?.reload()
+                            },
+                        ) {
+                            Text(
+                                text = "تلاش مجدد",
+                                style = MaterialTheme.typography.labelLarge.copy(
+                                    fontFamily = VistaFontFamily,
+                                    color = VistaBrandColors.Indigo,
+                                    fontWeight = FontWeight.Bold,
+                                ),
+                            )
+                        }
                     }
                 }
             }
         }
     }
+}
+
+internal fun isNavigationAllowed(
+    url: String?,
+    restrictHost: String?,
+    allowedPathPrefix: String?,
+): Boolean {
+    if (restrictHost == null) return true
+    val uri = runCatching { java.net.URI(url) }.getOrNull() ?: return false
+
+    val scheme = uri.scheme.orEmpty().lowercase()
+    if (scheme != "http" && scheme != "https") {
+        return scheme == "about" || scheme == "data"
+    }
+    if (!uri.host.orEmpty().equals(restrictHost, ignoreCase = true)) return false
+
+    val prefix = allowedPathPrefix?.takeIf { it.isNotBlank() } ?: return true
+    val path = uri.path.orEmpty().ifBlank { "/" }
+    return path == prefix || path.startsWith("$prefix/")
 }

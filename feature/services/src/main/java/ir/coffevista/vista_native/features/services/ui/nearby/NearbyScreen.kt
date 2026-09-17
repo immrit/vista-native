@@ -1,5 +1,21 @@
 package ir.coffevista.vista_native.features.services.ui.nearby
 
+import android.Manifest
+import android.app.Activity
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.location.Location
+import android.location.LocationListener
+import android.location.LocationManager
+import android.net.Uri
+import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
+import androidx.compose.ui.platform.LocalContext
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.VectorConverter
@@ -96,7 +112,45 @@ fun NearbyScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     var reportingCandidate by remember { mutableStateOf<NearbyCandidate?>(null) }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val fineGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true
+        val coarseGranted = permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        if (fineGranted || coarseGranted) {
+            checkAndAcquireLocation(context, viewModel)
+        } else {
+            val activity = context as? Activity
+            val showRationale = activity?.let {
+                ActivityCompat.shouldShowRequestPermissionRationale(it, Manifest.permission.ACCESS_FINE_LOCATION)
+            } ?: true
+            if (!showRationale) {
+                viewModel.setLocationError("permission_forever")
+            } else {
+                viewModel.setLocationError("permission")
+            }
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        val fineGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val coarseGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        if (!fineGranted && !coarseGranted) {
+            viewModel.setLocationError("permission")
+        } else {
+            val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
+            val isGpsEnabled = locationManager?.isProviderEnabled(LocationManager.GPS_PROVIDER) == true ||
+                locationManager?.isProviderEnabled(LocationManager.NETWORK_PROVIDER) == true
+            if (!isGpsEnabled) {
+                viewModel.setLocationError("service_off")
+            } else {
+                checkAndAcquireLocation(context, viewModel)
+            }
+        }
+    }
 
     LaunchedEffect(state.zoneTransition) {
         if (state.zoneTransition != null) {
@@ -202,7 +256,32 @@ fun NearbyScreen(
                 when {
                     state.isDisabled -> {
                         DisabledDiscoveryView(
-                            onEnable = { viewModel.initBootstrap() }
+                            onEnable = { checkAndAcquireLocation(context, viewModel) }
+                        )
+                    }
+                    state.locationError != null -> {
+                        LocationErrorView(
+                            error = state.locationError!!,
+                            onRequestPermission = {
+                                permissionLauncher.launch(
+                                    arrayOf(
+                                        Manifest.permission.ACCESS_FINE_LOCATION,
+                                        Manifest.permission.ACCESS_COARSE_LOCATION,
+                                    )
+                                )
+                            },
+                            onOpenGpsSettings = {
+                                context.startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+                            },
+                            onOpenAppSettings = {
+                                val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                    data = Uri.fromParts("package", context.packageName, null)
+                                }
+                                context.startActivity(intent)
+                            },
+                            onRetry = {
+                                checkAndAcquireLocation(context, viewModel)
+                            },
                         )
                     }
                     state.isLocating || (state.isLoading && state.cards.isEmpty()) -> {
@@ -212,7 +291,7 @@ fun NearbyScreen(
                     }
                     state.cards.isEmpty() -> {
                         EmptyDeckView(
-                            onRefresh = { viewModel.loadCards(reset = true) }
+                            onRefresh = { checkAndAcquireLocation(context, viewModel) }
                         )
                     }
                     else -> {
@@ -541,6 +620,125 @@ private fun DisabledDiscoveryView(onEnable: () -> Unit) {
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun LocationErrorView(
+    error: String,
+    onRequestPermission: () -> Unit,
+    onOpenGpsSettings: () -> Unit,
+    onOpenAppSettings: () -> Unit,
+    onRetry: () -> Unit,
+) {
+    val msg = when (error) {
+        "service_off" -> "سرویس موقعیت‌مکانی دستگاه خاموش است.\nبرای استفاده از «اطراف من» باید GPS فعال باشه."
+        "permission_forever" -> "دسترسی مکان مسدود شده.\nبرای فعال‌سازی باید از تنظیمات دستگاه اجازه بدی."
+        "permission" -> "برای پیدا کردن آدم‌های نزدیک، به دسترسی موقعیت مکانی نیاز داریم."
+        else -> "خطا در دریافت موقعیت مکانی"
+    }
+    val actionLabel = when (error) {
+        "service_off" -> "فعال‌سازی GPS"
+        "permission_forever" -> "راهنمای تنظیمات"
+        "permission" -> "فعال‌سازی"
+        else -> "تلاش مجدد"
+    }
+    val icon = when (error) {
+        "service_off" -> Icons.Rounded.LocationOff
+        "permission_forever" -> Icons.Rounded.Close
+        "permission" -> Icons.Rounded.LocationOff
+        else -> Icons.Rounded.Replay
+    }
+    val onAction: () -> Unit = when (error) {
+        "service_off" -> onOpenGpsSettings
+        "permission_forever" -> onOpenAppSettings
+        "permission" -> onRequestPermission
+        else -> onRetry
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(32.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = VistaBrandColors.Indigo.copy(alpha = 0.65f),
+                modifier = Modifier.size(56.dp),
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = msg,
+                style = MaterialTheme.typography.bodyMedium.copy(
+                    fontFamily = VistaFontFamily,
+                    color = MaterialTheme.vistaColors.contentSecondary,
+                    fontSize = 14.sp,
+                    textAlign = TextAlign.Center,
+                    lineHeight = 22.sp,
+                ),
+            )
+            Spacer(modifier = Modifier.height(20.dp))
+            Button(
+                onClick = onAction,
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = VistaBrandColors.Indigo),
+            ) {
+                Text(
+                    text = actionLabel,
+                    style = MaterialTheme.typography.labelLarge.copy(
+                        fontFamily = VistaFontFamily,
+                        fontWeight = FontWeight.Bold,
+                    ),
+                )
+            }
+        }
+    }
+}
+
+private fun checkAndAcquireLocation(context: Context, viewModel: NearbyViewModel) {
+    val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
+    val isGpsEnabled = locationManager?.isProviderEnabled(LocationManager.GPS_PROVIDER) == true ||
+        locationManager?.isProviderEnabled(LocationManager.NETWORK_PROVIDER) == true
+    if (!isGpsEnabled) {
+        viewModel.setLocationError("service_off")
+        return
+    }
+    val fineGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+    val coarseGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+    if (!fineGranted && !coarseGranted) {
+        viewModel.setLocationError("permission")
+        return
+    }
+    try {
+        val lastGps = locationManager?.getLastKnownLocation(LocationManager.GPS_PROVIDER)
+        val lastNetwork = locationManager?.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
+        val loc = lastGps ?: lastNetwork
+        if (loc != null) {
+            viewModel.onLocationAcquired(loc.latitude, loc.longitude)
+        } else {
+            locationManager?.requestSingleUpdate(
+                LocationManager.NETWORK_PROVIDER,
+                object : LocationListener {
+                    override fun onLocationChanged(location: Location) {
+                        viewModel.onLocationAcquired(location.latitude, location.longitude)
+                    }
+                    @Deprecated("Deprecated in Java")
+                    override fun onStatusChanged(provider: String?, status: Int, extras: android.os.Bundle?) {}
+                    override fun onProviderEnabled(provider: String) {}
+                    override fun onProviderDisabled(provider: String) {
+                        viewModel.setLocationError("service_off")
+                    }
+                },
+                null
+            )
+        }
+    } catch (_: SecurityException) {
+        viewModel.setLocationError("permission")
+    } catch (_: Exception) {
+        viewModel.setLocationError("failed")
     }
 }
 

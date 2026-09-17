@@ -145,6 +145,8 @@ fun FeedScreen(
     onOpenStoryPlayer: (Int) -> Unit = {},
     onCreateStory: () -> Unit = {},
     onSendDirectMessage: (FeedPost) -> Unit = {},
+    onNavigateToStoryEditor: (android.net.Uri) -> Unit = {},
+    onVideoClick: (String) -> Unit = onPostClick,
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val selectedKind by viewModel.selectedKind.collectAsStateWithLifecycle()
@@ -171,6 +173,7 @@ fun FeedScreen(
         onRefresh = viewModel::refresh,
         onLoadMore = viewModel::loadMore,
         onPostClick = onPostClick,
+        onVideoClick = onVideoClick,
         onAuthorClick = onAuthorClick,
         onLikeClick = viewModel::toggleLike,
         onSaveClick = viewModel::toggleSave,
@@ -206,6 +209,7 @@ fun FeedScreen(
             onDismiss = { showShareForPost = null },
             onShared = { viewModel.trackEvent(post.id, "share") },
             onSendDirectMessage = onSendDirectMessage,
+            onNavigateToStoryEditor = onNavigateToStoryEditor,
         )
     }
     reportPostTarget?.let { target ->
@@ -248,6 +252,7 @@ internal fun FeedScreenContent(
     onRefresh: () -> Unit,
     onLoadMore: () -> Unit,
     onPostClick: (String) -> Unit,
+    onVideoClick: (String) -> Unit = onPostClick,
     onAuthorClick: (String) -> Unit = {},
     onLikeClick: (String, Boolean, Long) -> Unit = { _, _, _ -> },
     onSaveClick: (String, Boolean) -> Unit = { _, _ -> },
@@ -309,6 +314,7 @@ internal fun FeedScreenContent(
                         selectedKind = selectedKind,
                         onLoadMore = onLoadMore,
                         onPostClick = onPostClick,
+                        onVideoClick = onVideoClick,
                         onAuthorClick = onAuthorClick,
                         onLikeClick = onLikeClick,
                         onSaveClick = onSaveClick,
@@ -486,6 +492,7 @@ internal fun FeedContent(
     viewerUserId: String? = null,
     onLoadMore: () -> Unit,
     onPostClick: (String) -> Unit,
+    onVideoClick: (String) -> Unit = onPostClick,
     onAuthorClick: (String) -> Unit,
     onLikeClick: (String, Boolean, Long) -> Unit,
     onSaveClick: (String, Boolean) -> Unit,
@@ -535,6 +542,7 @@ internal fun FeedContent(
                 isOwnPost = post.userId == viewerUserId,
                 showFollowState = selectedKind == FeedKind.Explore,
                 onPostClick = { onPostClick(post.id) },
+                onVideoClick = { onVideoClick(post.id) },
                 onAuthorClick = { onAuthorClick(post.userId) },
                 onLikeClick = onLikeClick,
                 onSaveClick = onSaveClick,
@@ -622,6 +630,7 @@ fun VistaFeedPostCard(
     isOwnPost: Boolean = false,
     verticalMenu: Boolean = false,
     onPostClick: () -> Unit,
+    onVideoClick: (() -> Unit)? = null,
     onAuthorClick: () -> Unit,
     onLikeClick: (String, Boolean, Long) -> Unit = { _, _, _ -> },
     onSaveClick: (String, Boolean) -> Unit = { _, _ -> },
@@ -761,7 +770,13 @@ fun VistaFeedPostCard(
 
         PostMedia(
             post = post,
-            onClick = onPostClick,
+            onClick = {
+                if (!post.videoUrl.isNullOrBlank() && onVideoClick != null) {
+                    onVideoClick()
+                } else {
+                    onPostClick()
+                }
+            },
             onDoubleTap = {
                 if (!post.isLiked) {
                     onLikeClick(post.id, post.isLiked, post.likeCount)

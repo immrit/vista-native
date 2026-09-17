@@ -19,6 +19,10 @@ data class Conversation(
     val isMuted: Boolean,
     val requestStatus: String?,
     val typingUserIds: Set<String> = emptySet(),
+    val isMessageRequest: Boolean = false,
+    val lastMessageType: String? = null,
+    val isLastMessageFromMe: Boolean = false,
+    val lastMessageStatus: MessageStatus = MessageStatus.SENT,
 )
 
 enum class ConversationType { PRIVATE, GROUP, SECRET }
@@ -111,6 +115,8 @@ data class GroupInfo(
     val inviteCode: String?,
     val inviteEnabled: Boolean,
     val isAdmin: Boolean,
+    val createdByUserId: String? = null,
+    val currentUserId: String? = null,
 )
 
 @Immutable
@@ -287,6 +293,7 @@ data class ChatAttachmentDraft(
     val kind: AttachmentKind,
     val durationSeconds: Int? = null,
     val caption: String = "",
+    val mediaGroupId: String? = null,
 )
 
 @Immutable

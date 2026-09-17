@@ -33,6 +33,10 @@ data class ConversationEntity(
     val isMuted: Boolean,
     val requestStatus: String?,
     val lastSyncedAtEpochMillis: Long,
+    val isMessageRequest: Boolean = false,
+    val lastMessageType: String? = null,
+    val lastMessageIsMine: Boolean = false,
+    val lastMessageStatus: String = "SENT",
 )
 
 @Entity(
@@ -138,6 +142,7 @@ data class TransferTaskEntity(
     val sizeBytes: Long,
     val kind: String,
     val durationSeconds: Int?,
+    val mediaGroupId: String? = null,
     val captionCiphertext: ByteArray,
     val progress: Float,
     val state: String,
@@ -307,6 +312,9 @@ interface ChatDao {
     @Query("UPDATE chat_conversation SET unreadCount = 0 WHERE accountId = :accountId AND id = :conversationId")
     suspend fun resetUnread(accountId: String, conversationId: String)
 
+    @Query("UPDATE chat_conversation SET isMessageRequest = 0, requestStatus = :status WHERE accountId = :accountId AND id = :conversationId")
+    suspend fun resolveMessageRequest(accountId: String, conversationId: String, status: String)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertMessage(item: MessageEntity)
 
@@ -463,6 +471,12 @@ interface ChatDao {
     @Query("DELETE FROM chat_conversation WHERE accountId = :accountId AND id = :conversationId")
     suspend fun deleteConversation(accountId: String, conversationId: String)
 
+    @Transaction
+    suspend fun deleteConversationWithMessages(accountId: String, conversationId: String) {
+        deleteConversationMessages(accountId, conversationId)
+        deleteConversation(accountId, conversationId)
+    }
+
     @Query("DELETE FROM chat_message WHERE accountId = :accountId")
     suspend fun deleteMessages(accountId: String)
 
@@ -570,7 +584,7 @@ interface ChatDao {
         RemoteKeyEntity::class,
         ProfileNoteEntity::class,
     ],
-    version = 4,
+    version = 6,
     exportSchema = false,
 )
 abstract class ChatDatabase : RoomDatabase() {
@@ -625,6 +639,25 @@ abstract class ChatDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("CREATE TABLE IF NOT EXISTS chat_download_task (accountId TEXT NOT NULL, conversationId TEXT NOT NULL, messageId TEXT NOT NULL, remoteUrlCiphertext BLOB NOT NULL, fileNameCiphertext BLOB NOT NULL, mimeType TEXT, localPath TEXT, receivedBytes INTEGER NOT NULL, totalBytes INTEGER NOT NULL, eTag TEXT, state TEXT NOT NULL, attempts INTEGER NOT NULL, updatedAtEpochMillis INTEGER NOT NULL, PRIMARY KEY(accountId, messageId))")
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_chat_download_task_accountId_conversationId_updatedAtEpochMillis ON chat_download_task(accountId, conversationId, updatedAtEpochMillis)")
+            }
+        }
+
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE chat_transfer ADD COLUMN mediaGroupId TEXT")
+            }
+        }
+
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE chat_conversation ADD COLUMN isMessageRequest INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE chat_conversation ADD COLUMN lastMessageType TEXT")
+                db.execSQL("ALTER TABLE chat_conversation ADD COLUMN lastMessageIsMine INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE chat_conversation ADD COLUMN lastMessageStatus TEXT NOT NULL DEFAULT 'SENT'")
+                // v4 did not persist the independent server flag. Preserve the
+                // only unambiguous legacy state so pending requests remain
+                // available offline immediately after an in-place upgrade.
+                db.execSQL("UPDATE chat_conversation SET isMessageRequest = 1 WHERE LOWER(requestStatus) = 'pending'")
             }
         }
     }

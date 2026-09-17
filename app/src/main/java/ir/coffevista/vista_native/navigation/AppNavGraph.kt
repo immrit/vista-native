@@ -413,21 +413,23 @@ fun VistaApp(
                     },
                     onExitRequested = onExitRequested,
                     content = ShellFeatureContent(
-                        feedRoot = { onPostClick, onAuthorClick, onCreatePost, onOpenStoryPlayer, onCreateStory, onNotifications, onAppeal, onHashtag ->
+                        feedRoot = { onPostClick, onAuthorClick, onCreatePost, onOpenStoryPlayer, onCreateStory, onNotifications, onAppeal, onHashtag, onVideoClick ->
                             var directSharePost by remember { mutableStateOf<FeedPost?>(null) }
                             val feedViewModel: FeedViewModel = hiltViewModel()
                             FeedScreen(
                                 viewModel = feedViewModel,
                                 commentsViewModel = hiltViewModel<CommentsViewModel>(),
                                 onPostClick = onPostClick,
+                                onVideoClick = onVideoClick,
                                 onAuthorClick = onAuthorClick,
                                 onCreatePostClick = onCreatePost,
                                 onOpenStoryPlayer = onOpenStoryPlayer,
-                                onCreateStory = onCreateStory,
+                                onCreateStory = { onCreateStory(null) },
                                 onNotificationClick = onNotifications,
                                 onAppealClick = onAppeal,
                                 onHashtagClick = onHashtag,
                                 onSendDirectMessage = { directSharePost = it },
+                                onNavigateToStoryEditor = { uri -> onCreateStory(uri) },
                             )
                             directSharePost?.let { post ->
                                 PostDirectShareSheet(
@@ -470,8 +472,9 @@ fun VistaApp(
                                 onOpenLink = onOpenLink,
                             )
                         },
-                        storyCreate = { onClose, onStoryPublished ->
+                        storyCreate = { initialUri, onClose, onStoryPublished ->
                             ir.coffevista.vista_native.features.stories.ui.editor.StoryEditorScreen(
+                                initialMediaUri = initialUri,
                                 onClose = onClose,
                                 onStoryPublished = onStoryPublished,
                             )
@@ -514,7 +517,7 @@ fun VistaApp(
                                 onHashtagClick = onHashtagClick,
                             )
                         },
-                        ownProfile = { onPostClick, onSettingsClick, logout, onOpenFollowers, onOpenQrScanner, onEditProfile, onAddStory ->
+                        ownProfile = { onPostClick, onSettingsClick, logout, onOpenFollowers, onOpenQrScanner, onEditProfile, onAddStory, onReelClick ->
                             val postsViewModel = hiltViewModel<ProfilePostsViewModel>()
                             val postsState by postsViewModel.uiState.collectAsStateWithLifecycle()
                             LaunchedEffect(signedIn.context.userId) {
@@ -532,6 +535,7 @@ fun VistaApp(
                                 onPostsRefresh = postsViewModel::refresh,
                                 onPostsLoadMore = postsViewModel::loadMore,
                                 onPostClick = onPostClick,
+                                onReelClick = onReelClick,
                                 onLikeClick = postsViewModel::toggleLike,
                                 onSaveClick = postsViewModel::toggleSave,
                             )
@@ -639,7 +643,7 @@ fun VistaApp(
                         faqPage = { onBack ->
                             FAQScreen(onBack = onBack)
                         },
-                        postDetail = { onBack, onAuthorClick, onHashtagClick, onAppealClick ->
+                        postDetail = { onBack, onAuthorClick, onHashtagClick, onAppealClick, onNavigateToStoryEditor ->
                             var directSharePost by remember { mutableStateOf<FeedPost?>(null) }
                             val postDetailViewModel: PostDetailViewModel = hiltViewModel()
                             PostDetailScreen(
@@ -650,6 +654,7 @@ fun VistaApp(
                                 viewModel = postDetailViewModel,
                                 commentsViewModel = hiltViewModel<CommentsViewModel>(),
                                 onSendDirectMessage = { directSharePost = it },
+                                onNavigateToStoryEditor = onNavigateToStoryEditor,
                             )
                             directSharePost?.let { post ->
                                 PostDirectShareSheet(
@@ -660,7 +665,7 @@ fun VistaApp(
                                 )
                             }
                         },
-                        userProfile = { userId, onBack, onSelfProfile, onPostClick, onOpenFollowers, onOpenChat ->
+                        userProfile = { userId, onBack, onSelfProfile, onPostClick, onOpenFollowers, onOpenChat, onReelClick ->
                             val postsViewModel = hiltViewModel<ProfilePostsViewModel>()
                             val postsState by postsViewModel.uiState.collectAsStateWithLifecycle()
                             LaunchedEffect(userId) {
@@ -675,6 +680,7 @@ fun VistaApp(
                                 onPostsRefresh = postsViewModel::refresh,
                                 onPostsLoadMore = postsViewModel::loadMore,
                                 onPostClick = onPostClick,
+                                onReelClick = onReelClick,
                                 onLikeClick = postsViewModel::toggleLike,
                                 onSaveClick = postsViewModel::toggleSave,
                                 onMessage = onOpenChat?.let { openChat -> { openChat(userId) } },
@@ -745,6 +751,11 @@ fun VistaApp(
                                 title = title,
                                 onBack = onBack,
                                 restrictHost = "coffevista.ir",
+                                allowedPathPrefix = runCatching {
+                                    android.net.Uri.parse(url).path
+                                }.getOrNull().takeIf { path ->
+                                    path == "/game" || path?.startsWith("/game/") == true
+                                }?.let { "/game" },
                                 appBarColor = androidx.compose.ui.graphics.Color(0xFF0A3D6B),
                                 appBarForegroundColor = androidx.compose.ui.graphics.Color.White,
                                 useBackButton = true,

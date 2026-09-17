@@ -88,8 +88,15 @@ fun StoryEditorScreen(
     onClose: () -> Unit,
     onStoryPublished: () -> Unit,
     modifier: Modifier = Modifier,
+    initialMediaUri: Uri? = null,
     viewModel: StoryEditorViewModel = hiltViewModel(),
 ) {
+    LaunchedEffect(initialMediaUri) {
+        initialMediaUri?.let { uri ->
+            viewModel.onMediaSelected(uri, isVideo = false)
+        }
+    }
+
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
 
