@@ -73,6 +73,7 @@ interface ChatRepository {
     suspend fun refreshSuggestedUsers(): ChatResult<List<ChatUser>> = ChatResult.Success(emptyList())
     suspend fun searchUsers(query: String): ChatResult<List<ChatUser>>
     suspend fun createConversation(peerId: String, isSecret: Boolean = false): ChatResult<Conversation>
+    suspend fun findConversationByPeer(peerId: String, isSecret: Boolean): Conversation? = null
     fun observeProfileNotes(): Flow<List<ProfileNote>>
     suspend fun refreshProfileNotes(): ChatResult<Unit>
     suspend fun upsertOwnProfileNote(content: String): ChatResult<ProfileNote>
@@ -110,11 +111,18 @@ interface ChatRepository {
     suspend fun partnerProfile(userId: String): ChatResult<ChatPartnerProfile> =
         ChatResult.Failure("اطلاعات کاربر در دسترس نیست", false)
 
-    suspend fun sendText(conversationId: String, text: String): ChatResult<Message>
+    suspend fun ensureSecretChatHandshake(conversationId: String): ChatResult<Unit> =
+        ChatResult.Success(Unit)
+    suspend fun computeSecretSafetyNumber(conversationId: String): String? = null
+    suspend fun getSecretAutoDeleteSeconds(conversationId: String): Int = 0
+    suspend fun setSecretAutoDeleteSeconds(conversationId: String, seconds: Int): ChatResult<Unit> =
+        ChatResult.Success(Unit)
+
+    suspend fun sendText(conversationId: String, text: String, clientId: String? = null): ChatResult<Message>
     suspend fun sendSharedPost(conversationId: String, post: SharedPostDraft): ChatResult<Message> =
         ChatResult.Failure("ارسال پست در دسترس نیست", false)
-    suspend fun sendReply(conversationId: String, text: String, replyTo: Message): ChatResult<Message> =
-        sendText(conversationId, text)
+    suspend fun sendReply(conversationId: String, text: String, replyTo: Message, clientId: String? = null): ChatResult<Message> =
+        sendText(conversationId, text, clientId)
     suspend fun sendAttachment(conversationId: String, draft: ChatAttachmentDraft): ChatResult<Message>
     suspend fun sendRemoteGif(conversationId: String, url: String): ChatResult<Message>
     suspend fun retryMessage(conversationId: String, clientId: String): ChatResult<Message>

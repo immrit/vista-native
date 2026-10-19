@@ -8,10 +8,16 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaComponentSize
+
+val LocalBottomBarVisibility = compositionLocalOf<(Boolean) -> Unit> { {} }
+val LocalHomeTabClick = compositionLocalOf<kotlinx.coroutines.flow.SharedFlow<Unit>> {
+    kotlinx.coroutines.flow.MutableSharedFlow()
+}
 
 @Composable
 fun <T> VistaNavigationBar(

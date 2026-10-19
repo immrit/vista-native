@@ -27,6 +27,7 @@ Thumbs.db
 keystore.properties
 signing.properties
 secrets.properties
+key.properties
 secrets/
 .env
 .env.*

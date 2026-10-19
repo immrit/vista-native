@@ -2,11 +2,28 @@
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.Base64
 
 class ChatE2EETest {
+
+    @Test
+    fun `legacy encrypted payload shape requires nonce mac and ciphertext`() {
+        val valid = ByteArray(34)
+        valid[0] = 12
+        valid[13] = 16
+
+        assertTrue(hasLegacyEncryptedPayloadShape(valid))
+        assertFalse(hasLegacyEncryptedPayloadShape(ByteArray(30).also {
+            it[0] = 12
+            it[13] = 16
+        }))
+        assertFalse(hasLegacyEncryptedPayloadShape(valid.copyOf().also { it[0] = 8 }))
+        assertFalse(hasLegacyEncryptedPayloadShape(valid.copyOf().also { it[13] = 12 }))
+        assertFalse(hasLegacyEncryptedPayloadShape("ordinary Base64 text".toByteArray()))
+    }
 
     @Test
     fun `ecdh shared secret matches on both sides`() {

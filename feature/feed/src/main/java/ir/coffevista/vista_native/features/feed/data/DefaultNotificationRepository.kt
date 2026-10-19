@@ -55,7 +55,9 @@ class DefaultNotificationRepository @Inject constructor(
         }
 
         try {
+            android.util.Log.d("VistaNotification", "Fetching notifications page=$page refresh=$refresh")
             val response = api.getNotifications(limit = PageSize, offset = page * PageSize)
+            android.util.Log.d("VistaNotification", "Fetched ${response.notifications.size} notifications, hasMore=${response.hasMore}")
             val mapped = response.notifications.map(NotificationDto::toDomain)
             mutableNotifications.value = if (refresh) {
                 mapped
@@ -66,11 +68,13 @@ class DefaultNotificationRepository @Inject constructor(
             mutableHasMore.value = response.hasMore
             if (response.hasMore) page += 1
         } catch (error: HttpException) {
+            android.util.Log.e("VistaNotification", "HttpException: code=${error.code()} msg=${error.message()}", error)
             if (error.code() == 429) {
                 nextAllowedFetchAtMillis = System.currentTimeMillis() + RateLimitCooldownMillis
             }
             if (refresh) mutableNotifications.value = previous
-        } catch (_: Exception) {
+        } catch (error: Exception) {
+            android.util.Log.e("VistaNotification", "Exception fetching notifications: ${error.message}", error)
             if (refresh) mutableNotifications.value = previous
         } finally {
             mutableIsLoading.value = false

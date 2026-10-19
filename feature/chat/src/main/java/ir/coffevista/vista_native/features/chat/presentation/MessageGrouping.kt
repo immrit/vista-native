@@ -66,6 +66,17 @@ internal fun renderItemIndexForMessage(
 }
 internal fun visibleMessageDateEpochMillis(
     renderItems: List<MessageRenderItem>,
+    visibleIndices: List<Int>,
+): Long? {
+    if (renderItems.isEmpty() || visibleIndices.isEmpty()) return null
+    val topItemIndex = visibleIndices
+        .filter { it in renderItems.indices }
+        .maxOrNull() ?: return null
+    return renderItems[topItemIndex].oldest.createdAtEpochMillis
+}
+
+internal fun visibleMessageDateEpochMillis(
+    renderItems: List<MessageRenderItem>,
     firstVisibleItemIndex: Int,
 ): Long? = renderItems.getOrNull(firstVisibleItemIndex)?.primary?.createdAtEpochMillis
 

@@ -37,6 +37,17 @@ data class NotificationsResponseDto(
 )
 
 @Serializable
+data class NotificationSenderDto(
+    val username: String? = null,
+    @SerialName("full_name") val fullName: String? = null,
+    @SerialName("avatar_url") val avatarUrl: String? = null,
+    @SerialName("is_verified") val isVerified: Boolean = false,
+    @SerialName("user_is_verified") val userIsVerified: Boolean = false,
+    @SerialName("verification_type") val verificationType: String? = null,
+    val role: String? = null,
+)
+
+@Serializable
 data class NotificationDto(
     val id: String = "",
     @SerialName("sender_id") val senderId: String = "",
@@ -44,8 +55,8 @@ data class NotificationDto(
     val content: String = "",
     @SerialName("created_at") val createdAt: String = "",
     val type: String = "",
-    val username: String = "",
-    @SerialName("full_name") val fullName: String = "",
+    val username: String? = null,
+    @SerialName("full_name") val fullName: String? = null,
     @SerialName("user_is_verified") val userIsVerified: Boolean = false,
     @SerialName("is_verified") val isVerified: Boolean = false,
     @SerialName("avatar_url") val avatarUrl: String? = null,
@@ -58,7 +69,8 @@ data class NotificationDto(
     @SerialName("conversation_id") val conversationId: String? = null,
     @SerialName("follower_id") val followerId: String? = null,
     val deeplink: String? = null,
-    val metadata: Map<String, JsonElement> = emptyMap(),
+    val metadata: Map<String, JsonElement>? = null,
+    val sender: NotificationSenderDto? = null,
 )
 
 @Serializable
@@ -97,28 +109,66 @@ data class VistaNotification(
     val canonicalType: String get() = canonicalNotificationType(type)
 }
 
-fun NotificationDto.toDomain(): VistaNotification = VistaNotification(
-    id = id,
-    senderId = senderId,
-    recipientId = recipientId,
-    content = normalizeNotificationContent(content, type),
-    createdAt = createdAt,
-    type = canonicalNotificationType(type),
-    username = username.ifBlank { fullName.ifBlank { "کاربر" } },
-    fullName = fullName.ifBlank { username.ifBlank { "کاربر" } },
-    userIsVerified = userIsVerified || isVerified,
-    avatarUrl = avatarUrl,
-    postId = postId?.takeIf { it.isNotBlank() },
-    commentId = commentId?.takeIf { it.isNotBlank() },
-    parentCommentId = parentCommentId?.takeIf { it.isNotBlank() },
-    isRead = isRead,
-    verificationType = verificationType,
-    openScreen = openScreen,
-    conversationId = conversationId?.takeIf { it.isNotBlank() },
-    followerId = followerId?.takeIf { it.isNotBlank() },
-    deeplink = deeplink,
-    metadata = metadata.mapValues { (_, value) -> value.asLooseString() },
-)
+fun NotificationDto.toDomain(): VistaNotification {
+    val resolvedUsername = sender?.username?.takeIf { it.isNotBlank() }
+        ?: username?.takeIf { it.isNotBlank() }
+        ?: sender?.fullName?.takeIf { it.isNotBlank() }
+        ?: fullName?.takeIf { it.isNotBlank() }
+        ?: "کاربر"
+
+    val resolvedFullName = sender?.fullName?.takeIf { it.isNotBlank() }
+        ?: fullName?.takeIf { it.isNotBlank() }
+        ?: resolvedUsername
+
+    val resolvedAvatar = sender?.avatarUrl?.takeIf { it.isNotBlank() }
+        ?: avatarUrl?.takeIf { it.isNotBlank() }
+
+    val resolvedVerified = (sender?.isVerified == true) || (sender?.userIsVerified == true) || userIsVerified || isVerified
+    val resolvedVerificationType = sender?.verificationType?.takeIf { it.isNotBlank() } ?: verificationType
+
+    val canonicalType = canonicalNotificationType(type)
+    val resolvedContent = normalizeNotificationContent(content, canonicalType, resolvedUsername)
+
+    val meta = metadata?.mapValues { (_, value) -> value.asLooseString() } ?: emptyMap()
+    val resolvedPostId = postId?.takeIf { it.isNotBlank() }
+        ?: meta["post_id"]?.takeIf { it.isNotBlank() }
+        ?: meta["postId"]?.takeIf { it.isNotBlank() }
+
+    val resolvedCommentId = commentId?.takeIf { it.isNotBlank() }
+        ?: meta["comment_id"]?.takeIf { it.isNotBlank() }
+        ?: meta["commentId"]?.takeIf { it.isNotBlank() }
+
+    val resolvedConversationId = conversationId?.takeIf { it.isNotBlank() }
+        ?: meta["conversation_id"]?.takeIf { it.isNotBlank() }
+        ?: meta["conversationId"]?.takeIf { it.isNotBlank() }
+
+    val resolvedFollowerId = followerId?.takeIf { it.isNotBlank() }
+        ?: meta["follower_id"]?.takeIf { it.isNotBlank() }
+        ?: meta["followerId"]?.takeIf { it.isNotBlank() }
+
+    return VistaNotification(
+        id = id,
+        senderId = senderId,
+        recipientId = recipientId,
+        content = resolvedContent,
+        createdAt = createdAt,
+        type = canonicalType,
+        username = resolvedUsername,
+        fullName = resolvedFullName,
+        userIsVerified = resolvedVerified,
+        avatarUrl = resolvedAvatar,
+        postId = resolvedPostId,
+        commentId = resolvedCommentId,
+        parentCommentId = parentCommentId?.takeIf { it.isNotBlank() },
+        isRead = isRead,
+        verificationType = resolvedVerificationType,
+        openScreen = openScreen,
+        conversationId = resolvedConversationId,
+        followerId = resolvedFollowerId,
+        deeplink = deeplink,
+        metadata = meta,
+    )
+}
 
 fun canonicalNotificationType(rawType: String?): String {
     return when (rawType?.trim()?.lowercase().orEmpty()) {
@@ -152,18 +202,35 @@ fun notificationTypeMatchesFilter(notificationType: String, filterType: String?)
     }
 }
 
-private fun normalizeNotificationContent(raw: String, type: String): String {
+internal fun normalizeNotificationContent(raw: String, type: String, username: String = "کاربر"): String {
     val trimmed = raw.trim()
-    if (trimmed.isNotEmpty()) return trimmed
+    if (trimmed.isNotEmpty()) {
+        if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+            val contentMatch = Regex(""""(?:content|post_content)"\s*:\s*"([^"]+)"""").find(trimmed)
+            if (contentMatch != null) return contentMatch.groupValues[1]
+            val authorMatch = Regex(""""(?:authorName|post_author_name)"\s*:\s*"([^"]+)"""").find(trimmed)
+            if (authorMatch != null) return "پست اشتراک‌گذاری‌شده از ${authorMatch.groupValues[1]}"
+            return "یک پست به اشتراک گذاشته شد"
+        }
+        val cleanName = username.trim()
+        val stripped = if (cleanName.isNotBlank() && trimmed.startsWith(cleanName)) {
+            trimmed.removePrefix(cleanName).trimStart()
+        } else trimmed
+        if (stripped.isNotEmpty()) return stripped
+    }
     return when (canonicalNotificationType(type)) {
         "message" -> "پیام جدید"
-        "follow" -> "دنبال‌کننده جدید"
-        "follow_request" -> "درخواست دنبال کردن"
-        "follow_request_accepted" -> "درخواست دنبال‌کردن پذیرفته شد"
-        "like" -> "لایک جدید"
-        "comment" -> "نظر جدید"
-        "comment_reply" -> "پاسخ جدید"
-        "mention" -> "شما را تگ کرد"
+        "follow" -> "شما را دنبال کرد"
+        "follow_request" -> "درخواست دنبال‌کردن شما را ارسال کرد"
+        "follow_request_accepted" -> "درخواست دنبال‌کردن شما را پذیرفت"
+        "like" -> "پست شما را لایک کرد"
+        "comment" -> "روی پست شما نظر داد"
+        "comment_reply" -> "به نظر شما پاسخ داد"
+        "mention" -> "شما را در یک نظر تگ کرد"
+        "reaction" -> "به پیام شما واکنش نشان داد"
+        "suggest_follow" -> "پیشنهاد دنبال کردن"
+        "suggest_post" -> "پیشنهاد پست جدید"
+        "daily_suggestion_digest" -> "خلاصه پیشنهادهای امروز"
         else -> "اعلان جدید"
     }
 }

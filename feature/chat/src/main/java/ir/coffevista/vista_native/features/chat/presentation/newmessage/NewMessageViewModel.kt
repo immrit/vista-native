@@ -211,13 +211,19 @@ class NewMessageViewModel @Inject constructor(
     fun openUser(user: ChatUser, onOpened: (conversationId: String, title: String) -> Unit) {
         if (mutableState.value.openingUserId != null) return
         val secret = mutableState.value.isSecretMode
-        val existing = user.conversationId?.takeIf(String::isNotBlank)
-        if (!secret && existing != null) {
-            onOpened(existing, user.displayName)
+        val existingConversationId = user.conversationId?.takeIf(String::isNotBlank)
+        if (!secret && existingConversationId != null) {
+            onOpened(existingConversationId, user.displayName)
             return
         }
         viewModelScope.launch {
             mutableState.update { it.copy(openingUserId = user.id, error = null, canRetry = false) }
+            val existing = repository.findConversationByPeer(user.id, secret)
+            if (existing != null) {
+                mutableState.update { it.copy(openingUserId = null) }
+                onOpened(existing.id, existing.title.ifBlank { user.displayName })
+                return@launch
+            }
             when (val result = repository.createConversation(user.id, secret)) {
                 is ChatResult.Success -> {
                     mutableState.update { it.copy(openingUserId = null) }

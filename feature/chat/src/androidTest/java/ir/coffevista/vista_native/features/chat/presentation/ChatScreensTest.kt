@@ -211,6 +211,60 @@ class ChatScreensTest {
             assertEquals(1, retryCount)
         }
     }
+
+    @Test
+    fun sharedContentIsAnnouncedBeforeRecipientSelection() {
+        compose.setContent {
+            VistaTheme {
+                NewMessageScreen(
+                    state = NewMessageUiState(isLoading = false),
+                    onBack = {},
+                    sharedContentSummary = "۲ فایل همراه با متن",
+                    onQueryChanged = {},
+                    onSecretModeChanged = {},
+                    onUser = {},
+                )
+            }
+        }
+
+        compose.onNodeWithText(
+            "پس از انتخاب گیرنده، ۲ فایل همراه با متن برای بازبینی آماده می‌شود",
+        ).assertIsDisplayed()
+    }
+
+    @Test
+    fun sharedTextBecomesAComposerDraftExactlyOnceWithoutSending() {
+        var composerDraft: String? = null
+        var consumeCount = 0
+        var sendCount = 0
+        compose.setContent {
+            VistaTheme {
+                MessageDetailScreen(
+                    state = MessagesUiState(
+                        conversationId = "conversation",
+                        isInitialLoading = false,
+                    ),
+                    initialSharedContentId = "share-request",
+                    initialSharedText = "متن اشتراکی",
+                    onInitialSharedContentConsumed = { consumeCount += 1 },
+                    title = "گفتگو",
+                    onBack = {},
+                    onRefresh = {},
+                    onLoadOlder = {},
+                    onSend = { _, _ -> sendCount += 1 },
+                    onRetry = {},
+                    onComposerChanged = { composerDraft = it },
+                )
+            }
+        }
+
+        compose.runOnIdle {
+            assertEquals("متن اشتراکی", composerDraft)
+            assertEquals(1, consumeCount)
+            assertEquals(0, sendCount)
+        }
+    }
+
     @Test
     fun newGroupShowsRemovableSelectedMemberAndHonestLimit() {
         val member = ChatUser("peer", "peer", "Raha", null)

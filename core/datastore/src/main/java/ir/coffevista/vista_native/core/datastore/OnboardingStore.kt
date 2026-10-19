@@ -31,7 +31,7 @@ class ProtoOnboardingStore(
     }
 }
 
-internal const val CURRENT_SCHEMA_VERSION = 5
+internal const val CURRENT_SCHEMA_VERSION = 6
 internal const val CURRENT_ONBOARDING_VERSION = "1.0.0"
 
 internal fun isCurrentOnboardingCompletion(

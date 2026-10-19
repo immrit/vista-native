@@ -3,12 +3,15 @@ package ir.coffevista.vista_native.features.chat.presentation.messages
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import ir.coffevista.vista_native.core.security.SessionStore
 import ir.coffevista.vista_native.features.chat.domain.model.ChatAttachmentDraft
 import ir.coffevista.vista_native.features.chat.domain.model.ChatPartnerProfile
 import ir.coffevista.vista_native.features.chat.domain.model.ChatUser
 import ir.coffevista.vista_native.features.chat.domain.model.BlockStatus
 import ir.coffevista.vista_native.features.chat.domain.model.Conversation
 import ir.coffevista.vista_native.features.chat.domain.model.Message
+import ir.coffevista.vista_native.features.chat.domain.model.MessageContent
+import ir.coffevista.vista_native.features.chat.domain.model.MessageStatus
 import ir.coffevista.vista_native.features.chat.domain.model.ConversationType
 import ir.coffevista.vista_native.features.chat.domain.model.GroupInfo
 import ir.coffevista.vista_native.features.chat.domain.model.GroupMember
@@ -19,8 +22,11 @@ import ir.coffevista.vista_native.features.chat.domain.model.RealtimeConnectionS
 import ir.coffevista.vista_native.features.chat.domain.repository.ChatRepository
 import ir.coffevista.vista_native.features.chat.domain.repository.ChatResult
 import ir.coffevista.vista_native.features.chat.domain.repository.GifCatalog
+import java.util.UUID
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -66,11 +72,17 @@ data class MessagesUiState(
     val gifQuery: String = "",
     val isLoadingGifs: Boolean = false,
     val gifError: String? = null,
-)
+    val secretAutoDeleteSeconds: Int = 0,
+    val secretSafetyNumber: String? = null,
+    val isSafetyNumberLoading: Boolean = false,
+) {
+    val isSecret: Boolean get() = conversation?.type == ConversationType.SECRET
+}
 
 @HiltViewModel
 class MessagesViewModel @Inject constructor(
     private val repository: ChatRepository,
+    private val sessionStore: SessionStore? = null,
     private val gifCatalog: GifCatalog = EmptyGifCatalog,
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(MessagesUiState())
@@ -83,11 +95,16 @@ class MessagesViewModel @Inject constructor(
     private var gifSearchJob: Job? = null
     private var sharedMediaObserver: Job? = null
     private var downloadsObserver: Job? = null
+    private var readAcknowledgement: Job? = null
+    private var isConversationVisible = false
+    private var lastReadAttemptedMessageId: String? = null
     private var lastTypingAt = 0L
     private var lastRealtimeState = repository.realtimeState.value
     private var loadedGroupId: String? = null
     private var loadedBlockPeerId: String? = null
     private var loadedPartnerProfilePeerId: String? = null
+    private val autoDeleteJobs = java.util.concurrent.ConcurrentHashMap<String, Job>()
+    private val optimisticPendingMessages = java.util.concurrent.ConcurrentHashMap<String, Message>()
 
     init {
         viewModelScope.launch {
@@ -109,6 +126,10 @@ class MessagesViewModel @Inject constructor(
         groupUserSearchJob?.cancel()
         sharedMediaObserver?.cancel()
         downloadsObserver?.cancel()
+        readAcknowledgement?.cancel()
+        lastReadAttemptedMessageId = null
+        autoDeleteJobs.values.forEach { it.cancel() }
+        autoDeleteJobs.clear()
         loadedBlockPeerId = null
         loadedPartnerProfilePeerId = null
         mutableState.value = MessagesUiState(
@@ -117,18 +138,35 @@ class MessagesViewModel @Inject constructor(
         )
         observer = viewModelScope.launch {
             repository.observeMessages(conversationId).collectLatest { messages ->
+                val persistedClientIds = messages.map { it.clientId }.toSet()
+                persistedClientIds.forEach { optimisticPendingMessages.remove(it) }
+                val remainingPending = optimisticPendingMessages.values.toList()
+                val mergedMessages = remainingPending + messages.filterNot { m -> remainingPending.any { it.clientId == m.clientId } }
                 mutableState.update { current ->
                     current.copy(
-                        messages = messages,
-                        pinnedMessages = messages.filter(Message::isPinned),
+                        messages = mergedMessages,
+                        pinnedMessages = mergedMessages.filter(Message::isPinned),
                         isInitialLoading = false,
                     )
+                }
+                acknowledgeVisibleUnread()
+                val autoDelete = mutableState.value.secretAutoDeleteSeconds
+                if (autoDelete > 0) {
+                    scheduleSecretAutoDelete(mergedMessages, autoDelete)
                 }
             }
         }
         conversationObserver = viewModelScope.launch {
             repository.observeConversation(conversationId).collectLatest { conversation ->
                 mutableState.update { it.copy(conversation = conversation) }
+                if (conversation?.type == ConversationType.SECRET) {
+                    runCatching { repository.ensureSecretChatHandshake(conversationId) }
+                    val autoDelete = runCatching { repository.getSecretAutoDeleteSeconds(conversationId) }.getOrDefault(0)
+                    mutableState.update { it.copy(secretAutoDeleteSeconds = autoDelete) }
+                    if (autoDelete > 0) {
+                        scheduleSecretAutoDelete(mutableState.value.messages, autoDelete)
+                    }
+                }
                 if (conversation?.type == ConversationType.GROUP && loadedGroupId != conversationId) {
                     loadedGroupId = conversationId
                     loadGroupDetails()
@@ -157,8 +195,36 @@ class MessagesViewModel @Inject constructor(
         refresh()
         loadPinnedMessages()
         viewModelScope.launch {
-            repository.setConversationActive(conversationId, true)
+            if (isConversationVisible) repository.setConversationActive(conversationId, true)
+            acknowledgeVisibleUnread()
+        }
+    }
+
+    fun setConversationVisible(conversationId: String, visible: Boolean) {
+        if (mutableState.value.conversationId != conversationId) {
+            if (visible) isConversationVisible = true
+            return
+        }
+        if (isConversationVisible == visible) return
+        isConversationVisible = visible
+        if (!visible) lastReadAttemptedMessageId = null
+        viewModelScope.launch { repository.setConversationActive(conversationId, visible) }
+        if (visible) acknowledgeVisibleUnread()
+    }
+
+    private fun acknowledgeVisibleUnread() {
+        val current = mutableState.value
+        val conversationId = current.conversationId ?: return
+        if (!isConversationVisible || readAcknowledgement?.isActive == true) return
+        val newestUnread = current.messages.firstOrNull { !it.isMine && it.status != MessageStatus.READ } ?: return
+        if (newestUnread.clientId == lastReadAttemptedMessageId) return
+        lastReadAttemptedMessageId = newestUnread.clientId
+        readAcknowledgement = viewModelScope.launch {
             repository.markRead(conversationId)
+        }.also { job ->
+            job.invokeOnCompletion {
+                viewModelScope.launch { acknowledgeVisibleUnread() }
+            }
         }
     }
 
@@ -189,11 +255,22 @@ class MessagesViewModel @Inject constructor(
 
     fun startSecretChat(onOpened: (Conversation) -> Unit = {}) {
         val current = mutableState.value
-        val peerId = current.conversation?.peerId?.trim().orEmpty()
+        val peerId = current.conversation?.peerId?.trim()?.takeIf(String::isNotEmpty)
+            ?: current.partnerProfile?.userId?.trim()?.takeIf(String::isNotEmpty)
+            ?: ""
         if (peerId.isEmpty() || current.conversation?.type != ConversationType.PRIVATE) return
         viewModelScope.launch {
+            val existing = repository.findConversationByPeer(peerId, isSecret = true)
+            if (existing != null) {
+                withContext(Dispatchers.Main.immediate) {
+                    onOpened(existing)
+                }
+                return@launch
+            }
             when (val result = repository.createConversation(peerId, isSecret = true)) {
-                is ChatResult.Success -> onOpened(result.value)
+                is ChatResult.Success -> withContext(Dispatchers.Main.immediate) {
+                    onOpened(result.value)
+                }
                 is ChatResult.Failure -> mutableState.update { it.copy(error = result.message) }
             }
         }
@@ -242,23 +319,98 @@ class MessagesViewModel @Inject constructor(
 
     fun send(text: String, onAccepted: () -> Unit) {
         val conversationId = mutableState.value.conversationId ?: return
-        if (text.isBlank()) return
+        val trimmed = text.trim()
+        if (trimmed.isBlank()) return
         onAccepted()
+        val clientId = UUID.randomUUID().toString()
+        val myUserId = sessionStore?.read()?.userId
+            ?: mutableState.value.messages.firstOrNull { it.isMine }?.senderId.orEmpty()
+        val optimistic = Message(
+            accountId = myUserId,
+            conversationId = conversationId,
+            clientId = clientId,
+            serverId = null,
+            senderId = myUserId,
+            content = MessageContent.Text(trimmed),
+            createdAtEpochMillis = System.currentTimeMillis(),
+            status = MessageStatus.PENDING,
+            isMine = true,
+        )
+        optimisticPendingMessages[clientId] = optimistic
+        mutableState.update { current ->
+            current.copy(
+                messages = listOf(optimistic) + current.messages.filterNot { it.clientId == clientId },
+                error = null,
+            )
+        }
         viewModelScope.launch {
-            if (repository.sendText(conversationId, text) is ChatResult.Failure) {
-                // The failed optimistic row is the actionable error surface.
+            when (val result = repository.sendText(conversationId, trimmed, clientId)) {
+                is ChatResult.Failure -> {
+                    optimisticPendingMessages.remove(clientId)
+                    mutableState.update { current ->
+                        current.copy(
+                            messages = current.messages.map {
+                                if (it.clientId == clientId) it.copy(status = MessageStatus.FAILED) else it
+                            },
+                            error = result.message,
+                        )
+                    }
+                }
+                is ChatResult.Success -> Unit
             }
         }
     }
 
     fun sendReply(text: String, replyTo: Message, onAccepted: () -> Unit) {
         val conversationId = mutableState.value.conversationId ?: return
-        if (text.isBlank()) return
+        val trimmed = text.trim()
+        if (trimmed.isBlank()) return
         onAccepted()
+        val clientId = UUID.randomUUID().toString()
+        val myUserId = sessionStore?.read()?.userId
+            ?: mutableState.value.messages.firstOrNull { it.isMine }?.senderId.orEmpty()
+        val replyContent = when (val c = replyTo.content) {
+            is MessageContent.Text -> c.value
+            is MessageContent.Structured -> c.payload
+            MessageContent.Deleted -> "این پیام حذف شده است"
+            MessageContent.EncryptedUnavailable -> "پیام محرمانه"
+        }
+        val optimistic = Message(
+            accountId = myUserId,
+            conversationId = conversationId,
+            clientId = clientId,
+            serverId = null,
+            senderId = myUserId,
+            content = MessageContent.Text(trimmed),
+            createdAtEpochMillis = System.currentTimeMillis(),
+            status = MessageStatus.PENDING,
+            replyToMessageId = replyTo.serverId ?: replyTo.clientId,
+            replyToContent = replyContent,
+            replyToSenderName = if (replyTo.isMine) "شما" else mutableState.value.conversation?.title.orEmpty().ifBlank { "کاربر" },
+            replyToKind = replyTo.attachment?.kind?.name?.lowercase() ?: "text",
+            isMine = true,
+        )
+        optimisticPendingMessages[clientId] = optimistic
+        mutableState.update { current ->
+            current.copy(
+                messages = listOf(optimistic) + current.messages.filterNot { it.clientId == clientId },
+                error = null,
+            )
+        }
         viewModelScope.launch {
-            when (val result = repository.sendReply(conversationId, text, replyTo)) {
+            when (val result = repository.sendReply(conversationId, trimmed, replyTo, clientId)) {
+                is ChatResult.Failure -> {
+                    optimisticPendingMessages.remove(clientId)
+                    mutableState.update { current ->
+                        current.copy(
+                            messages = current.messages.map {
+                                if (it.clientId == clientId) it.copy(status = MessageStatus.FAILED) else it
+                            },
+                            error = result.message,
+                        )
+                    }
+                }
                 is ChatResult.Success -> Unit
-                is ChatResult.Failure -> mutableState.update { it.copy(error = result.message) }
             }
         }
     }
@@ -390,6 +542,14 @@ class MessagesViewModel @Inject constructor(
     }
 
     fun delete(message: Message, forEveryone: Boolean) {
+        val targetId = message.serverId ?: message.clientId
+        optimisticPendingMessages.remove(message.clientId)
+        mutableState.update { current ->
+            current.copy(
+                messages = current.messages.filterNot { (it.serverId ?: it.clientId) == targetId },
+                pinnedMessages = current.pinnedMessages.filterNot { (it.serverId ?: it.clientId) == targetId },
+            )
+        }
         viewModelScope.launch {
             val result = repository.deleteMessage(message, forEveryone)
             if (result is ChatResult.Failure) {
@@ -645,7 +805,71 @@ class MessagesViewModel @Inject constructor(
         }
     }
 
+    fun setSecretAutoDelete(seconds: Int) {
+        val conversationId = mutableState.value.conversationId ?: return
+        viewModelScope.launch {
+            repository.setSecretAutoDeleteSeconds(conversationId, seconds)
+            mutableState.update { it.copy(secretAutoDeleteSeconds = seconds) }
+            scheduleSecretAutoDelete(mutableState.value.messages, seconds)
+        }
+    }
+
+    fun computeSafetyNumber(onResult: (String?) -> Unit = {}) {
+        val conversationId = mutableState.value.conversationId ?: return
+        viewModelScope.launch {
+            mutableState.update { it.copy(isSafetyNumberLoading = true) }
+            val number = repository.computeSecretSafetyNumber(conversationId)
+            mutableState.update { it.copy(isSafetyNumberLoading = false, secretSafetyNumber = number) }
+            onResult(number)
+        }
+    }
+
+    private fun scheduleSecretAutoDelete(messages: List<Message>, seconds: Int) {
+        if (seconds <= 0) {
+            autoDeleteJobs.values.forEach { it.cancel() }
+            autoDeleteJobs.clear()
+            return
+        }
+        val now = System.currentTimeMillis()
+        val currentIds = messages.mapTo(mutableSetOf()) { it.serverId ?: it.clientId }
+        val iterator = autoDeleteJobs.entries.iterator()
+        while (iterator.hasNext()) {
+            val entry = iterator.next()
+            if (!currentIds.contains(entry.key)) {
+                entry.value.cancel()
+                iterator.remove()
+            }
+        }
+
+        for (message in messages) {
+            val targetId = message.serverId ?: message.clientId
+            if (message.status == MessageStatus.PENDING || message.status == MessageStatus.FAILED || autoDeleteJobs.containsKey(targetId)) continue
+            val messageTime = message.createdAtEpochMillis
+            val expiresAt = messageTime + seconds * 1000L
+            val delayMs = expiresAt - now
+            if (delayMs <= 0L) {
+                viewModelScope.launch {
+                    runCatching { repository.deleteMessage(message, forEveryone = true) }
+                }
+            } else {
+                autoDeleteJobs[targetId] = viewModelScope.launch {
+                    try {
+                        delay(delayMs)
+                        autoDeleteJobs.remove(targetId)
+                        runCatching { repository.deleteMessage(message, forEveryone = true) }
+                    } catch (_: kotlinx.coroutines.CancellationException) {
+                        // ignore cancellation
+                    } catch (_: Exception) {
+                        // ignore failures
+                    }
+                }
+            }
+        }
+    }
+
     override fun onCleared() {
+        autoDeleteJobs.values.forEach { it.cancel() }
+        autoDeleteJobs.clear()
         mutableState.value.conversationId?.let { conversationId ->
             viewModelScope.launch { repository.setConversationActive(conversationId, false) }
         }

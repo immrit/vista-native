@@ -7,7 +7,7 @@ import retrofit2.http.Body
 import retrofit2.http.POST
 
 interface ChangePasswordApi {
-    @POST("v1/change-password")
+    @POST("v1/auth/change-password")
     suspend fun changePassword(@Body request: ChangePasswordRequestDto): Response<Unit>
 }
 

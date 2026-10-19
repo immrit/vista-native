@@ -111,8 +111,11 @@ class VistaNotificationManager @Inject constructor(
             action = Intent.ACTION_VIEW
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
             putExtra(EXTRA_NOTIFICATION_TYPE, TYPE_CHAT)
+            putExtra("type", TYPE_CHAT)
             putExtra(EXTRA_CONVERSATION_ID, conversationId)
+            putExtra("conversation_id", conversationId)
             putExtra(EXTRA_PEER_ID, peerId)
+            putExtra("peer_id", peerId)
         }
 
         val pendingIntent = PendingIntent.getActivity(
@@ -157,15 +160,26 @@ class VistaNotificationManager @Inject constructor(
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
             if (postId != null) {
                 putExtra(EXTRA_NOTIFICATION_TYPE, TYPE_POST)
+                putExtra("type", TYPE_POST)
                 putExtra(EXTRA_POST_ID, postId)
+                putExtra("post_id", postId)
             } else if (storyId != null) {
                 putExtra(EXTRA_NOTIFICATION_TYPE, TYPE_STORY)
+                putExtra("type", TYPE_STORY)
                 putExtra(EXTRA_STORY_ID, storyId)
+                putExtra("story_id", storyId)
             } else {
                 putExtra(EXTRA_NOTIFICATION_TYPE, TYPE_SOCIAL)
+                putExtra("type", TYPE_SOCIAL)
             }
-            userId?.let { putExtra(EXTRA_USER_ID, it) }
-            commentId?.let { putExtra(EXTRA_COMMENT_ID, it) }
+            userId?.let {
+                putExtra(EXTRA_USER_ID, it)
+                putExtra("user_id", it)
+            }
+            commentId?.let {
+                putExtra(EXTRA_COMMENT_ID, it)
+                putExtra("comment_id", it)
+            }
         }
 
         val pendingIntent = PendingIntent.getActivity(

@@ -54,7 +54,7 @@ class FeedViewModelTest {
                 override suspend fun getStoryViews(storyId: String, limit: Int, offset: Int) = ir.coffevista.vista_native.features.stories.domain.StoryViewsResponseDto()
                 override suspend fun reactToStory(storyId: String, request: ir.coffevista.vista_native.features.stories.domain.StoryReactRequestDto) = Unit
                 override suspend fun replyToStory(storyId: String, request: ir.coffevista.vista_native.features.stories.domain.StoryReplyRequestDto) = Unit
-                override suspend fun votePoll(storyId: String, request: ir.coffevista.vista_native.features.stories.domain.StoryVoteRequestDto) = Unit
+                override suspend fun votePoll(storyId: String, elementId: String, request: ir.coffevista.vista_native.features.stories.domain.StoryVoteRequestDto) = Unit
             },
             dispatcher,
         )

@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Poll
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.TextFields
@@ -89,11 +90,18 @@ fun StoryEditorScreen(
     onStoryPublished: () -> Unit,
     modifier: Modifier = Modifier,
     initialMediaUri: Uri? = null,
+    initialMediaMimeType: String? = null,
+    initialSharedContentId: String? = null,
+    onInitialSharedContentConsumed: (String) -> Unit = {},
     viewModel: StoryEditorViewModel = hiltViewModel(),
 ) {
-    LaunchedEffect(initialMediaUri) {
+    LaunchedEffect(initialSharedContentId, initialMediaUri, initialMediaMimeType) {
         initialMediaUri?.let { uri ->
-            viewModel.onMediaSelected(uri, isVideo = false)
+            viewModel.onMediaSelected(
+                uri,
+                isVideo = initialMediaMimeType?.startsWith("video/", ignoreCase = true) == true,
+            )
+            initialSharedContentId?.let(onInitialSharedContentConsumed)
         }
     }
 
@@ -118,6 +126,7 @@ fun StoryEditorScreen(
 
     var showLocationDialog by remember { mutableStateOf(false) }
     var locationName by remember { mutableStateOf("") }
+    var showMusicPickerSheet by remember { mutableStateOf(false) }
     var showCloseFriendsDialog by remember { mutableStateOf(false) }
     var showDiscardDialog by remember { mutableStateOf(false) }
     val hasUnsavedChanges = uiState.mediaUri != null || uiState.elements.isNotEmpty()
@@ -316,7 +325,7 @@ fun StoryEditorScreen(
                     // Interactive Elements
                     StoryElementsOverlay(
                         elements = uiState.elements,
-                        onPollVote = {},
+                        onPollVote = { _, _ -> },
                         onLinkClick = {},
                         onMentionClick = {},
                     )
@@ -510,6 +519,10 @@ fun StoryEditorScreen(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceAround,
                         ) {
+                            StickerOption(icon = Icons.Default.MusicNote, label = "موزیک") {
+                                showStickerSheet = false
+                                showMusicPickerSheet = true
+                            }
                             StickerOption(icon = Icons.Default.Poll, label = "نظرسنجی") {
                                 showStickerSheet = false
                                 showPollDialog = true
@@ -530,6 +543,18 @@ fun StoryEditorScreen(
                         Spacer(modifier = Modifier.height(24.dp))
                     }
                 }
+            }
+
+            // Music Picker Bottom Sheet
+            if (showMusicPickerSheet) {
+                MusicPickerBottomSheet(
+                    musicRepository = viewModel.musicRepository,
+                    onMusicSelected = { track ->
+                        viewModel.addMusicElement(track)
+                        showMusicPickerSheet = false
+                    },
+                    onDismiss = { showMusicPickerSheet = false },
+                )
             }
 
             // Poll Dialog

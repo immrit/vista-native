@@ -66,6 +66,7 @@ class MessageContextActionPolicyTest {
 
         assertFalse(policy.canForward)
         assertFalse(policy.canTogglePinned)
+        assertFalse(policy.canCopy)
         assertTrue(policy.canReply)
         assertTrue(policy.canReact)
     }

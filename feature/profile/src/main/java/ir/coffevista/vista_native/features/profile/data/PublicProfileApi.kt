@@ -15,7 +15,7 @@ interface PublicProfileApi {
     @GET("v1/profiles/by-username/{username}")
     suspend fun fetchProfileByUsername(
         @Path("username") username: String,
-    ): Response<PublicProfileDto> = fetchPublicProfile(username)
+    ): Response<PublicProfileDto>
 
     @POST("v1/me/follow")
     suspend fun follow(
@@ -32,12 +32,12 @@ interface PublicProfileApi {
         @Path("userId") userId: String,
         @retrofit2.http.Query("limit") limit: Int = 30,
         @retrofit2.http.Query("offset") offset: Int = 0,
-    ): Response<FollowListResponseDto> = Response.success(FollowListResponseDto())
+    ): Response<FollowListResponseDto>
 
     @GET("v1/profiles/following/{userId}")
     suspend fun getFollowing(
         @Path("userId") userId: String,
         @retrofit2.http.Query("limit") limit: Int = 30,
         @retrofit2.http.Query("offset") offset: Int = 0,
-    ): Response<FollowListResponseDto> = Response.success(FollowListResponseDto())
+    ): Response<FollowListResponseDto>
 }

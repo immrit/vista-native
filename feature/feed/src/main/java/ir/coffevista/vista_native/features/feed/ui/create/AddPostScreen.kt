@@ -121,6 +121,8 @@ fun AddPostScreen(
     modifier: Modifier = Modifier,
     preloadedText: String? = null,
     preloadedMediaUris: List<Uri> = emptyList(),
+    preloadedRequestId: String? = null,
+    onPreloadedConsumed: (String) -> Unit = {},
     viewModel: AddPostViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -132,8 +134,9 @@ fun AddPostScreen(
     var selectedImageIndex by remember { mutableIntStateOf(0) }
 
     // Share intent / preloaded media
-    LaunchedEffect(preloadedText, preloadedMediaUris) {
+    LaunchedEffect(preloadedRequestId, preloadedText, preloadedMediaUris) {
         viewModel.initPreloaded(preloadedText, preloadedMediaUris)
+        preloadedRequestId?.let(onPreloadedConsumed)
     }
 
     // Camera launcher setup

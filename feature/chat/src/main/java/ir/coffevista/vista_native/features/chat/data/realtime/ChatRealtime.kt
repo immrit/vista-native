@@ -3,6 +3,7 @@ package ir.coffevista.vista_native.features.chat.data.realtime
 import android.util.Log
 import ir.coffevista.vista_native.features.chat.data.remote.ConversationDto
 import ir.coffevista.vista_native.features.chat.data.remote.MessageDto
+import ir.coffevista.vista_native.features.chat.data.remote.ReactionUpdateDto
 import ir.coffevista.vista_native.features.chat.data.mapper.epochMillisOrNull
 import ir.coffevista.vista_native.features.chat.domain.model.ReadReceipt
 import ir.coffevista.vista_native.features.chat.domain.model.RealtimeConnectionState
@@ -15,7 +16,9 @@ import kotlin.random.Random
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -84,6 +87,12 @@ sealed interface RealtimeEvent {
         override val eventId: String?,
         override val conversationId: String?,
         val receipt: ReadReceipt,
+    ) : RealtimeEvent
+
+    data class ReactionUpdated(
+        override val eventId: String?,
+        override val conversationId: String?,
+        val update: ReactionUpdateDto,
     ) : RealtimeEvent
 
     data class Connected(override val eventId: String? = null) : RealtimeEvent {
@@ -159,6 +168,11 @@ object RealtimeEventParser {
                     ),
                 )
             }
+            "reaction_updated" -> RealtimeEvent.ReactionUpdated(
+                envelope.event_id,
+                conversationId,
+                json.decodeFromJsonElement(data),
+            )
             else -> RealtimeEvent.Unknown(envelope.type, envelope.event_id, conversationId)
         }
     }.getOrNull()
@@ -214,6 +228,36 @@ class OkHttpChatWebSocketFactory(
     private val callFactory: PolicyAwareInternalCallFactory,
 ) : ChatWebSocketFactory {
     override suspend fun connect(url: String, headers: Map<String, String>): ChatSocket {
+        // Strip Sec-WebSocket-Protocol from raw websocket headers if present because
+        // sending full JWTs as protocol tokens violates token syntax and triggers 502 on Nginx.
+        val cleanHeaders = headers.filterKeys { !it.equals("Sec-WebSocket-Protocol", ignoreCase = true) }
+
+        // 1. Try primary websocket endpoint: /v1/chat/ws
+        val firstError = try {
+            return connectWebSocket(url, cleanHeaders)
+        } catch (t: Throwable) {
+            t
+        }
+
+        // 2. Try alternative websocket endpoint: /ws
+        val altWsUrl = url.replace("/v1/chat/ws", "/ws")
+        if (altWsUrl != url) {
+            try {
+                return connectWebSocket(altWsUrl, cleanHeaders)
+            } catch (_: Throwable) {
+                // Ignore and proceed to SSE
+            }
+        }
+
+        // 3. Fall back to SSE stream: /v1/chat/stream
+        Log.w(
+            "VistaChatRealtime",
+            "WebSocket connection failed (${firstError.message}), falling back to SSE stream...",
+        )
+        return connectSse(url, headers)
+    }
+
+    private suspend fun connectWebSocket(url: String, headers: Map<String, String>): ChatSocket {
         val opened = CompletableDeferred<Unit>()
         val channel = Channel<String>(capacity = Channel.BUFFERED)
         lateinit var socket: WebSocket
@@ -221,13 +265,20 @@ class OkHttpChatWebSocketFactory(
             headers.forEach { (name, value) -> header(name, value) }
         }.build()
         socket = callFactory.newWebSocket(request, object : WebSocketListener() {
-            override fun onOpen(webSocket: WebSocket, response: Response) { opened.complete(Unit) }
+            override fun onOpen(webSocket: WebSocket, response: Response) {
+                Log.i("VistaChatRealtime", "WebSocket opened successfully proto=${response.protocol} code=${response.code} url=$url")
+                opened.complete(Unit)
+            }
             override fun onMessage(webSocket: WebSocket, text: String) { channel.trySend(text) }
-            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) { channel.close() }
+            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                Log.i("VistaChatRealtime", "WebSocket closed code=$code reason=$reason")
+                channel.close()
+            }
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                val bodySnippet = runCatching { response?.peekBody(1024)?.string() }.getOrNull()
                 Log.w(
                     "VistaChatRealtime",
-                    "WebSocket failure type=${t.javaClass.simpleName} cause=${t.cause?.javaClass?.simpleName} http=${response?.code}",
+                    "WebSocket failure url=$url type=${t.javaClass.simpleName} msg=${t.message} cause=${t.cause?.javaClass?.simpleName} http=${response?.code} proto=${response?.protocol} body=$bodySnippet",
                 )
                 if (!opened.isCompleted) {
                     opened.completeExceptionally(ChatSocketOpenException(response?.code, t))
@@ -240,6 +291,82 @@ class OkHttpChatWebSocketFactory(
             override val incoming: Flow<String> = channel.receiveAsFlow()
             override suspend fun close() {
                 socket.close(1000, null)
+                channel.close()
+            }
+        }
+    }
+
+    private suspend fun connectSse(url: String, headers: Map<String, String>): ChatSocket {
+        val token = headers["Authorization"]?.removePrefix("Bearer ")?.trim().orEmpty()
+        var sseUrl = url
+            .replace("/v1/chat/ws", "/v1/chat/stream")
+            .replace("/ws", "/v1/chat/stream")
+            .replaceFirst("wss://", "https://")
+            .replaceFirst("ws://", "http://")
+        if (token.isNotEmpty() && !sseUrl.contains("token=")) {
+            sseUrl += (if (sseUrl.contains("?")) "&" else "?") + "token=$token"
+        }
+        val opened = CompletableDeferred<Unit>()
+        val channel = Channel<String>(capacity = Channel.BUFFERED)
+        val request = Request.Builder()
+            .url(sseUrl)
+            .apply {
+                headers.forEach { (name, value) ->
+                    // Exclude Sec-WebSocket-* headers for SSE
+                    if (!name.startsWith("Sec-WebSocket", ignoreCase = true)) {
+                        header(name, value)
+                    }
+                }
+                header("Accept", "text/event-stream")
+                header("Cache-Control", "no-cache")
+            }
+            .build()
+
+        val call = callFactory.newStreamCall(request)
+        val job = CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val response = call.execute()
+                if (!response.isSuccessful) {
+                    val code = response.code
+                    val body = runCatching { response.peekBody(512).string() }.getOrNull()
+                    Log.w("VistaChatRealtime", "SSE stream failed http=$code body=$body")
+                    if (!opened.isCompleted) {
+                        opened.completeExceptionally(ChatSocketOpenException(code, IOException("SSE HTTP $code: $body")))
+                    }
+                    response.close()
+                    channel.close(IOException("SSE HTTP $code"))
+                    return@launch
+                }
+                Log.i("VistaChatRealtime", "SSE stream connected successfully! code=${response.code}")
+                opened.complete(Unit)
+                response.body?.source()?.use { source ->
+                    while (!source.exhausted() && isActive) {
+                        val line = source.readUtf8Line() ?: break
+                        val trimmed = line.trim()
+                        if (trimmed.startsWith("data:")) {
+                            val data = trimmed.removePrefix("data:").trim()
+                            if (data.isNotBlank()) {
+                                channel.trySend(data)
+                            }
+                        }
+                    }
+                }
+            } catch (t: Throwable) {
+                if (!opened.isCompleted) {
+                    opened.completeExceptionally(ChatSocketOpenException(null, t))
+                }
+                channel.close(t)
+            } finally {
+                call.cancel()
+                channel.close()
+            }
+        }
+        opened.await()
+        return object : ChatSocket {
+            override val incoming: Flow<String> = channel.receiveAsFlow()
+            override suspend fun close() {
+                job.cancel()
+                call.cancel()
                 channel.close()
             }
         }
@@ -258,9 +385,15 @@ class ChatRealtimeCoordinator(
     private val mutableEvents = MutableSharedFlow<RealtimeEvent>(extraBufferCapacity = 64)
     private var runner: Job? = null
     private var activeSocket: ChatSocket? = null
+    private var syncHandler: (suspend () -> Unit)? = null
+    private var pollingJob: Job? = null
 
     val state: StateFlow<RealtimeConnectionState> = mutableState.asStateFlow()
     val events = mutableEvents.asSharedFlow()
+
+    fun setSyncHandler(handler: suspend () -> Unit) {
+        syncHandler = handler
+    }
 
     fun start() {
         if (runner?.isActive == true) return
@@ -268,43 +401,81 @@ class ChatRealtimeCoordinator(
             combine(sessionProvider.account, foreground) { account, active -> account to active }
                 .collectLatest { (account, active) ->
                     when {
-                        account == null -> mutableState.value = RealtimeConnectionState.DISCONNECTED
-                        !active -> mutableState.value = RealtimeConnectionState.PAUSED
-                        else -> connectionLoop(account)
+                        account == null -> {
+                            stopPolling()
+                            mutableState.value = RealtimeConnectionState.DISCONNECTED
+                        }
+                        !active -> {
+                            mutableState.value = RealtimeConnectionState.PAUSED
+                        }
+                        else -> {
+                            connectionLoop(account)
+                        }
                     }
                 }
         }
     }
 
-    suspend fun setForeground(active: Boolean) { foreground.emit(active) }
+    suspend fun setForeground(active: Boolean) {
+        foreground.emit(active)
+        if (active && pollingJob != null) {
+            scope.launch {
+                runCatching { syncHandler?.invoke() }
+            }
+        }
+    }
 
     suspend fun stop() {
         runner?.cancel()
         runner = null
+        stopPolling()
         activeSocket?.close()
         activeSocket = null
         mutableState.value = RealtimeConnectionState.DISCONNECTED
     }
 
+    private fun startPolling() {
+        if (pollingJob?.isActive == true) return
+        pollingJob = scope.launch {
+            // Immediate sync when entering polling fallback mode
+            runCatching { syncHandler?.invoke() }
+            while (isActive) {
+                delay(8_000L) // Poll every 8 seconds while in foreground
+                if (foreground.value && sessionProvider.account.value != null) {
+                    runCatching { syncHandler?.invoke() }
+                }
+            }
+        }
+    }
+
+    private fun stopPolling() {
+        pollingJob?.cancel()
+        pollingJob = null
+    }
+
     private suspend fun connectionLoop(account: ChatAccount) {
         val deduplicator = RealtimeEventDeduplicator()
         var attempt = 0
+        var isFallbackPolling = false
+
         while (true) {
             var refreshedSession = false
             try {
                 val currentAccount = sessionProvider.account.value ?: return
-                mutableState.value = if (attempt == 0) {
-                    RealtimeConnectionState.CONNECTING
-                } else {
-                    RealtimeConnectionState.RECONNECTING
+                if (!isFallbackPolling) {
+                    mutableState.value = if (attempt == 0) {
+                        RealtimeConnectionState.CONNECTING
+                    } else {
+                        RealtimeConnectionState.RECONNECTING
+                    }
+                    mutableState.value = RealtimeConnectionState.AUTHENTICATING
                 }
-                mutableState.value = RealtimeConnectionState.AUTHENTICATING
                 val socket = socketFactory.connect(
                     url = internalBaseUrl.toChatWebSocketUrl(),
-                    headers = mapOf(
-                        "Authorization" to "Bearer ${currentAccount.accessToken}",
-                    ),
+                    headers = currentAccount.realtimeHeaders(),
                 )
+                stopPolling()
+                isFallbackPolling = false
                 activeSocket = socket
                 mutableState.value = RealtimeConnectionState.CONNECTED
                 attempt = 0
@@ -317,15 +488,22 @@ class ChatRealtimeCoordinator(
             } catch (failure: Throwable) {
                 Log.w(
                     "VistaChatRealtime",
-                    "Reconnect type=${failure.javaClass.simpleName} cause=${failure.cause?.javaClass?.simpleName}",
+                    "Realtime stream failure (${failure.javaClass.simpleName}: ${failure.message}), checking fallback...",
                 )
                 if (failure is ChatSocketOpenException && failure.statusCode == 401) {
                     refreshedSession = sessionProvider.refresh()
                 }
-                mutableState.value = if (sessionProvider.account.value == null) {
-                    RealtimeConnectionState.FAILED
+                if (sessionProvider.account.value == null) {
+                    stopPolling()
+                    isFallbackPolling = false
+                    mutableState.value = RealtimeConnectionState.FAILED
                 } else {
-                    RealtimeConnectionState.RECONNECTING
+                    // Gateway error (502, 503, 504) or failed handshake:
+                    // Server streaming is currently unavailable, switch to Fallback Polling.
+                    // Keep mutableState as CONNECTED so the UI is NOT stuck in "در حال اتصال..."
+                    isFallbackPolling = true
+                    mutableState.value = RealtimeConnectionState.CONNECTED
+                    startPolling()
                 }
             } finally {
                 activeSocket?.close()
@@ -335,7 +513,13 @@ class ChatRealtimeCoordinator(
                 attempt = 0
                 continue
             }
-            delay(reconnectPolicy.delayMillis(attempt++))
+            val delayMs = if (isFallbackPolling) {
+                // In fallback polling mode, check the websocket in the background every 45s
+                45_000L
+            } else {
+                reconnectPolicy.delayMillis(attempt++)
+            }
+            delay(delayMs)
         }
     }
 
@@ -346,3 +530,12 @@ class ChatRealtimeCoordinator(
         return "$normalized/v1/chat/ws"
     }
 }
+
+internal fun ChatAccount.realtimeHeaders(): Map<String, String> = mapOf(
+    "Authorization" to "Bearer $accessToken",
+    // Some reverse proxies drop Authorization during an HTTP Upgrade. The
+    // backend deliberately accepts the same token as the second negotiated
+    // WebSocket subprotocol, without exposing it in the URL.
+    "Sec-WebSocket-Protocol" to "Authorization, $accessToken",
+    "X-Device-ID" to deviceId,
+)

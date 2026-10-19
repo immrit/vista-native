@@ -45,7 +45,11 @@ object OnboardingStoreFactory {
         context: Context,
         applicationScope: CoroutineScope,
         dispatchers: DispatcherProvider,
-    ): DataStore<AppPreferences> = DataStoreFactory.create(
+    ): DataStore<AppPreferences> {
+        // Check before DataStore creates its file. Existing Native preferences
+        // always win over an older Flutter snapshot when both are present.
+        val nativePreferencesExisted = context.dataStoreFile(DATASTORE_FILE_NAME).exists()
+        return DataStoreFactory.create(
             serializer = AppPreferencesSerializer,
             corruptionHandler = ReplaceFileCorruptionHandler {
                 defaultAppPreferences()
@@ -56,11 +60,13 @@ object OnboardingStoreFactory {
                     sharedPreferencesName = LEGACY_SHARED_PREFERENCES,
                     migrate = ::migrateLegacyOnboarding,
                 ),
+                FlutterMediaSettingsMigration(context, nativePreferencesExisted),
                 AppPreferencesSchemaMigration(),
             ),
             scope = applicationScope + dispatchers.io,
             produceFile = { context.dataStoreFile(DATASTORE_FILE_NAME) },
         )
+    }
 
     private const val DATASTORE_FILE_NAME = "vista_app_preferences.pb"
 }

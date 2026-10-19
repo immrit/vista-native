@@ -64,9 +64,17 @@ data class StoryMention(
 )
 
 @Serializable
+data class StoryMusic(
+    @SerialName("music_url") val musicUrl: String,
+    val title: String,
+    val artist: String,
+    @SerialName("cover_url") val coverUrl: String? = null,
+)
+
+@Serializable
 data class StoryElement(
     val id: String,
-    val type: String, // "text", "poll", "question", "mention", "location", "link", "drawing"
+    val type: String, // "text", "poll", "question", "mention", "location", "link", "drawing", "music"
     val content: String? = null,
     val x: Float = 0f,
     val y: Float = 0f,
@@ -78,6 +86,7 @@ data class StoryElement(
     val link: StoryLink? = null,
     val location: StoryLocation? = null,
     val mention: StoryMention? = null,
+    val music: StoryMusic? = null,
 )
 
 @Serializable
@@ -121,13 +130,53 @@ data class StoryUser(
 }
 
 @Serializable
-data class StoryView(
-    @SerialName("user_id") val userId: String,
-    val username: String,
-    @SerialName("full_name") val fullName: String,
+data class StoryViewProfileDto(
+    val username: String = "",
+    @SerialName("full_name") val fullName: String = "",
     @SerialName("avatar_url") val avatarUrl: String? = null,
     @SerialName("is_verified") val isVerified: Boolean = false,
-    @SerialName("viewed_at") val viewedAt: String,
+    @SerialName("verification_type") val verificationType: String? = null,
+    val role: String? = null,
+)
+
+@Serializable
+data class StoryViewDto(
+    @SerialName("viewer_id") val viewerId: String = "",
+    @SerialName("user_id") val legacyUserId: String = "",
+    val profiles: StoryViewProfileDto? = null,
+    val username: String = "",
+    @SerialName("full_name") val fullName: String = "",
+    @SerialName("avatar_url") val avatarUrl: String? = null,
+    @SerialName("is_verified") val isVerified: Boolean = false,
+    @SerialName("viewed_at") val viewedAt: String = "",
+    @SerialName("reaction") val reaction: String? = null,
+) {
+    fun toDomain(): StoryView {
+        val resolvedUserId = viewerId.ifBlank { legacyUserId }
+        val resolvedUsername = profiles?.username?.ifBlank { null } ?: username
+        val resolvedFullName = profiles?.fullName?.ifBlank { null } ?: fullName.ifBlank { resolvedUsername }
+        val resolvedAvatarUrl = profiles?.avatarUrl ?: avatarUrl
+        val resolvedIsVerified = profiles?.isVerified ?: isVerified
+        return StoryView(
+            userId = resolvedUserId,
+            username = resolvedUsername,
+            fullName = resolvedFullName,
+            avatarUrl = resolvedAvatarUrl,
+            isVerified = resolvedIsVerified,
+            viewedAt = viewedAt,
+            reaction = reaction,
+        )
+    }
+}
+
+@Serializable
+data class StoryView(
+    @SerialName("user_id") val userId: String = "",
+    val username: String = "",
+    @SerialName("full_name") val fullName: String = "",
+    @SerialName("avatar_url") val avatarUrl: String? = null,
+    @SerialName("is_verified") val isVerified: Boolean = false,
+    @SerialName("viewed_at") val viewedAt: String = "",
     @SerialName("reaction") val reaction: String? = null,
 )
 
@@ -167,9 +216,11 @@ data class CreateStoryRequestDto(
 
 @Serializable
 data class StoryViewsResponseDto(
-    val views: List<StoryView> = emptyList(),
+    val views: List<StoryViewDto> = emptyList(),
     val total: Int = 0,
-)
+) {
+    fun toDomainViews(): List<StoryView> = views.map { it.toDomain() }
+}
 
 @Serializable
 data class StoryReactRequestDto(
@@ -183,5 +234,6 @@ data class StoryReplyRequestDto(
 
 @Serializable
 data class StoryVoteRequestDto(
-    @SerialName("option_id") val optionId: String,
+    @SerialName("option_index") val optionIndex: Int = 0,
+    @SerialName("option_id") val legacyOptionId: String? = null,
 )

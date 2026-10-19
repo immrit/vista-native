@@ -85,6 +85,61 @@ class ChatDatabaseTest {
     }
 
     @Test
+    fun markingConversationReadUpdatesOnlyItsIncomingVisibleMessages() = runBlocking {
+        dao.upsertConversations(
+            listOf(
+                conversation("account-a").copy(unreadCount = 2),
+                conversation("account-b").copy(unreadCount = 1),
+                conversation("account-a").copy(id = "conversation-b", unreadCount = 1),
+            ),
+        )
+        dao.upsertMessages(
+            listOf(
+                message("incoming"),
+                message("own").copy(isMine = true),
+                message("key").copy(messageType = "exchange_key"),
+                message("reply").copy(messageType = "EXCHANGE_KEY_REPLY"),
+                message("other-account").copy(accountId = "account-b"),
+                message("other-conversation").copy(conversationId = "conversation-b"),
+            ),
+        )
+
+        dao.markConversationRead("account-a", "conversation-a")
+
+        assertEquals(0, dao.conversation("account-a", "conversation-a")?.unreadCount)
+        assertEquals(1, dao.conversation("account-b", "conversation-a")?.unreadCount)
+        assertEquals(1, dao.conversation("account-a", "conversation-b")?.unreadCount)
+        val statuses = dao.messages("account-a", "conversation-a").associate { it.clientId to it.status }
+        assertEquals("READ", statuses["incoming"])
+        assertEquals("SENT", statuses["own"])
+        assertEquals("SENT", statuses["key"])
+        assertEquals("SENT", statuses["reply"])
+        assertEquals("SENT", dao.messages("account-b", "conversation-a").single().status)
+        assertEquals("SENT", dao.messages("account-a", "conversation-b").single().status)
+    }
+
+    @Test
+    fun transcriptQueryExcludesSecretHandshakeFramesBeforeMapping() = runBlocking {
+        val visible = message("visible")
+        dao.upsertMessages(
+            listOf(
+                visible,
+                message("key").copy(messageType = "exchange_key"),
+                message("reply").copy(messageType = "EXCHANGE_KEY_REPLY"),
+            ),
+        )
+
+        assertEquals(
+            listOf("visible"),
+            dao.observeMessages("account-a", "conversation-a").first().map { it.clientId },
+        )
+        assertEquals(
+            setOf("visible", "key", "reply"),
+            dao.messages("account-a", "conversation-a").map { it.clientId }.toSet(),
+        )
+    }
+
+    @Test
     fun remoteCursorAndPendingQueueRemainAccountScoped() = runBlocking {
         dao.upsertRemoteKey(RemoteKeyEntity("account-a", "messages:conversation-a", "cursor-a", true, 1))
         dao.upsertRemoteKey(RemoteKeyEntity("account-b", "messages:conversation-a", "cursor-b", false, 1))

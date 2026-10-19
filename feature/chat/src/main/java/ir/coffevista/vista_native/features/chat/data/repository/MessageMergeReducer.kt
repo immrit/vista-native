@@ -18,6 +18,8 @@ object MessageMergeReducer {
             deletedAt != null -> MessageContent.Deleted
             incoming.editedAtEpochMillis != null &&
                 incoming.editedAtEpochMillis >= (existing.editedAtEpochMillis ?: Long.MIN_VALUE) -> incoming.content
+            incoming.content == MessageContent.EncryptedUnavailable &&
+                (existing.content is MessageContent.Text || existing.content is MessageContent.Structured) -> existing.content
             source == MergeSource.REST || source == MergeSource.REALTIME -> incoming.content
             else -> existing.content
         }
@@ -25,6 +27,12 @@ object MessageMergeReducer {
             serverId = incoming.serverId ?: existing.serverId,
             senderId = incoming.senderId,
             content = content,
+            opaqueEncryptedPayload = if (content == MessageContent.EncryptedUnavailable) {
+                incoming.opaqueEncryptedPayload ?: existing.opaqueEncryptedPayload
+            } else {
+                null
+            },
+            transportType = incoming.transportType ?: existing.transportType,
             createdAtEpochMillis = minOf(existing.createdAtEpochMillis, incoming.createdAtEpochMillis),
             editedAtEpochMillis = editedAt,
             deletedAtEpochMillis = deletedAt,

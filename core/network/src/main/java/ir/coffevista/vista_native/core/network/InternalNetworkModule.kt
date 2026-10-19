@@ -37,12 +37,14 @@ object InternalNetworkModule {
         policyStore: TlsPolicyStore,
         evaluator: TlsPolicyEvaluator,
         reporter: HttpTlsFailureReporter,
+        authenticator: InternalAuthenticator,
     ): okhttp3.Call.Factory = PolicyAwareInternalCallFactory(
         environment = environment,
         policyStore = policyStore,
         evaluator = evaluator,
         reporter = reporter,
         authorizationInterceptor = authorizationInterceptor,
+        authenticator = authenticator,
     )
 
     @Provides

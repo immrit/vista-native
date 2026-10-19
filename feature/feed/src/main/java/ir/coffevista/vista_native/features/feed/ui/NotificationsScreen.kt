@@ -17,11 +17,18 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AlternateEmail
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CheckCircle
@@ -166,7 +173,7 @@ internal fun NotificationsScreenContent(
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Default.Close, contentDescription = "بازگشت")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "بازگشت")
                     }
                 },
                 actions = {
@@ -207,29 +214,42 @@ internal fun NotificationsScreenContent(
                     onRefresh = onRefresh,
                     modifier = Modifier.fillMaxSize(),
                 ) {
-                    NotificationsList(
-                        notifications = filtered,
-                        hasMore = state.hasMore,
-                        isFetching = state.isLoading,
-                        actionLoadingIds = state.actionLoadingIds,
-                        onLoadMore = onLoadMore,
-                        onOpenItem = onOpenItem,
-                        onOpenActor = onOpenActor,
-                        onFollowRequestAction = { notification, accept ->
-                            onFollowRequestAction(notification, accept) { result ->
-                                val message = when (result.state) {
-                                    FollowRequestActionState.Success -> if (accept) {
-                                        "درخواست با موفقیت پذیرفته شد"
-                                    } else {
-                                        "درخواست رد شد"
-                                    }
-                                    FollowRequestActionState.AlreadyHandled -> "این درخواست قبلا مدیریت شده است"
-                                    FollowRequestActionState.Failed -> "خطا در پردازش درخواست"
-                                }
-                                scope.launch { snackbarHostState.showSnackbar(result.message.ifBlank { message }) }
-                            }
+                    AnimatedContent(
+                        targetState = selectedFilter,
+                        transitionSpec = {
+                            fadeIn(animationSpec = tween(220)) togetherWith
+                                fadeOut(animationSpec = tween(180))
                         },
-                    )
+                        label = "NotificationsFilterTransition",
+                    ) { currentFilter ->
+                        val tabFiltered = remember(state.notifications, currentFilter) {
+                            state.notifications.filter { notificationTypeMatchesFilter(it.type, currentFilter) }
+                        }
+                        NotificationsList(
+                            notifications = tabFiltered,
+                            hasMore = state.hasMore,
+                            isFetching = state.isLoading,
+                            actionLoadingIds = state.actionLoadingIds,
+                            onRefresh = onRefresh,
+                            onLoadMore = onLoadMore,
+                            onOpenItem = onOpenItem,
+                            onOpenActor = onOpenActor,
+                            onFollowRequestAction = { notification, accept ->
+                                onFollowRequestAction(notification, accept) { result ->
+                                    val message = when (result.state) {
+                                        FollowRequestActionState.Success -> if (accept) {
+                                            "درخواست با موفقیت پذیرفته شد"
+                                        } else {
+                                            "درخواست رد شد"
+                                        }
+                                        FollowRequestActionState.AlreadyHandled -> "این درخواست قبلا مدیریت شده است"
+                                        FollowRequestActionState.Failed -> "خطا در پردازش درخواست"
+                                    }
+                                    scope.launch { snackbarHostState.showSnackbar(result.message.ifBlank { message }) }
+                                }
+                            },
+                        )
+                    }
                 }
             }
         }
@@ -252,19 +272,21 @@ private fun NotificationFilterTabs(
     ) {
         items(tabs, key = { it.type }) { tab ->
             val selected = tab.type == selectedFilter
+            val tabColor by animateColorAsState(
+                targetValue = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                animationSpec = tween(180),
+                label = "tab_bg_${tab.type}",
+            )
+            val tabContentColor by animateColorAsState(
+                targetValue = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                animationSpec = tween(180),
+                label = "tab_text_${tab.type}",
+            )
             Surface(
                 onClick = { onSelected(tab.type) },
                 shape = RoundedCornerShape(18.dp),
-                color = if (selected) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.surfaceVariant
-                },
-                contentColor = if (selected) {
-                    MaterialTheme.colorScheme.onPrimary
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
+                color = tabColor,
+                contentColor = tabContentColor,
                 border = if (selected) null else {
                     androidx.compose.foundation.BorderStroke(
                         1.dp,
@@ -306,13 +328,14 @@ private fun NotificationsList(
     hasMore: Boolean,
     isFetching: Boolean,
     actionLoadingIds: Set<String>,
+    onRefresh: () -> Unit,
     onLoadMore: () -> Unit,
     onOpenItem: (NotificationFeedItem) -> Unit,
     onOpenActor: (NotificationFeedItem) -> Unit,
     onFollowRequestAction: (VistaNotification, Boolean) -> Unit,
 ) {
     if (notifications.isEmpty()) {
-        NotificationEmptyState(onRetry = onLoadMore)
+        NotificationEmptyState(onRetry = onRefresh)
         return
     }
 
@@ -403,7 +426,9 @@ private fun NotificationRow(
                         overflow = TextOverflow.Ellipsis,
                         fontSize = 14.5.sp,
                         fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.weight(1f, fill = false),
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .clickable(onClick = onOpenActor),
                     )
                     if (notification.userIsVerified) {
                         VerifiedMark(Modifier.padding(start = 4.dp))
@@ -739,7 +764,34 @@ private fun formatNotificationTime(createdAt: String): String {
     }
 }
 
-private fun parseInstant(raw: String): Instant? = runCatching { Instant.parse(raw) }.getOrNull()
+private val NOTIF_DATE_FORMATS = listOf(
+    java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME,
+    java.time.format.DateTimeFormatter.ISO_INSTANT,
+    java.time.format.DateTimeFormatter.ISO_LOCAL_DATE_TIME,
+    java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"),
+    java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS"),
+    java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss"),
+    java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS"),
+)
+
+private fun parseInstant(raw: String): Instant? {
+    if (raw.isBlank()) return null
+    raw.toLongOrNull()?.let { return Instant.ofEpochMilli(it) }
+    val trimmed = raw.trim()
+    for (formatter in NOTIF_DATE_FORMATS) {
+        try {
+            val temporal = formatter.parseBest(trimmed, Instant::from, java.time.ZonedDateTime::from, java.time.LocalDateTime::from)
+            return when (temporal) {
+                is Instant -> temporal
+                is java.time.ZonedDateTime -> temporal.toInstant()
+                is java.time.LocalDateTime -> temporal.atZone(ZoneId.systemDefault()).toInstant()
+                else -> null
+            }
+        } catch (_: Throwable) {
+        }
+    }
+    return runCatching { Instant.parse(trimmed) }.getOrNull()
+}
 
 private fun notificationIcon(type: String): ImageVector = when (type) {
     "like" -> Icons.Default.Favorite

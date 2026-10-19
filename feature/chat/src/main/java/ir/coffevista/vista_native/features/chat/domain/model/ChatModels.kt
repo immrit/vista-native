@@ -27,6 +27,16 @@ data class Conversation(
 
 enum class ConversationType { PRIVATE, GROUP, SECRET }
 
+fun Conversation.peerIdentityKey(): String {
+    if (type == ConversationType.GROUP) {
+        return "GROUP:$id"
+    }
+    val cleanPeer = peerId?.trim()?.lowercase()?.takeIf(String::isNotEmpty)
+    val cleanTitle = title.trim().lowercase().takeIf { it.isNotEmpty() && it != "کاربر" && it != "user" }
+    val identity = cleanPeer ?: cleanTitle ?: id
+    return "${type.name}:$identity"
+}
+
 @Immutable
 data class BlockStatus(
     val isBlocked: Boolean,
@@ -150,6 +160,11 @@ data class Message(
     val serverId: String?,
     val senderId: String,
     val content: MessageContent,
+    /**
+     * Backend transport type retained independently from rendered content.
+     * Handshake frames are protocol records, not chat bubbles.
+     */
+    val transportType: String? = null,
     val createdAtEpochMillis: Long,
     val editedAtEpochMillis: Long? = null,
     val deletedAtEpochMillis: Long? = null,
@@ -165,10 +180,22 @@ data class Message(
     val originalSenderId: String? = null,
     val originalMessageId: String? = null,
     val isPinned: Boolean = false,
+    /** Opaque server envelope retained for key recovery; never rendered as chat text. */
+    val opaqueEncryptedPayload: String? = null,
     val isMine: Boolean,
 ) {
     val stableKey: String get() = serverId ?: "local:$clientId"
+
+    val isSecretHandshakeFrame: Boolean
+        get() = transportType.equals("exchange_key", ignoreCase = true) ||
+            transportType.equals("exchange_key_reply", ignoreCase = true) ||
+            // Builds before transportType existed persisted this synthetic text.
+            // Keep it out of the transcript as Flutter does for handshake frames.
+            (transportType.equals("text", ignoreCase = true) &&
+                (content as? MessageContent.Text)?.value == SECRET_HANDSHAKE_NOTICE)
 }
+
+const val SECRET_HANDSHAKE_NOTICE = "🔒 ارتباط رمزنگاری‌شده (E2EE) برقرار شد."
 
 sealed interface MessageContent {
     @Immutable

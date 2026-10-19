@@ -171,9 +171,23 @@ fun StoryPlayerScreen(
         } else null
     }
 
-    DisposableEffect(exoPlayer) {
+    // Music Audio Player (for stories with attached music or music sticker)
+    val musicPlayer = remember(activeStory.id) {
+        val musicUrl = activeStory.musicUrl
+            ?: activeStory.interactiveElements.firstOrNull { it.type == "music" }?.music?.musicUrl
+        if (!musicUrl.isNullOrBlank()) {
+            ExoPlayer.Builder(context).build().apply {
+                setMediaItem(MediaItem.fromUri(Uri.parse(musicUrl)))
+                prepare()
+                playWhenReady = true
+            }
+        } else null
+    }
+
+    DisposableEffect(exoPlayer, musicPlayer) {
         onDispose {
             exoPlayer?.release()
+            musicPlayer?.release()
         }
     }
 
@@ -210,9 +224,11 @@ fun StoryPlayerScreen(
     LaunchedEffect(activeStory.id, isPlaybackPaused, currentUserIndex, currentStoryIndex) {
         if (isPlaybackPaused) {
             exoPlayer?.pause()
+            musicPlayer?.pause()
             return@LaunchedEffect
         } else {
             exoPlayer?.play()
+            musicPlayer?.play()
         }
 
         val isVideo = activeStory.mediaType == StoryMediaType.Video
@@ -303,9 +319,9 @@ fun StoryPlayerScreen(
                 if (activeStory.interactiveElements.isNotEmpty()) {
                     StoryElementsOverlay(
                         elements = activeStory.interactiveElements,
-                        onPollVote = { optionId ->
+                        onPollVote = { elementId, optionIndex ->
                             coroutineScope.launch {
-                                repository.votePoll(activeStory.id, optionId)
+                                repository.votePoll(activeStory.id, elementId, optionIndex)
                             }
                         },
                         onLinkClick = onOpenLink,
@@ -599,8 +615,12 @@ fun StoryPlayerScreen(
                                                     val msg = replyText
                                                     replyText = ""
                                                     coroutineScope.launch {
-                                                        repository.replyToStory(activeStory.id, msg)
-                                                        snackbarHostState.showSnackbar("پاسخ شما ارسال شد")
+                                                        val res = repository.replyToStory(activeStory.id, msg)
+                                                        if (res.isSuccess) {
+                                                            snackbarHostState.showSnackbar("پاسخ شما ارسال شد")
+                                                        } else {
+                                                            snackbarHostState.showSnackbar(res.exceptionOrNull()?.message ?: "خطا در ارسال پاسخ")
+                                                        }
                                                     }
                                                 },
                                             ) {

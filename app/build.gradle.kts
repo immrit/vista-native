@@ -1,3 +1,7 @@
+import groovy.json.JsonSlurper
+import java.io.File
+import java.util.Properties
+
 plugins {
     id("vista.android.application")
     id("vista.hilt")
@@ -9,17 +13,46 @@ hilt {
     enableAggregatingTask = false
 }
 
-fun injectedValue(gradleName: String, environmentName: String): String? =
+val keyPropertiesFile = listOf(
+    rootProject.file("key.properties"),
+    file("key.properties"),
+    File("E:/vista/android/key.properties"),
+).firstOrNull { it.exists() }
+
+val keyProperties = Properties().apply {
+    if (keyPropertiesFile != null && keyPropertiesFile.exists()) {
+        keyPropertiesFile.inputStream().use { stream ->
+            this.load(stream)
+        }
+    }
+}
+
+fun injectedValue(gradleName: String, environmentName: String, keyPropName: String? = null): String? =
     providers.gradleProperty(gradleName)
         .orElse(providers.environmentVariable(environmentName))
         .orNull
         ?.takeIf { it.isNotBlank() }
+        ?: keyPropName?.let { prop -> keyProperties.getProperty(prop)?.takeIf { it.isNotBlank() } }
+
+val rawStoreFile = injectedValue("vista.signing.storeFile", "VISTA_SIGNING_STORE_FILE", "storeFile")
+val resolvedStoreFile = rawStoreFile?.let { path ->
+    if (File(path).isAbsolute) {
+        File(path)
+    } else {
+        listOf(
+            file(path),
+            rootProject.file(path),
+            file("src/main/$path"),
+            File("E:/vista/android/app/$path"),
+        ).firstOrNull { it.exists() } ?: file(path)
+    }
+}
 
 val signingValues = mapOf(
-    "storeFile" to injectedValue("vista.signing.storeFile", "VISTA_SIGNING_STORE_FILE"),
-    "storePassword" to injectedValue("vista.signing.storePassword", "VISTA_SIGNING_STORE_PASSWORD"),
-    "keyAlias" to injectedValue("vista.signing.keyAlias", "VISTA_SIGNING_KEY_ALIAS"),
-    "keyPassword" to injectedValue("vista.signing.keyPassword", "VISTA_SIGNING_KEY_PASSWORD"),
+    "storeFile" to resolvedStoreFile?.takeIf { it.exists() }?.absolutePath,
+    "storePassword" to injectedValue("vista.signing.storePassword", "VISTA_SIGNING_STORE_PASSWORD", "storePassword"),
+    "keyAlias" to injectedValue("vista.signing.keyAlias", "VISTA_SIGNING_KEY_ALIAS", "keyAlias"),
+    "keyPassword" to injectedValue("vista.signing.keyPassword", "VISTA_SIGNING_KEY_PASSWORD", "keyPassword"),
 )
 val configuredSigningValues = signingValues.values.count { it != null }
 check(configuredSigningValues == 0 || configuredSigningValues == signingValues.size) {
@@ -106,6 +139,115 @@ android {
                 "proguard-rules.pro"
             )
         }
+    }
+}
+
+val generatedProductionFirebaseResources = layout.buildDirectory.dir(
+    "generated/res/productionFirebase",
+)
+
+val generateProductionFirebaseResources by tasks.registering {
+    val firebaseConfig = file("google-services.json")
+    inputs.file(firebaseConfig)
+    outputs.dir(generatedProductionFirebaseResources)
+
+    doLast {
+        fun Map<*, *>.objectValue(name: String): Map<*, *> =
+            (this[name] as? Map<*, *>)
+                ?: error("google-services.json is missing object: $name")
+
+        fun Map<*, *>.stringValue(name: String): String =
+            (this[name] as? String)
+                ?.takeIf(String::isNotBlank)
+                ?: error("google-services.json is missing value: $name")
+
+        fun xmlEscape(value: String): String = buildString(value.length) {
+            value.forEach { character ->
+                append(
+                    when (character) {
+                        '&' -> "&amp;"
+                        '<' -> "&lt;"
+                        '>' -> "&gt;"
+                        '\"' -> "&quot;"
+                        '\'' -> "&apos;"
+                        else -> character
+                    },
+                )
+            }
+        }
+
+        val root = JsonSlurper().parse(firebaseConfig) as? Map<*, *>
+            ?: error("google-services.json must contain a JSON object")
+        val projectInfo = root.objectValue("project_info")
+        val productionClient = (root["client"] as? List<*>)
+            ?.filterIsInstance<Map<*, *>>()
+            ?.singleOrNull { client ->
+                client.objectValue("client_info")
+                    .objectValue("android_client_info")
+                    .stringValue("package_name") == nativeProductionApplicationId
+            }
+            ?: error(
+                "google-services.json must contain exactly one client for " +
+                    nativeProductionApplicationId,
+            )
+        val clientInfo = productionClient.objectValue("client_info")
+        val apiKey = (productionClient["api_key"] as? List<*>)
+            ?.filterIsInstance<Map<*, *>>()
+            ?.singleOrNull()
+            ?.stringValue("current_key")
+            ?: error("google-services.json must contain exactly one API key")
+
+        val values = linkedMapOf(
+            "google_app_id" to clientInfo.stringValue("mobilesdk_app_id"),
+            "gcm_defaultSenderId" to projectInfo.stringValue("project_number"),
+            "project_id" to projectInfo.stringValue("project_id"),
+            "google_api_key" to apiKey,
+            "google_crash_reporting_api_key" to apiKey,
+        )
+        (projectInfo["firebase_url"] as? String)?.takeIf(String::isNotBlank)?.let {
+            values["firebase_database_url"] = it
+        }
+        (projectInfo["storage_bucket"] as? String)?.takeIf(String::isNotBlank)?.let {
+            values["google_storage_bucket"] = it
+        }
+        (productionClient["oauth_client"] as? List<*>)
+            ?.filterIsInstance<Map<*, *>>()
+            ?.firstOrNull { it["client_type"] == 3 }
+            ?.get("client_id")
+            ?.let { it as? String }
+            ?.takeIf(String::isNotBlank)
+            ?.let { values["default_web_client_id"] = it }
+
+        val valuesDirectory = generatedProductionFirebaseResources.get()
+            .dir("values")
+            .asFile
+        check(valuesDirectory.mkdirs() || valuesDirectory.isDirectory) {
+            "Could not create generated Firebase resource directory"
+        }
+        valuesDirectory.resolve("google_services.xml").writeText(
+            buildString {
+                appendLine("<?xml version=\"1.0\" encoding=\"utf-8\"?>")
+                appendLine("<resources>")
+                values.forEach { (name, value) ->
+                    appendLine(
+                        "    <string name=\"$name\" translatable=\"false\">" +
+                            "${xmlEscape(value)}</string>",
+                    )
+                }
+                appendLine("</resources>")
+            },
+        )
+    }
+}
+
+android.sourceSets.getByName("production").res.srcDir(generateProductionFirebaseResources)
+
+// `srcDir` registers the generated location but does not make an ordinary
+// task producer an implicit AGP dependency. Ensure the production resource
+// merger never packages an empty Firebase resource directory.
+tasks.configureEach {
+    if (name.contains("ProductionRelease") && name != "generateProductionFirebaseResources") {
+        dependsOn(generateProductionFirebaseResources)
     }
 }
 

@@ -1,5 +1,6 @@
 package ir.coffevista.vista_native.features.feed.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -56,6 +57,7 @@ fun PostDetailScreen(
     viewModel: PostDetailViewModel,
     commentsViewModel: CommentsViewModel,
 ) {
+    BackHandler(onBack = onBack)
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val commentsState by commentsViewModel.uiState.collectAsStateWithLifecycle()
     val currentPost = (uiState as? PostDetailUiState.Content)?.post

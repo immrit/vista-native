@@ -304,6 +304,15 @@ private class FakePublicProfileApi : PublicProfileApi {
     override suspend fun unfollow(
         request: FollowActionRequestDto,
     ): Response<UnfollowResponseDto> = unfollowResponse
+
+    override suspend fun fetchProfileByUsername(username: String): Response<PublicProfileDto> =
+        fetchPublicProfile(username)
+
+    override suspend fun getFollowers(userId: String, limit: Int, offset: Int): Response<FollowListResponseDto> =
+        Response.success(FollowListResponseDto())
+
+    override suspend fun getFollowing(userId: String, limit: Int, offset: Int): Response<FollowListResponseDto> =
+        Response.success(FollowListResponseDto())
 }
 
 private class FakePublicProfileDao : PublicProfileDao {

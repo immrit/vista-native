@@ -102,6 +102,32 @@ class MessageMergeReducerTest {
         assertTrue(result.isPinned)
     }
 
+    @Test
+    fun `encrypted unavailable payload cannot overwrite existing plaintext or structured content`() {
+        val existing = message(clientId = "a", serverId = "a", status = MessageStatus.SENT)
+            .copy(content = MessageContent.Text("سلام، پیام محرمانه"))
+        val incoming = message(clientId = "a", serverId = "a", status = MessageStatus.SENT)
+            .copy(content = MessageContent.EncryptedUnavailable)
+
+        val resultRest = MessageMergeReducer.merge(existing, incoming, MergeSource.REST)
+        assertEquals(MessageContent.Text("سلام، پیام محرمانه"), resultRest.content)
+
+        val resultWs = MessageMergeReducer.merge(existing, incoming, MergeSource.REALTIME)
+        assertEquals(MessageContent.Text("سلام، پیام محرمانه"), resultWs.content)
+    }
+
+    @Test
+    fun `replayed unavailable message keeps recoverable server envelope`() {
+        val existing = message(clientId = "a", serverId = "a", status = MessageStatus.SENT)
+            .copy(content = MessageContent.EncryptedUnavailable, opaqueEncryptedPayload = "VE2E2:recoverable")
+        val replay = existing.copy(opaqueEncryptedPayload = null)
+
+        val merged = MessageMergeReducer.merge(existing, replay, MergeSource.REALTIME)
+
+        assertEquals(MessageContent.EncryptedUnavailable, merged.content)
+        assertEquals("VE2E2:recoverable", merged.opaqueEncryptedPayload)
+    }
+
     private fun message(clientId: String, serverId: String?, status: MessageStatus) = Message(
         accountId = "account-a",
         conversationId = "conversation-a",

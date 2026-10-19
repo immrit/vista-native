@@ -26,6 +26,7 @@ data class StoredSession(
     val passwordRequired: Boolean,
     val displayName: String = "کاربر ویستا",
     val biometricEnabled: Boolean = false,
+    val requiresOnlineValidation: Boolean = false,
 )
 
 interface SessionStore {
@@ -42,6 +43,7 @@ interface SessionStore {
 class EncryptedSessionStore internal constructor(
     private val storage: SessionPayloadStorage,
     private val keyProvider: SessionSecretKeyProvider,
+    private val flutterMigration: FlutterSessionMigration = NoOpFlutterSessionMigration,
 ) : SessionStore {
     @Inject
     constructor(
@@ -49,13 +51,18 @@ class EncryptedSessionStore internal constructor(
     ) : this(
         storage = SharedPreferencesSessionPayloadStorage(context),
         keyProvider = AndroidKeystoreSessionKeyProvider(),
+        flutterMigration = AndroidFlutterSessionMigration(context),
     )
 
     override fun read(): StoredSession? {
         val encoded = runCatching(storage::read).getOrElse {
             failClosed()
             return null
-        }?.takeIf(String::isNotBlank) ?: return null
+        } ?: return importFlutterSession()
+        if (encoded.isBlank()) {
+            failClosed()
+            return null
+        }
 
         return runCatching {
             SessionEnvelopeCodec.decode(
@@ -69,7 +76,7 @@ class EncryptedSessionStore internal constructor(
     }
 
     override fun save(payload: AuthPayload) {
-        val preservedBiometricPreference = read()
+        val preservedBiometricPreference = runCatching(::read).getOrNull()
             ?.takeIf { current -> current.userId == payload.user.id }
             ?.biometricEnabled
             ?: false
@@ -105,7 +112,23 @@ class EncryptedSessionStore internal constructor(
     }
 
     override fun clear() {
+        check(flutterMigration.preventFutureImport()) { "Flutter session logout marker failed" }
         check(storage.clear()) { "Encrypted session clear failed" }
+    }
+
+    private fun importFlutterSession(): StoredSession? {
+        val imported = runCatching { flutterMigration.importOrNull() }.getOrNull() ?: return null
+        return try {
+            saveStoredSession(imported)
+            val encoded = storage.read()?.takeIf(String::isNotBlank)
+                ?: error("Imported session was not persisted")
+            SessionEnvelopeCodec.decode(encoded, keyProvider.getOrCreate()).also { persisted ->
+                check(persisted == imported) { "Imported session verification failed" }
+            }
+        } catch (_: Exception) {
+            runCatching(storage::clear)
+            null
+        }
     }
 
     private fun saveStoredSession(session: StoredSession) {
@@ -122,6 +145,7 @@ class EncryptedSessionStore internal constructor(
     }
 
     private fun failClosed() {
+        check(flutterMigration.preventFutureImport()) { "Flutter session recovery marker failed" }
         runCatching(storage::clear)
         runCatching(keyProvider::reset)
     }
@@ -214,6 +238,7 @@ internal object SessionEnvelopeCodec {
             .put(KEY_PASSWORD_REQUIRED, session.passwordRequired)
             .put(KEY_DISPLAY_NAME, session.displayName)
             .put(KEY_BIOMETRIC_ENABLED, session.biometricEnabled)
+            .put(KEY_REQUIRES_ONLINE_VALIDATION, session.requiresOnlineValidation)
             .toString()
             .toByteArray(Charsets.UTF_8)
         val cipher = Cipher.getInstance(TRANSFORMATION)
@@ -279,6 +304,7 @@ internal object SessionEnvelopeCodec {
                 ?: displayNameFromJwt(accessToken)
                 ?: "کاربر ویستا",
             biometricEnabled = json.optBoolean(KEY_BIOMETRIC_ENABLED, false),
+            requiresOnlineValidation = json.optBoolean(KEY_REQUIRES_ONLINE_VALIDATION, false),
         )
     }
 
@@ -314,12 +340,13 @@ private const val KEY_PROFILE_COMPLETED = "profile_completed"
 private const val KEY_PASSWORD_REQUIRED = "password_required"
 private const val KEY_DISPLAY_NAME = "display_name"
 private const val KEY_BIOMETRIC_ENABLED = "biometric_enabled"
+private const val KEY_REQUIRES_ONLINE_VALIDATION = "requires_online_validation"
 
 fun expiryFromJwt(token: String): Long? = jwtPayload(token)
     ?.optLong("exp")
     ?.takeIf { it > 0L }
 
-private fun userIdFromJwt(token: String): String? = jwtPayload(token)
+internal fun userIdFromJwt(token: String): String? = jwtPayload(token)
     ?.optString("sub")
     ?.takeIf(String::isNotBlank)
 

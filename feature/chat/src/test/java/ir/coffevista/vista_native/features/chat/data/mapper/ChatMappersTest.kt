@@ -35,6 +35,18 @@ class ChatMappersTest {
     fun `secret payload never maps ciphertext into UI text`() {
         val message = dto().copy(isSecret = true, content = "VE2E1:ciphertext").toDomain("account")
         assertEquals(MessageContent.EncryptedUnavailable, message.content)
+        assertEquals("VE2E1:ciphertext", message.opaqueEncryptedPayload)
+    }
+
+    @Test
+    fun `unavailable secret payload survives encrypted cache round trip for later key recovery`() = runTest {
+        val original = dto().copy(isSecret = true, content = "VE2E2:opaque-envelope").toDomain("account")
+        val stored = original.toEntity(cipher, 10)
+        val restored = stored.toDomain(cipher)
+
+        assertEquals("encrypted_unavailable", stored.contentKind)
+        assertEquals(MessageContent.EncryptedUnavailable, restored.content)
+        assertEquals("VE2E2:opaque-envelope", restored.opaqueEncryptedPayload)
     }
 
     @Test

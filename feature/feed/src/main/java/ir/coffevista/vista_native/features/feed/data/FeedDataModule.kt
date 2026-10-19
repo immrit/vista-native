@@ -35,11 +35,22 @@ abstract class FeedDataModule {
     abstract fun bindNotificationRepository(
         impl: DefaultNotificationRepository
     ): NotificationRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindMusicRepository(
+        impl: ir.coffevista.vista_native.features.feed.music.DefaultMusicRepository
+    ): ir.coffevista.vista_native.features.feed.music.MusicRepository
 }
 
 @Module
 @InstallIn(SingletonComponent::class)
 object FeedApiModule {
+    @Provides
+    @Singleton
+    fun provideMusicApi(@InternalApi retrofit: Retrofit): ir.coffevista.vista_native.features.feed.music.MusicApi =
+        retrofit.create(ir.coffevista.vista_native.features.feed.music.MusicApi::class.java)
+
     @Provides
     @Singleton
     fun providePostMentionsApi(@InternalApi retrofit: Retrofit): PostMentionsApi =

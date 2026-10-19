@@ -2,6 +2,7 @@ package ir.coffevista.vista_native
 
 import android.os.Bundle
 import android.content.Intent
+import android.net.Uri
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.fragment.app.FragmentActivity
@@ -63,6 +64,9 @@ class MainActivity : FragmentActivity() {
     private var pendingChatNotification: Map<String, String>? = null
     private var notificationReconciliationJob: Job? = null
     private var biometricUnlockRequired by mutableStateOf(false)
+    private var pendingSharedContent by mutableStateOf<ir.coffevista.vista_native.share.SharedIncomingContent?>(null)
+    private var routedSharedContent by mutableStateOf<ir.coffevista.vista_native.share.RoutedSharedContent?>(null)
+    private var shareIntentGeneration = 0L
 
     @Inject
     lateinit var authenticationStateOwner: AuthenticationStateOwner
@@ -128,6 +132,20 @@ class MainActivity : FragmentActivity() {
             savedInstanceState.getBundle(KEY_PENDING_CHAT_NOTIFICATION)?.let { b ->
                 pendingChatNotification = b.keySet().associateWith { key -> b.getString(key).orEmpty() }
             }
+            pendingSharedContent = savedInstanceState.readSharedContent(KEY_PENDING_SHARED_CONTENT)
+            val routedContent = savedInstanceState.readSharedContent(KEY_ROUTED_SHARED_CONTENT)
+            val routedDestination = savedInstanceState.getString(KEY_ROUTED_SHARED_DESTINATION)
+                ?.let { value ->
+                    runCatching {
+                        ir.coffevista.vista_native.share.SharedContentDestination.valueOf(value)
+                    }.getOrNull()
+                }
+            if (routedContent != null && routedDestination != null) {
+                routedSharedContent = ir.coffevista.vista_native.share.RoutedSharedContent(
+                    content = routedContent,
+                    destination = routedDestination,
+                )
+            }
         } else {
             biometricUnlockRequired = sessionStore.isBiometricEnabled()
         }
@@ -135,6 +153,7 @@ class MainActivity : FragmentActivity() {
         pushTokenRegistrar.syncTokenAsync()
         configureStartupFixtures(intent)
         submitDeepLink(intent)
+        if (savedInstanceState == null) handleShareIntent(intent)
         lifecycleScope.launch {
             authenticationStateOwner.state
                 .map { state ->
@@ -185,6 +204,12 @@ class MainActivity : FragmentActivity() {
                                 chatRepository = chatRepository,
                                 servicesRepository = servicesRepository,
                                 biometricAuthenticator = biometricAuthenticator,
+                                routedSharedContent = routedSharedContent,
+                                onSharedContentConsumed = { requestId ->
+                                    if (routedSharedContent?.content?.requestId == requestId) {
+                                        routedSharedContent = null
+                                    }
+                                },
                                 onExitRequested = ::finish,
                             )
                             if (biometricUnlockRequired && sessionStore.isBiometricEnabled()) {
@@ -193,6 +218,35 @@ class MainActivity : FragmentActivity() {
                                         biometricAuthenticator.authenticate(this@MainActivity) { authenticated ->
                                             if (authenticated) biometricUnlockRequired = false
                                         }
+                                    },
+                                )
+                            }
+                            pendingSharedContent?.let { shared ->
+                                ir.coffevista.vista_native.share.ShareTargetBottomSheet(
+                                    content = shared,
+                                    onSendToChat = {
+                                        routeSharedContent(
+                                            content = it,
+                                            destination = ir.coffevista.vista_native.share.SharedContentDestination.CHAT,
+                                            deepLink = "vista://chat/share",
+                                        )
+                                    },
+                                    onSendToPost = {
+                                        routeSharedContent(
+                                            content = it,
+                                            destination = ir.coffevista.vista_native.share.SharedContentDestination.POST,
+                                            deepLink = "vista://post/share",
+                                        )
+                                    },
+                                    onSendToStory = {
+                                        routeSharedContent(
+                                            content = it,
+                                            destination = ir.coffevista.vista_native.share.SharedContentDestination.STORY,
+                                            deepLink = "vista://post/share_story",
+                                        )
+                                    },
+                                    onDismiss = {
+                                        pendingSharedContent = null
                                     },
                                 )
                             }
@@ -208,6 +262,7 @@ class MainActivity : FragmentActivity() {
         setIntent(intent)
         configureStartupFixtures(intent)
         submitDeepLink(intent)
+        handleShareIntent(intent)
     }
 
     override fun onStart() {
@@ -278,6 +333,7 @@ class MainActivity : FragmentActivity() {
     }
 
     private fun configureStartupFixtures(intent: Intent?) {
+        if (!BuildConfig.DEBUG) return
         val scenario = intent?.getStringExtra(FOUNDATION_FIXTURE_EXTRA)
         startupFixtures.forEach { fixture -> fixture.configure(scenario) }
         feedApiFixtures.forEach { fixture -> fixture.configure(scenario) }
@@ -294,12 +350,85 @@ class MainActivity : FragmentActivity() {
             data.forEach { (k, v) -> b.putString(k, v) }
             outState.putBundle(KEY_PENDING_CHAT_NOTIFICATION, b)
         }
+        pendingSharedContent?.let { outState.writeSharedContent(KEY_PENDING_SHARED_CONTENT, it) }
+        routedSharedContent?.let { routed ->
+            outState.writeSharedContent(KEY_ROUTED_SHARED_CONTENT, routed.content)
+            outState.putString(KEY_ROUTED_SHARED_DESTINATION, routed.destination.name)
+        }
+    }
+
+    private fun handleShareIntent(intent: Intent?) {
+        if (intent == null) return
+        if (intent.action != Intent.ACTION_SEND && intent.action != Intent.ACTION_SEND_MULTIPLE) return
+        val generation = ++shareIntentGeneration
+        lifecycleScope.launch {
+            val content = ir.coffevista.vista_native.share.IncomingShareCache(this@MainActivity)
+                .materialize(intent)
+            if (generation != shareIntentGeneration || content == null) return@launch
+            routedSharedContent = null
+            pendingSharedContent = content
+        }
+    }
+
+    private fun routeSharedContent(
+        content: ir.coffevista.vista_native.share.SharedIncomingContent,
+        destination: ir.coffevista.vista_native.share.SharedContentDestination,
+        deepLink: String,
+    ) {
+        pendingSharedContent = null
+        routedSharedContent = ir.coffevista.vista_native.share.RoutedSharedContent(content, destination)
+        deepLinkCoordinator.submit(
+            deepLink,
+            authenticated = authenticationStateOwner.state.value is AuthenticationState.SignedIn,
+        )
+    }
+
+    private fun Bundle.writeSharedContent(
+        key: String,
+        content: ir.coffevista.vista_native.share.SharedIncomingContent,
+    ) {
+        putBundle(
+            key,
+            Bundle().apply {
+                putString(KEY_SHARED_REQUEST_ID, content.requestId)
+                putString(KEY_SHARED_MIME_TYPE, content.mimeType)
+                putString(KEY_SHARED_TEXT, content.text)
+                putStringArrayList(KEY_SHARED_URIS, ArrayList(content.uris.map(Uri::toString)))
+                putInt(KEY_SHARED_REJECTED_COUNT, content.rejectedItemCount)
+            },
+        )
+    }
+
+    private fun Bundle.readSharedContent(key: String): ir.coffevista.vista_native.share.SharedIncomingContent? {
+        val shared = getBundle(key) ?: return null
+        val requestId = shared.getString(KEY_SHARED_REQUEST_ID)?.takeIf(String::isNotBlank) ?: return null
+        val mimeType = shared.getString(KEY_SHARED_MIME_TYPE)?.takeIf(String::isNotBlank) ?: return null
+        val text = shared.getString(KEY_SHARED_TEXT)
+        val uris = shared.getStringArrayList(KEY_SHARED_URIS).orEmpty().mapNotNull { raw ->
+            runCatching { Uri.parse(raw) }.getOrNull()
+        }
+        if (text.isNullOrBlank() && uris.isEmpty()) return null
+        return ir.coffevista.vista_native.share.SharedIncomingContent(
+            requestId = requestId,
+            mimeType = mimeType,
+            text = text,
+            uris = uris,
+            rejectedItemCount = shared.getInt(KEY_SHARED_REJECTED_COUNT),
+        )
     }
 
     private companion object {
         const val FOUNDATION_FIXTURE_EXTRA = "vista.foundation.fixture"
         const val KEY_BIOMETRIC_LOCKED = "vista.lifecycle.biometric_locked"
         const val KEY_PENDING_CHAT_NOTIFICATION = "vista.lifecycle.pending_chat_notification"
+        const val KEY_PENDING_SHARED_CONTENT = "vista.lifecycle.pending_shared_content"
+        const val KEY_ROUTED_SHARED_CONTENT = "vista.lifecycle.routed_shared_content"
+        const val KEY_ROUTED_SHARED_DESTINATION = "vista.lifecycle.routed_shared_destination"
+        const val KEY_SHARED_REQUEST_ID = "request_id"
+        const val KEY_SHARED_MIME_TYPE = "mime_type"
+        const val KEY_SHARED_TEXT = "text"
+        const val KEY_SHARED_URIS = "uris"
+        const val KEY_SHARED_REJECTED_COUNT = "rejected_count"
     }
 }
 

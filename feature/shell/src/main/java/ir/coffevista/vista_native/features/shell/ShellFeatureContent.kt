@@ -135,6 +135,15 @@ data class ShellFeatureContent(
     val servicesWeb: (@Composable (String, String, () -> Unit) -> Unit),
     val chatRoot: (@Composable ((String, String) -> Unit, () -> Unit) -> Unit),
     val chatNewMessage: (@Composable (() -> Unit, (String, String) -> Unit) -> Unit),
-    val chatDetail: (@Composable (String, String?, String, () -> Unit, (String) -> Unit) -> Unit),
+    val chatDetail: (
+        @Composable (
+            conversationId: String,
+            messageId: String?,
+            title: String,
+            onBack: () -> Unit,
+            onOpenProfile: (String) -> Unit,
+            onOpenChat: (String, String) -> Unit,
+        ) -> Unit
+    ),
     val chatBadgeCount: Int = 0,
 )

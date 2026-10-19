@@ -91,8 +91,8 @@ class StoryRepositoryTest {
             lastReplySent = request.message
         }
 
-        override suspend fun votePoll(storyId: String, request: StoryVoteRequestDto) {
-            lastVoteOption = request.optionId
+        override suspend fun votePoll(storyId: String, elementId: String, request: StoryVoteRequestDto) {
+            lastVoteOption = request.legacyOptionId ?: request.optionIndex.toString()
         }
     }
 
@@ -145,8 +145,8 @@ class StoryRepositoryTest {
 
     @Test
     fun `votePoll records user choice`() = runTest {
-        val result = repository.votePoll("story_1", "opt_1")
+        val result = repository.votePoll("story_1", "elem_1", 2)
         assertTrue(result.isSuccess)
-        assertEquals("opt_1", fakeApi.lastVoteOption)
+        assertEquals("2", fakeApi.lastVoteOption)
     }
 }

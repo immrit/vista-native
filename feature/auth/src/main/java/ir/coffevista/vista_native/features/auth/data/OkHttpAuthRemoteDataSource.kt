@@ -51,16 +51,16 @@ interface AuthApi {
         @Body body: JsonObject,
     ): Response<Unit>
 
-    @POST("recovery-options")
+    @POST("v1/auth/recovery-options")
     suspend fun recoveryOptions(@Body body: JsonObject): Response<JsonObject>
 
-    @POST("recovery-send")
+    @POST("v1/auth/recovery-send")
     suspend fun sendRecoveryCode(@Body body: JsonObject): Response<JsonObject>
 
-    @POST("recovery-verify")
+    @POST("v1/auth/recovery-verify")
     suspend fun verifyRecoveryCode(@Body body: JsonObject): Response<JsonObject>
 
-    @POST("recovery-complete")
+    @POST("v1/auth/recovery-complete")
     suspend fun completeRecovery(@Body body: JsonObject): Response<JsonObject>
 
     @POST("v1/auth/refresh")

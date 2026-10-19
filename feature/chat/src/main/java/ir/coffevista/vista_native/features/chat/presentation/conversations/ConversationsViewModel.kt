@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import ir.coffevista.vista_native.features.chat.domain.model.Conversation
+import ir.coffevista.vista_native.features.chat.domain.model.peerIdentityKey
 import ir.coffevista.vista_native.features.chat.domain.model.BlockStatus
 import ir.coffevista.vista_native.features.chat.domain.model.RealtimeConnectionState
 import ir.coffevista.vista_native.features.chat.domain.model.ProfileNote
@@ -86,6 +87,19 @@ class ConversationsViewModel @Inject constructor(
                 // the presentation boundary instead of leaking main chats into it.
                 val folderConversations = conversations
                     .filter { conversation -> conversation.isArchived == includeArchived }
+                    .groupBy { it.peerIdentityKey() }
+                    .values
+                    .map { duplicates ->
+                        duplicates.maxWithOrNull(
+                            compareBy<Conversation> { it.lastMessageAtEpochMillis ?: 0L }
+                                .thenBy { it.id }
+                        ) ?: duplicates.first()
+                    }
+                    .sortedWith(
+                        compareByDescending<Conversation> { it.isPinned }
+                            .thenByDescending { it.lastMessageAtEpochMillis ?: 0L }
+                            .thenByDescending { it.id }
+                    )
                 mutableState.update {
                     it.copy(
                         conversations = folderConversations,
@@ -331,22 +345,28 @@ class ConversationsViewModel @Inject constructor(
         if (mutableState.value.isNoteReplySending || text.isBlank()) return
         viewModelScope.launch {
             mutableState.update { it.copy(isNoteReplySending = true, noteError = null) }
-            when (
-                val result = repository.replyToProfileNote(
-                    conversationId = conversation.id,
-                    note = note,
-                    senderName = conversation.title,
-                    text = text,
-                )
-            ) {
-                is ChatResult.Success -> {
-                    mutableState.update { it.copy(isNoteReplySending = false, noteError = null) }
-                    onComplete(true)
+            try {
+                when (
+                    val result = repository.replyToProfileNote(
+                        conversationId = conversation.id,
+                        note = note,
+                        senderName = conversation.title,
+                        text = text,
+                    )
+                ) {
+                    is ChatResult.Success -> {
+                        mutableState.update { it.copy(isNoteReplySending = false, noteError = null) }
+                        onComplete(true)
+                    }
+                    is ChatResult.Failure -> {
+                        mutableState.update { it.copy(isNoteReplySending = false, noteError = result.message) }
+                        onComplete(false)
+                    }
                 }
-                is ChatResult.Failure -> {
-                    mutableState.update { it.copy(isNoteReplySending = false, noteError = result.message) }
-                    onComplete(false)
-                }
+            } catch (t: Throwable) {
+                if (t is kotlinx.coroutines.CancellationException) throw t
+                mutableState.update { it.copy(isNoteReplySending = false, noteError = t.message ?: "خطا در ارسال پاسخ") }
+                onComplete(false)
             }
         }
     }

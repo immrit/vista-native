@@ -189,16 +189,30 @@ private class ContentUriRequestBody(
     override fun contentLength(): Long = contentLength
 
     override fun writeTo(sink: BufferedSink) {
-        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+        val buffer = ByteArray(BUFFER_SIZE)
         var sent = 0L
+        var lastReportedProgress = 0f
+        var lastReportedTime = 0L
         openStream(resolver, uri)?.use { input ->
             while (true) {
                 val read = input.read(buffer)
                 if (read < 0) break
                 sink.write(buffer, 0, read)
                 sent += read
-                onProgress((sent.toFloat() / contentLength.toFloat()).coerceIn(0f, 1f))
+                val progress = if (contentLength > 0L) {
+                    (sent.toFloat() / contentLength.toFloat()).coerceIn(0f, 1f)
+                } else 0f
+                val now = System.currentTimeMillis()
+                if (progress - lastReportedProgress >= 0.01f || progress >= 1f || now - lastReportedTime >= 100L) {
+                    lastReportedProgress = progress
+                    lastReportedTime = now
+                    onProgress(progress)
+                }
             }
         } ?: throw IOException("فایل انتخاب‌شده قابل خواندن نیست")
+    }
+
+    private companion object {
+        const val BUFFER_SIZE = 64 * 1024 // 64 KB for high-throughput streaming
     }
 }

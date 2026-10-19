@@ -3,10 +3,24 @@ package ir.coffevista.vista_native.features.feed.ui
 import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import ir.coffevista.vista_native.core.designsystem.component.LocalBottomBarVisibility
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -125,7 +139,9 @@ import ir.coffevista.vista_native.features.feed.data.FeedKind
 import ir.coffevista.vista_native.features.feed.data.FeedPost
 import java.time.Duration
 import java.time.Instant
+import ir.coffevista.vista_native.core.designsystem.component.LocalHomeTabClick
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 
@@ -147,7 +163,15 @@ fun FeedScreen(
     onSendDirectMessage: (FeedPost) -> Unit = {},
     onNavigateToStoryEditor: (android.net.Uri) -> Unit = {},
     onVideoClick: (String) -> Unit = onPostClick,
+    onBottomBarVisibilityChange: ((Boolean) -> Unit)? = null,
+    homeTabClickFlow: SharedFlow<Unit>? = null,
 ) {
+    val bottomBarVisibilityCallback = onBottomBarVisibilityChange ?: LocalBottomBarVisibility.current
+    DisposableEffect(Unit) {
+        onDispose {
+            bottomBarVisibilityCallback(true)
+        }
+    }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val selectedKind by viewModel.selectedKind.collectAsStateWithLifecycle()
     val viewerUserId by viewModel.viewerUserId.collectAsStateWithLifecycle()
@@ -192,6 +216,8 @@ fun FeedScreen(
         onCreatePostClick = onCreatePostClick,
         onOpenStoryPlayer = onOpenStoryPlayer,
         onCreateStory = onCreateStory,
+        onBarsVisibilityChange = bottomBarVisibilityCallback,
+        homeTabClickFlow = homeTabClickFlow,
     )
 
     showCommentsForPostId?.let { postId ->
@@ -273,34 +299,118 @@ internal fun FeedScreenContent(
     onCreateStory: () -> Unit = {},
     selectedKind: FeedKind = FeedKind.Explore,
     onKindSelected: (FeedKind) -> Unit = {},
+    onBarsVisibilityChange: (Boolean) -> Unit = {},
+    homeTabClickFlow: SharedFlow<Unit>? = null,
 ) {
-    Column(
+    val listState = rememberLazyListState()
+    var isBarsVisible by rememberSaveable { mutableStateOf(true) }
+    val coroutineScope = rememberCoroutineScope()
+    var idleJob by remember { mutableStateOf<Job?>(null) }
+
+    fun updateBarsVisibility(visible: Boolean) {
+        if (isBarsVisible != visible) {
+            isBarsVisible = visible
+            onBarsVisibilityChange(visible)
+        }
+    }
+
+    val homeTabFlow = homeTabClickFlow ?: LocalHomeTabClick.current
+    LaunchedEffect(homeTabFlow) {
+        homeTabFlow.collect {
+            idleJob?.cancel()
+            updateBarsVisibility(true)
+            coroutineScope.launch {
+                if (listState.firstVisibleItemIndex > 10) {
+                    listState.scrollToItem(10)
+                }
+                listState.animateScrollToItem(0)
+            }
+            onRefresh()
+        }
+    }
+
+    val nestedScrollConnection = remember(listState) {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                val delta = available.y
+                if (delta < -4f) {
+                    updateBarsVisibility(false)
+                    idleJob?.cancel()
+                    idleJob = coroutineScope.launch {
+                        delay(1200)
+                        updateBarsVisibility(true)
+                    }
+                } else if (delta > 4f) {
+                    idleJob?.cancel()
+                    updateBarsVisibility(true)
+                }
+                return Offset.Zero
+            }
+        }
+    }
+
+    LaunchedEffect(listState) {
+        var previousIndex = listState.firstVisibleItemIndex
+        var previousOffset = listState.firstVisibleItemScrollOffset
+        snapshotFlow {
+            Triple(
+                listState.firstVisibleItemIndex,
+                listState.firstVisibleItemScrollOffset,
+                listState.isScrollInProgress,
+            )
+        }.collect { (index, offset, isScrolling) ->
+            if (index == 0 && offset == 0) {
+                idleJob?.cancel()
+                updateBarsVisibility(true)
+            } else if (isScrolling) {
+                val delta = if (index != previousIndex) {
+                    (index - previousIndex) * 1000 + (offset - previousOffset)
+                } else {
+                    offset - previousOffset
+                }
+
+                if (delta > 4) {
+                    idleJob?.cancel()
+                    updateBarsVisibility(false)
+                    idleJob = coroutineScope.launch {
+                        delay(1200)
+                        updateBarsVisibility(true)
+                    }
+                } else if (delta < -4) {
+                    idleJob?.cancel()
+                    updateBarsVisibility(true)
+                }
+            }
+            previousIndex = index
+            previousOffset = offset
+        }
+    }
+
+    val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    val topHeaderHeight = statusBarTop + 56.dp + 48.dp + 115.dp
+
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background),
     ) {
-        FeedAppBar(
-            onNotificationClick = onNotificationClick,
-            unreadNotificationCount = unreadNotificationCount,
-        )
-        FeedTabs(selectedKind = selectedKind, onKindSelected = onKindSelected)
-        ir.coffevista.vista_native.features.stories.ui.tray.StoryTray(
-            storyUsers = storyUsers,
-            currentUserId = viewerUserId.orEmpty(),
-            currentUserAvatar = currentUserAvatar,
-            onOpenStoryPlayer = onOpenStoryPlayer,
-            onCreateStory = onCreateStory,
+        Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .height(115.dp),
-        )
-        Box(modifier = Modifier.fillMaxSize()) {
+                .fillMaxSize()
+                .nestedScroll(nestedScrollConnection),
+        ) {
             when (val state = uiState) {
-                FeedUiState.Loading -> FeedSkeletonList()
-                is FeedUiState.Error -> FeedInitialError(
-                    message = state.message,
-                    onRetry = onRefresh,
-                )
+                FeedUiState.Loading -> FeedSkeletonList(topPadding = topHeaderHeight + 8.dp)
+                is FeedUiState.Error -> Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(top = topHeaderHeight),
+                ) {
+                    FeedInitialError(
+                        message = state.message,
+                        onRetry = onRefresh,
+                    )
+                }
                 is FeedUiState.Content -> PullToRefreshBox(
                     isRefreshing = state.isRefreshing,
                     onRefresh = onRefresh,
@@ -310,6 +420,7 @@ internal fun FeedScreenContent(
                 ) {
                     FeedContent(
                         state = state,
+                        listState = listState,
                         viewerUserId = viewerUserId,
                         selectedKind = selectedKind,
                         onLoadMore = onLoadMore,
@@ -328,22 +439,83 @@ internal fun FeedScreenContent(
                         onHashtagClick = onHashtagClick,
                         onMentionClick = onMentionClick,
                         onAppealClick = onAppealClick,
+                        topPadding = topHeaderHeight + 8.dp,
                     )
                 }
             }
-            VistaFloatingActionButton(
-                onClick = onCreatePostClick,
-                contentDescription = "ارسال پست جدید",
+            androidx.compose.animation.AnimatedVisibility(
+                visible = isBarsVisible,
+                enter = scaleIn(animationSpec = spring(dampingRatio = Spring.DampingRatioLowBouncy)) + fadeIn(),
+                exit = scaleOut(animationSpec = tween(200)) + fadeOut(),
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .padding(end = 16.dp),
             ) {
-                Icon(
-                    imageVector = Icons.Default.Add,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(28.dp),
-                )
+                VistaFloatingActionButton(
+                    onClick = onCreatePostClick,
+                    contentDescription = "ارسال پست جدید",
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(28.dp),
+                    )
+                }
+            }
+        }
+
+        AnimatedVisibility(
+            visible = isBarsVisible,
+            enter = slideInVertically(
+                initialOffsetY = { -it },
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioLowBouncy,
+                    stiffness = Spring.StiffnessMediumLow,
+                ),
+            ) + fadeIn(animationSpec = tween(200)),
+            exit = slideOutVertically(
+                targetOffsetY = { -it },
+                animationSpec = tween(250),
+            ) + fadeOut(animationSpec = tween(150)),
+            modifier = Modifier.align(Alignment.TopCenter),
+        ) {
+            Surface(
+                color = MaterialTheme.colorScheme.background.copy(alpha = 0.98f),
+                shadowElevation = 3.dp,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .statusBarsPadding(),
+                ) {
+                    FeedAppBar(
+                        onNotificationClick = onNotificationClick,
+                        unreadNotificationCount = unreadNotificationCount,
+                    )
+                    FeedTabs(
+                        selectedKind = selectedKind,
+                        onKindSelected = { kind ->
+                            updateBarsVisibility(true)
+                            onKindSelected(kind)
+                        },
+                    )
+                    ir.coffevista.vista_native.features.stories.ui.tray.StoryTray(
+                        storyUsers = storyUsers,
+                        currentUserId = viewerUserId.orEmpty(),
+                        currentUserAvatar = currentUserAvatar,
+                        onOpenStoryPlayer = onOpenStoryPlayer,
+                        onCreateStory = onCreateStory,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(115.dp),
+                    )
+                    HorizontalDivider(
+                        thickness = 0.5.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
+                    )
+                }
             }
         }
     }
@@ -507,8 +679,9 @@ internal fun FeedContent(
     onMentionClick: (String) -> Unit = {},
     onAppealClick: (String) -> Unit = {},
     selectedKind: FeedKind = FeedKind.Explore,
+    listState: LazyListState = rememberLazyListState(),
+    topPadding: androidx.compose.ui.unit.Dp = 8.dp,
 ) {
-    val listState = rememberLazyListState()
     val navigationBarInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     LaunchedEffect(listState, state.posts.size, state.hasMore) {
         snapshotFlow {
@@ -529,7 +702,7 @@ internal fun FeedContent(
         modifier = Modifier
             .fillMaxSize()
             .testTag(FeedTestTags.List),
-        contentPadding = PaddingValues(top = 8.dp, bottom = 110.dp + navigationBarInset),
+        contentPadding = PaddingValues(top = topPadding, bottom = 110.dp + navigationBarInset),
     ) {
         if (state.isOffline || state.isStale) {
             item(key = "offline-banner") {
@@ -1307,7 +1480,9 @@ private fun PostActionRow(
 }
 
 @Composable
-private fun FeedSkeletonList() {
+private fun FeedSkeletonList(
+    topPadding: androidx.compose.ui.unit.Dp = 8.dp,
+) {
     val transition = androidx.compose.animation.core.rememberInfiniteTransition(label = "shimmerTransition")
     val translateAnim by transition.animateFloat(
         initialValue = 0f,
@@ -1335,7 +1510,7 @@ private fun FeedSkeletonList() {
     )
 
     LazyColumn(
-        contentPadding = PaddingValues(top = 8.dp, bottom = 110.dp),
+        contentPadding = PaddingValues(top = topPadding, bottom = 110.dp),
         userScrollEnabled = false,
     ) {
         items(4) {

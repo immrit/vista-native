@@ -23,8 +23,12 @@ import ir.coffevista.vista_native.features.chat.presentation.components.ChatAtta
 import ir.coffevista.vista_native.features.chat.presentation.components.ChatLinkPreviewCard
 import ir.coffevista.vista_native.features.chat.presentation.components.ChatTextBubbleLayout
 import ir.coffevista.vista_native.features.chat.presentation.components.PinnedMessagesBar
+import ir.coffevista.vista_native.features.chat.presentation.components.SharedPostCard
+import ir.coffevista.vista_native.features.chat.presentation.components.SharedPostParser
 import ir.coffevista.vista_native.features.chat.presentation.components.UnreadMessagesDivider
 import ir.coffevista.vista_native.features.chat.presentation.components.extractFirstUrl
+import androidx.compose.material.icons.outlined.AutoStories
+import androidx.compose.material.icons.outlined.EditNote
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.BorderStroke
@@ -32,6 +36,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -55,6 +61,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.union
@@ -65,6 +73,7 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -122,6 +131,7 @@ import ir.coffevista.vista_native.features.chat.presentation.components.EmojiCur
 import ir.coffevista.vista_native.features.chat.presentation.components.ChatComposerField
 import ir.coffevista.vista_native.features.chat.presentation.components.ChatComposerController
 import ir.coffevista.vista_native.features.chat.presentation.components.TelegramXMediaPanel
+import ir.coffevista.vista_native.features.chat.presentation.components.KeyboardHeightStore
 import ir.coffevista.vista_native.features.chat.presentation.components.MessageContextMenu
 import ir.coffevista.vista_native.features.chat.presentation.components.MessageContextCapabilities
 import androidx.compose.ui.geometry.Rect
@@ -140,9 +150,12 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PersonOutline
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -164,9 +177,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
+import androidx.compose.material3.ripple
 import androidx.compose.material3.TopAppBar
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -176,6 +191,8 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
@@ -252,7 +269,11 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import coil.compose.AsyncImage
+import coil.compose.SubcomposeAsyncImage
 import ir.coffevista.vista_native.core.designsystem.R
 import ir.coffevista.vista_native.features.chat.R as ChatR
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaBrandColors
@@ -274,10 +295,16 @@ import ir.coffevista.vista_native.features.chat.domain.model.RealtimeConnectionS
 import ir.coffevista.vista_native.features.chat.domain.model.ProfileNote
 import ir.coffevista.vista_native.features.chat.domain.model.TransferState
 import ir.coffevista.vista_native.features.chat.domain.model.inboxPreviewText
+import ir.coffevista.vista_native.features.chat.domain.model.peerIdentityKey
 import ir.coffevista.vista_native.features.chat.presentation.conversations.ConversationsUiState
 import ir.coffevista.vista_native.features.chat.presentation.conversations.ConversationsViewModel
 import ir.coffevista.vista_native.features.chat.presentation.messages.MessagesUiState
 import ir.coffevista.vista_native.features.chat.presentation.messages.MessagesViewModel
+import ir.coffevista.vista_native.features.chat.presentation.components.SecretChatIntroCard
+import ir.coffevista.vista_native.features.chat.presentation.components.TelegramEncryptionKeyDialog
+import ir.coffevista.vista_native.features.chat.presentation.components.TelegramAutoDeleteDialog
+import ir.coffevista.vista_native.features.chat.presentation.components.TelegramSecretGreen
+import ir.coffevista.vista_native.features.chat.presentation.components.TelegramSecretBadgeBg
 import java.text.SimpleDateFormat
 import java.io.File
 import java.util.Calendar
@@ -372,15 +399,16 @@ fun ConversationListScreen(
     val requestConversations = if (state.includeArchived) {
         emptyList()
     } else {
-        visibleConversations.filter { it.isMessageRequest }
+        visibleConversations.filter { it.isMessageRequest }.distinctBy { it.peerIdentityKey() }
     }
     val nonRequestConversations = if (state.includeArchived) {
         visibleConversations
     } else {
         visibleConversations.filterNot { it.isMessageRequest }
     }
-    val regularConversations = nonRequestConversations.filter { it.isPinned } +
-        nonRequestConversations.filterNot { it.isPinned }
+    val regularConversations = (nonRequestConversations.filter { it.isPinned } +
+        nonRequestConversations.filterNot { it.isPinned })
+        .distinctBy { it.peerIdentityKey() }
     Box(modifier = Modifier.fillMaxSize()) {
         Scaffold(
         modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
@@ -727,13 +755,29 @@ private fun ProfileNotesTray(
     onOpenOwnNote: () -> Unit,
     onOpenPeerNote: (ProfileNote, Conversation) -> Unit,
 ) {
-    val own = notes.firstOrNull { it.isMine && !it.isExpired() }
-    val peerNotes = notes.asSequence()
-        .filter { !it.isMine && !it.isExpired() }
-        .mapNotNull { note ->
-            conversations.firstOrNull { it.peerId?.trim() == note.userId.trim() }?.let { note to it }
+    val own = remember(notes) { notes.firstOrNull { it.isMine && !it.isExpired() } }
+    val peerNotes = remember(notes, conversations) {
+        val privateConvsByPeer = HashMap<String, Conversation>(conversations.size)
+        conversations.forEach { conv ->
+            if (conv.type == ConversationType.PRIVATE) {
+                conv.peerId?.trim()?.takeIf(String::isNotEmpty)?.let { pid ->
+                    val lower = pid.lowercase()
+                    privateConvsByPeer.putIfAbsent(lower, conv)
+                    privateConvsByPeer.putIfAbsent(lower.replace("-", ""), conv)
+                }
+            }
         }
-        .toList()
+        notes.asSequence()
+            .filter { !it.isMine && !it.isExpired() && it.userId.isNotBlank() }
+            .distinctBy { it.userId }
+            .mapNotNull { note ->
+                val cleanNoteUserId = note.userId.trim().lowercase()
+                val conv = privateConvsByPeer[cleanNoteUserId]
+                    ?: privateConvsByPeer[cleanNoteUserId.replace("-", "")]
+                conv?.let { note to it }
+            }
+            .toList()
+    }
     LazyRow(
         modifier = Modifier.fillMaxWidth().height(120.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -748,7 +792,7 @@ private fun ProfileNotesTray(
                 onClick = onOpenOwnNote,
             )
         }
-        items(peerNotes, key = { it.first.userId }) { (note, conversation) ->
+        items(peerNotes, key = { "peer-note-${it.first.userId}" }) { (note, conversation) ->
             ProfileNoteItem(
                 text = note.content,
                 label = conversation.title,
@@ -995,11 +1039,6 @@ private fun ConversationRow(
     val maxStartSwipePx = with(density) { 144.dp.toPx() }
     val maxEndSwipePx = with(density) { (if (onBlock == null) 144.dp else 216.dp).toPx() }
     val revealThreshold = with(density) { 40.dp.toPx() }
-    // Reveal actions on right-swipe (start) and left-swipe (end)
-    val revealProgress = (
-        kotlin.math.abs(swipeOffset.value) /
-            if (swipeOffset.value >= 0f) maxStartSwipePx else maxEndSwipePx
-        ).coerceIn(0f, 1f)
 
     Box(
         modifier = Modifier
@@ -1048,7 +1087,10 @@ private fun ConversationRow(
             modifier = Modifier
                 .align(androidx.compose.ui.AbsoluteAlignment.CenterLeft)
                 .height(76.dp)
-                .graphicsLayer { alpha = if (swipeOffset.value > 0) revealProgress else 0f },
+                .graphicsLayer {
+                    val progress = if (maxStartSwipePx > 0f) (swipeOffset.value / maxStartSwipePx).coerceIn(0f, 1f) else 0f
+                    alpha = if (swipeOffset.value > 0f) progress else 0f
+                },
             verticalAlignment = Alignment.CenterVertically,
         ) {
             SwipeActionButton(
@@ -1077,7 +1119,10 @@ private fun ConversationRow(
             modifier = Modifier
                 .align(androidx.compose.ui.AbsoluteAlignment.CenterRight)
                 .height(76.dp)
-                .graphicsLayer { alpha = if (swipeOffset.value < 0) revealProgress else 0f },
+                .graphicsLayer {
+                    val progress = if (maxEndSwipePx > 0f) (-swipeOffset.value / maxEndSwipePx).coerceIn(0f, 1f) else 0f
+                    alpha = if (swipeOffset.value < 0f) progress else 0f
+                },
             verticalAlignment = Alignment.CenterVertically,
         ) {
             SwipeActionButton(
@@ -1632,6 +1677,10 @@ private fun EmptyChatGlyph(color: Color) {
 fun MessageDetailRoute(
     conversationId: String,
     initialMessageId: String? = null,
+    initialSharedContentId: String? = null,
+    initialSharedText: String? = null,
+    initialSharedUris: List<android.net.Uri> = emptyList(),
+    onInitialSharedContentConsumed: (String) -> Unit = {},
     title: String,
     viewModel: MessagesViewModel,
     onBack: () -> Unit,
@@ -1640,9 +1689,31 @@ fun MessageDetailRoute(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     LaunchedEffect(conversationId) { viewModel.bind(conversationId) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, conversationId, viewModel) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> viewModel.setConversationVisible(conversationId, true)
+                Lifecycle.Event.ON_PAUSE -> viewModel.setConversationVisible(conversationId, false)
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+            viewModel.setConversationVisible(conversationId, true)
+        }
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            viewModel.setConversationVisible(conversationId, false)
+        }
+    }
     MessageDetailScreen(
         state = state,
         initialMessageId = initialMessageId,
+        initialSharedContentId = initialSharedContentId,
+        initialSharedText = initialSharedText,
+        initialSharedUris = initialSharedUris,
+        onInitialSharedContentConsumed = onInitialSharedContentConsumed,
         title = state.conversation?.title?.takeIf(String::isNotBlank) ?: title,
         onBack = onBack,
         onRefresh = viewModel::refresh,
@@ -1683,6 +1754,8 @@ fun MessageDetailRoute(
         onOpenProfile = onOpenProfile,
         onLoadPartnerProfile = viewModel::loadPartnerProfile,
         onStartSecretChat = { viewModel.startSecretChat(onStartSecretChat) },
+        onSetSecretAutoDelete = viewModel::setSecretAutoDelete,
+        onComputeSafetyNumber = viewModel::computeSafetyNumber,
     )
 }
 
@@ -1691,6 +1764,10 @@ fun MessageDetailRoute(
 fun MessageDetailScreen(
     state: MessagesUiState,
     initialMessageId: String? = null,
+    initialSharedContentId: String? = null,
+    initialSharedText: String? = null,
+    initialSharedUris: List<android.net.Uri> = emptyList(),
+    onInitialSharedContentConsumed: (String) -> Unit = {},
     title: String,
     onBack: () -> Unit,
     onRefresh: () -> Unit,
@@ -1732,18 +1809,33 @@ fun MessageDetailScreen(
     onOpenProfile: (String) -> Unit = {},
     onLoadPartnerProfile: (String) -> Unit = {},
     onStartSecretChat: () -> Unit = {},
+    onSetSecretAutoDelete: (Int) -> Unit = {},
+    onComputeSafetyNumber: ((String?) -> Unit) -> Unit = {},
 ) = CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
     val context = LocalContext.current
     val localView = LocalView.current
     val isSecretConversation = state.conversation?.type == ConversationType.SECRET
-    DisposableEffect(localView, isSecretConversation) {
-        val window = (localView.context as? android.app.Activity)?.window
-        if (isSecretConversation) {
-            window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+    val isDarkTheme = isSystemInDarkTheme()
+    val isDebuggable = remember(context) {
+        runCatching {
+            (context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+        }.getOrDefault(true)
+    }
+    DisposableEffect(localView, isSecretConversation, isDarkTheme) {
+        val activity = localView.context.findActivity()
+        val window = activity?.takeUnless { it.isFinishing || it.isDestroyed }?.window
+        if (window != null) {
+            runCatching {
+                val insetsController = androidx.core.view.WindowCompat.getInsetsController(window, localView)
+                insetsController.isAppearanceLightStatusBars = !isDarkTheme
+            }
+        }
+        if (isSecretConversation && !isDebuggable) {
+            runCatching { window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE) }
         }
         onDispose {
-            if (isSecretConversation) {
-                window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+            if (isSecretConversation && !isDebuggable) {
+                runCatching { window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE) }
             }
         }
     }
@@ -1761,14 +1853,8 @@ fun MessageDetailScreen(
     // Composer geometry and editable state are reconstructed from the active
     // conversation. Restoring a raw TextFieldValue after process recreation
     // can resurrect a stale selection/draft and corrupt input-surface swaps.
-    var composer by remember(state.conversationId) { mutableStateOf("") }
-    var composerValue by remember(state.conversationId) {
-        mutableStateOf(TextFieldValue(composer, TextRange(composer.length)))
-    }
-    // Hoist blank check to derivedStateOf → AnimatedVisibility/AnimatedContent don't
-    // rebuild on every keystroke, only on blank↔filled transition
-    val isComposerBlank = composer.isBlank()
-    val isComposerNotBlank = composer.isNotBlank()
+    var autoDeleteDialogVisible by rememberSaveable { mutableStateOf(false) }
+    var safetyNumberDialogVisible by rememberSaveable { mutableStateOf(false) }
     var emojiPanelVisible by remember { mutableStateOf(false) }
     val composerController = remember { ChatComposerController() }
     val focusRequester = remember { FocusRequester() }
@@ -1822,123 +1908,67 @@ fun MessageDetailScreen(
     }
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
-    val defaultKeyboardHeight = remember(configuration.screenHeightDp, isLandscape) {
-        if (isLandscape) {
-            (configuration.screenHeightDp.dp * 0.5f).coerceIn(160.dp, 240.dp)
-        } else {
-            // This is only the cold-start fallback (when the user opens emoji
-            // before focusing the composer).  Once the IME has appeared, the
-            // panel below is always sized from its actual inset instead.
-            300.dp
-        }
-    }
+    val screenHeightDp = configuration.screenHeightDp.toFloat()
     val density = LocalDensity.current
     val composerHostView = LocalView.current
-    var visibleKeyboardHeightPx by remember(composerHostView) { mutableIntStateOf(0) }
-    var visibleKeyboardPanelHeightPx by remember(composerHostView) { mutableIntStateOf(0) }
-    DisposableEffect(composerHostView) {
-        val root = composerHostView.rootView
-        val visibleFrame = AndroidRect()
-        val listener = ViewTreeObserver.OnGlobalLayoutListener {
-            root.getWindowVisibleDisplayFrame(visibleFrame)
-            val coveredHeight = (root.height - visibleFrame.bottom).coerceAtLeast(0)
-            // With adjustResize, most of the IME is removed from root.height
-            // before visible-frame measurement. The physical root delta keeps
-            // the emoji replacement equal to the real keyboard footprint.
-            val resizedRootHeight = (
-                root.resources.displayMetrics.heightPixels - root.height
-            ).coerceAtLeast(0)
-            val keyboardFootprint = maxOf(coveredHeight, resizedRootHeight)
-            // Ignore status/navigation-only changes. A keyboard surface is
-            // materially taller than 160dp on supported phone layouts.
-            if (keyboardFootprint >= with(density) { 160.dp.roundToPx() }) {
-                visibleKeyboardHeightPx = keyboardFootprint
-                // The visible frame already represents the exact footprint
-                // that the IME takes from this window.  Adding the navigation
-                // bar again makes the custom emoji panel taller than a real
-                // keyboard by one gesture-navigation inset (32–36 px here).
-                visibleKeyboardPanelHeightPx = keyboardFootprint
-            }
-        }
-        root.viewTreeObserver.addOnGlobalLayoutListener(listener)
-        onDispose {
-            root.viewTreeObserver.removeOnGlobalLayoutListener(listener)
-        }
+
+    var composerPanelHeightDp by remember(configuration.screenHeightDp, isLandscape) {
+        mutableFloatStateOf(KeyboardHeightStore.getKeyboardHeightDp(context, isLandscape, screenHeightDp))
     }
-    // Compose's insets can be consumed on Android 13 with adjustNothing.  The
-    // visible display frame above remains tied to the IME's actual footprint.
+
     val imeBottomPx = WindowInsets.ime.getBottom(density)
     val navBottomPx = WindowInsets.navigationBars.getBottom(density)
     val imeBottomDp = with(density) { imeBottomPx.toDp() }
     val navBottomDp = with(density) { navBottomPx.toDp() }
-    val visibleKeyboardHeightDp = with(density) { visibleKeyboardHeightPx.toDp() }
-    // Use the same window footprint measured while the IME was visible.  The
-    // value must not add system bars: they are already accounted for by the
-    // window's visible display frame.
-    val panelReservationDp = with(density) {
-        (visibleKeyboardPanelHeightPx.takeIf { it > 0 } ?: visibleKeyboardHeightPx).toDp()
+    val isImeVisible = WindowInsets.isImeVisible
+
+    // Track peak resting keyboard height while IME is open.
+    // Avoids capturing intermediate opening or closing animation frames.
+    var peakImeHeightDp by remember { mutableFloatStateOf(0f) }
+    val isImeOpen = isImeVisible || imeBottomDp >= 160.dp
+
+    LaunchedEffect(isImeOpen, imeBottomDp.value) {
+        val currentDp = imeBottomDp.value
+        if (isImeOpen) {
+            if (currentDp > peakImeHeightDp) {
+                peakImeHeightDp = currentDp
+            }
+            if (currentDp >= 160f && currentDp >= (peakImeHeightDp - 2f)) {
+                kotlinx.coroutines.delay(80)
+                if (isImeOpen && imeBottomDp.value >= (peakImeHeightDp - 4f)) {
+                    val finalVal = maxOf(imeBottomDp.value, peakImeHeightDp)
+                    composerPanelHeightDp = finalVal
+                    KeyboardHeightStore.saveKeyboardHeightDp(context, isLandscape, finalVal, screenHeightDp)
+                }
+            }
+        } else {
+            peakImeHeightDp = 0f
+        }
     }
-    val isKeyboardOpen = imeBottomPx > navBottomPx + with(density) { 20.dp.roundToPx() }
-    // Emoji is a keyboard replacement, not an extra bottom sheet. Cap its
-    // reservation to the active viewport and reuse the same value while the
-    // IME is returning so the composer cannot jump between the two surfaces.
-    // `screenHeightDp` follows the resized app window while the IME is present.
-    // Using it here caps emoji to that shrunken viewport and moves the composer
-    // between keyboard and emoji. DisplayMetrics keeps the physical screen bound.
-    val physicalScreenHeight = with(density) {
-        composerHostView.resources.displayMetrics.heightPixels.toDp()
-    }
-    val responsivePanelLimit = (physicalScreenHeight * if (isLandscape) 0.58f else 0.48f)
-        .coerceIn(180.dp, 420.dp)
-    val responsivePanelFallback = defaultKeyboardHeight.coerceIn(180.dp, responsivePanelLimit)
-    // Some adjustResize implementations only expose a navigation-sized inset.
-    // Keep the custom panel large enough to replace a phone keyboard even when
-    // that incomplete value is all the platform reports.
-    val emojiPanelMinimum = (physicalScreenHeight * if (isLandscape) 0.42f else 0.37f)
-        .coerceIn(180.dp, responsivePanelLimit)
-    val responsivePanelReservation = when {
-        panelReservationDp >= 160.dp -> panelReservationDp.coerceIn(180.dp, responsivePanelLimit)
-        isKeyboardOpen && imeBottomDp >= 160.dp -> imeBottomDp.coerceIn(180.dp, responsivePanelLimit)
-        else -> responsivePanelFallback
-    }
-    // This is geometry, not user state. Persisting it restores a stale IME
-    // height after process recreation or a density/orientation change.
-    var composerPanelHeightDp by remember(configuration.screenHeightDp, isLandscape) {
-        mutableStateOf(defaultKeyboardHeight.value)
-    }
+
     var isSwitchingToKeyboard by remember { mutableStateOf(false) }
     LaunchedEffect(isSwitchingToKeyboard) {
         if (isSwitchingToKeyboard) {
-            // Run only after the emoji surface has left composition.  A fixed
-            // delay races that commit on slower frames and can leave the
-            // keyboard button visibly inert on alternating taps.
             composerController.openKeyboard()
+            kotlinx.coroutines.delay(600)
+            if (isSwitchingToKeyboard) {
+                isSwitchingToKeyboard = false
+                emojiPanelVisible = false
+            }
         }
     }
-    LaunchedEffect(
-        visibleKeyboardPanelHeightPx,
-        visibleKeyboardHeightPx,
-        imeBottomPx,
-        navBottomPx,
-        isKeyboardOpen,
-        responsivePanelReservation,
-    ) {
-        // On Android 13 with `adjustNothing`, Compose can transiently report a
-        // small navigation-like IME inset (~100dp) even though the keyboard is
-        // visibly full height.  Never let that partial value replace the
-        // portrait fallback; genuine full IME surfaces are substantially taller.
-        if (visibleKeyboardHeightDp.value >= 160f ||
-            (isKeyboardOpen && imeBottomDp.value >= 160f)
-        ) {
-            composerPanelHeightDp = responsivePanelReservation.value
-        }
-        if (isKeyboardOpen && isSwitchingToKeyboard) {
+
+    LaunchedEffect(isImeOpen, imeBottomDp.value, isSwitchingToKeyboard) {
+        if (isSwitchingToKeyboard && isImeOpen && imeBottomDp >= (composerPanelHeightDp.dp - 28.dp)) {
             isSwitchingToKeyboard = false
+            emojiPanelVisible = false
         }
     }
+
     val isPanelActive = emojiPanelVisible || isSwitchingToKeyboard
-    BackHandler(enabled = emojiPanelVisible) {
+    BackHandler(enabled = emojiPanelVisible || isSwitchingToKeyboard) {
         emojiPanelVisible = false
+        isSwitchingToKeyboard = false
     }
     // Back handlers are dispatched in reverse composition order. Register
     // selection after the composer panel so Back always leaves selection
@@ -2030,8 +2060,23 @@ fun MessageDetailScreen(
             listState.animateScrollToItem(0)
         }
     }
+    LaunchedEffect(initialSharedContentId, state.conversationId) {
+        val requestId = initialSharedContentId ?: return@LaunchedEffect
+        if (state.conversationId.isNullOrBlank()) return@LaunchedEffect
+        val sharedText = initialSharedText
+        if (!sharedText.isNullOrBlank()) onComposerChanged(sharedText)
+        if (initialSharedUris.isNotEmpty()) {
+            enqueueSelectedAttachments(
+                uris = initialSharedUris,
+                groupAsAlbum = initialSharedUris.size > 1,
+            )
+        }
+        onInitialSharedContentConsumed(requestId)
+    }
 
-    val isDarkTheme = isSystemInDarkTheme()
+    var headerHeightDp by remember { mutableStateOf(0.dp) }
+    val statusBarTopDp = with(density) { WindowInsets.statusBars.getTop(density).toDp() }
+    val effectiveTopPadding = if (headerHeightDp > 0.dp) headerHeightDp else (statusBarTopDp + 56.dp)
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -2054,274 +2099,38 @@ fun MessageDetailScreen(
 
         Column(
             modifier = Modifier
-                .fillMaxSize()
-                .statusBarsPadding(),
+                .fillMaxSize(),
         ) {
-            if (selectedMessageKeys.isNotEmpty()) {
-                val selectedMessages = state.messages.filter { it.stableKey in selectedMessageKeys }
-                val secret = state.conversation?.type == ConversationType.SECRET
-                TopAppBar(
-                    colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        titleContentColor = MaterialTheme.colorScheme.onPrimary,
-                        navigationIconContentColor = MaterialTheme.colorScheme.onPrimary,
-                        actionIconContentColor = MaterialTheme.colorScheme.onPrimary,
-                    ),
-                    navigationIcon = {
-                        IconButton(onClick = ::dismissMessageInteraction) {
-                            Icon(Icons.Default.Close, contentDescription = "خروج از انتخاب پیام")
-                        }
-                    },
-                    title = { Text("${selectedMessages.size} انتخاب شده", fontWeight = FontWeight.SemiBold) },
-                    actions = {
-                        if (!secret) {
-                            IconButton(
-                                enabled = selectedMessages.isNotEmpty(),
-                                onClick = {
-                                    clipboard.setText(AnnotatedString(selectedMessages.joinToString("\n\n") { it.previewText() }))
-                                    dismissMessageInteraction()
-                                },
-                            ) { Icon(Icons.Default.ContentCopy, contentDescription = "کپی پیام‌های انتخاب شده") }
-                            IconButton(
-                                enabled = selectedMessages.isNotEmpty(),
-                                onClick = { forwardingMessages = selectedMessages },
-                            ) { Icon(Icons.AutoMirrored.Filled.Forward, contentDescription = "فوروارد پیام‌های انتخاب شده") }
-                        }
-                        IconButton(
-                            enabled = selectedMessages.isNotEmpty(),
-                            onClick = { deletingMessages = selectedMessages },
-                        ) { Icon(Icons.Default.Delete, contentDescription = "حذف پیام‌های انتخاب شده") }
-                    },
-                )
-            } else if (searchVisible) {
-                TopAppBar(
-                    title = {
-                        BasicTextField(
-                            value = state.searchQuery,
-                            onValueChange = onSearch,
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions.Default.copy(imeAction = ImeAction.Search),
-                            textStyle = MaterialTheme.typography.bodyLarge.copy(
-                                color = MaterialTheme.colorScheme.onSurface,
-                                textAlign = TextAlign.Right,
-                            ),
-                            decorationBox = { field ->
-                                Box(contentAlignment = Alignment.CenterEnd) {
-                                    if (state.searchQuery.isBlank()) {
-                                        Text("جستجو در پیام‌ها...", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    }
-                                    field()
-                                }
-                            },
-                        )
-                    },
-                    navigationIcon = {
-                        IconButton(onClick = {
-                            searchVisible = false
-                            searchResultIndex = 0
-                            onSearch("")
-                        }) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "بستن جستجوی پیام‌ها")
-                        }
-                    },
-                    actions = {
-                        if (state.isSearching) {
-                            CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                        } else if (state.searchQuery.trim().length >= 2) {
-                            Text(
-                                if (state.searchResults.isEmpty()) "نتیجه‌ای یافت نشد"
-                                else "${searchResultIndex + 1}/${state.searchResults.size}",
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            TextButton(
-                                enabled = searchResultIndex > 0,
-                                onClick = { searchResultIndex -= 1 },
-                            ) { Text("↑") }
-                            TextButton(
-                                enabled = searchResultIndex < state.searchResults.lastIndex,
-                                onClick = { searchResultIndex += 1 },
-                            ) { Text("↓") }
-                        }
-                    },
-                )
-            } else {
-                // A fixed 56dp app bar clips the presence line at large font
-                // scales. Keep the compact default while reserving two lines
-                // when the user has requested an accessibility text size.
-                val conversationTopBarHeight = if (density.fontScale > 1.3f) 72.dp else 56.dp
-                TopAppBar(
-                    modifier = Modifier.height(conversationTopBarHeight),
-                    title = {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    if (state.conversation?.type == ConversationType.GROUP) {
-                                        groupSheetVisible = true
-                                    } else {
-                                        openPartnerDetails()
-                                    }
-                                },
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            ChatAvatarImage(
-                                model = state.conversation?.avatarUrl,
-                                contentDescription = null,
-                                modifier = Modifier.size(42.dp).clip(CircleShape),
-                            )
-                            Spacer(Modifier.width(10.dp))
-                            Column(
-                                modifier = Modifier.weight(1f),
-                                horizontalAlignment = Alignment.Start,
-                            ) {
-                                Text(
-                                    title,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    fontSize = 17.sp,
-                                    fontWeight = FontWeight.Bold,
-                                )
-                                if (isSecretConversation) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(
-                                            Icons.Default.Lock,
-                                            contentDescription = null,
-                                            tint = Color(0xFF43A047),
-                                            modifier = Modifier.size(13.dp),
-                                        )
-                                        Spacer(Modifier.width(3.dp))
-                                        Text(
-                                            "گفتگوی محرمانه • رمزگذاری سراسری فعال",
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                            color = Color(0xFF43A047),
-                                            fontSize = 11.sp,
-                                        )
-                                    }
-                                }
-                                val subtitle = when {
-                                    state.conversation?.type == ConversationType.GROUP -> when {
-                                        state.conversation.typingUserIds.isNotEmpty() -> "در حال نوشتن..."
-                                        state.isGroupLoading && state.groupMembers.isEmpty() -> "در حال بررسی اعضا..."
-                                        else -> "${maxOf(state.groupInfo?.memberCount ?: 0, state.groupMembers.size)} عضو"
-                                    }
-                                    state.conversation?.typingUserIds?.isNotEmpty() == true -> "در حال نوشتن..."
-                                    state.presence?.isOnline == true -> "آنلاین"
-                                    state.presence?.canViewLastSeen == true ->
-                                        formatUserPresence(state.presence.lastOnlineAtEpochMillis)
-                                    else -> "آخرین بازدید به تازگی"
-                                }
-                                Text(
-                                    subtitle,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    color = if (subtitle == "آنلاین" || subtitle.startsWith("در حال")) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Normal,
-                                )
-                            }
-                        }
-                    },
-                    navigationIcon = {
-                        IconButton(onClick = onBack) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "بازگشت", modifier = Modifier.size(24.dp))
-                        }
-                    },
-                    actions = {
-                        Box {
-                            var menuVisible by remember { mutableStateOf(false) }
-                            IconButton(onClick = { menuVisible = true }) {
-                                Icon(Icons.Default.MoreVert, contentDescription = "گزینه‌های گفتگو")
-                            }
-                            DropdownMenu(expanded = menuVisible, onDismissRequest = { menuVisible = false }) {
-                                DropdownMenuItem(
-                                    text = { Text("جستجو") },
-                                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                                    onClick = {
-                                        menuVisible = false
-                                        searchVisible = true
-                                    },
-                                )
-                                if (state.conversation?.type == ConversationType.GROUP) {
-                                    DropdownMenuItem(
-                                        text = { Text("اطلاعات گروه") },
-                                        leadingIcon = { Icon(Icons.Default.Group, contentDescription = null) },
-                                        onClick = {
-                                            menuVisible = false
-                                            groupSheetVisible = true
-                                            onRefreshGroup()
-                                        },
-                                    )
-                                } else {
-                                    if (state.conversation?.type == ConversationType.PRIVATE) {
-                                        DropdownMenuItem(
-                                            text = { Text("شروع گفتگوی محرمانه") },
-                                            leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
-                                            onClick = {
-                                                menuVisible = false
-                                                onStartSecretChat()
-                                            },
-                                        )
-                                    }
-                                    DropdownMenuItem(
-                                        text = { Text("اطلاعات کاربر") },
-                                        leadingIcon = { Icon(Icons.Default.Info, contentDescription = null) },
-                                        onClick = {
-                                            menuVisible = false
-                                            openPartnerDetails()
-                                        },
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text("مسدود کردن", color = MaterialTheme.colorScheme.error) },
-                                        leadingIcon = { Icon(Icons.Default.Block, contentDescription = null) },
-                                        onClick = {
-                                            menuVisible = false
-                                            blockingPeerId = state.conversation?.peerId
-                                        },
-                                    )
-                                }
-                            }
-                        }
-                    },
-                )
-            }
-
-            if (state.pinnedMessages.isNotEmpty()) {
-                PinnedMessagesBar(
-                    pinnedMessages = state.pinnedMessages,
-                    onMessageClick = { pinned ->
-                        val index = renderItemIndexForMessage(
-                            messageRenderItems,
-                            pinned.serverId ?: pinned.clientId,
-                        )
-                        if (index >= 0) coroutineScope.launch { listState.animateScrollToItem(index) }
-                    },
-                    onUnpinClick = { pinned ->
-                        onTogglePinned(pinned)
-                    },
-                )
-            }
-
-            if (state.connectionState == RealtimeConnectionState.RECONNECTING ||
-                state.connectionState == RealtimeConnectionState.DISCONNECTED
-            ) {
-                ConnectionBanner("در حال اتصال مجدد…", onRetry = onRefresh)
-            }
-
             Box(
                 Modifier
                     .weight(1f)
-                    .fillMaxWidth(),
+                    .fillMaxWidth()
+                    .pointerInput(emojiPanelVisible, isSwitchingToKeyboard) {
+                        if (emojiPanelVisible || isSwitchingToKeyboard) {
+                            detectTapGestures {
+                                emojiPanelVisible = false
+                                isSwitchingToKeyboard = false
+                            }
+                        }
+                    },
             ) {
+                val isDragged by listState.interactionSource.collectIsDraggedAsState()
+                LaunchedEffect(isDragged) {
+                    if (isDragged) {
+                        if (emojiPanelVisible || isSwitchingToKeyboard) {
+                            emojiPanelVisible = false
+                            isSwitchingToKeyboard = false
+                        }
+                        composerController.closeKeyboard()
+                    }
+                }
                 val displayedMessages = if (searchVisible && state.searchResults.isNotEmpty()) {
                     listOf(state.searchResults[searchResultIndex.coerceIn(0, state.searchResults.lastIndex)])
                 } else {
                     state.messages
                 }
                 val displayedRenderItems = remember(displayedMessages) {
-                    buildMessageRenderItems(displayedMessages)
+                    buildMessageRenderItems(displayedMessages).distinctBy { it.stableKey }
                 }
                 val unreadWindow = remember(state.messages) { unreadMessageWindow(state.messages) }
                 val groupMemberById = remember(state.groupMembers) {
@@ -2329,9 +2138,10 @@ fun MessageDetailScreen(
                 }
                 val floatingDateEpochMillis by remember(displayedRenderItems, listState) {
                     derivedStateOf {
+                        val visibleIndices = listState.layoutInfo.visibleItemsInfo.map { it.index }
                         visibleMessageDateEpochMillis(
                             renderItems = displayedRenderItems,
-                            firstVisibleItemIndex = listState.firstVisibleItemIndex,
+                            visibleIndices = visibleIndices.ifEmpty { listOf(listState.firstVisibleItemIndex) },
                         )
                     }
                 }
@@ -2356,12 +2166,30 @@ fun MessageDetailScreen(
                     state.error != null && state.messages.isEmpty() -> ErrorState(state.error, onRefresh)
                     searchVisible && state.searchQuery.trim().length >= 2 && !state.isSearching && state.searchResults.isEmpty() ->
                         Text("نتیجه‌ای یافت نشد", Modifier.align(Alignment.Center))
-                    state.messages.isEmpty() -> Text("هنوز پیامی نیست", Modifier.align(Alignment.Center))
+                    state.messages.isEmpty() -> {
+                        if (isSecretConversation) {
+                            SecretChatIntroCard(
+                                onSetTimer = { autoDeleteDialogVisible = true },
+                                onViewKey = {
+                                    onComputeSafetyNumber { }
+                                    safetyNumberDialogVisible = true
+                                },
+                                modifier = Modifier.align(Alignment.Center),
+                            )
+                        } else {
+                            Text("هنوز پیامی نیست", Modifier.align(Alignment.Center))
+                        }
+                    }
                     else -> LazyColumn(
                         modifier = Modifier.fillMaxSize().testTag("chat-message-list"),
                         state = listState,
                         reverseLayout = true,
-                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
+                        contentPadding = PaddingValues(
+                            start = 6.dp,
+                            end = 6.dp,
+                            top = effectiveTopPadding + 6.dp,
+                            bottom = 6.dp,
+                        ),
                     ) {
                         itemsIndexed(
                             displayedRenderItems,
@@ -2381,125 +2209,131 @@ fun MessageDetailScreen(
                                 presentedMessageKeys = presentedMessageKeys,
                                 nowEpochMillis = messageEntrySnapshotTime,
                             )
-                            val groupSender = groupMemberById[message.senderId]
-                            GroupSenderFrame(
-                                enabled = state.conversation?.type == ConversationType.GROUP && !message.isMine,
-                                senderId = message.senderId,
-                                senderName = groupSender?.displayName ?: "کاربر",
-                                avatarUrl = groupSender?.avatarUrl,
-                                isFirstInGroup = groupPosition.isFirstInGroup,
-                                isLastInGroup = groupPosition.isLastInGroup,
-                                onOpenProfile = onOpenProfile,
-                            ) {
-                                if (renderItem.isAlbum) {
-                                    MediaAlbumBubble(
-                                        messages = renderItem.messages,
-                                        downloads = state.downloads,
-                                        selectionMode = selectedMessageKeys.isNotEmpty(),
-                                        selected = messageKeys.all(selectedMessageKeys::contains),
-                                        onToggleSelection = { toggleMessageSelection(messageKeys) },
-                                        onLongPress = {
-                                            if (messageInteraction is MessageInteractionState.Idle) {
-                                                startSelection(messageKeys)
-                                            }
-                                        },
-                                        onRetry = onRetry,
-                                        onCancelTransfer = onCancelTransfer,
-                                        onStartDownload = onStartDownload,
-                                        onPauseDownload = onPauseDownload,
-                                        onResumeDownload = onResumeDownload,
-                                        onCancelDownload = onCancelDownload,
-                                        onAttachmentClick = { viewedAttachment = it },
-                                    )
-                                } else {
-                                    SwipeToReplyLayout(
-                                        enabled = messageInteraction is MessageInteractionState.Idle &&
-                                            message.content != MessageContent.Deleted,
-                                        bubbleOnRight = message.isMine,
-                                        onReply = {
-                                            replyingTo = message
-                                            editingMessage = null
-                                        },
-                                    ) {
-                                        MessageBubble(
-                                            message = message,
-                                            searchQuery = state.searchQuery.takeIf {
-                                                searchVisible && it.trim().length >= 2
-                                            },
-                                            onRetry = onRetry,
-                                            onCancelTransfer = onCancelTransfer,
-                                            downloadTask = state.downloads[message.serverId ?: message.clientId],
-                                            onStartDownload = onStartDownload,
-                                            onPauseDownload = onPauseDownload,
-                                            onResumeDownload = onResumeDownload,
-                                            onCancelDownload = onCancelDownload,
-                                            selectionMode = selectedMessageKeys.isNotEmpty(),
-                                            selected = message.stableKey in selectedMessageKeys,
-                                            onToggleSelection = {
-                                                toggleMessageSelection(message.stableKey)
-                                            },
-                                            onLongPress = {
-                                                if (messageInteraction is MessageInteractionState.Idle &&
-                                                    message.content != MessageContent.Deleted
-                                                ) {
-                                                    startSelection(message.stableKey)
-                                                }
-                                            },
-                                            onOpenContextMenu = { bubbleBounds ->
-                                                if (messageInteraction is MessageInteractionState.Idle &&
-                                                    message.content != MessageContent.Deleted
-                                                ) {
-                                                    openMessageContext(message.stableKey, bubbleBounds)
-                                                }
-                                            },
-                                            onReply = {
-                                                replyingTo = message
-                                                editingMessage = null
-                                            },
-                                            onReact = { emoji -> onReact(message, emoji) },
-                                            animateEntry = animateEntry,
-                                            isFirstInGroup = groupPosition.isFirstInGroup,
-                                            isLastInGroup = groupPosition.isLastInGroup,
-                                            onAttachmentClick = { viewedAttachment = it },
-                                            onJumpToRepliedMessage = {
-                                                val target = state.messages.firstOrNull { candidate ->
-                                                    (candidate.serverId != null && candidate.serverId == message.replyToMessageId) ||
-                                                        (candidate.clientId.isNotBlank() && candidate.clientId == message.replyToMessageId) ||
-                                                        (candidate.content is MessageContent.Text &&
-                                                            candidate.content.value == message.replyToContent)
-                                                }
-                                                val targetIndex = target?.let {
-                                                    renderItemIndexForMessage(messageRenderItems, it.stableKey)
-                                                } ?: -1
-                                                if (targetIndex >= 0) {
-                                                    if (searchVisible) {
-                                                        searchVisible = false
-                                                        searchResultIndex = 0
-                                                        onSearch("")
-                                                    }
-                                                    coroutineScope.launch { listState.animateScrollToItem(targetIndex) }
-                                                }
-                                            },
-                                        )
-                                    }
-                                }
-                            }
                             val older = if (searchVisible) {
                                 null
                             } else {
                                 displayedMessages.getOrNull(index + renderItem.messages.size)
                             }
-                            val unreadDividerIndex = unreadWindow.dividerIndex
+                            val oldestUnreadIndex = if (unreadWindow.count > 0) unreadWindow.count - 1 else null
                             val isUnreadBoundary = !searchVisible &&
-                                unreadDividerIndex != null &&
-                                unreadDividerIndex in index until (index + renderItem.messages.size)
-                            if (isUnreadBoundary) {
-                                UnreadMessagesDivider()
-                            }
-                            if (older != null &&
+                                oldestUnreadIndex != null &&
+                                oldestUnreadIndex in index until (index + renderItem.messages.size)
+                            val isDateBoundary = !searchVisible && (
+                                older == null ||
                                 !isSameLocalDay(renderItem.oldest.createdAtEpochMillis, older.createdAtEpochMillis)
-                            ) {
-                                DateDivider(renderItem.oldest.createdAtEpochMillis)
+                            )
+                            Column(modifier = Modifier.fillMaxWidth().animateItem()) {
+                                if (isDateBoundary) {
+                                    DateDivider(renderItem.oldest.createdAtEpochMillis)
+                                }
+                                if (isUnreadBoundary) {
+                                    UnreadMessagesDivider(text = "پیام‌های جدید")
+                                }
+                                val groupSender = groupMemberById[message.senderId]
+                                GroupSenderFrame(
+                                    enabled = state.conversation?.type == ConversationType.GROUP && !message.isMine,
+                                    senderId = message.senderId,
+                                    senderName = groupSender?.displayName ?: "کاربر",
+                                    avatarUrl = groupSender?.avatarUrl,
+                                    isFirstInGroup = groupPosition.isFirstInGroup,
+                                    isLastInGroup = groupPosition.isLastInGroup,
+                                    onOpenProfile = onOpenProfile,
+                                ) {
+                                    if (renderItem.isAlbum) {
+                                        MediaAlbumBubble(
+                                            messages = renderItem.messages,
+                                            downloads = state.downloads,
+                                            selectionMode = selectedMessageKeys.isNotEmpty(),
+                                            selected = messageKeys.all(selectedMessageKeys::contains),
+                                            onToggleSelection = { toggleMessageSelection(messageKeys) },
+                                            onLongPress = {
+                                                if (messageInteraction is MessageInteractionState.Idle) {
+                                                    startSelection(messageKeys)
+                                                }
+                                            },
+                                            onRetry = onRetry,
+                                            onCancelTransfer = onCancelTransfer,
+                                            onStartDownload = onStartDownload,
+                                            onPauseDownload = onPauseDownload,
+                                            onResumeDownload = onResumeDownload,
+                                            onCancelDownload = onCancelDownload,
+                                            onAttachmentClick = { viewedAttachment = it },
+                                        )
+                                    } else {
+                                        SwipeToReplyLayout(
+                                            enabled = messageInteraction is MessageInteractionState.Idle &&
+                                                message.content != MessageContent.Deleted,
+                                            bubbleOnRight = message.isMine,
+                                            onReply = {
+                                                replyingTo = message
+                                                editingMessage = null
+                                            },
+                                        ) {
+                                            MessageBubble(
+                                                message = message,
+                                                searchQuery = state.searchQuery.takeIf {
+                                                    searchVisible && it.trim().length >= 2
+                                                },
+                                                onRetry = onRetry,
+                                                onCancelTransfer = onCancelTransfer,
+                                                downloadTask = state.downloads[message.serverId ?: message.clientId],
+                                                onStartDownload = onStartDownload,
+                                                onPauseDownload = onPauseDownload,
+                                                onResumeDownload = onResumeDownload,
+                                                onCancelDownload = onCancelDownload,
+                                                selectionMode = selectedMessageKeys.isNotEmpty(),
+                                                selected = message.stableKey in selectedMessageKeys,
+                                                onToggleSelection = {
+                                                    toggleMessageSelection(message.stableKey)
+                                                },
+                                                onLongPress = {
+                                                    if (messageInteraction is MessageInteractionState.Idle &&
+                                                        message.content != MessageContent.Deleted
+                                                    ) {
+                                                        startSelection(message.stableKey)
+                                                    }
+                                                },
+                                                onOpenContextMenu = { bubbleBounds ->
+                                                    if (messageInteraction is MessageInteractionState.Idle &&
+                                                        message.content != MessageContent.Deleted
+                                                    ) {
+                                                        openMessageContext(message.stableKey, bubbleBounds)
+                                                    }
+                                                },
+                                                onReply = {
+                                                    replyingTo = message
+                                                    editingMessage = null
+                                                },
+                                                onReact = { emoji -> onReact(message, emoji) },
+                                                animateEntry = animateEntry,
+                                                isFirstInGroup = groupPosition.isFirstInGroup,
+                                                isLastInGroup = groupPosition.isLastInGroup,
+                                                isSecretConversation = isSecretConversation,
+                                                secretAutoDeleteSeconds = state.secretAutoDeleteSeconds,
+                                                onAttachmentClick = { viewedAttachment = it },
+                                                onJumpToRepliedMessage = {
+                                                    val target = state.messages.firstOrNull { candidate ->
+                                                        (candidate.serverId != null && candidate.serverId == message.replyToMessageId) ||
+                                                            (candidate.clientId.isNotBlank() && candidate.clientId == message.replyToMessageId) ||
+                                                            (candidate.content is MessageContent.Text &&
+                                                                candidate.content.value == message.replyToContent)
+                                                    }
+                                                    val targetIndex = target?.let {
+                                                        renderItemIndexForMessage(messageRenderItems, it.stableKey)
+                                                    } ?: -1
+                                                    if (targetIndex >= 0) {
+                                                        if (searchVisible) {
+                                                            searchVisible = false
+                                                            searchResultIndex = 0
+                                                            onSearch("")
+                                                        }
+                                                        coroutineScope.launch { listState.animateScrollToItem(targetIndex) }
+                                                    }
+                                                },
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         }
                         if (!searchVisible) item(key = "older") {
@@ -2514,18 +2348,41 @@ fun MessageDetailScreen(
                     epochMillis = floatingDateEpochMillis,
                     modifier = Modifier
                         .align(Alignment.TopCenter)
-                        .padding(top = 8.dp),
+                        .padding(top = effectiveTopPadding + 8.dp),
                 )
 
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.BottomEnd,
                 ) {
-                    val showScrollToBottom = listState.firstVisibleItemIndex > 3
-                    if (showScrollToBottom && !searchVisible) {
+                    val showScrollToBottom by remember {
+                        derivedStateOf { listState.firstVisibleItemIndex > 2 }
+                    }
+                    val unreadBelow by remember(displayedRenderItems, unreadWindow.count) {
+                        derivedStateOf {
+                            val firstIdx = listState.firstVisibleItemIndex
+                            if (firstIdx <= 0) 0
+                            else {
+                                val hiddenMessageCount = displayedRenderItems
+                                    .take(firstIdx)
+                                    .sumOf { it.messages.size }
+                                minOf(hiddenMessageCount, unreadWindow.count)
+                            }
+                        }
+                    }
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = showScrollToBottom && !searchVisible,
+                        enter = androidx.compose.animation.scaleIn(
+                            animationSpec = spring(stiffness = Spring.StiffnessMediumLow, dampingRatio = Spring.DampingRatioMediumBouncy),
+                            initialScale = 0.5f,
+                        ) + androidx.compose.animation.fadeIn(tween(160)),
+                        exit = androidx.compose.animation.scaleOut(
+                            animationSpec = tween(140),
+                            targetScale = 0.5f,
+                        ) + androidx.compose.animation.fadeOut(tween(140)),
+                        modifier = Modifier.padding(end = 12.dp, bottom = 12.dp),
+                    ) {
                         Box(
-                            modifier = Modifier
-                                .padding(end = 12.dp, bottom = 12.dp),
                             contentAlignment = Alignment.TopEnd,
                         ) {
                             Box(
@@ -2547,10 +2404,6 @@ fun MessageDetailScreen(
                                     modifier = Modifier.size(20.dp),
                                 )
                             }
-                            val hiddenMessageCount = displayedRenderItems
-                                .take(listState.firstVisibleItemIndex)
-                                .sumOf { it.messages.size }
-                            val unreadBelow = minOf(hiddenMessageCount, unreadWindow.count)
                             if (unreadBelow > 0) {
                                 Box(
                                     modifier = Modifier
@@ -2577,83 +2430,31 @@ fun MessageDetailScreen(
             Column(
                 modifier = Modifier.fillMaxWidth(),
             ) {
-            AnimatedVisibility(
-                visible = replyingTo != null,
-                enter = slideInVertically(tween(220, easing = FastOutSlowInEasing)) { it } + fadeIn(tween(200)),
-                exit = slideOutVertically(tween(200, easing = FastOutSlowInEasing)) { it } + fadeOut(tween(180)),
-            ) {
-                replyingTo?.let { message ->
-                    ComposerContextBanner(
-                        label = "پاسخ به ${message.replyDisplayName(title)}",
-                        preview = message.previewText(),
-                        onDismiss = { replyingTo = null },
-                    )
-                }
-            }
-            AnimatedVisibility(
-                visible = editingMessage != null,
-                enter = slideInVertically(tween(220, easing = FastOutSlowInEasing)) { it } + fadeIn(tween(200)),
-                exit = slideOutVertically(tween(200, easing = FastOutSlowInEasing)) { it } + fadeOut(tween(180)),
-            ) {
-                editingMessage?.let { message ->
-                    ComposerContextBanner(
-                        label = "ویرایش پیام",
-                        preview = message.previewText(),
-                        onDismiss = {
-                            editingMessage = null
-                            composer = ""
-                            composerValue = TextFieldValue("", TextRange.Zero)
-                        },
-                    )
-                }
-            }
-            Composer(
-                value = composerValue,
-                isBlank = isComposerBlank,
-                isNotBlank = isComposerNotBlank,
-                controller = composerController,
-                onValueChange = { newValue ->
-                    val snappedSelection = EmojiCursorHelper.snapSelection(newValue.text, newValue.selection)
-                    val safeValue = if (snappedSelection != newValue.selection) {
-                        newValue.copy(selection = snappedSelection)
-                    } else {
-                        newValue
-                    }
-                    composerValue = safeValue
-                    composer = safeValue.text
-                    onComposerChanged(safeValue.text)
+            ChatComposerBar(
+                conversationId = state.conversationId,
+                title = title,
+                replyingTo = replyingTo,
+                editingMessage = editingMessage,
+                onClearReply = { replyingTo = null },
+                onClearEdit = { editingMessage = null },
+                onSend = { text, onDone ->
+                    onSend(text, onDone)
+                    coroutineScope.launch { listState.animateScrollToItem(0) }
                 },
-                onSend = {
-                    when (val editing = editingMessage) {
-                        null -> when (val reply = replyingTo) {
-                            null -> onSend(composer) {
-                                composer = ""
-                                composerValue = TextFieldValue("", TextRange.Zero)
-                            }
-                            else -> onSendReply(composer, reply) {
-                                composer = ""
-                                composerValue = TextFieldValue("", TextRange.Zero)
-                                replyingTo = null
-                            }
-                        }
-                        else -> if (composer.isNotBlank()) {
-                            onEdit(editing, composer)
-                            composer = ""
-                            composerValue = TextFieldValue("", TextRange.Zero)
-                            editingMessage = null
-                        }
-                    }
+                onSendReply = { text, reply, onDone ->
+                    onSendReply(text, reply, onDone)
+                    coroutineScope.launch { listState.animateScrollToItem(0) }
                 },
+                onEdit = onEdit,
+                onComposerChanged = onComposerChanged,
+                composerController = composerController,
                 focusRequester = focusRequester,
-                onAttach = { if (!isSecretConversation) attachmentSheetVisible = true },
+                onAttach = { attachmentSheetVisible = true },
                 onEmoji = {
                     if (emojiPanelVisible) {
                         isSwitchingToKeyboard = true
-                        emojiPanelVisible = false
+                        composerController.openKeyboard()
                     } else {
-                        // Do not leave the BasicTextField focused beneath the
-                        // panel: Gboard may otherwise immediately re-show and
-                        // consume the same interaction as a text edit.
                         focusManager.clearFocus(force = true)
                         isSwitchingToKeyboard = false
                         emojiPanelVisible = true
@@ -2664,13 +2465,13 @@ fun MessageDetailScreen(
                 onFocusText = {
                     if (emojiPanelVisible) {
                         isSwitchingToKeyboard = true
-                        emojiPanelVisible = false
+                        composerController.openKeyboard()
                     }
                 },
-                onSendVoice = { draft -> if (!isSecretConversation) onSendVoice(draft) },
+                onSendVoice = onSendVoice,
                 hasRecordPermission = hasRecordAudioPermission,
                 onPermissionRequired = { recordAudioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO) },
-                attachmentsEnabled = !isSecretConversation,
+                attachmentsEnabled = true,
             )
             if (attachmentSheetVisible) {
                 ChatAttachmentBottomSheet(
@@ -2717,50 +2518,451 @@ fun MessageDetailScreen(
                     },
                 )
             }
-            if (isPanelActive) {
-                val panelHeight = if (emojiPanelVisible) {
-                    composerPanelHeightDp.dp.coerceAtLeast(emojiPanelMinimum)
-                } else {
-                    composerPanelHeightDp.dp
+            val currentPanelHeight = composerPanelHeightDp.dp
+
+            if (emojiPanelVisible || isSwitchingToKeyboard) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(currentPanelHeight)
+                ) {
+                    TelegramXMediaPanel(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .navigationBarsPadding(),
+                        gifs = state.gifs,
+                        query = state.gifQuery,
+                        isLoading = state.isLoadingGifs,
+                        error = state.gifError,
+                        onLoadGifs = { force -> onLoadGifs(force) },
+                        onSearchGifs = onSearchGifs,
+                        onEmoji = { emoji ->
+                            composerController.insertEmoji(emoji)
+                        },
+                        onBackspace = {
+                            composerController.dispatchBackspace()
+                        },
+                        onGif = { gifUrl ->
+                            emojiPanelVisible = false
+                            isSwitchingToKeyboard = false
+                            onSendGif(gifUrl)
+                        },
+                        onSticker = { sticker ->
+                            composerController.insertEmoji(sticker)
+                        },
+                    )
                 }
-                Box(Modifier.height(panelHeight)) {
-                    if (emojiPanelVisible) {
-                        TelegramXMediaPanel(
-                            modifier = Modifier.fillMaxSize(),
-                            gifs = state.gifs,
-                            query = state.gifQuery,
-                            isLoading = state.isLoadingGifs,
-                            error = state.gifError,
-                            onLoadGifs = { force -> onLoadGifs(force) },
-                            onSearchGifs = onSearchGifs,
-                            onEmoji = { emoji ->
-                                composerController.insertEmoji(emoji)
-                            },
-                            onBackspace = {
-                                composerController.dispatchBackspace()
-                            },
-                            onGif = { gifUrl ->
-                                emojiPanelVisible = false
-                                onSendGif(gifUrl)
-                            },
-                            onSticker = { sticker ->
-                                composerController.insertEmoji(sticker)
-                            },
-                        )
-                    }
-                }
-            } else if (isKeyboardOpen) {
-                // Keep the same reserved footprint that the emoji surface uses.
-                // WindowInsets can change by the navigation-bar height while the
-                // IME animates; using it directly here makes the text box jump.
-                Spacer(Modifier.height(composerPanelHeightDp.dp))
+            } else if (imeBottomDp > 0.dp) {
+                Spacer(Modifier.height(imeBottomDp))
             } else {
                 Spacer(Modifier.height(navBottomDp))
             }
             }
         }
+
+        val topBarBgColor = if (isDarkTheme) Color(0xFF17212B) else Color(0xFFFFFFFF)
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .align(Alignment.TopCenter)
+                .onGloballyPositioned { coordinates ->
+                    val h = with(density) { coordinates.size.height.toDp() }
+                    if (h > 0.dp && headerHeightDp != h) {
+                        headerHeightDp = h
+                    }
+                },
+        ) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = topBarBgColor,
+                shadowElevation = 2.dp,
+                border = BorderStroke(
+                    0.5.dp,
+                    if (isDarkTheme) Color(0x28FFFFFF) else Color(0x18000000),
+                ),
+            ) {
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .matchParentSize()
+                            .background(
+                                Brush.verticalGradient(
+                                    listOf(
+                                        if (isDarkTheme) Color(0x18FFFFFF) else Color(0x55FFFFFF),
+                                        Color.Transparent,
+                                    )
+                                )
+                            )
+                    )
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .windowInsetsPadding(WindowInsets.statusBars.only(WindowInsetsSides.Top)),
+                    ) {
+                if (selectedMessageKeys.isNotEmpty()) {
+                    val selectedMessages = state.messages.filter { it.stableKey in selectedMessageKeys }
+                    val secret = state.conversation?.type == ConversationType.SECRET
+                    TopAppBar(
+                        windowInsets = WindowInsets(0, 0, 0, 0),
+                        colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            titleContentColor = MaterialTheme.colorScheme.onPrimary,
+                            navigationIconContentColor = MaterialTheme.colorScheme.onPrimary,
+                            actionIconContentColor = MaterialTheme.colorScheme.onPrimary,
+                        ),
+                        navigationIcon = {
+                            IconButton(onClick = ::dismissMessageInteraction) {
+                                Icon(Icons.Default.Close, contentDescription = "خروج از انتخاب پیام")
+                            }
+                        },
+                        title = { Text("${selectedMessages.size} انتخاب شده", fontWeight = FontWeight.SemiBold) },
+                        actions = {
+                            if (!secret) {
+                                if (selectedMessages.size == 1) {
+                                    IconButton(
+                                        onClick = {
+                                            replyingTo = selectedMessages.first()
+                                            editingMessage = null
+                                            dismissMessageInteraction()
+                                        },
+                                    ) { Icon(Icons.AutoMirrored.Filled.Reply, contentDescription = "پاسخ به پیام") }
+                                }
+                                IconButton(
+                                    enabled = selectedMessages.isNotEmpty(),
+                                    onClick = {
+                                        clipboard.setText(AnnotatedString(selectedMessages.joinToString("\n\n") { it.previewText() }))
+                                        dismissMessageInteraction()
+                                    },
+                                ) { Icon(Icons.Default.ContentCopy, contentDescription = "کپی پیام‌های انتخاب شده") }
+                                IconButton(
+                                    enabled = selectedMessages.isNotEmpty(),
+                                    onClick = { forwardingMessages = selectedMessages },
+                                ) { Icon(Icons.AutoMirrored.Filled.Forward, contentDescription = "فوروارد پیام‌های انتخاب شده") }
+                            }
+                            IconButton(
+                                enabled = selectedMessages.isNotEmpty(),
+                                onClick = { deletingMessages = selectedMessages },
+                            ) { Icon(Icons.Default.Delete, contentDescription = "حذف پیام‌های انتخاب شده") }
+                        },
+                    )
+                } else if (searchVisible) {
+                    TopAppBar(
+                        windowInsets = WindowInsets(0, 0, 0, 0),
+                        colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(
+                            containerColor = Color.Transparent,
+                        ),
+                        title = {
+                            BasicTextField(
+                                value = state.searchQuery,
+                                onValueChange = onSearch,
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions.Default.copy(imeAction = ImeAction.Search),
+                                textStyle = MaterialTheme.typography.bodyLarge.copy(
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    textAlign = TextAlign.Right,
+                                ),
+                                decorationBox = { field ->
+                                    Box(contentAlignment = Alignment.CenterEnd) {
+                                        if (state.searchQuery.isBlank()) {
+                                            Text("جستجو در پیام‌ها...", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
+                                        field()
+                                    }
+                                },
+                            )
+                        },
+                        navigationIcon = {
+                            IconButton(onClick = {
+                                searchVisible = false
+                                searchResultIndex = 0
+                                onSearch("")
+                            }) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "بستن جستجوی پیام‌ها")
+                            }
+                        },
+                        actions = {
+                            if (state.isSearching) {
+                                CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                            } else if (state.searchQuery.trim().length >= 2) {
+                                Text(
+                                    if (state.searchResults.isEmpty()) "نتیجه‌ای یافت نشد"
+                                    else "${searchResultIndex + 1}/${state.searchResults.size}",
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                TextButton(
+                                    enabled = searchResultIndex > 0,
+                                    onClick = { searchResultIndex -= 1 },
+                                ) { Text("↑") }
+                                TextButton(
+                                    enabled = searchResultIndex < state.searchResults.lastIndex,
+                                    onClick = { searchResultIndex += 1 },
+                                ) { Text("↓") }
+                            }
+                        },
+                    )
+                } else {
+                    val conversationTopBarHeight = if (density.fontScale > 1.3f) 72.dp else 56.dp
+                    TopAppBar(
+                        modifier = Modifier.height(conversationTopBarHeight),
+                        windowInsets = WindowInsets(0, 0, 0, 0),
+                        colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(
+                            containerColor = Color.Transparent,
+                            titleContentColor = MaterialTheme.colorScheme.onSurface,
+                            navigationIconContentColor = MaterialTheme.colorScheme.onSurface,
+                            actionIconContentColor = MaterialTheme.colorScheme.onSurface,
+                        ),
+                        title = {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        if (state.conversation?.type == ConversationType.GROUP) {
+                                            groupSheetVisible = true
+                                        } else {
+                                            openPartnerDetails()
+                                        }
+                                    },
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                ChatAvatarImage(
+                                    model = state.conversation?.avatarUrl,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(42.dp).clip(CircleShape),
+                                )
+                                Spacer(Modifier.width(10.dp))
+                                Column(
+                                    modifier = Modifier.weight(1f),
+                                    horizontalAlignment = Alignment.Start,
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        if (isSecretConversation) {
+                                            Icon(
+                                                Icons.Default.Lock,
+                                                contentDescription = null,
+                                                tint = TelegramSecretGreen,
+                                                modifier = Modifier.size(15.dp),
+                                            )
+                                            Spacer(Modifier.width(4.dp))
+                                        }
+                                        Text(
+                                            title,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            fontSize = 17.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (isSecretConversation && !isDarkTheme) Color(0xFF1B5E20) else Color.Unspecified,
+                                        )
+                                    }
+                                    if (isSecretConversation) {
+                                        val secretText = if (state.secretAutoDeleteSeconds > 0) {
+                                            "گفتگوی محرمانه • تایمر: ${formatSecretAutoDeleteLabel(state.secretAutoDeleteSeconds)}"
+                                        } else {
+                                            "گفتگوی محرمانه • رمزگذاری سرتاسری"
+                                        }
+                                        Text(
+                                            secretText,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            color = TelegramSecretGreen,
+                                            fontSize = 11.5.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                        )
+                                    } else {
+                                        val subtitle = when {
+                                            state.connectionState == RealtimeConnectionState.CONNECTING ||
+                                            state.connectionState == RealtimeConnectionState.RECONNECTING -> "در حال اتصال..."
+                                            state.connectionState == RealtimeConnectionState.DISCONNECTED -> "در انتظار شبکه..."
+                                            state.conversation?.type == ConversationType.GROUP -> when {
+                                                state.conversation.typingUserIds.isNotEmpty() -> "در حال نوشتن..."
+                                                state.isGroupLoading && state.groupMembers.isEmpty() -> "در حال بررسی اعضا..."
+                                                else -> "${maxOf(state.groupInfo?.memberCount ?: 0, state.groupMembers.size)} عضو"
+                                            }
+                                            state.conversation?.typingUserIds?.isNotEmpty() == true -> "در حال نوشتن..."
+                                            state.presence?.isOnline == true -> "آنلاین"
+                                            state.presence?.canViewLastSeen == true ->
+                                                formatUserPresence(state.presence.lastOnlineAtEpochMillis)
+                                            else -> "آخرین بازدید به تازگی"
+                                        }
+                                        Text(
+                                            subtitle,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            color = if (subtitle == "آنلاین" || subtitle.startsWith("در حال")) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Normal,
+                                        )
+                                    }
+                                }
+                            }
+                        },
+                        navigationIcon = {
+                            IconButton(onClick = onBack) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "بازگشت", modifier = Modifier.size(24.dp))
+                            }
+                        },
+                        actions = {
+                            if (isSecretConversation) {
+                                IconButton(onClick = { autoDeleteDialogVisible = true }) {
+                                    Icon(
+                                        Icons.Default.Timer,
+                                        contentDescription = "تنظیم تایمر حذف خودکار",
+                                        tint = if (state.secretAutoDeleteSeconds > 0) TelegramSecretGreen else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(22.dp),
+                                    )
+                                }
+                                IconButton(onClick = {
+                                    onComputeSafetyNumber { }
+                                    safetyNumberDialogVisible = true
+                                }) {
+                                    Icon(
+                                        Icons.Default.Security,
+                                        contentDescription = "کلید رمزنگاری محرمانه",
+                                        tint = TelegramSecretGreen,
+                                        modifier = Modifier.size(22.dp),
+                                    )
+                                }
+                            }
+                            Box {
+                                var menuVisible by remember { mutableStateOf(false) }
+                                IconButton(onClick = { menuVisible = true }) {
+                                    Icon(Icons.Default.MoreVert, contentDescription = "گزینه‌های گفتگو")
+                                }
+                                DropdownMenu(expanded = menuVisible, onDismissRequest = { menuVisible = false }) {
+                                    DropdownMenuItem(
+                                        text = { Text("جستجو") },
+                                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                                        onClick = {
+                                            menuVisible = false
+                                            searchVisible = true
+                                        },
+                                    )
+                                    if (state.conversation?.type == ConversationType.GROUP) {
+                                        DropdownMenuItem(
+                                            text = { Text("اطلاعات گروه") },
+                                            leadingIcon = { Icon(Icons.Default.Group, contentDescription = null) },
+                                            onClick = {
+                                                menuVisible = false
+                                                groupSheetVisible = true
+                                                onRefreshGroup()
+                                            },
+                                        )
+                                    } else {
+                                        if (isSecretConversation) {
+                                            DropdownMenuItem(
+                                                text = { Text("تایمر حذف خودکار") },
+                                                leadingIcon = { Icon(Icons.Default.Timer, contentDescription = null) },
+                                                onClick = {
+                                                    menuVisible = false
+                                                    autoDeleteDialogVisible = true
+                                                },
+                                            )
+                                            DropdownMenuItem(
+                                                text = { Text("کد امنیتی (تأیید هویت E2EE)") },
+                                                leadingIcon = { Icon(Icons.Default.Security, contentDescription = null) },
+                                                onClick = {
+                                                    menuVisible = false
+                                                    onComputeSafetyNumber { }
+                                                    safetyNumberDialogVisible = true
+                                                },
+                                            )
+                                        } else if (state.conversation?.type == ConversationType.PRIVATE) {
+                                            DropdownMenuItem(
+                                                text = { Text("شروع گفتگوی محرمانه") },
+                                                leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
+                                                onClick = {
+                                                    menuVisible = false
+                                                    onStartSecretChat()
+                                                },
+                                            )
+                                        }
+                                        DropdownMenuItem(
+                                            text = { Text("اطلاعات کاربر") },
+                                            leadingIcon = { Icon(Icons.Default.Info, contentDescription = null) },
+                                            onClick = {
+                                                menuVisible = false
+                                                openPartnerDetails()
+                                            },
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text("مسدود کردن", color = MaterialTheme.colorScheme.error) },
+                                            leadingIcon = { Icon(Icons.Default.Block, contentDescription = null) },
+                                            onClick = {
+                                                menuVisible = false
+                                                blockingPeerId = state.conversation?.peerId
+                                            },
+                                        )
+                                    }
+                                }
+                            }
+                        },
+                    )
+                }
+
+                if (state.pinnedMessages.isNotEmpty()) {
+                    PinnedMessagesBar(
+                        pinnedMessages = state.pinnedMessages,
+                        onMessageClick = { pinned ->
+                            val index = renderItemIndexForMessage(
+                                messageRenderItems,
+                                pinned.serverId ?: pinned.clientId,
+                            )
+                            if (index >= 0) coroutineScope.launch { listState.animateScrollToItem(index) }
+                        },
+                        onUnpinClick = { pinned ->
+                            onTogglePinned(pinned)
+                        },
+                    )
+                }
+            }
+        }
+    }
+    Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(6.dp)
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(
+                                if (isDarkTheme) Color(0x30101419) else Color(0x15000000),
+                                Color.Transparent,
+                            )
+                        )
+                    )
+            )
+        }
         SnackbarHost(snackbarHostState, Modifier.align(Alignment.BottomCenter))
-        if (partnerProfileVisible && state.conversation?.type != ConversationType.GROUP) {
+        if (autoDeleteDialogVisible) {
+            TelegramAutoDeleteDialog(
+                currentSeconds = state.secretAutoDeleteSeconds,
+                onDismiss = { autoDeleteDialogVisible = false },
+                onSelect = { seconds ->
+                    onSetSecretAutoDelete(seconds)
+                    autoDeleteDialogVisible = false
+                },
+            )
+        }
+        if (safetyNumberDialogVisible) {
+            TelegramEncryptionKeyDialog(
+                safetyNumber = state.secretSafetyNumber,
+                peerName = state.conversation?.title ?: "مخاطب",
+                isLoading = state.isSafetyNumberLoading,
+                onDismiss = { safetyNumberDialogVisible = false },
+            )
+        }
+        AnimatedVisibility(
+            visible = partnerProfileVisible && state.conversation?.type != ConversationType.GROUP,
+            enter = slideInHorizontally(
+                initialOffsetX = { fullWidth -> fullWidth },
+                animationSpec = spring(stiffness = Spring.StiffnessMediumLow, dampingRatio = Spring.DampingRatioNoBouncy),
+            ) + fadeIn(animationSpec = tween(220)),
+            exit = slideOutHorizontally(
+                targetOffsetX = { fullWidth -> fullWidth },
+                animationSpec = spring(stiffness = Spring.StiffnessMediumLow, dampingRatio = Spring.DampingRatioNoBouncy),
+            ) + fadeOut(animationSpec = tween(180)),
+        ) {
             PartnerDetailsScreen(
                 state = state,
                 onDismiss = { partnerProfileVisible = false },
@@ -2771,6 +2973,39 @@ fun MessageDetailScreen(
                     searchVisible = true
                 },
                 onToggleBlock = onToggleBlock,
+            )
+        }
+
+        AnimatedVisibility(
+            visible = groupSheetVisible && state.conversation?.type == ConversationType.GROUP,
+            enter = slideInHorizontally(
+                initialOffsetX = { fullWidth -> fullWidth },
+                animationSpec = spring(stiffness = Spring.StiffnessMediumLow, dampingRatio = Spring.DampingRatioNoBouncy),
+            ) + fadeIn(animationSpec = tween(220)),
+            exit = slideOutHorizontally(
+                targetOffsetX = { fullWidth -> fullWidth },
+                animationSpec = spring(stiffness = Spring.StiffnessMediumLow, dampingRatio = Spring.DampingRatioNoBouncy),
+            ) + fadeOut(animationSpec = tween(180)),
+        ) {
+            GroupDetailsScreen(
+                state = state,
+                clipboard = clipboard,
+                onDismiss = { groupSheetVisible = false },
+                onRefresh = onRefreshGroup,
+                onToggleMute = onToggleMute,
+                onOpenSearch = {
+                    groupSheetVisible = false
+                    searchVisible = true
+                },
+                onUpdateName = onUpdateGroupName,
+                onAddMembers = onAddGroupMembers,
+                onSearchUsers = onSearchGroupUsers,
+                onRemoveMember = onRemoveGroupMember,
+                onSetAdmin = onSetGroupAdmin,
+                onSetInviteEnabled = onSetGroupInviteEnabled,
+                onRegenerateInvite = onRegenerateGroupInvite,
+                onLeave = { terminalGroupAction = "leave" },
+                onDelete = { terminalGroupAction = "delete" },
             )
         }
     }
@@ -2826,9 +3061,6 @@ fun MessageDetailScreen(
             onEdit = {
                 editingMessage = message
                 replyingTo = null
-                val text = message.previewText()
-                composer = text
-                composerValue = TextFieldValue(text, TextRange(text.length))
                 dismissMessageInteraction()
             },
             onDelete = {
@@ -2901,23 +3133,7 @@ fun MessageDetailScreen(
             dismissButton = { TextButton(onClick = { blockingPeerId = null }) { Text("انصراف") } },
         )
     }
-    if (groupSheetVisible && state.conversation?.type == ConversationType.GROUP) {
-        GroupDetailsSheet(
-            state = state,
-            clipboard = clipboard,
-            onDismiss = { groupSheetVisible = false },
-            onRefresh = onRefreshGroup,
-            onUpdateName = onUpdateGroupName,
-            onAddMembers = onAddGroupMembers,
-            onSearchUsers = onSearchGroupUsers,
-            onRemoveMember = onRemoveGroupMember,
-            onSetAdmin = onSetGroupAdmin,
-            onSetInviteEnabled = onSetGroupInviteEnabled,
-            onRegenerateInvite = onRegenerateGroupInvite,
-            onLeave = { terminalGroupAction = "leave" },
-            onDelete = { terminalGroupAction = "delete" },
-        )
-    }
+
     terminalGroupAction?.let { action ->
         AlertDialog(
             onDismissRequest = { terminalGroupAction = null },
@@ -3498,13 +3714,23 @@ private fun MessageBubble(
     animateEntry: Boolean = false,
     isFirstInGroup: Boolean = true,
     isLastInGroup: Boolean = true,
+    isSecretConversation: Boolean = false,
+    secretAutoDeleteSeconds: Int = 0,
     onAttachmentClick: (ir.coffevista.vista_native.features.chat.domain.model.Attachment) -> Unit,
     onJumpToRepliedMessage: () -> Unit = {},
 ) {
     val isDeleted = message.content == MessageContent.Deleted
+    val sharedPost = remember(message.content) {
+        if (isDeleted) null
+        else when (val content = message.content) {
+            is MessageContent.Structured -> SharedPostParser.tryParse(content.payload)
+            is MessageContent.Text -> SharedPostParser.tryParse(content.value)
+            else -> null
+        }
+    }
     val text = when (val content = message.content) {
-        is MessageContent.Text -> content.value
-        is MessageContent.Structured -> content.payload
+        is MessageContent.Text -> if (sharedPost != null) "" else content.value
+        is MessageContent.Structured -> if (sharedPost != null) "" else content.payload
         MessageContent.Deleted -> "این پیام حذف شده است"
         MessageContent.EncryptedUnavailable -> "🔒 پیام رمزگذاری‌شده"
     }
@@ -3514,7 +3740,7 @@ private fun MessageBubble(
         append(statusDescription(message.status))
     }
     val density = LocalDensity.current
-    var bubbleBounds by remember(message.stableKey) { mutableStateOf<Rect?>(null) }
+    val coordinatesHolder = remember(message.stableKey) { LayoutCoordinatesHolder() }
     val chatEntryMode = LocalChatEntryMode.current
     val entryProgress = if (animateEntry && chatEntryMode != "off") {
         val progress by animateFloatAsState(
@@ -3557,6 +3783,12 @@ private fun MessageBubble(
             val screenWidth = LocalConfiguration.current.screenWidthDp.dp
             val base = Modifier
                 .widthIn(min = 60.dp, max = screenWidth * 0.82f)
+                .shadow(
+                    elevation = 1.dp,
+                    shape = shape,
+                    ambientColor = Color.Black.copy(alpha = 0.06f),
+                    spotColor = Color.Black.copy(alpha = 0.08f),
+                )
                 .clip(shape)
                 .combinedClickable(
                     onClick = {
@@ -3584,7 +3816,7 @@ private fun MessageBubble(
                             // One tap opens the already permission-gated
                             // contextual surface; media/retry transfers keep
                             // their established direct interactions above.
-                            else -> onOpenContextMenu(bubbleBounds)
+                            else -> onOpenContextMenu(coordinatesHolder.coordinates?.takeIf { it.isAttached }?.boundsInWindow())
                         }
                     },
                     onLongClick = { onLongPress() },
@@ -3672,7 +3904,7 @@ private fun MessageBubble(
                         ) else Modifier
                     )
                         .onGloballyPositioned { coordinates ->
-                            bubbleBounds = coordinates.boundsInWindow()
+                            coordinatesHolder.coordinates = coordinates
                         }
                         .padding(start = 12.dp, top = 8.dp, end = 12.dp, bottom = 6.dp),
                 ) {
@@ -3697,6 +3929,11 @@ private fun MessageBubble(
                     }
                 }
                 if (!isDeleted && !message.replyToContent.isNullOrBlank()) {
+                    val rawReplyTarget = message.replyToMessageId?.trim().orEmpty()
+                    val replySender = message.replyToSenderName?.trim().orEmpty()
+                    val isNoteReply = rawReplyTarget.startsWith("note:") || replySender.startsWith("یادداشت")
+                    val isStoryReply = rawReplyTarget.startsWith("story:") || replySender.startsWith("استوری")
+
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -3713,20 +3950,53 @@ private fun MessageBubble(
                         Box(
                             Modifier
                                 .width(3.dp)
-                                .height(40.dp)
+                                .height(if (isNoteReply || isStoryReply) 46.dp else 40.dp)
                                 .clip(RoundedCornerShape(1.5.dp))
-                                .background(if (message.isMine) Color.White.copy(alpha = 0.85f) else MaterialTheme.colorScheme.primary)
+                                .background(if (message.isMine) Color.White.copy(alpha = 0.85f) else MaterialTheme.colorScheme.primary),
                         )
                         Spacer(Modifier.width(8.dp))
                         Column {
+                            if (isStoryReply || isNoteReply) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier
+                                        .padding(bottom = 2.dp)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(
+                                            if (message.isMine) Color.White.copy(alpha = 0.22f)
+                                            else MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                                        )
+                                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                                ) {
+                                    Icon(
+                                        imageVector = if (isStoryReply) Icons.Outlined.AutoStories else Icons.Outlined.EditNote,
+                                        contentDescription = null,
+                                        tint = if (message.isMine) Color.White else MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(11.dp),
+                                    )
+                                    Spacer(Modifier.width(3.dp))
+                                    Text(
+                                        text = if (isStoryReply) "پاسخ به استوری" else "پاسخ به یادداشت",
+                                        color = if (message.isMine) Color.White else MaterialTheme.colorScheme.primary,
+                                        fontSize = 9.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                    )
+                                }
+                            }
                             Text(
-                                "پاسخ به ${message.replyToSenderName?.trim()?.takeIf(String::isNotEmpty) ?: "کاربر"}",
+                                if (isStoryReply || isNoteReply) replySender.ifBlank { "کاربر" }
+                                else "پاسخ به ${replySender.ifBlank { "کاربر" }}",
                                 color = if (message.isMine) Color.White.copy(alpha = 0.9f) else MaterialTheme.colorScheme.primary,
                                 fontSize = 10.5.sp,
                                 fontWeight = FontWeight.Bold,
                             )
+                            val replyDisplayContent = remember(message.replyToContent) {
+                                SharedPostParser.tryParse(message.replyToContent)?.let { parsedPost ->
+                                    "پست از ${parsedPost.authorName}: ${parsedPost.content.ifBlank { "رسانه" }}"
+                                } ?: message.replyToContent
+                            }
                             Text(
-                                message.replyToContent,
+                                replyDisplayContent,
                                 maxLines = 2,
                                 overflow = TextOverflow.Ellipsis,
                                 color = if (message.isMine) Color.White.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -3755,6 +4025,15 @@ private fun MessageBubble(
                 val metaFooter: @Composable () -> Unit = {
                     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (isSecretConversation && secretAutoDeleteSeconds > 0) {
+                                Icon(
+                                    imageVector = Icons.Default.Timer,
+                                    contentDescription = "تایمر خودکار",
+                                    tint = if (message.isMine) Color.White.copy(alpha = 0.85f) else TelegramSecretGreen,
+                                    modifier = Modifier.size(11.dp),
+                                )
+                                Spacer(Modifier.width(2.5.dp))
+                            }
                             if (message.editedAtEpochMillis != null) {
                                 Text(
                                     "ویرایش شده",
@@ -3777,7 +4056,18 @@ private fun MessageBubble(
                     }
                 }
 
-                if (text.isNotBlank()) {
+                if (sharedPost != null) {
+                    Column {
+                        SharedPostCard(
+                            post = sharedPost,
+                            isMine = message.isMine,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Box(Modifier.align(if (isRtlMessage) Alignment.Start else Alignment.End)) {
+                            metaFooter()
+                        }
+                    }
+                } else if (text.isNotBlank()) {
                     ChatTextBubbleLayout(
                         text = {
                             TelegramEmojiText(
@@ -3874,33 +4164,90 @@ private fun ComposerContextBanner(
     label: String,
     preview: String,
     onDismiss: () -> Unit,
+    badgeIcon: androidx.compose.ui.graphics.vector.ImageVector? = null,
+    badgeText: String? = null,
 ) {
+    val isDark = isSystemInDarkTheme()
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surface)
-            .padding(horizontal = 12.dp, vertical = 7.dp),
+            .padding(horizontal = 8.dp, vertical = 3.dp)
+            .shadow(3.dp, RoundedCornerShape(18.dp))
+            .clip(RoundedCornerShape(18.dp))
+            .background(
+                if (isDark) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.95f)
+                else Color.White.copy(alpha = 0.96f),
+            )
+            .border(
+                0.5.dp,
+                if (isDark) Color(0x22FFFFFF) else Color(0x18000000),
+                RoundedCornerShape(18.dp),
+            )
+            .padding(horizontal = 12.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
             Modifier
-                .width(3.dp)
-                .height(38.dp)
-                .clip(RoundedCornerShape(3.dp))
+                .width(3.5.dp)
+                .height(34.dp)
+                .clip(RoundedCornerShape(2.dp))
                 .background(MaterialTheme.colorScheme.primary),
         )
-        Spacer(Modifier.width(9.dp))
+        Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
-            Text(label, color = MaterialTheme.colorScheme.primary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (badgeIcon != null && badgeText != null) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .padding(end = 6.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f))
+                            .padding(horizontal = 5.dp, vertical = 1.5.dp),
+                    ) {
+                        Icon(
+                            imageVector = badgeIcon,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(11.dp),
+                        )
+                        Spacer(Modifier.width(3.dp))
+                        Text(
+                            text = badgeText,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontSize = 9.5.sp,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                }
+                Text(
+                    text = label,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
             Text(
-                preview,
+                text = preview,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 12.sp,
+                fontSize = 11.5.sp,
             )
         }
-        TextButton(onClick = onDismiss) { Text("لغو") }
+        IconButton(
+            onClick = onDismiss,
+            modifier = Modifier.size(28.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Default.Close,
+                contentDescription = "لغو",
+                modifier = Modifier.size(16.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 
@@ -4518,8 +4865,16 @@ private fun MessageInfoDialog(message: Message, onDismiss: () -> Unit) {
 }
 
 internal fun Message.previewText(): String = when (val value = content) {
-    is MessageContent.Text -> value.value.ifBlank { attachment?.fileName ?: "پیوست" }
-    is MessageContent.Structured -> value.payload
+    is MessageContent.Text -> {
+        val parsed = SharedPostParser.tryParse(value.value)
+        if (parsed != null) "پست از ${parsed.authorName}: ${parsed.content.ifBlank { "رسانه" }}"
+        else value.value.ifBlank { attachment?.fileName ?: "پیوست" }
+    }
+    is MessageContent.Structured -> {
+        val parsed = SharedPostParser.tryParse(value.payload)
+        if (parsed != null) "پست از ${parsed.authorName}: ${parsed.content.ifBlank { "رسانه" }}"
+        else value.payload
+    }
     MessageContent.Deleted -> "این پیام حذف شده است"
     MessageContent.EncryptedUnavailable -> "پیام رمزگذاری‌شده"
 }
@@ -4589,7 +4944,7 @@ private fun java.util.Calendar.toJalaliDate(): JalaliDate {
     return JalaliDate(jy, jm, jd)
 }
 
-private fun String.toPersianDigits(): String = map { char ->
+internal fun String.toPersianDigits(): String = map { char ->
     if (char in '0'..'9') "۰۱۲۳۴۵۶۷۸۹"[char - '0'] else char
 }.joinToString("")
 
@@ -5059,6 +5414,146 @@ private fun MessageStatusMark(status: MessageStatus) {
     }
 }
 
+private class LayoutCoordinatesHolder {
+    var coordinates: androidx.compose.ui.layout.LayoutCoordinates? = null
+}
+
+private fun formatSecretAutoDeleteLabel(seconds: Int): String = when {
+    seconds <= 0 -> "خاموش"
+    seconds < 60 -> "$seconds ثانیه"
+    seconds < 3600 -> "${seconds / 60} دقیقه"
+    seconds < 86400 -> "${seconds / 3600} ساعت"
+    else -> "${seconds / 86400} روز"
+}
+
+@Composable
+private fun ChatComposerBar(
+    conversationId: String?,
+    title: String,
+    replyingTo: Message?,
+    editingMessage: Message?,
+    onClearReply: () -> Unit,
+    onClearEdit: () -> Unit,
+    onSend: (String, () -> Unit) -> Unit,
+    onSendReply: (String, Message, () -> Unit) -> Unit,
+    onEdit: (Message, String) -> Unit,
+    onComposerChanged: (String) -> Unit,
+    composerController: ChatComposerController,
+    focusRequester: FocusRequester,
+    onAttach: () -> Unit,
+    onEmoji: () -> Unit,
+    isEmojiPanelOpen: Boolean,
+    onFocusText: () -> Unit,
+    onSendVoice: (ir.coffevista.vista_native.features.chat.domain.model.ChatAttachmentDraft) -> Unit,
+    hasRecordPermission: Boolean,
+    onPermissionRequired: () -> Unit,
+    attachmentsEnabled: Boolean,
+) {
+    var composerValue by remember(conversationId) {
+        mutableStateOf(TextFieldValue("", TextRange.Zero))
+    }
+
+    LaunchedEffect(editingMessage) {
+        if (editingMessage != null) {
+            val text = editingMessage.previewText()
+            composerValue = TextFieldValue(text, TextRange(text.length))
+        }
+    }
+
+    // composerValue is a local delegated state value. Keeping these trivial
+    // predicates inside an unkeyed derivedStateOf captured the initial blank
+    // value on the AndroidView-backed composer, so typed text reached state but
+    // the trailing control remained the voice recorder forever.
+    val isBlank = composerValue.text.isBlank()
+    val isNotBlank = !isBlank
+
+    Column(Modifier.fillMaxWidth()) {
+        AnimatedVisibility(
+            visible = replyingTo != null,
+            enter = slideInVertically(tween(220, easing = FastOutSlowInEasing)) { it } + fadeIn(tween(200)),
+            exit = slideOutVertically(tween(200, easing = FastOutSlowInEasing)) { it } + fadeOut(tween(180)),
+        ) {
+            replyingTo?.let { message ->
+                val rawReplyTarget = message.replyToMessageId?.trim().orEmpty()
+                val replySender = message.replyDisplayName(title)
+                val isNoteReply = rawReplyTarget.startsWith("note:") || replySender.startsWith("یادداشت")
+                val isStoryReply = rawReplyTarget.startsWith("story:") || replySender.startsWith("استوری")
+
+                ComposerContextBanner(
+                    label = if (isStoryReply) "پاسخ به استوری" else if (isNoteReply) "پاسخ به یادداشت" else "پاسخ به $replySender",
+                    preview = message.previewText(),
+                    badgeIcon = if (isStoryReply) Icons.Outlined.AutoStories else if (isNoteReply) Icons.Outlined.EditNote else null,
+                    badgeText = if (isStoryReply) "استوری" else if (isNoteReply) "یادداشت" else null,
+                    onDismiss = onClearReply,
+                )
+            }
+        }
+        AnimatedVisibility(
+            visible = editingMessage != null,
+            enter = slideInVertically(tween(220, easing = FastOutSlowInEasing)) { it } + fadeIn(tween(200)),
+            exit = slideOutVertically(tween(200, easing = FastOutSlowInEasing)) { it } + fadeOut(tween(180)),
+        ) {
+            editingMessage?.let { message ->
+                ComposerContextBanner(
+                    label = "ویرایش پیام",
+                    preview = message.previewText(),
+                    onDismiss = {
+                        onClearEdit()
+                        composerValue = TextFieldValue("", TextRange.Zero)
+                    },
+                )
+            }
+        }
+        Composer(
+            value = composerValue,
+            isBlank = isBlank,
+            isNotBlank = isNotBlank,
+            controller = composerController,
+            onValueChange = { newValue ->
+                val snappedSelection = EmojiCursorHelper.snapSelection(newValue.text, newValue.selection)
+                val safeValue = if (snappedSelection != newValue.selection) {
+                    newValue.copy(selection = snappedSelection)
+                } else {
+                    newValue
+                }
+                composerValue = safeValue
+                onComposerChanged(safeValue.text)
+            },
+            onSend = {
+                val currentText = composerValue.text
+                when (val editing = editingMessage) {
+                    null -> when (val reply = replyingTo) {
+                        null -> onSend(currentText) {
+                            composerValue = TextFieldValue("", TextRange.Zero)
+                            composerController.openKeyboard()
+                        }
+                        else -> onSendReply(currentText, reply) {
+                            composerValue = TextFieldValue("", TextRange.Zero)
+                            onClearReply()
+                            composerController.openKeyboard()
+                        }
+                    }
+                    else -> if (currentText.isNotBlank()) {
+                        onEdit(editing, currentText)
+                        composerValue = TextFieldValue("", TextRange.Zero)
+                        onClearEdit()
+                        composerController.openKeyboard()
+                    }
+                }
+            },
+            focusRequester = focusRequester,
+            onAttach = onAttach,
+            onEmoji = onEmoji,
+            isEmojiPanelOpen = isEmojiPanelOpen,
+            onFocusText = onFocusText,
+            onSendVoice = onSendVoice,
+            hasRecordPermission = hasRecordPermission,
+            onPermissionRequired = onPermissionRequired,
+            attachmentsEnabled = attachmentsEnabled,
+        )
+    }
+}
+
 @Composable
 private fun Composer(
     value: TextFieldValue,
@@ -5100,6 +5595,11 @@ private fun Composer(
                             if (isSystemInDarkTheme()) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.94f)
                             else Color.White.copy(alpha = 0.94f),
                         )
+                        .border(
+                            0.5.dp,
+                            if (isSystemInDarkTheme()) Color(0x20FFFFFF) else Color(0x15000000),
+                            RoundedCornerShape(24.dp),
+                        )
                         .padding(horizontal = 6.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -5117,7 +5617,10 @@ private fun Composer(
                                 }
                                 onAttach()
                             },
-                            modifier = Modifier.size(34.dp).graphicsLayer { rotationZ = attachmentRotation.value },
+                            modifier = Modifier
+                                .focusProperties { canFocus = false }
+                                .size(34.dp)
+                                .graphicsLayer { rotationZ = attachmentRotation.value },
                         ) {
                             Icon(Icons.Default.AttachFile, contentDescription = "پیوست فایل", modifier = Modifier.size(22.dp))
                         }
@@ -5125,6 +5628,7 @@ private fun Composer(
                     IconButton(
                         onClick = onEmoji,
                         modifier = Modifier
+                            .focusProperties { canFocus = false }
                             .size(40.dp)
                             .zIndex(1f),
                     ) {
@@ -5155,34 +5659,58 @@ private fun Composer(
             }
 
             if (attachmentsEnabled || isNotBlank) {
-                AnimatedContent(
-                    targetState = isNotBlank,
-                    transitionSpec = {
-                        (fadeIn(tween(220)) + scaleIn(tween(300, easing = FastOutSlowInEasing), initialScale = 0.6f))
-                            .togetherWith(fadeOut(tween(160)) + scaleOut(tween(200), targetScale = 0.7f))
-                    },
-                    label = "composer-send-voice",
-                    modifier = if (isVoiceHolding) Modifier.weight(1f) else Modifier,
-                ) { hasText ->
-                    if (!hasText) {
-                        VoiceRecorderDock(
-                            modifier = if (isVoiceHolding) Modifier.fillMaxWidth() else Modifier,
-                            onSendVoice = onSendVoice,
-                            onPermissionRequired = onPermissionRequired,
-                            hasRecordPermission = hasRecordPermission,
-                            onHoldingStateChange = { isVoiceHolding = it },
-                        )
-                    } else {
-                        Box(
-                            Modifier
-                                .size(40.dp)
-                                .clip(CircleShape)
-                                .background(Brush.linearGradient(listOf(VistaBrandColors.Indigo, VistaBrandColors.VioletDeep)))
-                                .clickable(role = Role.Button, onClick = onSend)
-                                .semantics { contentDescription = "ارسال پیام" },
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                if (isVoiceHolding) {
+                    VoiceRecorderDock(
+                        modifier = Modifier.fillMaxWidth(),
+                        onSendVoice = onSendVoice,
+                        onPermissionRequired = onPermissionRequired,
+                        hasRecordPermission = hasRecordPermission,
+                        onHoldingStateChange = { isVoiceHolding = it },
+                    )
+                } else {
+                    AnimatedContent(
+                        targetState = isNotBlank,
+                        transitionSpec = {
+                            (scaleIn(
+                                initialScale = 0.60f,
+                                animationSpec = spring(
+                                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                                    stiffness = Spring.StiffnessMediumLow,
+                                ),
+                            ) + fadeIn(animationSpec = tween(180)))
+                                .togetherWith(
+                                    scaleOut(
+                                        targetScale = 0.60f,
+                                        animationSpec = tween(120),
+                                    ) + fadeOut(animationSpec = tween(120))
+                                )
+                        },
+                        label = "composerActionMorph",
+                    ) { hasText ->
+                        if (hasText) {
+                            IconButton(
+                                onClick = {
+                                    onSend()
+                                    controller.openKeyboard()
+                                },
+                                modifier = Modifier
+                                    .focusProperties { canFocus = false }
+                                    .size(48.dp)
+                                    .shadow(4.dp, CircleShape)
+                                    .clip(CircleShape)
+                                    .background(Brush.linearGradient(listOf(VistaBrandColors.Indigo, VistaBrandColors.VioletDeep)))
+                                    .semantics { contentDescription = "ارسال پیام" },
+                            ) {
+                                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                            }
+                        } else {
+                            VoiceRecorderDock(
+                                modifier = Modifier,
+                                onSendVoice = onSendVoice,
+                                onPermissionRequired = onPermissionRequired,
+                                hasRecordPermission = hasRecordPermission,
+                                onHoldingStateChange = { isVoiceHolding = it },
+                            )
                         }
                     }
                 }
@@ -5199,10 +5727,10 @@ private fun FloatingMessageDateOverlay(
     modifier: Modifier = Modifier,
 ) {
     AnimatedVisibility(
-        visible = visible,
+        visible = visible && epochMillis != null,
         modifier = modifier.testTag("chat-floating-date"),
-        enter = fadeIn(tween(200)),
-        exit = fadeOut(tween(200)),
+        enter = fadeIn(tween(200)) + scaleIn(initialScale = 0.85f, animationSpec = tween(200)),
+        exit = fadeOut(tween(200)) + scaleOut(targetScale = 0.85f, animationSpec = tween(200)),
     ) {
         epochMillis?.let { FloatingMessageDateChip(it) }
     }
@@ -5330,7 +5858,7 @@ internal fun bundledAvatarDrawableName(source: String?): String? {
 }
 
 @Composable
-private fun ChatAvatarImage(
+internal fun ChatAvatarImage(
     model: String?,
     contentDescription: String?,
     modifier: Modifier = Modifier,
@@ -5419,6 +5947,7 @@ internal fun localDayLabel(
         }
         else -> {
             val jalali = messageDay.toJalaliDate()
+            val todayJalali = today.toJalaliDate()
             val monthNames = arrayOf(
                 "فروردین", "اردیبهشت", "خرداد", "تیر", "مرداد", "شهریور",
                 "مهر", "آبان", "آذر", "دی", "بهمن", "اسفند",
@@ -5427,7 +5956,7 @@ internal fun localDayLabel(
                 append(jalali.day)
                 append(' ')
                 append(monthNames[jalali.month - 1])
-                if (messageDay.get(Calendar.YEAR) != today.get(Calendar.YEAR)) {
+                if (jalali.year != todayJalali.year) {
                     append(' ')
                     append(jalali.year)
                 }
@@ -5512,13 +6041,15 @@ private fun PartnerProfileSheet(
     var reportDetails by rememberSaveable { mutableStateOf("") }
     var selectedTabIndex by remember { mutableIntStateOf(0) }
 
+    val postMessages = state.messages.filter { message ->
+        message.content is MessageContent.Structured ||
+            message.transportType.equals("sharedPost", true) ||
+            message.transportType.equals("storyReply", true)
+    }
     val mediaMessages = state.sharedMedia.filter {
-        it.attachment?.kind in setOf(AttachmentKind.IMAGE, AttachmentKind.VIDEO, AttachmentKind.GIF)
+        it.attachment?.kind in setOf(AttachmentKind.IMAGE, AttachmentKind.VIDEO)
     }
     val fileMessages = state.sharedMedia.filter { it.attachment?.kind == AttachmentKind.DOCUMENT }
-    val audioMessages = state.sharedMedia.filter {
-        it.attachment?.kind == AttachmentKind.AUDIO || it.attachment?.kind == AttachmentKind.VOICE
-    }
     val linkMessages = state.messages.filter { message ->
         (message.content as? MessageContent.Text)?.value?.let { text ->
             text.contains("http://", ignoreCase = true) ||
@@ -5526,15 +6057,21 @@ private fun PartnerProfileSheet(
                 text.contains("www.", ignoreCase = true)
         } == true
     }
-    // Kept in the same order as the Flutter chat-profile route.  The tabs are
-    // intentionally stable so a selection does not jump while profile data is
-    // refreshed in the background.
+    val audioMessages = state.sharedMedia.filter {
+        it.attachment?.kind == AttachmentKind.AUDIO || it.attachment?.kind == AttachmentKind.VOICE
+    }
+    val gifMessages = state.sharedMedia.filter { it.attachment?.kind == AttachmentKind.GIF }
+    val groupMessages = emptyList<Message>()
+
     val tabs = listOf("پست‌ها", "رسانه", "فایل‌ها", "لینک‌ها", "صدا", "GIF", "گروه‌ها")
     val currentList = when (selectedTabIndex) {
-        0 -> mediaMessages
-        1 -> fileMessages
-        2 -> audioMessages
-        else -> linkMessages
+        0 -> postMessages
+        1 -> mediaMessages
+        2 -> fileMessages
+        3 -> linkMessages
+        4 -> audioMessages
+        5 -> gifMessages
+        else -> groupMessages
     }
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
@@ -5575,18 +6112,21 @@ private fun PartnerProfileSheet(
 
             Spacer(Modifier.height(20.dp))
 
-            TabRow(selectedTabIndex = selectedTabIndex) {
+            ScrollableTabRow(selectedTabIndex = selectedTabIndex, edgePadding = 4.dp) {
                 tabs.forEachIndexed { index, title ->
                     val count = when(index) {
-                        0 -> mediaMessages.size
-                        1 -> fileMessages.size
-                        2 -> audioMessages.size
-                        else -> linkMessages.size
+                        0 -> postMessages.size
+                        1 -> mediaMessages.size
+                        2 -> fileMessages.size
+                        3 -> linkMessages.size
+                        4 -> audioMessages.size
+                        5 -> gifMessages.size
+                        else -> 0
                     }
                     Tab(
                         selected = selectedTabIndex == index,
                         onClick = { selectedTabIndex = index },
-                        text = { Text("$title ($count)") }
+                        text = { Text(if (index == 6) title else "$title ($count)") }
                     )
                 }
             }
@@ -5594,7 +6134,7 @@ private fun PartnerProfileSheet(
             Box(modifier = Modifier.fillMaxWidth().height(190.dp), contentAlignment = Alignment.Center) {
                 if (currentList.isEmpty()) {
                     Text(
-                        text = "بدون ${tabs[selectedTabIndex]}",
+                        text = if (selectedTabIndex == 6) "گروه مشترکی یافت نشد" else "بدون ${tabs[selectedTabIndex]}",
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 } else {
@@ -5751,9 +6291,23 @@ private fun PartnerDetailsScreen(
     var selectedTabIndex by rememberSaveable(conversation?.id) { mutableIntStateOf(0) }
     var blockConfirmVisible by rememberSaveable(conversation?.id) { mutableStateOf(false) }
     val mediaMessages = state.sharedMedia.filter {
-        it.attachment?.kind in setOf(AttachmentKind.IMAGE, AttachmentKind.VIDEO, AttachmentKind.GIF)
+        it.attachment?.kind in setOf(AttachmentKind.IMAGE, AttachmentKind.VIDEO)
     }
-    val tabs = listOf("پست‌ها", "رسانه", "فایل‌ها", "لینک‌ها", "صدا", "GIF", "گروه‌ها")
+    val fileMessages = state.sharedMedia.filter { it.attachment?.kind == AttachmentKind.DOCUMENT }
+    val audioMessages = state.sharedMedia.filter {
+        it.attachment?.kind == AttachmentKind.AUDIO || it.attachment?.kind == AttachmentKind.VOICE
+    }
+    val gifMessages = state.sharedMedia.filter { it.attachment?.kind == AttachmentKind.GIF }
+    val linkMessages = state.messages.filter { message ->
+        (message.content as? MessageContent.Text)?.value?.let { text ->
+            text.contains("http://", ignoreCase = true) ||
+                text.contains("https://", ignoreCase = true) ||
+                text.contains("www.", ignoreCase = true)
+        } == true
+    }
+    // Do not render labels for unsupported/fake datasets. Every tab below has a
+    // concrete Room-backed source and a deterministic index-to-data mapping.
+    val tabs = listOf("رسانه", "فایل‌ها", "لینک‌ها", "صدا", "GIF")
 
     BackHandler(onBack = onDismiss)
     Scaffold(
@@ -5787,14 +6341,22 @@ private fun PartnerDetailsScreen(
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .background(MaterialTheme.colorScheme.surfaceVariant),
+                            .background(
+                                Brush.verticalGradient(
+                                    listOf(
+                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.50f),
+                                        MaterialTheme.colorScheme.tertiary.copy(alpha = 0.40f),
+                                        MaterialTheme.colorScheme.surfaceVariant,
+                                    )
+                                )
+                            ),
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
                             text = displayName.firstOrNull()?.uppercase() ?: "?",
                             fontSize = 80.sp,
                             fontWeight = FontWeight.Light,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
+                            color = Color.White.copy(alpha = 0.20f),
                         )
                     }
                 }
@@ -5816,7 +6378,8 @@ private fun PartnerDetailsScreen(
                     modifier = Modifier
                         .align(Alignment.TopStart)
                         .statusBarsPadding()
-                        .padding(8.dp),
+                        .padding(8.dp)
+                        .background(Color.Black.copy(alpha = 0.30f), CircleShape),
                 ) {
                     Icon(
                         Icons.AutoMirrored.Filled.ArrowBack,
@@ -5847,21 +6410,63 @@ private fun PartnerDetailsScreen(
                             .padding(4.dp)
                             .clip(CircleShape),
                     ) {
-                        if (!heroAvatar.isNullOrBlank()) {
-                            AsyncImage(
-                                model = heroAvatar,
+                        val cleanAvatar = heroAvatar?.trim()?.takeIf { it.isNotEmpty() && !it.equals("null", ignoreCase = true) }
+                        if (!cleanAvatar.isNullOrBlank()) {
+                            SubcomposeAsyncImage(
+                                model = cleanAvatar,
                                 contentDescription = "تصویر $displayName",
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier.fillMaxSize(),
+                                loading = {
+                                    Box(
+                                        Modifier
+                                            .fillMaxSize()
+                                            .background(
+                                                Brush.linearGradient(
+                                                    listOf(
+                                                        Color(0xFF6C5CE7),
+                                                        Color(0xFF0984E3),
+                                                    )
+                                                )
+                                            ),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Text(displayName.firstOrNull()?.uppercase() ?: "?", color = Color.White, fontSize = 42.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                },
+                                error = {
+                                    Box(
+                                        Modifier
+                                            .fillMaxSize()
+                                            .background(
+                                                Brush.linearGradient(
+                                                    listOf(
+                                                        Color(0xFF6C5CE7),
+                                                        Color(0xFF0984E3),
+                                                    )
+                                                )
+                                            ),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Text(displayName.firstOrNull()?.uppercase() ?: "?", color = Color.White, fontSize = 42.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                },
                             )
                         } else {
                             Box(
                                 Modifier
                                     .fillMaxSize()
-                                    .background(MaterialTheme.colorScheme.primaryContainer),
+                                    .background(
+                                        Brush.linearGradient(
+                                            listOf(
+                                                Color(0xFF6C5CE7),
+                                                Color(0xFF0984E3),
+                                            )
+                                        )
+                                    ),
                                 contentAlignment = Alignment.Center,
                             ) {
-                                Text(displayName.firstOrNull()?.uppercase() ?: "?", fontSize = 38.sp, fontWeight = FontWeight.SemiBold)
+                                Text(displayName.firstOrNull()?.uppercase() ?: "?", color = Color.White, fontSize = 42.sp, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -5985,7 +6590,7 @@ private fun PartnerDetailsScreen(
                         .height(300.dp),
                     contentAlignment = Alignment.Center,
                 ) {
-                if (selectedTabIndex == 1 && mediaMessages.isNotEmpty()) {
+                if (selectedTabIndex == 0 && mediaMessages.isNotEmpty()) {
                     LazyVerticalGrid(
                         columns = GridCells.Fixed(3),
                         contentPadding = PaddingValues(1.dp),
@@ -6016,24 +6621,52 @@ private fun PartnerDetailsScreen(
                         }
                     }
                 } else {
+                    val selectedItems = when (selectedTabIndex) {
+                        0 -> mediaMessages
+                        1 -> fileMessages
+                        2 -> linkMessages
+                        3 -> audioMessages
+                        4 -> gifMessages
+                        else -> emptyList()
+                    }
+                    if (selectedItems.isNotEmpty() && selectedTabIndex != 0) {
+                        LazyColumn(Modifier.fillMaxSize()) {
+                            items(selectedItems, key = { it.stableKey }) { message ->
+                                Row(
+                                    Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Icon(
+                                        when (message.attachment?.kind) {
+                                            AttachmentKind.AUDIO, AttachmentKind.VOICE -> Icons.Default.Mic
+                                            AttachmentKind.GIF -> Icons.Default.EmojiEmotions
+                                            else -> Icons.Default.AttachFile
+                                        },
+                                        contentDescription = null,
+                                    )
+                                    Spacer(Modifier.width(10.dp))
+                                    Column(Modifier.weight(1f)) {
+                                        Text(message.attachment?.fileName ?: message.previewText(), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        Text(formatConversationTime(message.createdAtEpochMillis), maxLines = 1, style = MaterialTheme.typography.bodySmall)
+                                    }
+                                }
+                            }
+                        }
+                        return@Box
+                    }
                     val icon = when (selectedTabIndex) {
-                        0 -> Icons.Default.Description
+                        0 -> Icons.Default.AttachFile
                         1 -> Icons.Default.Description
-                        2 -> Icons.Default.Description
-                        3 -> Icons.Default.AttachFile
-                        4 -> Icons.Default.Mic
-                        5 -> Icons.Default.EmojiEmotions
-                        else -> Icons.Default.Group
+                        2 -> Icons.Default.AttachFile
+                        3 -> Icons.Default.Mic
+                        else -> Icons.Default.EmojiEmotions
                     }
                     val emptyText = when (selectedTabIndex) {
-                        0 -> "هیچ پست‌هایی یافت نشد"
-                        1 -> "هیچ رسانه‌ای یافت نشد"
-                        2 -> "هیچ فایلی یافت نشد"
-                        3 -> "هیچ لینکی یافت نشد"
-                        4 -> "هیچ صدایی یافت نشد"
-                        5 -> "هیچ گیفی یافت نشد"
-                        6 -> "هیچ گروه مشترکی یافت نشد"
-                        else -> "هیچ موردی یافت نشد"
+                        0 -> "هیچ رسانه‌ای یافت نشد"
+                        1 -> "هیچ فایلی یافت نشد"
+                        2 -> "هیچ لینکی یافت نشد"
+                        3 -> "هیچ صدایی یافت نشد"
+                        else -> "هیچ گیفی یافت نشد"
                     }
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Icon(
@@ -6094,6 +6727,13 @@ private fun PartnerDetailsAction(
     enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.93f else 1.0f,
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow, dampingRatio = Spring.DampingRatioMediumBouncy),
+        label = "partnerActionPressScale",
+    )
     val foreground = when {
         destructive -> MaterialTheme.colorScheme.error
         enabled -> MaterialTheme.colorScheme.onSurface
@@ -6101,9 +6741,18 @@ private fun PartnerDetailsAction(
     }
     Column(
         modifier = modifier
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
             .clip(RoundedCornerShape(12.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f))
-            .clickable(enabled = enabled, onClick = onClick)
+            .clickable(
+                enabled = enabled,
+                interactionSource = interactionSource,
+                indication = ripple(),
+                onClick = onClick,
+            )
             .padding(vertical = 14.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -6142,3 +6791,10 @@ private fun ModerationReason.persianLabel(): String = when (this) {
     ModerationReason.VIOLENCE -> "خشونت"
     ModerationReason.OTHER -> "سایر موارد"
 }
+
+private tailrec fun android.content.Context.findActivity(): android.app.Activity? = when (this) {
+    is android.app.Activity -> this
+    is android.content.ContextWrapper -> baseContext.findActivity()
+    else -> null
+}
+

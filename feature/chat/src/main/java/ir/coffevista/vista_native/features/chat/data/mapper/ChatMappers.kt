@@ -219,7 +219,8 @@ internal fun MessageDto.toDomain(accountId: String): Message {
     val deleted = deletedAt != null
     val contentModel = when {
         deleted -> MessageContent.Deleted
-        isSecret -> MessageContent.EncryptedUnavailable
+        isSecret && (content.looksLikeCiphertextPreview() || content.startsWith("VE2E") || content.startsWith("e2ee:")) ->
+            MessageContent.EncryptedUnavailable
         messageType.equals("sharedPost", true) || messageType.equals("storyReply", true) ->
             MessageContent.Structured(messageType, content)
         else -> MessageContent.Text(content)
@@ -247,6 +248,12 @@ internal fun MessageDto.toDomain(accountId: String): Message {
         serverId = id,
         senderId = senderId,
         content = contentModel,
+        opaqueEncryptedPayload = content.takeIf {
+            isSecret && !deleted && messageType != "exchange_key" &&
+                messageType != "exchange_key_reply" && it.isNotBlank() &&
+                (it.looksLikeCiphertextPreview() || it.startsWith("VE2E") || it.startsWith("e2ee:"))
+        },
+        transportType = messageType,
         createdAtEpochMillis = createdAt.epochMillisOrNull() ?: 0L,
         editedAtEpochMillis = editedAt.epochMillisOrNull(),
         deletedAtEpochMillis = deletedAt.epochMillisOrNull(),
@@ -291,7 +298,7 @@ internal suspend fun Message.toEntity(cipher: ChatContentCipher, now: Long): Mes
         is MessageContent.Text -> "text" to value.value
         is MessageContent.Structured -> "structured:${value.kind}" to value.payload
         MessageContent.Deleted -> "deleted" to ""
-        MessageContent.EncryptedUnavailable -> "encrypted_unavailable" to ""
+        MessageContent.EncryptedUnavailable -> "encrypted_unavailable" to opaqueEncryptedPayload.orEmpty()
     }
     return MessageEntity(
         accountId = accountId,
@@ -311,7 +318,7 @@ internal suspend fun Message.toEntity(cipher: ChatContentCipher, now: Long): Mes
         },
         isMine = isMine,
         lastMutationAtEpochMillis = now,
-        messageType = when (val value = content) {
+        messageType = transportType?.trim()?.takeIf(String::isNotEmpty) ?: when (val value = content) {
             is MessageContent.Structured -> value.kind
             else -> attachment?.kind?.wireName ?: "text"
         },
@@ -377,6 +384,12 @@ internal suspend fun MessageEntity.toDomain(cipher: ChatContentCipher): Message 
         serverId = serverId,
         senderId = senderId,
         content = content,
+        opaqueEncryptedPayload = if (contentKind == "encrypted_unavailable") {
+            plaintext?.takeIf(String::isNotBlank)
+        } else {
+            null
+        },
+        transportType = messageType,
         createdAtEpochMillis = createdAtEpochMillis,
         editedAtEpochMillis = editedAtEpochMillis,
         deletedAtEpochMillis = deletedAtEpochMillis,

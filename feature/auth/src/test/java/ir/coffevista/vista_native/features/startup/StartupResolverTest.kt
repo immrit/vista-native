@@ -147,6 +147,38 @@ class StartupResolverTest {
     }
 
     @Test
+    fun importedFlutterSessionNeverAuthenticatesOfflineBeforeServerValidation() = runBlocking {
+        val auth = FakeAuthRepository()
+        val destination = StartupResolver(
+            authRepository = auth,
+            onboardingStore = FakeOnboardingStore(true),
+            sessionStore = FakeSessionStore(
+                stored(expiresAt = 1L).copy(requiresOnlineValidation = true),
+            ),
+            clock = EpochClock { NOW },
+            networkMonitor = FakeNetworkMonitor(NetworkState.OFFLINE),
+        ).resolve()
+
+        assertTrue(destination is StartupDestination.RecoverableError)
+        assertEquals(0, auth.refreshCalls)
+    }
+
+    @Test
+    fun transientRefreshCannotPromoteUnvalidatedFlutterSession() = runBlocking {
+        val auth = FakeAuthRepository(
+            refreshResult = Outcome.Failure(AppError(ErrorKind.NETWORK, "temporary")),
+        )
+        val destination = resolver(
+            session = stored(expiresAt = 1L).copy(requiresOnlineValidation = true),
+            onboardingDone = true,
+            auth = auth,
+        ).resolve()
+
+        assertTrue(destination is StartupDestination.RecoverableError)
+        assertEquals(1, auth.refreshCalls)
+    }
+
+    @Test
     fun offlineWithoutSessionRoutesToAuthenticationWithoutNetworkCalls() = runBlocking {
         val auth = FakeAuthRepository()
         val destination = StartupResolver(

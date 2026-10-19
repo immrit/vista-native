@@ -1,5 +1,11 @@
 package ir.coffevista.vista_native.navigation
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -104,6 +110,8 @@ fun VistaApp(
     chatRepository: ChatRepository,
     servicesRepository: ServicesRepository,
     biometricAuthenticator: ir.coffevista.vista_native.core.security.BiometricAuthenticator? = null,
+    routedSharedContent: ir.coffevista.vista_native.share.RoutedSharedContent? = null,
+    onSharedContentConsumed: (String) -> Unit = {},
     onExitRequested: () -> Unit,
 ) {
     val navController = rememberNavController()
@@ -178,6 +186,30 @@ fun VistaApp(
     NavHost(
         navController = navController,
         startDestination = AppRoute.Startup,
+        enterTransition = {
+            slideInHorizontally(
+                initialOffsetX = { fullWidth -> -fullWidth },
+                animationSpec = tween(320, easing = FastOutSlowInEasing)
+            ) + fadeIn(animationSpec = tween(220))
+        },
+        exitTransition = {
+            slideOutHorizontally(
+                targetOffsetX = { fullWidth -> (fullWidth * 0.25f).toInt() },
+                animationSpec = tween(320, easing = FastOutSlowInEasing)
+            ) + fadeOut(animationSpec = tween(200))
+        },
+        popEnterTransition = {
+            slideInHorizontally(
+                initialOffsetX = { fullWidth -> (fullWidth * 0.25f).toInt() },
+                animationSpec = tween(320, easing = FastOutSlowInEasing)
+            ) + fadeIn(animationSpec = tween(220))
+        },
+        popExitTransition = {
+            slideOutHorizontally(
+                targetOffsetX = { fullWidth -> -fullWidth },
+                animationSpec = tween(320, easing = FastOutSlowInEasing)
+            ) + fadeOut(animationSpec = tween(200))
+        },
     ) {
         composable<AppRoute.Startup> { startupEntry ->
             val startupViewModel: StartupViewModel = hiltViewModel()
@@ -473,17 +505,30 @@ fun VistaApp(
                             )
                         },
                         storyCreate = { initialUri, onClose, onStoryPublished ->
+                            val shared = routedSharedContent?.takeIf {
+                                it.destination == ir.coffevista.vista_native.share.SharedContentDestination.STORY
+                            }
                             ir.coffevista.vista_native.features.stories.ui.editor.StoryEditorScreen(
-                                initialMediaUri = initialUri,
+                                initialMediaUri = shared?.content?.uris?.firstOrNull() ?: initialUri,
+                                initialMediaMimeType = shared?.content?.mimeType,
+                                initialSharedContentId = shared?.content?.requestId,
+                                onInitialSharedContentConsumed = onSharedContentConsumed,
                                 onClose = onClose,
                                 onStoryPublished = onStoryPublished,
                             )
                         },
                         addPost = { onBack, onNavigateToTrimmer, onPostCreated ->
+                            val shared = routedSharedContent?.takeIf {
+                                it.destination == ir.coffevista.vista_native.share.SharedContentDestination.POST
+                            }
                             ir.coffevista.vista_native.features.feed.ui.create.AddPostScreen(
                                 onBack = onBack,
                                 onNavigateToTrimmer = onNavigateToTrimmer,
                                 onPostCreated = onPostCreated,
+                                preloadedText = shared?.content?.text,
+                                preloadedMediaUris = shared?.content?.uris.orEmpty(),
+                                preloadedRequestId = shared?.content?.requestId,
+                                onPreloadedConsumed = onSharedContentConsumed,
                             )
                         },
                         videoTrimmer = { videoUri, onBack, onTrimComplete ->
@@ -671,6 +716,7 @@ fun VistaApp(
                             LaunchedEffect(userId) {
                                 if (userId.isNotBlank()) postsViewModel.bind(userId)
                             }
+                            val coroutineScope = rememberCoroutineScope()
                             OtherUserProfileScreen(
                                 viewModel = hiltViewModel(),
                                 onBack = onBack,
@@ -683,7 +729,22 @@ fun VistaApp(
                                 onReelClick = onReelClick,
                                 onLikeClick = postsViewModel::toggleLike,
                                 onSaveClick = postsViewModel::toggleSave,
-                                onMessage = onOpenChat?.let { openChat -> { openChat(userId) } },
+                                onMessage = onOpenChat?.let { openChat ->
+                                    {
+                                        coroutineScope.launch {
+                                            val existing = chatRepository.findConversationByPeer(userId, isSecret = false)
+                                            val conversation = existing ?: when (val res = chatRepository.createConversation(userId, isSecret = false)) {
+                                                is ir.coffevista.vista_native.features.chat.domain.repository.ChatResult.Success -> res.value
+                                                is ir.coffevista.vista_native.features.chat.domain.repository.ChatResult.Failure -> null
+                                            }
+                                            if (conversation != null) {
+                                                openChat(conversation.id)
+                                            } else {
+                                                openChat(userId)
+                                            }
+                                        }
+                                    }
+                                },
                             )
                         },
                         followersFollowing = { targetUserId, initialTab, onBack, onOpenProfile ->
@@ -771,22 +832,33 @@ fun VistaApp(
                             )
                         },
                         chatNewMessage = { onBack, onOpenConversation ->
+                            val shared = routedSharedContent?.takeIf {
+                                it.destination == ir.coffevista.vista_native.share.SharedContentDestination.CHAT
+                            }
                             NewMessageRoute(
                                 viewModel = hiltViewModel(),
                                 onBack = onBack,
                                 onOpenConversation = onOpenConversation,
+                                sharedContentSummary = shared?.content?.destinationSummary,
                             )
                         },
-                        chatDetail = { conversationId, messageId, title, onBack, onOpenProfile ->
+                        chatDetail = { conversationId, messageId, title, onBack, onOpenProfile, onOpenChat ->
+                            val shared = routedSharedContent?.takeIf {
+                                it.destination == ir.coffevista.vista_native.share.SharedContentDestination.CHAT
+                            }
                             MessageDetailRoute(
                                 conversationId = conversationId,
                                 initialMessageId = messageId,
+                                initialSharedContentId = shared?.content?.requestId,
+                                initialSharedText = shared?.content?.text,
+                                initialSharedUris = shared?.content?.uris.orEmpty(),
+                                onInitialSharedContentConsumed = onSharedContentConsumed,
                                 title = title,
                                 viewModel = hiltViewModel(),
                                 onBack = onBack,
                                 onOpenProfile = onOpenProfile,
-                                onStartSecretChat = {
-                                    navController.navigate(ShellRoutes.chatDetail(conversationId))
+                                onStartSecretChat = { secretConversation ->
+                                    onOpenChat(secretConversation.id, secretConversation.title)
                                 },
                             )
                         },

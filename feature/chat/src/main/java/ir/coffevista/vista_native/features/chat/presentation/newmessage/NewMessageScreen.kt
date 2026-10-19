@@ -64,11 +64,13 @@ fun NewMessageRoute(
     viewModel: NewMessageViewModel,
     onBack: () -> Unit,
     onOpenConversation: (conversationId: String, title: String) -> Unit,
+    sharedContentSummary: String? = null,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     NewMessageScreen(
         state = state,
         onBack = onBack,
+        sharedContentSummary = sharedContentSummary,
         onQueryChanged = viewModel::queryChanged,
         onSecretModeChanged = viewModel::setSecretMode,
         onGroupModeChanged = viewModel::setGroupMode,
@@ -87,6 +89,7 @@ fun NewMessageRoute(
 fun NewMessageScreen(
     state: NewMessageUiState,
     onBack: () -> Unit,
+    sharedContentSummary: String? = null,
     onQueryChanged: (String) -> Unit,
     onSecretModeChanged: (Boolean) -> Unit,
     onGroupModeChanged: (Boolean) -> Unit = {},
@@ -132,6 +135,25 @@ fun NewMessageScreen(
         },
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
+            sharedContentSummary?.takeIf(String::isNotBlank)?.let { summary ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.primaryContainer)
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "پس از انتخاب گیرنده، $summary برای بازبینی آماده می‌شود",
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        fontSize = 13.sp,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
             if (state.isGroupMode) {
                 OutlinedTextField(
                     value = state.groupName,

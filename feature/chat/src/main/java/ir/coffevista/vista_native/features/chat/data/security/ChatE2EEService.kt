@@ -5,6 +5,8 @@ import android.content.SharedPreferences
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
+import ir.coffevista.vista_native.core.security.FlutterSecureStorageReader
+import ir.coffevista.vista_native.core.security.FlutterSecureValue
 import java.math.BigInteger
 import java.nio.ByteBuffer
 import java.security.MessageDigest
@@ -31,6 +33,7 @@ class ChatE2EEService(
         context.getSharedPreferences("vista_e2e_keys", Context.MODE_PRIVATE)
     }
     private val secureRandom = SecureRandom()
+    private val flutterSecureStorage = FlutterSecureStorageReader(context)
 
     /**
      * Retrieves the stored X25519 keypair for the given [userId], or generates and saves a new one.
@@ -38,19 +41,51 @@ class ChatE2EEService(
     @Synchronized
     fun getOrGenerateKeyPair(userId: String): KeyPair {
         val pubB64 = prefs.getString("e2e_pub_$userId", null)
-        val privateKey = readPrivateKey(userId)
-        if (privateKey != null && !pubB64.isNullOrBlank()) {
-            return try {
-                KeyPair(
-                    privateKey = privateKey,
-                    publicKey = Base64.decode(pubB64, Base64.NO_WRAP),
-                ).also { require(it.publicKey.size == X25519_KEY_LENGTH) }
-            } catch (_: Exception) {
-                generateAndSaveKeyPair(userId)
+        val privateKey = runCatching {
+            readPrivateKey(userId) ?: importFlutterPrivateKey(userId)
+        }.getOrNull()
+        if (privateKey != null) {
+            val derivedPublicKey = X25519.scalarMultBase(privateKey)
+            val storedPublicKey = runCatching {
+                Base64.decode(pubB64.orEmpty(), Base64.NO_WRAP)
+            }.getOrNull()
+            if (storedPublicKey == null || !storedPublicKey.contentEquals(derivedPublicKey)) {
+                // The private key is the durable identity. Repair a missing or
+                // stale public half instead of silently rotating that identity.
+                runCatching {
+                    prefs.edit()
+                        .putString("e2e_pub_$userId", Base64.encodeToString(derivedPublicKey, Base64.NO_WRAP))
+                        .commit()
+                }
             }
+            return KeyPair(privateKey, derivedPublicKey)
         }
         return generateAndSaveKeyPair(userId)
     }
+
+    private fun importFlutterPrivateKey(userId: String): ByteArray? = runCatching {
+        fun readPair(privateName: String, publicName: String): ByteArray? {
+            val privateValue = runCatching { flutterSecureStorage.read(privateName) }.getOrNull()
+            val publicValue = runCatching { flutterSecureStorage.read(publicName) }.getOrNull()
+            if (privateValue !is FlutterSecureValue.Present) return null
+            val encoded = privateValue.value
+            val privateKey = runCatching { Base64.decode(encoded, Base64.DEFAULT) }.getOrNull()
+                ?.takeIf { it.size == X25519_KEY_LENGTH } ?: return null
+            if (publicValue is FlutterSecureValue.Present) {
+                val publicKey = runCatching { Base64.decode(publicValue.value, Base64.DEFAULT) }.getOrNull()
+                if (publicKey != null && !publicKey.contentEquals(X25519.scalarMultBase(privateKey))) {
+                    return null
+                }
+            }
+            return privateKey
+        }
+
+        val imported = readPair("e2e_priv_$userId", "e2e_pub_$userId")
+            ?: readPair("e2ee_private_key", "e2ee_public_key")
+            ?: return null
+        runCatching { writePrivateKey(userId, imported) }
+        imported
+    }.getOrNull()
 
     @Synchronized
     fun generateAndSaveKeyPair(userId: String): KeyPair {
@@ -72,8 +107,10 @@ class ChatE2EEService(
     /**
      * Gets the stored peer public key for [conversationId].
      */
-    fun getPeerPublicKey(conversationId: String): ByteArray? {
-        val b64 = prefs.getString("e2e_peer_pub_$conversationId", null) ?: return null
+    fun getPeerPublicKey(id: String): ByteArray? {
+        val b64 = prefs.getString("e2e_peer_pub_$id", null)
+            ?: prefs.getString("e2e_pub_$id", null)
+            ?: return null
         return try {
             Base64.decode(b64.trim(), Base64.DEFAULT)
         } catch (_: Exception) {
@@ -82,18 +119,41 @@ class ChatE2EEService(
     }
 
     /**
-     * Saves the peer public key for [conversationId].
+     * Saves the peer public key for [conversationId] and optional [peerId].
      */
-    fun savePeerPublicKey(conversationId: String, peerPublicKeyB64: String) {
+    fun savePeerPublicKey(conversationId: String, peerPublicKeyB64: String, peerId: String? = null) {
         val trimmed = peerPublicKeyB64.trim()
         if (trimmed.isNotBlank()) {
-            prefs.edit().putString("e2e_peer_pub_$conversationId", trimmed).apply()
+            val editor = prefs.edit().putString("e2e_peer_pub_$conversationId", trimmed)
+            if (!peerId.isNullOrBlank()) {
+                editor.putString("e2e_peer_pub_$peerId", trimmed)
+                editor.putString("e2e_pub_$peerId", trimmed)
+            }
+            editor.apply()
         }
     }
 
-    fun savePeerPublicKey(conversationId: String, peerPublicKeyBytes: ByteArray) {
+    fun savePeerPublicKey(conversationId: String, peerPublicKeyBytes: ByteArray, peerId: String? = null) {
         val b64 = Base64.encodeToString(peerPublicKeyBytes, Base64.NO_WRAP)
-        savePeerPublicKey(conversationId, b64)
+        savePeerPublicKey(conversationId, b64, peerId)
+    }
+
+    fun getSecretAutoDeleteSeconds(conversationId: String): Int {
+        return prefs.getInt("secret_auto_delete_seconds_$conversationId", 0)
+    }
+
+    fun setSecretAutoDeleteSeconds(conversationId: String, seconds: Int) {
+        if (seconds > 0) {
+            prefs.edit()
+                .putInt("secret_auto_delete_seconds_$conversationId", seconds)
+                .putLong("secret_auto_delete_enabled_at_ms_$conversationId", System.currentTimeMillis())
+                .apply()
+        } else {
+            prefs.edit()
+                .remove("secret_auto_delete_seconds_$conversationId")
+                .remove("secret_auto_delete_enabled_at_ms_$conversationId")
+                .apply()
+        }
     }
 
     /**
@@ -103,31 +163,35 @@ class ChatE2EEService(
      */
     private fun readPrivateKey(userId: String): ByteArray? {
         prefs.getString("e2e_priv_enc_$userId", null)?.let { encrypted ->
-            return runCatching { decryptPrivateKey(userId, encrypted) }
-                .getOrElse {
-                    prefs.edit().remove("e2e_priv_enc_$userId").apply()
-                    null
-                }
+            val decrypted = runCatching { decryptPrivateKey(userId, encrypted) }.getOrNull()
+            if (decrypted != null && decrypted.size == X25519_KEY_LENGTH) {
+                return decrypted
+            }
+            // Corrupted or invalidated key in keystore - remove to allow regeneration
+            runCatching { prefs.edit().remove("e2e_priv_enc_$userId").apply() }
         }
 
         val legacy = prefs.getString("e2e_priv_$userId", null) ?: return null
         val legacyKey = runCatching { Base64.decode(legacy, Base64.NO_WRAP) }.getOrNull()
             ?.takeIf { it.size == X25519_KEY_LENGTH }
-            ?: run {
-                prefs.edit().remove("e2e_priv_$userId").apply()
-                return null
-            }
-        writePrivateKey(userId, legacyKey)
-        prefs.edit().remove("e2e_priv_$userId").apply()
-        return legacyKey
+        if (legacyKey != null) {
+            runCatching { writePrivateKey(userId, legacyKey) }
+            runCatching { prefs.edit().remove("e2e_priv_$userId").apply() }
+            return legacyKey
+        }
+        runCatching { prefs.edit().remove("e2e_priv_$userId").apply() }
+        return null
     }
 
     private fun writePrivateKey(userId: String, privateKey: ByteArray) {
-        require(privateKey.size == X25519_KEY_LENGTH) { "Invalid X25519 private key" }
-        prefs.edit()
-            .putString("e2e_priv_enc_$userId", encryptPrivateKey(userId, privateKey))
-            .remove("e2e_priv_$userId")
-            .apply()
+        if (privateKey.size != X25519_KEY_LENGTH) return
+        runCatching {
+            val encrypted = encryptPrivateKey(userId, privateKey)
+            prefs.edit()
+                .putString("e2e_priv_enc_$userId", encrypted)
+                .remove("e2e_priv_$userId")
+                .apply()
+        }
     }
 
     private fun encryptPrivateKey(userId: String, privateKey: ByteArray): String {
@@ -386,6 +450,19 @@ class ChatE2EEService(
             trimmed.startsWith(PREFIX_LEGACY_V1)
     }
 
+    /**
+     * Historical Vista clients sometimes sent the legacy AES-GCM payload
+     * without an envelope prefix. Only accept the exact legacy binary shape;
+     * a generic Base64-looking user message must not be treated as ciphertext.
+     */
+    fun isEncryptedPayload(content: String): Boolean {
+        if (isEncryptedEnvelope(content)) return true
+        val decoded = runCatching {
+            Base64.decode(content.trim(), Base64.DEFAULT)
+        }.getOrNull() ?: return false
+        return hasLegacyEncryptedPayloadShape(decoded)
+    }
+
     fun computeSafetyNumber(myPublicKey: ByteArray, peerPublicKey: ByteArray): String {
         val (first, second) = if (compareBytes(myPublicKey, peerPublicKey) <= 0) {
             myPublicKey to peerPublicKey
@@ -478,6 +555,18 @@ class ChatE2EEService(
             return okm
         }
     }
+}
+
+internal fun hasLegacyEncryptedPayloadShape(bytes: ByteArray): Boolean {
+    if (bytes.size <= 1 + 12 + 1 + 16) return false
+    val nonceLength = bytes[0].toInt() and 0xFF
+    if (nonceLength !in 12..16) return false
+    val macLengthIndex = 1 + nonceLength
+    if (macLengthIndex >= bytes.lastIndex) return false
+    val macLength = bytes[macLengthIndex].toInt() and 0xFF
+    if (macLength != 16) return false
+    val cipherTextOffset = macLengthIndex + 1 + macLength
+    return cipherTextOffset < bytes.size
 }
 
 /**

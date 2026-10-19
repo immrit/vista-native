@@ -101,6 +101,16 @@ data class AuthorInfoDto(
     val verificationType: String? = null,
 )
 
+private const val MEDIA_CDN_BASE = "https://s3.coffevista.ir"
+
+internal fun String?.resolvedCdnUrl(): String? {
+    val value = this?.trim()?.takeIf(String::isNotEmpty) ?: return null
+    if (value.startsWith("http://") || value.startsWith("https://")) return value
+    if (value.startsWith("//")) return "https:$value"
+    if (value.startsWith("asset://") || value.startsWith("lib/") || value.startsWith("assets/")) return value
+    return "$MEDIA_CDN_BASE/${value.removePrefix("/")}"
+}
+
 internal fun FeedPostDto.asEntity(
     accountId: String,
     sortOrder: Long,
@@ -109,10 +119,10 @@ internal fun FeedPostDto.asEntity(
     id = id,
     userId = userId,
     content = content,
-    imageUrl = imageUrl,
-    imageUrls = imageUrls,
-    videoUrl = videoUrl,
-    musicUrl = musicUrl,
+    imageUrl = imageUrl.resolvedCdnUrl(),
+    imageUrls = imageUrls.mapNotNull { it.resolvedCdnUrl() },
+    videoUrl = videoUrl.resolvedCdnUrl(),
+    musicUrl = musicUrl.resolvedCdnUrl(),
     aspectRatio = aspectRatio,
     musicTitle = musicTitle,
     tags = tags,
@@ -125,7 +135,7 @@ internal fun FeedPostDto.asEntity(
     authorId = author.userId,
     authorUsername = author.username,
     authorFullName = author.fullName,
-    authorAvatarUrl = author.avatarUrl,
+    authorAvatarUrl = author.avatarUrl.resolvedCdnUrl(),
     authorIsVerified = author.isVerified,
     authorVerificationType = author.verificationType,
     authorFollowStatus = authorFollowStatus,

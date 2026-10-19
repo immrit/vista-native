@@ -48,6 +48,11 @@ class StartupResolver @Inject constructor(
         } ?: return unauthenticatedDestination()
 
         if (!isOnline) {
+            if (stored.requiresOnlineValidation) {
+                return StartupDestination.RecoverableError(
+                    "برای انتقال امن نشست قبلی، اتصال اینترنت و تأیید دوباره لازم است",
+                )
+            }
             telemetry.record(
                 FoundationSignal(
                     name = "foundation.startup.session",
@@ -57,7 +62,9 @@ class StartupResolver @Inject constructor(
             return stored.authenticated(offline = true)
         }
 
-        if (stored.expiresAtEpochSeconds > clock.nowEpochSeconds() + CLOCK_SKEW_SECONDS) {
+        if (!stored.requiresOnlineValidation &&
+            stored.expiresAtEpochSeconds > clock.nowEpochSeconds() + CLOCK_SKEW_SECONDS
+        ) {
             return stored.authenticated(offline = false)
         }
 
@@ -79,7 +86,13 @@ class StartupResolver @Inject constructor(
                 )
             }
             RefreshResolution.TerminalSession -> unauthenticatedDestination()
-            RefreshResolution.TransientFailure -> stored.authenticated(offline = true)
+            RefreshResolution.TransientFailure -> if (stored.requiresOnlineValidation) {
+                StartupDestination.RecoverableError(
+                    "تأیید نشست منتقل‌شده ممکن نشد. لطفاً دوباره تلاش کنید",
+                )
+            } else {
+                stored.authenticated(offline = true)
+            }
             RefreshResolution.PersistenceFailure -> StartupDestination.RecoverableError(
                 "ذخیره امن نشست ممکن نشد. لطفاً دوباره تلاش کنید",
             )

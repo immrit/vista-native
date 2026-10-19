@@ -54,6 +54,21 @@ class ChatViewModelsTest {
     }
 
     @Test
+    fun `conversations viewmodel deduplicates conversations with same peer and secret type`() = runTest(mainDispatcherRule.dispatcher) {
+        val s1 = conversation().copy(id = "s-1", peerId = "d39db83e-379d-4dbd-9bd6-c262b6bf391d", title = "ahmad", type = ConversationType.SECRET, lastMessageAtEpochMillis = 100L)
+        val s2 = conversation().copy(id = "s-2", peerId = "d39db83e-379d-4dbd-9bd6-c262b6bf391d", title = "ahmad", type = ConversationType.SECRET, lastMessageAtEpochMillis = 200L)
+        val s3 = conversation().copy(id = "s-3", peerId = "d39db83e-379d-4dbd-9bd6-c262b6bf391d", title = "ahmad", type = ConversationType.SECRET, lastMessageAtEpochMillis = 300L)
+        val repository = FakeChatRepository().apply {
+            conversations.value = listOf(s1, s2, s3)
+        }
+        val viewModel = ConversationsViewModel(repository)
+        advanceUntilIdle()
+
+        assertEquals(1, viewModel.state.value.conversations.size)
+        assertEquals("s-3", viewModel.state.value.conversations.single().id)
+    }
+
+    @Test
     fun `retryable refresh failure exposes cached mode and a successful retry clears it`() =
         runTest(mainDispatcherRule.dispatcher) {
             val cached = conversation()
@@ -215,6 +230,37 @@ class ChatViewModelsTest {
     }
 
     @Test
+    fun `incoming messages are acknowledged only while the conversation is visible`() = runTest(mainDispatcherRule.dispatcher) {
+        val repository = FakeChatRepository()
+        val viewModel = MessagesViewModel(repository)
+        viewModel.bind("fixture-conversation")
+        advanceUntilIdle()
+
+        val first = message().copy(clientId = "incoming-1", isMine = false, status = MessageStatus.DELIVERED)
+        repository.messages.value = listOf(first)
+        advanceUntilIdle()
+        assertEquals(emptyList<String>(), repository.readCalls)
+
+        viewModel.setConversationVisible("fixture-conversation", true)
+        advanceUntilIdle()
+        assertEquals(listOf("fixture-conversation"), repository.readCalls)
+
+        repository.messages.value = listOf(first.copy(clientId = "incoming-2"), first)
+        advanceUntilIdle()
+        assertEquals(2, repository.readCalls.size)
+
+        viewModel.setConversationVisible("fixture-conversation", false)
+        advanceUntilIdle()
+        repository.messages.value = listOf(first.copy(clientId = "incoming-3"), first)
+        advanceUntilIdle()
+        assertEquals(2, repository.readCalls.size)
+
+        viewModel.setConversationVisible("fixture-conversation", true)
+        advanceUntilIdle()
+        assertEquals(3, repository.readCalls.size)
+    }
+
+    @Test
     fun `transfer retry and cancel failures are visible to the user`() = runTest(mainDispatcherRule.dispatcher) {
         val repository = FakeChatRepository().apply {
             messages.value = listOf(message())
@@ -305,7 +351,7 @@ class ChatViewModelsTest {
     fun `gif catalog mirrors trending search debounce and remote gif send`() = runTest(mainDispatcherRule.dispatcher) {
         val repository = FakeChatRepository()
         val catalog = FakeGifCatalog()
-        val viewModel = MessagesViewModel(repository, catalog)
+        val viewModel = MessagesViewModel(repository = repository, gifCatalog = catalog)
         viewModel.bind("fixture-conversation")
         advanceUntilIdle()
 
@@ -400,6 +446,45 @@ class ChatViewModelsTest {
         viewModel.openUser(user) { id, title -> opened = id to title }
 
         assertEquals("existing-conversation" to "Peer", opened)
+        assertTrue(repository.createdConversations.isEmpty())
+    }
+
+    @Test
+    fun `new message in secret mode reuses an existing secret conversation without creating a duplicate`() = runTest(mainDispatcherRule.dispatcher) {
+        val secretConv = conversation().copy(id = "secret-1", peerId = "peer", type = ConversationType.SECRET, title = "Secret Peer")
+        val user = ChatUser("peer", "peer", "Peer", null)
+        val repository = FakeChatRepository().apply {
+            conversations.value = listOf(secretConv)
+            suggestedUsers.value = listOf(user)
+        }
+        val viewModel = NewMessageViewModel(repository)
+        viewModel.setSecretMode(true)
+        advanceUntilIdle()
+        var opened: Pair<String, String>? = null
+
+        viewModel.openUser(user) { id, title -> opened = id to title }
+        advanceUntilIdle()
+
+        assertEquals("secret-1" to "Secret Peer", opened)
+        assertTrue(repository.createdConversations.isEmpty())
+    }
+
+    @Test
+    fun `start secret chat reuses an existing secret conversation without creating a duplicate`() = runTest(mainDispatcherRule.dispatcher) {
+        val directConv = conversation().copy(id = "direct-1", peerId = "peer", type = ConversationType.PRIVATE, title = "Peer")
+        val existingSecretConv = conversation().copy(id = "secret-1", peerId = "peer", type = ConversationType.SECRET, title = "Secret Peer")
+        val repository = FakeChatRepository().apply {
+            conversations.value = listOf(directConv, existingSecretConv)
+        }
+        val viewModel = MessagesViewModel(repository)
+        viewModel.bind(directConv.id)
+        advanceUntilIdle()
+
+        var openedSecret: Conversation? = null
+        viewModel.startSecretChat { openedSecret = it }
+        advanceUntilIdle()
+
+        assertEquals("secret-1", openedSecret?.id)
         assertTrue(repository.createdConversations.isEmpty())
     }
 
@@ -558,6 +643,7 @@ class ChatViewModelsTest {
         val noteReplies = mutableListOf<List<String>>()
         val messageSearches = mutableListOf<Pair<String, String>>()
         val retried = mutableListOf<Pair<String, String>>()
+        val readCalls = mutableListOf<String>()
         val createdConversations = mutableListOf<Pair<String, Boolean>>()
         val createdGroups = mutableListOf<Pair<String, List<String>>>()
         val addedGroupMembers = mutableListOf<List<String>>()
@@ -568,6 +654,9 @@ class ChatViewModelsTest {
         val acceptedMessageRequests = mutableListOf<String>()
         val rejectedMessageRequests = mutableListOf<String>()
         val toggledConversationFlags = mutableListOf<Pair<String, String>>()
+        val autoDeleteSeconds = mutableMapOf<String, Int>()
+        var safetyNumberResult: String? = "12345 67890 12345 67890 12345 67890"
+        var handshakeCalls = 0
         var blockStatus = BlockStatus(isBlocked = false, isBlockedBy = false)
         var searchedUsers = emptyList<ChatUser>()
         var searchUsersResult: ChatResult<List<ChatUser>>? = null
@@ -606,6 +695,10 @@ class ChatViewModelsTest {
             createdConversations += peerId to isSecret
             return ChatResult.Success(conversation())
         }
+        override suspend fun findConversationByPeer(peerId: String, isSecret: Boolean): Conversation? {
+            val expected = if (isSecret) ConversationType.SECRET else ConversationType.PRIVATE
+            return conversations.value.firstOrNull { it.peerId == peerId && it.type == expected }
+        }
         override suspend fun createGroup(name: String, memberIds: List<String>, imageUrl: String?): ChatResult<Conversation> {
             createdGroups += name to memberIds
             return ChatResult.Success(
@@ -636,11 +729,11 @@ class ChatViewModelsTest {
             messageSearches += conversationId to query
             return ChatResult.Success(messages.value)
         }
-        override suspend fun sendText(conversationId: String, text: String): ChatResult<Message> {
+        override suspend fun sendText(conversationId: String, text: String, clientId: String?): ChatResult<Message> {
             sent += conversationId to text
             return ChatResult.Success(message())
         }
-        override suspend fun sendReply(conversationId: String, text: String, replyTo: Message): ChatResult<Message> {
+        override suspend fun sendReply(conversationId: String, text: String, replyTo: Message, clientId: String?): ChatResult<Message> {
             sentReplies += Triple(conversationId, text, replyTo.serverId ?: replyTo.clientId)
             return ChatResult.Success(message())
         }
@@ -664,7 +757,10 @@ class ChatViewModelsTest {
             return retryResult
         }
         override suspend fun cancelTransfer(conversationId: String, clientId: String) = cancelResult
-        override suspend fun markRead(conversationId: String) = ChatResult.Success(Unit)
+        override suspend fun markRead(conversationId: String): ChatResult<Unit> {
+            readCalls += conversationId
+            return ChatResult.Success(Unit)
+        }
         override suspend fun sendTyping(conversationId: String) = ChatResult.Success(Unit)
         override suspend fun setConversationActive(conversationId: String, active: Boolean) = ChatResult.Success(Unit)
         override suspend fun toggleConversationFlag(conversationId: String, flag: String): ChatResult<Conversation> {
@@ -719,6 +815,21 @@ class ChatViewModelsTest {
             additionalDetails: String?,
         ): ChatResult<Unit> = ChatResult.Success(Unit).also {
             reports += Triple(userId, reason, additionalDetails)
+        }
+
+        override suspend fun ensureSecretChatHandshake(conversationId: String): ChatResult<Unit> {
+            handshakeCalls++
+            return ChatResult.Success(Unit)
+        }
+
+        override suspend fun computeSecretSafetyNumber(conversationId: String): String? = safetyNumberResult
+
+        override suspend fun getSecretAutoDeleteSeconds(conversationId: String): Int =
+            autoDeleteSeconds[conversationId] ?: 0
+
+        override suspend fun setSecretAutoDeleteSeconds(conversationId: String, seconds: Int): ChatResult<Unit> {
+            autoDeleteSeconds[conversationId] = seconds
+            return ChatResult.Success(Unit)
         }
 
         override suspend fun setForeground(foreground: Boolean) = Unit

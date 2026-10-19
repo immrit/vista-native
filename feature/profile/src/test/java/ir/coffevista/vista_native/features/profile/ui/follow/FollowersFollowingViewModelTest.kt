@@ -51,6 +51,9 @@ class FollowersFollowingViewModelTest {
         override suspend fun fetchPublicProfile(userId: String): Response<PublicProfileDto> =
             error("unused")
 
+        override suspend fun fetchProfileByUsername(username: String): Response<PublicProfileDto> =
+            error("unused")
+
         override suspend fun follow(request: FollowActionRequestDto): Response<FollowActionResponseDto> {
             lastFollowTarget = request.targetUserId
             return Response.success(FollowActionResponseDto(status = "following", message = "ok"))
@@ -62,11 +65,11 @@ class FollowersFollowingViewModelTest {
         }
 
         override suspend fun getFollowers(userId: String, limit: Int, offset: Int): Response<FollowListResponseDto> {
-            return Response.success(FollowListResponseDto(users = listOf(sampleFollower), total = 1))
+            return Response.success(FollowListResponseDto(profiles = listOf(sampleFollower), total = 1))
         }
 
         override suspend fun getFollowing(userId: String, limit: Int, offset: Int): Response<FollowListResponseDto> {
-            return Response.success(FollowListResponseDto(users = listOf(sampleFollowing), total = 1))
+            return Response.success(FollowListResponseDto(profiles = listOf(sampleFollowing), total = 1))
         }
     }
 

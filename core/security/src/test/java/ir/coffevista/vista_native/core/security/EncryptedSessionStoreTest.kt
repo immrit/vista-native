@@ -126,6 +126,75 @@ class EncryptedSessionStoreTest {
         assertTrue(store.isBiometricEnabled())
         assertFalse(requireNotNull(storage.encoded).contains("biometric_enabled"))
     }
+
+    @Test
+    fun flutterSessionImportsOnceIntoNativeCiphertextWithoutDeletingSource() {
+        val storage = MemorySessionPayloadStorage()
+        val flutter = MemoryFlutterSessionMigration(stored().copy(requiresOnlineValidation = true))
+        val store = EncryptedSessionStore(storage, MutableKeyProvider(), flutter)
+
+        assertTrue(store.read()?.requiresOnlineValidation == true)
+        assertEquals(1, flutter.importCalls)
+        assertFalse(requireNotNull(storage.encoded).contains(ACCESS_TOKEN))
+        assertEquals(USER_ID, store.read()?.userId)
+        assertEquals(1, flutter.importCalls)
+        assertFalse(flutter.blocked)
+    }
+
+    @Test
+    fun logoutTombstonePreventsFlutterSessionReimport() {
+        val storage = MemorySessionPayloadStorage()
+        val flutter = MemoryFlutterSessionMigration(stored().copy(requiresOnlineValidation = true))
+        val store = EncryptedSessionStore(storage, MutableKeyProvider(), flutter)
+        assertTrue(store.read() != null)
+
+        store.clear()
+
+        assertTrue(flutter.blocked)
+        assertNull(store.read())
+    }
+
+    @Test
+    fun nativeCiphertextCorruptionCannotResurrectOldFlutterSession() {
+        val storage = MemorySessionPayloadStorage(encoded = "malformed")
+        val flutter = MemoryFlutterSessionMigration(stored())
+        val store = EncryptedSessionStore(storage, MutableKeyProvider(), flutter)
+
+        assertNull(store.read())
+        assertTrue(flutter.blocked)
+        assertNull(store.read())
+    }
+
+    @Test
+    fun blankNativePayloadAlsoCannotResurrectOldFlutterSession() {
+        val flutter = MemoryFlutterSessionMigration(stored())
+        val store = EncryptedSessionStore(
+            MemorySessionPayloadStorage(encoded = " "),
+            MutableKeyProvider(),
+            flutter,
+        )
+
+        assertNull(store.read())
+        assertTrue(flutter.blocked)
+        assertEquals(0, flutter.importCalls)
+    }
+}
+
+private class MemoryFlutterSessionMigration(
+    private val session: StoredSession,
+) : FlutterSessionMigration {
+    var blocked = false
+    var importCalls = 0
+
+    override fun importOrNull(): StoredSession? {
+        importCalls += 1
+        return session.takeUnless { blocked }
+    }
+
+    override fun preventFutureImport(): Boolean {
+        blocked = true
+        return true
+    }
 }
 
 private class MemorySessionPayloadStorage(

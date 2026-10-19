@@ -1,6 +1,8 @@
 package ir.coffevista.vista_native.features.chat.presentation.components
 
+import android.content.Context
 import android.icu.text.BreakIterator
+import android.view.inputmethod.InputMethodManager
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.text.BasicTextField
@@ -15,8 +17,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -37,6 +42,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.sp
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import ir.coffevista.vista_native.core.designsystem.component.VistaEmojiSpan
 
 /**
@@ -92,9 +99,12 @@ fun ChatComposerField(
     } ?: true
     val latestValue = rememberUpdatedState(value)
     val latestOnValueChange = rememberUpdatedState(onValueChange)
+    val latestOnFocusText = rememberUpdatedState(onFocusText)
+    val latestIsEmojiPanelOpen = rememberUpdatedState(isEmojiPanelOpen)
     val latestKeyboardController = rememberUpdatedState(keyboardController)
+    var editTextRef by remember { mutableStateOf<EditText?>(null) }
 
-    DisposableEffect(controller, actualFocusRequester) {
+    DisposableEffect(controller, actualFocusRequester, editTextRef) {
         controller.onInsertEmoji = { symbol ->
             val currentValue = latestValue.value
             val start = currentValue.selection.min
@@ -119,11 +129,43 @@ fun ChatComposerField(
             }
         }
         controller.onRequestKeyboard = {
-            actualFocusRequester.requestFocus()
-            latestKeyboardController.value?.show()
+            editTextRef?.let { et ->
+                et.requestFocus()
+                val imm = et.context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+                imm?.showSoftInput(et, 0)
+                val activity = et.context as? android.app.Activity
+                if (activity?.window != null) {
+                    androidx.core.view.WindowCompat.getInsetsController(activity.window, et)
+                        .show(WindowInsetsCompat.Type.ime())
+                } else {
+                    ViewCompat.getWindowInsetsController(et)
+                        ?.show(WindowInsetsCompat.Type.ime())
+                }
+                et.post {
+                    et.requestFocus()
+                    imm?.showSoftInput(et, 0)
+                }
+            } ?: run {
+                actualFocusRequester.requestFocus()
+                latestKeyboardController.value?.show()
+            }
         }
         controller.onHideKeyboard = {
-            latestKeyboardController.value?.hide()
+            editTextRef?.let { et ->
+                val imm = et.context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+                val activity = et.context as? android.app.Activity
+                if (activity?.window != null) {
+                    androidx.core.view.WindowCompat.getInsetsController(activity.window, et)
+                        .hide(WindowInsetsCompat.Type.ime())
+                } else {
+                    ViewCompat.getWindowInsetsController(et)
+                        ?.hide(WindowInsetsCompat.Type.ime())
+                }
+                imm?.hideSoftInputFromWindow(et.windowToken, 0)
+                et.clearFocus()
+            } ?: run {
+                latestKeyboardController.value?.hide()
+            }
         }
         onDispose {
             controller.onInsertEmoji = null
@@ -150,6 +192,16 @@ fun ChatComposerField(
                 object : EditText(context) {
                     override fun focusSearch(direction: Int): android.view.View = this
                 }.apply {
+                    editTextRef = this
+                    setOnTouchListener { _, event ->
+                        if (event.action == android.view.MotionEvent.ACTION_UP && latestIsEmojiPanelOpen.value) {
+                            latestOnFocusText.value()
+                        }
+                        false
+                    }
+                    setOnClickListener {
+                        if (latestIsEmojiPanelOpen.value) latestOnFocusText.value()
+                    }
                     background = null
                     setPadding(0, 0, 0, 0)
                     inputType = InputType.TYPE_CLASS_TEXT or
@@ -164,7 +216,7 @@ fun ChatComposerField(
                         override fun afterTextChanged(editable: Editable?) {
                             if (editable == null || this@apply.tag == true) return
                             VistaEmojiSpan.applySpans(context, editable)
-                            onValueChange(
+                            latestOnValueChange.value(
                                 TextFieldValue(
                                     editable.toString(),
                                     TextRange(selectionStart.coerceAtLeast(0)),
@@ -176,7 +228,11 @@ fun ChatComposerField(
             },
             modifier = modifier
                 .focusRequester(actualFocusRequester)
-                .onFocusChanged { if (it.isFocused && !isEmojiPanelOpen) onFocusText() }
+                .onFocusChanged {
+                    if (it.isFocused) {
+                        onFocusText()
+                    }
+                }
                 .semantics {
                     contentDescription = hint
                 },
@@ -186,11 +242,17 @@ fun ChatComposerField(
                 editText.setTextColor(textColor)
                 editText.setHintTextColor(hintColor)
                 if (editText.text.toString() != value.text) {
+                    val hadFocus = editText.hasFocus()
                     editText.tag = true
                     editText.setText(value.text)
                     editText.setSelection(value.selection.min.coerceIn(0, editText.text.length))
                     VistaEmojiSpan.applySpans(editText.context, editText.text)
                     editText.tag = false
+                    if (hadFocus) {
+                        editText.requestFocus()
+                        val imm = editText.context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+                        imm?.showSoftInput(editText, 0)
+                    }
                 } else if (editText.selectionStart != value.selection.min) {
                     editText.setSelection(value.selection.min.coerceIn(0, editText.text.length))
                 }

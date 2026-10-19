@@ -62,11 +62,13 @@ class NetworkSecurityPolicyTest {
             .execute()
             .close()
         assertEquals("Bearer access-secret", captured?.header("Authorization"))
+        org.junit.Assert.assertNotNull(captured?.header("X-Device-ID"))
 
         client.newCall(Request.Builder().url("https://api.coffevista.ir.evil.test/v1/me").build())
             .execute()
             .close()
         assertNull(captured?.header("Authorization"))
+        assertNull(captured?.header("X-Device-ID"))
     }
 
     @Test

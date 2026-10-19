@@ -64,7 +64,7 @@ internal fun Message.contextActionPolicy(
     return MessageContextActionPolicy(
         canReact = canInteractRemotely && capabilities.allowsReactions,
         canReply = canInteractRemotely,
-        canCopy = !isDeleted && isTextOnly,
+        canCopy = !isDeleted && isTextOnly && capabilities.conversationType != ConversationType.SECRET,
         // Secret conversations must never expose a forwarding or pin route.
         // The API remains authoritative for all other conversation policies.
         canForward = canInteractRemotely &&

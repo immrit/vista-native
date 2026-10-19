@@ -125,19 +125,22 @@ class StoryRepository internal constructor(
         }
     }
 
-    suspend fun votePoll(storyId: String, optionId: String): Result<Unit> = withContext(ioDispatcher) {
+    suspend fun votePoll(storyId: String, elementId: String, optionIndex: Int): Result<Unit> = withContext(ioDispatcher) {
         try {
-            api.votePoll(storyId, StoryVoteRequestDto(optionId))
+            api.votePoll(storyId, elementId, StoryVoteRequestDto(optionIndex))
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
 
+    suspend fun votePoll(storyId: String, optionId: String): Result<Unit> =
+        votePoll(storyId, elementId = "poll", optionIndex = optionId.toIntOrNull() ?: 0)
+
     suspend fun getStoryViews(storyId: String, limit: Int = 50, offset: Int = 0): Result<List<StoryView>> = withContext(ioDispatcher) {
         try {
             val response = api.getStoryViews(storyId, limit, offset)
-            Result.success(response.views)
+            Result.success(response.toDomainViews())
         } catch (e: Exception) {
             Result.failure(e)
         }

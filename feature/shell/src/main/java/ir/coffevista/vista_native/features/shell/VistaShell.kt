@@ -19,10 +19,32 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.material3.ripple
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.draw.clip
+import ir.coffevista.vista_native.core.designsystem.component.LocalBottomBarVisibility
+import ir.coffevista.vista_native.core.designsystem.component.LocalHomeTabClick
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -105,6 +127,11 @@ fun VistaShell(
             ShellRoutes.SearchWorkspace,
             ShellRoutes.ServicesDetailRoute,
         )
+    var isBottomIslandVisible by rememberSaveable { mutableStateOf(true) }
+
+    LaunchedEffect(selectedTab, backStackEntry?.destination?.route) {
+        isBottomIslandVisible = true
+    }
     var lastExitRequestAt by rememberSaveable { mutableStateOf(0L) }
     var lastDeepLinkId by rememberSaveable { mutableStateOf(0L) }
     var activeChatTitle by rememberSaveable { mutableStateOf("پیام‌ها") }
@@ -127,8 +154,16 @@ fun VistaShell(
 
         when (request.kind) {
             ShellDeferredKind.POST, ShellDeferredKind.GROUP -> {
-                selectTab(ShellTab.Feed)
-                navController.navigate(ShellRoutes.postDetail(request.reference))
+                if (request.reference == "share") {
+                    selectTab(ShellTab.Feed)
+                    navController.navigate(ShellRoutes.AddPost)
+                } else if (request.reference == "share_story") {
+                    selectTab(ShellTab.Feed)
+                    navController.navigate(ShellRoutes.storyCreate(null))
+                } else {
+                    selectTab(ShellTab.Feed)
+                    navController.navigate(ShellRoutes.postDetail(request.reference))
+                }
             }
             ShellDeferredKind.PROFILE -> {
                 if (request.reference == context.userId) {
@@ -139,7 +174,13 @@ fun VistaShell(
             }
             ShellDeferredKind.CHAT -> {
                 selectTab(ShellTab.Chat)
-                navController.navigate(ShellRoutes.chatDetail(request.reference, request.secondaryReference))
+                if (request.reference == "share") {
+                    navController.navigate(ShellRoutes.ChatNewMessage) {
+                        launchSingleTop = true
+                    }
+                } else {
+                    navController.navigate(ShellRoutes.chatDetail(request.reference, request.secondaryReference))
+                }
             }
         }
 
@@ -168,13 +209,41 @@ fun VistaShell(
         }
     }
 
-    Box(modifier = modifier.fillMaxSize()) {
+    val homeTabClickFlow = remember { kotlinx.coroutines.flow.MutableSharedFlow<Unit>(extraBufferCapacity = 1) }
+
+    CompositionLocalProvider(
+        LocalBottomBarVisibility provides { isBottomIslandVisible = it },
+        LocalHomeTabClick provides homeTabClickFlow,
+    ) {
+        Box(modifier = modifier.fillMaxSize()) {
         NavHost(
             navController = navController,
             startDestination = ShellRoutes.FeedGraph,
-            modifier = Modifier
-                .fillMaxSize()
-                .windowInsetsPadding(WindowInsets.statusBars.only(WindowInsetsSides.Top)),
+            enterTransition = {
+                slideInHorizontally(
+                    initialOffsetX = { fullWidth -> -fullWidth },
+                    animationSpec = tween(320, easing = FastOutSlowInEasing)
+                ) + fadeIn(animationSpec = tween(180))
+            },
+            exitTransition = {
+                slideOutHorizontally(
+                    targetOffsetX = { fullWidth -> (fullWidth * 0.25f).toInt() },
+                    animationSpec = tween(320, easing = FastOutSlowInEasing)
+                ) + fadeOut(animationSpec = tween(180))
+            },
+            popEnterTransition = {
+                slideInHorizontally(
+                    initialOffsetX = { fullWidth -> (fullWidth * 0.25f).toInt() },
+                    animationSpec = tween(320, easing = FastOutSlowInEasing)
+                ) + fadeIn(animationSpec = tween(180))
+            },
+            popExitTransition = {
+                slideOutHorizontally(
+                    targetOffsetX = { fullWidth -> -fullWidth },
+                    animationSpec = tween(320, easing = FastOutSlowInEasing)
+                ) + fadeOut(animationSpec = tween(180))
+            },
+            modifier = Modifier.fillMaxSize(),
         ) {
             navigation(route = ShellRoutes.FeedGraph, startDestination = ShellRoutes.FeedRoot) {
                 composable(ShellRoutes.FeedRoot) {
@@ -456,7 +525,12 @@ fun VistaShell(
                         entry.arguments?.getString("messageId"),
                         activeChatTitle,
                         navController::popBackStack,
-                    ) { userId -> navController.navigate(ShellRoutes.userProfile(userId)) }
+                        { userId -> navController.navigate(ShellRoutes.userProfile(userId)) },
+                        { conversationId, title ->
+                            activeChatTitle = title.ifBlank { "گفتگوی محرمانه" }
+                            navController.navigate(ShellRoutes.chatDetail(conversationId))
+                        },
+                    )
                 }
             }
             navigation(route = ShellRoutes.ProfileGraph, startDestination = ShellRoutes.ProfileRoot) {
@@ -707,21 +781,55 @@ fun VistaShell(
                 )
             }
         }
+        val islandVisible = showBottomIsland && isBottomIslandVisible
+        val snackbarBottomPadding by animateDpAsState(
+            targetValue = if (islandVisible) 126.dp else 20.dp,
+            animationSpec = spring(
+                dampingRatio = Spring.DampingRatioLowBouncy,
+                stiffness = Spring.StiffnessMediumLow,
+            ),
+            label = "snackbarBottomPadding",
+        )
         SnackbarHost(
             hostState = snackbarHostState,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(bottom = if (showBottomIsland) 126.dp else 20.dp),
+                .padding(bottom = snackbarBottomPadding),
         )
-        if (showBottomIsland) {
+        AnimatedVisibility(
+            visible = islandVisible,
+            enter = slideInVertically(
+                initialOffsetY = { fullHeight -> fullHeight },
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioLowBouncy,
+                    stiffness = Spring.StiffnessMediumLow,
+                ),
+            ) + fadeIn(animationSpec = tween(200)),
+            exit = slideOutVertically(
+                targetOffsetY = { fullHeight -> fullHeight },
+                animationSpec = tween(durationMillis = 250),
+            ) + fadeOut(animationSpec = tween(150)),
+            modifier = Modifier.align(Alignment.BottomCenter),
+        ) {
             VistaBottomIsland(
                 selectedTab = selectedTab,
                 chatBadgeCount = content.chatBadgeCount,
-                onSelect = ::selectTab,
-                modifier = Modifier.align(Alignment.BottomCenter),
+                onSelect = { tab ->
+                    if (tab == ShellTab.Feed) {
+                        isBottomIslandVisible = true
+                        if (selectedTab == ShellTab.Feed && atRoot) {
+                            homeTabClickFlow.tryEmit(Unit)
+                        } else {
+                            selectTab(tab)
+                        }
+                    } else {
+                        selectTab(tab)
+                    }
+                },
             )
         }
     }
+}
 }
 
 @Composable
@@ -733,13 +841,9 @@ private fun VistaShellSystemBars() {
         SideEffect {
             val window = (view.context as? Activity)?.window ?: return@SideEffect
             @Suppress("DEPRECATION")
-            window.statusBarColor = shellBackground.toArgb()
+            window.statusBarColor = android.graphics.Color.TRANSPARENT
             @Suppress("DEPRECATION")
-            window.navigationBarColor = if (lightBars) {
-                Color.White.toArgb()
-            } else {
-                shellBackground.toArgb()
-            }
+            window.navigationBarColor = android.graphics.Color.TRANSPARENT
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
                 @Suppress("DEPRECATION")
                 window.isStatusBarContrastEnforced = false
@@ -818,11 +922,28 @@ private fun VistaBottomIsland(
                     val selected = tab == selectedTab
                     val activeColor = MaterialTheme.colorScheme.primary
                     val inactiveColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    val tabScale by animateFloatAsState(
+                        targetValue = if (selected) 1.14f else 1.0f,
+                        animationSpec = spring(
+                            dampingRatio = Spring.DampingRatioMediumBouncy,
+                            stiffness = Spring.StiffnessMediumLow,
+                        ),
+                        label = "tab_scale_${tab.name}",
+                    )
+                    val tabIconColor by animateColorAsState(
+                        targetValue = if (selected) activeColor else inactiveColor,
+                        animationSpec = tween(durationMillis = 200),
+                        label = "tab_color_${tab.name}",
+                    )
                     if (tab == ShellTab.Services) {
                         Surface(
                             onClick = { onSelect(tab) },
                             modifier = Modifier
                                 .testTag("shell-tab-${tab.name.lowercase()}")
+                                .graphicsLayer {
+                                    scaleX = tabScale
+                                    scaleY = tabScale
+                                }
                                 .width(64.dp)
                                 .height(48.dp)
                                 .semantics {
@@ -857,8 +978,17 @@ private fun VistaBottomIsland(
                         Box(
                             modifier = Modifier
                                 .testTag("shell-tab-${tab.name.lowercase()}")
+                                .graphicsLayer {
+                                    scaleX = tabScale
+                                    scaleY = tabScale
+                                }
                                 .size(54.dp)
-                                .clickable { onSelect(tab) }
+                                .clip(CircleShape)
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = ripple(bounded = true),
+                                    onClick = { onSelect(tab) },
+                                )
                                 .semantics {
                                     contentDescription = tab.labelFa
                                     role = Role.Tab
@@ -870,7 +1000,7 @@ private fun VistaBottomIsland(
                                 VistaNavigationIcon(
                                     tab = tab,
                                     selected = selected,
-                                    color = if (selected) activeColor else inactiveColor,
+                                    color = tabIconColor,
                                     modifier = Modifier.size(30.dp),
                                 )
                                 if (tab == ShellTab.Chat && chatBadgeCount > 0) {

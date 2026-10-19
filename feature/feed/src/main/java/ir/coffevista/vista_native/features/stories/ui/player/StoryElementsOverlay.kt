@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -28,22 +29,25 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaBrandColors
 import ir.coffevista.vista_native.features.stories.domain.StoryElement
+import ir.coffevista.vista_native.features.stories.domain.StoryMusic
 import ir.coffevista.vista_native.features.stories.domain.StoryPoll
 import kotlin.math.roundToInt
 
 @Composable
 fun StoryElementsOverlay(
     elements: List<StoryElement>,
-    onPollVote: (optionId: String) -> Unit,
-    onLinkClick: (url: String) -> Unit,
-    onMentionClick: (userId: String) -> Unit,
+    onPollVote: (elementId: String, optionIndex: Int) -> Unit = { _, _ -> },
+    onLinkClick: (url: String) -> Unit = {},
+    onMentionClick: (userId: String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Box(modifier = modifier.fillMaxSize()) {
@@ -56,7 +60,10 @@ fun StoryElementsOverlay(
                                 .align(Alignment.Center)
                                 .padding(horizontal = 32.dp),
                         ) {
-                            StoryPollWidget(poll = poll, onVote = onPollVote)
+                            StoryPollWidget(
+                                poll = poll,
+                                onVote = { optionIndex -> onPollVote(element.id, optionIndex) },
+                            )
                         }
                     }
                 }
@@ -164,6 +171,18 @@ fun StoryElementsOverlay(
                         }
                     }
                 }
+
+                "music" -> {
+                    element.music?.let { music ->
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.Center)
+                                .offset { IntOffset((element.x * 200).roundToInt(), (element.y * 300).roundToInt()) },
+                        ) {
+                            StoryMusicStickerWidget(music = music)
+                        }
+                    }
+                }
             }
         }
     }
@@ -172,7 +191,7 @@ fun StoryElementsOverlay(
 @Composable
 private fun StoryPollWidget(
     poll: StoryPoll,
-    onVote: (optionId: String) -> Unit,
+    onVote: (optionIndex: Int) -> Unit,
 ) {
     val totalVotes = poll.totalVotes.coerceAtLeast(1)
 
@@ -194,7 +213,7 @@ private fun StoryPollWidget(
 
         Spacer(modifier = Modifier.height(14.dp))
 
-        poll.options.forEach { option ->
+        poll.options.forEachIndexed { index, option ->
             val hasVoted = poll.userVotedOptionId != null || option.isVoted
             val percentage = if (hasVoted) (option.votesCount.toFloat() / totalVotes * 100).toInt() else 0
 
@@ -207,7 +226,7 @@ private fun StoryPollWidget(
                     .background(Color(0xFFF0F0F0))
                     .then(
                         if (!hasVoted) {
-                            Modifier.clickable { onVote(option.id) }
+                            Modifier.clickable { onVote(index) }
                         } else Modifier,
                     ),
             ) {
@@ -263,3 +282,66 @@ private fun parseHexColor(hex: String): Color {
         Color.White
     }
 }
+
+@Composable
+fun StoryMusicStickerWidget(
+    music: StoryMusic,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .width(260.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(Color.Black.copy(alpha = 0.75f))
+            .border(width = 1.dp, color = Color.White.copy(alpha = 0.2f), shape = RoundedCornerShape(14.dp))
+            .padding(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(44.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(Color.White.copy(alpha = 0.1f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (!music.coverUrl.isNullOrBlank()) {
+                AsyncImage(
+                    model = music.coverUrl,
+                    contentDescription = null,
+                    modifier = Modifier.matchParentSize(),
+                    contentScale = ContentScale.Crop,
+                )
+            } else {
+                Icon(
+                    imageVector = Icons.Default.MusicNote,
+                    contentDescription = null,
+                    tint = VistaBrandColors.Pink,
+                    modifier = Modifier.size(24.dp),
+                )
+            }
+        }
+        Spacer(modifier = Modifier.width(10.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = music.title,
+                color = Color.White,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+            )
+            Text(
+                text = music.artist,
+                color = Color.White.copy(alpha = 0.7f),
+                fontSize = 11.sp,
+                maxLines = 1,
+            )
+        }
+        Icon(
+            imageVector = Icons.Default.MusicNote,
+            contentDescription = null,
+            tint = VistaBrandColors.Pink,
+            modifier = Modifier.size(20.dp),
+        )
+    }
+}
+

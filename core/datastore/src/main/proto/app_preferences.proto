@@ -22,4 +22,5 @@ message AppPreferences {
   bool privacy_cache_allow_profile_zoom = 16;
   string chat_entry_mode = 17;
   string emoji_style = 18;
+  bool flutter_media_settings_migrated = 19;
 }

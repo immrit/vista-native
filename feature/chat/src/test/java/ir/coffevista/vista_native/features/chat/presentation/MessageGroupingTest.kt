@@ -191,6 +191,29 @@ class MessageGroupingTest {
         ),
     )
 
+    @Test
+    fun `visibleMessageDateEpochMillis picks top-most visible item in reverseLayout`() {
+        val messages = listOf(
+            message("newest-today", "alice", 300_000L),
+            message("middle-yesterday", "alice", 200_000L),
+            message("oldest-last-week", "alice", 100_000L),
+        )
+        val renderItems = buildMessageRenderItems(messages)
+
+        // If viewport currently shows items at indices 0 and 1,
+        // the item at the TOP of the reverse-layout LazyColumn is index 1 (older).
+        val epoch = visibleMessageDateEpochMillis(renderItems, listOf(0, 1))
+        assertEquals(200_000L, epoch)
+
+        // If viewport scrolled further up showing indices 1 and 2:
+        val topEpoch = visibleMessageDateEpochMillis(renderItems, listOf(1, 2))
+        assertEquals(100_000L, topEpoch)
+
+        // Out of bounds filtering
+        val outOfBounds = visibleMessageDateEpochMillis(renderItems, listOf(99))
+        assertEquals(null, outOfBounds)
+    }
+
     private fun message(
         clientId: String,
         senderId: String,

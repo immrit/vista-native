@@ -1,6 +1,8 @@
 package ir.coffevista.vista_native.features.chat.data.repository
 
 import android.net.Uri
+import android.util.Base64
+import android.util.Log
 import ir.coffevista.vista_native.features.chat.data.local.ChatDao
 import ir.coffevista.vista_native.features.chat.data.local.ConversationEntity
 import ir.coffevista.vista_native.features.chat.data.local.MessageEntity
@@ -86,6 +88,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -116,25 +119,73 @@ class OfflineFirstChatRepository(
     // per account/conversation prevents a refresh from overwriting the cursor
     // chosen by an in-flight older-page request.
     private val messageFetchMutexes = ConcurrentHashMap<String, Mutex>()
+    private val secretHandshakeFramesInFlight = ConcurrentHashMap.newKeySet<String>()
+    private val secretRedecryptionInFlight = ConcurrentHashMap.newKeySet<String>()
+    private val secretRedecryptionKeyFingerprints = ConcurrentHashMap<String, Int>()
     private val cancelledTransfers = ConcurrentHashMap.newKeySet<String>()
     private val blockStatusCache = ConcurrentHashMap<String, CachedBlockStatus>()
     private val sessionGeneration = SessionGenerationGuard()
     private val pendingJson = Json { ignoreUnknownKeys = true }
+    private var activeConversationId: String? = null
 
     override val realtimeState: StateFlow<RealtimeConnectionState> = realtime.state
 
     init {
         sessionProvider.synchronize()
-        sessionProvider.account.value?.accountId?.let(mediaDownloader::recover)
+        sessionProvider.account.value?.accountId?.let { accId ->
+            mediaDownloader.recover(accId)
+            scope.launch { purgeDuplicateConversations(accId) }
+        }
+        realtime.setSyncHandler {
+            syncFromNetwork()
+        }
         realtime.start()
-        scope.launch { realtime.events.collect(::applyRealtimeEvent) }
+        scope.launch {
+            realtime.events.collect { event ->
+                runCatching { applyRealtimeEvent(event) }
+                    .onFailure { err -> android.util.Log.e("ChatRepo", "Error applying realtime event $event", err) }
+            }
+        }
+    }
+
+    private suspend fun syncFromNetwork() {
+        val account = sessionProvider.account.value ?: return
+        try {
+            refreshConversations(reset = false)
+            val currentActive = activeConversationId
+            if (currentActive != null) {
+                refreshMessages(currentActive)
+            }
+        } catch (t: Throwable) {
+            if (t is CancellationException) throw t
+        }
     }
 
     override fun observeConversations(includeArchived: Boolean): Flow<List<Conversation>> {
         sessionProvider.synchronize()
         val accountId = requireAccount().accountId
+        scope.launch { purgeDuplicateConversations(accountId) }
         return combine(dao.observeConversations(accountId, includeArchived), typing) { rows, typingByConversation ->
-            rows.map { row ->
+            val groups = rows
+                .groupBy { row ->
+                    conversationPeerKey(row.type, row.peerId, row.title, row.id)
+                }
+            val deduplicatedRows = groups
+                .values
+                .map { duplicates ->
+                    duplicates.maxWithOrNull(
+                        compareBy<ConversationEntity> { it.lastMessageAtEpochMillis ?: 0L }
+                            .thenBy { it.id }
+                    ) ?: duplicates.first()
+                }
+                .sortedWith(
+                    compareByDescending<ConversationEntity> { it.isPinned }
+                        .thenByDescending { it.lastMessageAtEpochMillis ?: 0L }
+                        .thenByDescending { it.id }
+                )
+            android.util.Log.e("DEDUP_LIVE", "observeConversations raw=${rows.size} dedup=${deduplicatedRows.size} keys=${groups.keys}")
+
+            deduplicatedRows.map { row ->
                 row.toDomain(cipher).copy(typingUserIds = typingByConversation[row.id].orEmpty())
             }
         }.flowOn(Dispatchers.Default)
@@ -171,7 +222,28 @@ class OfflineFirstChatRepository(
                 cursor = nextCursor
             }
 
-            val entities = rowsById.values.toList()
+            val deduplicatedEntities = rowsById.values
+                .groupBy { row ->
+                    conversationPeerKey(row.type, row.peerId, row.title, row.id)
+                }
+                .values
+                .map { duplicates ->
+                    duplicates.maxWithOrNull(
+                        compareBy<ConversationEntity> { it.lastMessageAtEpochMillis ?: 0L }
+                            .thenBy { it.id }
+                    ) ?: duplicates.first()
+                }
+
+            val redundantIdsFromRemote = rowsById.keys - deduplicatedEntities.map { it.id }.toSet()
+            if (redundantIdsFromRemote.isNotEmpty()) {
+                dao.deleteConversations(account.accountId, redundantIdsFromRemote.toList())
+                scope.launch {
+                    for (redId in redundantIdsFromRemote) {
+                        runCatching { api.deleteConversation(redId) }
+                    }
+                }
+            }
+
             val key = RemoteKeyEntity(
                 account.accountId,
                 CONVERSATIONS,
@@ -180,12 +252,9 @@ class OfflineFirstChatRepository(
                 timestamp,
             )
             check(sessionGeneration.isCurrent(generation)) { "نشست کاربر تغییر کرده است" }
-            // Flutter treats the conversation list as an upsert-only cache and
-            // removes rows only after an explicit delete/clear event. Absence
-            // from a cursor snapshot is not deletion evidence (requests and
-            // secret conversations may be omitted by backend filters), so a
-            // refresh must never erase previously visible conversations.
-            dao.upsertConversations(entities)
+            dao.upsertConversations(deduplicatedEntities)
+            purgeDuplicateConversations(account.accountId)
+            val entities = deduplicatedEntities
             // Some backend deployments keep the deleted message as the
             // conversation preview for a short period. A local delete
             // tombstone is stronger evidence than that stale projection;
@@ -229,11 +298,28 @@ class OfflineFirstChatRepository(
         val cached = dao.conversations(account.accountId).toSuggestedUsers(account.accountId)
         val conversationCandidates = remoteCall {
             val timestamp = now()
-            val rows = api.conversations(SUGGESTED_USERS_CONVERSATION_LIMIT, null).conversations
+            val rawRows = api.conversations(SUGGESTED_USERS_CONVERSATION_LIMIT, null).conversations
                 .map { it.toEntity(account.accountId, cipher, timestamp) }
                 .let { enrichMissingProfiles(it) }
-            dao.upsertConversations(rows)
-            rows.toSuggestedUsers(account.accountId)
+            val deduplicated = rawRows.groupBy { conversationPeerKey(it.type, it.peerId, it.title, it.id) }
+                .values
+                .map { duplicates ->
+                    duplicates.maxWithOrNull(
+                        compareBy<ConversationEntity> { it.lastMessageAtEpochMillis ?: 0L }
+                            .thenBy { it.id }
+                    ) ?: duplicates.first()
+                }
+            val redundantIds = rawRows.map { it.id }.toSet() - deduplicated.map { it.id }.toSet()
+            if (redundantIds.isNotEmpty()) {
+                dao.deleteConversations(account.accountId, redundantIds.toList())
+                scope.launch {
+                    for (redId in redundantIds) {
+                        runCatching { api.deleteConversation(redId) }
+                    }
+                }
+            }
+            dao.upsertConversations(deduplicated)
+            deduplicated.toSuggestedUsers(account.accountId)
         }
         if (conversationCandidates is ChatResult.Success && conversationCandidates.value.isNotEmpty()) {
             return conversationCandidates
@@ -281,21 +367,104 @@ class OfflineFirstChatRepository(
         sessionProvider.synchronize()
         val account = sessionProvider.account.value ?: return loggedOut()
         val normalizedPeerId = peerId.trim()
-        if (normalizedPeerId.isEmpty() || normalizedPeerId == account.accountId) {
+        if (normalizedPeerId.isEmpty() || normalizedPeerId.equals(account.accountId, ignoreCase = true)) {
             return ChatResult.Failure("کاربر انتخاب‌شده معتبر نیست", retryable = false)
+        }
+        purgeDuplicateConversations(account.accountId)
+        val existing = findConversationByPeer(normalizedPeerId, isSecret)
+        if (existing != null) {
+            if (isSecret) {
+                runCatching { ensureSecretChatHandshake(existing.id) }
+            }
+            return ChatResult.Success(existing)
         }
         return remoteCall {
             val base = api.createConversation(CreateConversationRequest(normalizedPeerId, isSecret))
                 .toEntity(account.accountId, cipher, now())
             val entity = enrichMissingProfiles(listOf(base)).single()
             dao.upsertConversations(listOf(entity))
+            if (isSecret) {
+                runCatching { ensureSecretChatHandshake(entity.id) }
+            }
             entity.toDomain(cipher)
+        }
+    }
+
+    override suspend fun findConversationByPeer(peerId: String, isSecret: Boolean): Conversation? {
+        sessionProvider.synchronize()
+        val account = sessionProvider.account.value ?: return null
+        val normalizedPeerId = peerId.trim().lowercase()
+        if (normalizedPeerId.isEmpty() || normalizedPeerId == account.accountId.lowercase()) return null
+        val expectedType = if (isSecret) ConversationType.SECRET.name else ConversationType.PRIVATE.name
+
+        fun matches(it: ConversationEntity): Boolean {
+            if (!it.type.equals(expectedType, ignoreCase = true)) return false
+            val candidatePeer = it.peerId?.trim()?.lowercase()
+            if (candidatePeer != null) {
+                if (candidatePeer == normalizedPeerId) return true
+                if (candidatePeer.replace("-", "") == normalizedPeerId.replace("-", "")) return true
+            }
+            return it.title.trim().equals(normalizedPeerId, ignoreCase = true)
+        }
+
+        var candidates = dao.conversations(account.accountId).filter(::matches)
+        if (candidates.isEmpty()) {
+            runCatching {
+                val remoteResponse = api.conversations(PAGE_SIZE_CONVERSATIONS, null)
+                val mapped = remoteResponse.conversations.map { it.toEntity(account.accountId, cipher, now()) }
+                val enriched = enrichMissingProfiles(mapped)
+                dao.upsertConversations(enriched)
+                candidates = dao.conversations(account.accountId).filter(::matches)
+            }
+        }
+        if (candidates.size > 1) {
+            scope.launch { purgeDuplicateConversations(account.accountId) }
+        }
+        val best = candidates.maxWithOrNull(
+            compareBy<ConversationEntity> { it.lastMessageAtEpochMillis ?: 0L }
+                .thenBy { it.id }
+        )
+        return best?.toDomain(cipher)
+    }
+
+    private fun conversationPeerKey(type: String, peerId: String?, title: String, id: String): String {
+        if (type.equals(ConversationType.GROUP.name, ignoreCase = true)) {
+            return "GROUP:$id"
+        }
+        val cleanPeer = peerId?.trim()?.lowercase()?.takeIf(String::isNotEmpty)
+        val cleanTitle = title.trim().lowercase().takeIf { it.isNotEmpty() && it != "کاربر" && it != "user" }
+        val identity = cleanPeer ?: cleanTitle ?: id
+        return "${type.uppercase()}:$identity"
+    }
+
+    private suspend fun purgeDuplicateConversations(accountId: String) {
+        val rows = dao.conversations(accountId)
+        val duplicates = rows
+            .filter { it.type != ConversationType.GROUP.name }
+            .groupBy { conversationPeerKey(it.type, it.peerId, it.title, it.id) }
+            .filterValues { it.size > 1 }
+
+        if (duplicates.isEmpty()) return
+
+        for ((_, group) in duplicates) {
+            val best = group.maxWithOrNull(
+                compareBy<ConversationEntity> { it.lastMessageAtEpochMillis ?: 0L }
+                    .thenBy { it.id }
+            ) ?: continue
+            val redundant = group.filter { it.id != best.id }
+            val redundantIds = redundant.map { it.id }
+            android.util.Log.e("DEDUP_LIVE", "purgeDuplicateConversations keeping=${best.id} deleting redundant=${redundantIds}")
+            dao.deleteConversations(accountId, redundantIds)
+            for (redId in redundantIds) {
+                runCatching { dao.migrateMessages(accountId, redId, best.id) }
+                scope.launch { runCatching { api.deleteConversation(redId) } }
+            }
         }
     }
 
     override fun observeProfileNotes(): Flow<List<ProfileNote>> {
         sessionProvider.synchronize()
-        val accountId = requireAccount().accountId
+        val accountId = sessionProvider.account.value?.accountId ?: return flowOf(emptyList())
         return dao.observeProfileNotes(accountId).map { rows ->
             rows.mapNotNull { row -> runCatching { row.toDomainNote() }.getOrNull() }
         }
@@ -363,7 +532,30 @@ class OfflineFirstChatRepository(
         val accountId = requireAccount().accountId
         mediaDownloader.recover(accountId)
         return dao.observeMessages(accountId, conversationId)
-            .map { rows -> rows.map { it.toDomain(cipher) } }
+            // Room invalidates this query for every write to the shared message
+            // table, including realtime activity in unrelated conversations.
+            // Reject identical entity snapshots before the expensive secret-chat
+            // decrypt/map pass so those invalidations cannot stall the UI thread.
+            .distinctUntilChanged { previous, current ->
+                previous.size == current.size && previous.indices.all { index ->
+                    val old = previous[index]
+                    val new = current[index]
+                    // MessageEntity is a data class, but ByteArray equality is
+                    // referential. Room materializes a fresh array per query, so
+                    // compare its bytes and reuse the new reference while data-
+                    // class equality checks every remaining column.
+                    old.contentCiphertext.contentEquals(new.contentCiphertext) &&
+                        old.copy(contentCiphertext = new.contentCiphertext) == new
+                }
+            }
+            .map { rows ->
+                rows.map { it.toDomain(cipher).hideOpaqueEncryptedPayload() }
+                    // Key-exchange messages remain persisted for restart-safe E2EE,
+                    // but are protocol frames rather than user-visible transcript rows.
+                    // This also suppresses the synthetic legacy notice emitted by
+                    // older Native builds before the transport type was retained.
+                    .filterNot(Message::isSecretHandshakeFrame)
+            }
             .flowOn(Dispatchers.Default)
     }
 
@@ -413,6 +605,21 @@ class OfflineFirstChatRepository(
         sessionProvider.synchronize()
         val accountId = requireAccount().accountId
         return dao.observeConversation(accountId, conversationId)
+            .distinctUntilChanged { previous, current ->
+                when {
+                    previous === current -> true
+                    previous == null || current == null -> false
+                    else -> {
+                        val previousPreview = previous.lastMessageCiphertext
+                        val currentPreview = current.lastMessageCiphertext
+                        val samePreview = previousPreview === currentPreview ||
+                            (previousPreview != null && currentPreview != null &&
+                                previousPreview.contentEquals(currentPreview))
+                        samePreview &&
+                            previous.copy(lastMessageCiphertext = currentPreview) == current
+                    }
+                }
+            }
             .map { it?.toDomain(cipher) }
             .flowOn(Dispatchers.Default)
     }
@@ -429,8 +636,10 @@ class OfflineFirstChatRepository(
         val normalized = query.trim()
         if (normalized.length < 2) return ChatResult.Success(emptyList())
         return remoteCall {
+            val isSecretConversation =
+                dao.conversation(account.accountId, conversationId)?.type == ConversationType.SECRET.name
             api.searchMessages(conversationId, normalized).messages.map { dto ->
-                decryptAndMapMessageDto(dto, account.accountId)
+                decryptAndMapMessageDto(dto, account.accountId, isSecretConversation)
             }
         }
     }
@@ -456,6 +665,272 @@ class OfflineFirstChatRepository(
         )
     }
 
+    override suspend fun ensureSecretChatHandshake(conversationId: String): ChatResult<Unit> {
+        sessionProvider.synchronize()
+        val account = sessionProvider.account.value ?: return loggedOut()
+        val conversation = dao.conversation(account.accountId, conversationId)
+        val isSecret = conversation?.type == ConversationType.SECRET.name
+        if (!isSecret) return ChatResult.Success(Unit)
+
+        val messages = dao.messages(account.accountId, conversationId)
+        val myKeyPair = e2eeService.getOrGenerateKeyPair(account.accountId)
+        val hasCurrentOwnKeyFrame = messages.any { entity ->
+            entity.isMine &&
+                (entity.messageType == "exchange_key" || entity.messageType == "exchange_key_reply") &&
+                runCatching {
+                    cipher.decrypt(
+                        account.accountId,
+                        conversationId,
+                        entity.clientId,
+                        entity.contentCiphertext,
+                    ).trim() == myKeyPair.publicKeyB64
+                }.getOrDefault(false)
+        }
+        if (!hasCurrentOwnKeyFrame) {
+            remoteCall {
+                sendSecretHandshakeFrame(
+                    accountId = account.accountId,
+                    conversationId = conversationId,
+                    messageType = "exchange_key",
+                    publicKey = myKeyPair.publicKeyB64,
+                )
+            }
+        }
+
+        val storedPeerPub = resolvePeerPublicKey(account.accountId, conversationId)
+        val peerKeyMessage = messages.firstOrNull {
+            !it.isMine && (it.messageType == "exchange_key" || it.messageType == "exchange_key_reply")
+        }
+
+        if (peerKeyMessage != null) {
+            val peerKeyB64 = runCatching {
+                cipher.decrypt(account.accountId, conversationId, peerKeyMessage.clientId, peerKeyMessage.contentCiphertext)
+            }.getOrNull() ?: peerKeyMessage.serverId?.let { sid ->
+                runCatching {
+                    cipher.decrypt(account.accountId, conversationId, sid, peerKeyMessage.contentCiphertext)
+                }.getOrNull()
+            }
+            val peerKeyBytes = peerKeyB64?.trim()?.takeIf(String::isNotEmpty)?.let { encoded ->
+                runCatching { Base64.decode(encoded, Base64.DEFAULT) }
+                    .getOrNull()
+                    ?.takeIf { it.size == 32 }
+            }
+            if (peerKeyBytes != null) {
+                if (storedPeerPub == null || !storedPeerPub.contentEquals(peerKeyBytes)) {
+                    secretRedecryptionKeyFingerprints.remove("${account.accountId}:$conversationId")
+                }
+                val conv = dao.conversation(account.accountId, conversationId)
+                e2eeService.savePeerPublicKey(conversationId, peerKeyBytes, conv?.peerId)
+                if (peerKeyMessage.messageType == "exchange_key") {
+                    runCatching {
+                        sendSecretHandshakeFrame(
+                            accountId = account.accountId,
+                            conversationId = conversationId,
+                            messageType = "exchange_key_reply",
+                            publicKey = myKeyPair.publicKeyB64,
+                        )
+                    }
+                }
+                redecryptSecretMessages(account.accountId, conversationId)
+                return ChatResult.Success(Unit)
+            }
+        }
+
+        if (storedPeerPub != null) {
+            redecryptSecretMessages(account.accountId, conversationId)
+        }
+
+        return ChatResult.Success(Unit)
+    }
+
+    private suspend fun sendSecretHandshakeFrame(
+        accountId: String,
+        conversationId: String,
+        messageType: String,
+        publicKey: String,
+    ) {
+        val existingCurrentKey = dao.messages(accountId, conversationId).any { entity ->
+            entity.isMine && entity.messageType == messageType && runCatching {
+                cipher.decrypt(
+                    accountId,
+                    conversationId,
+                    entity.clientId,
+                    entity.contentCiphertext,
+                ).trim() == publicKey.trim()
+            }.getOrDefault(false)
+        }
+        if (existingCurrentKey) return
+
+        val flightKey = "$accountId:$conversationId:$messageType"
+        if (!secretHandshakeFramesInFlight.add(flightKey)) return
+        try {
+            // Persist the authoritative response. Previously these protocol frames
+            // were discarded, so every conversation emission sent another frame.
+            val dto = api.sendMessage(
+                conversationId,
+                SendMessageRequest(
+                    id = newId(),
+                    content = publicKey,
+                    messageType = messageType,
+                ),
+            )
+            mergeAndPersist(
+                decryptAndMapMessageDto(dto, accountId, isSecretConversationHint = true).copy(isMine = true),
+                MergeSource.REST,
+            )
+        } finally {
+            secretHandshakeFramesInFlight.remove(flightKey)
+        }
+    }
+
+    private suspend fun resolvePeerPublicKey(accountId: String, conversationId: String): ByteArray? {
+        e2eeService.getPeerPublicKey(conversationId)?.let { return it }
+        val conv = dao.conversation(accountId, conversationId)
+        val peerId = conv?.peerId
+        if (!peerId.isNullOrBlank()) {
+            e2eeService.getPeerPublicKey(peerId)?.let { return it }
+        }
+        // Fallback: inspect stored handshake frames in the transcript
+        val stored = dao.messages(accountId, conversationId)
+        val peerKeyMessage = stored.firstOrNull {
+            !it.isMine && (it.messageType == "exchange_key" || it.messageType == "exchange_key_reply")
+        }
+        if (peerKeyMessage != null) {
+            val peerKeyB64 = runCatching {
+                cipher.decrypt(accountId, conversationId, peerKeyMessage.clientId, peerKeyMessage.contentCiphertext)
+            }.getOrNull() ?: peerKeyMessage.serverId?.let { sid ->
+                runCatching {
+                    cipher.decrypt(accountId, conversationId, sid, peerKeyMessage.contentCiphertext)
+                }.getOrNull()
+            } ?: runCatching { String(peerKeyMessage.contentCiphertext, Charsets.UTF_8) }.getOrNull()
+            val peerKeyBytes = peerKeyB64?.trim()?.takeIf(String::isNotEmpty)?.let { encoded ->
+                runCatching { Base64.decode(encoded, Base64.DEFAULT) }
+                    .getOrNull()
+                    ?.takeIf { it.size == 32 }
+            }
+            if (peerKeyBytes != null) {
+                e2eeService.savePeerPublicKey(conversationId, peerKeyBytes, peerId)
+                return peerKeyBytes
+            }
+        }
+        return null
+    }
+
+    override suspend fun computeSecretSafetyNumber(conversationId: String): String? {
+        sessionProvider.synchronize()
+        val account = sessionProvider.account.value ?: return null
+        val peerPub = resolvePeerPublicKey(account.accountId, conversationId) ?: return null
+        val myKeyPair = e2eeService.getOrGenerateKeyPair(account.accountId)
+        return runCatching { e2eeService.computeSafetyNumber(myKeyPair.publicKey, peerPub) }.getOrNull()
+    }
+
+    override suspend fun getSecretAutoDeleteSeconds(conversationId: String): Int {
+        return e2eeService.getSecretAutoDeleteSeconds(conversationId)
+    }
+
+    override suspend fun setSecretAutoDeleteSeconds(conversationId: String, seconds: Int): ChatResult<Unit> {
+        e2eeService.setSecretAutoDeleteSeconds(conversationId, seconds)
+        return ChatResult.Success(Unit)
+    }
+
+    private suspend fun redecryptSecretMessages(accountId: String, conversationId: String) {
+        val resolvedPub = resolvePeerPublicKey(accountId, conversationId)
+        val myKeyPair = e2eeService.getOrGenerateKeyPair(accountId)
+
+        val stored = dao.messages(accountId, conversationId)
+        val candidatePeerKeys = mutableListOf<ByteArray>()
+        resolvedPub?.let { candidatePeerKeys.add(it) }
+
+        // Gather candidate keys from any handshake frame in history
+        for (msg in stored.filter { !it.isMine && (it.messageType == "exchange_key" || it.messageType == "exchange_key_reply") }) {
+            val b64 = runCatching { cipher.decrypt(accountId, conversationId, msg.clientId, msg.contentCiphertext) }.getOrNull()
+                ?: msg.serverId?.let { sid -> runCatching { cipher.decrypt(accountId, conversationId, sid, msg.contentCiphertext) }.getOrNull() }
+            val bytes = b64?.trim()?.takeIf(String::isNotEmpty)?.let {
+                runCatching { Base64.decode(it, Base64.DEFAULT) }.getOrNull()?.takeIf { k -> k.size == 32 }
+            }
+            if (bytes != null && candidatePeerKeys.none { it.contentEquals(bytes) }) {
+                candidatePeerKeys.add(bytes)
+            }
+        }
+
+        if (candidatePeerKeys.isEmpty()) {
+            return
+        }
+
+        val candidateSecrets = candidatePeerKeys.mapNotNull { pk ->
+            runCatching { e2eeService.computeSharedSecret(myKeyPair.privateKey, pk) }.getOrNull()
+        }.distinct()
+
+        val conversationKey = "$accountId:$conversationId"
+        val flightKey = "$conversationKey:redecrypt"
+        if (!secretRedecryptionInFlight.add(flightKey)) {
+            return
+        }
+
+        try {
+            val updated = mutableListOf<MessageEntity>()
+            var winningPeerKey: ByteArray? = null
+
+            for (entity in stored) {
+                val plaintext = runCatching {
+                    cipher.decrypt(accountId, conversationId, entity.clientId, entity.contentCiphertext)
+                }.getOrNull() ?: entity.serverId?.let { sid ->
+                    runCatching {
+                        cipher.decrypt(accountId, conversationId, sid, entity.contentCiphertext)
+                    }.getOrNull()
+                }
+                val isEncrypted = plaintext != null && (e2eeService.isEncryptedPayload(plaintext) || entity.contentKind == "encrypted_unavailable")
+                if (isEncrypted && plaintext != null) {
+                    val candidateIds = listOfNotNull(entity.serverId, entity.clientId).distinct()
+                    var decrypted: String? = null
+
+                    secretLoop@ for ((idx, secret) in candidateSecrets.withIndex()) {
+                        for (candId in candidateIds) {
+                            val binding = ir.coffevista.vista_native.features.chat.data.security.ChatE2EEService.messageBinding(
+                                conversationId,
+                                entity.senderId,
+                                candId,
+                            )
+                            val attempt = runCatching { e2eeService.decryptMessage(plaintext, secret, binding) }.getOrNull()
+                            if (attempt != null && !e2eeService.isEncryptedPayload(attempt)) {
+                                decrypted = attempt
+                                winningPeerKey = candidatePeerKeys.getOrNull(idx)
+                                break@secretLoop
+                            }
+                        }
+                        val attemptNoAad = runCatching { e2eeService.decryptMessage(plaintext, secret, null) }.getOrNull()
+                        if (attemptNoAad != null && !e2eeService.isEncryptedPayload(attemptNoAad)) {
+                            decrypted = attemptNoAad
+                            winningPeerKey = candidatePeerKeys.getOrNull(idx)
+                            break@secretLoop
+                        }
+                    }
+
+                    if (decrypted != null && !e2eeService.isEncryptedPayload(decrypted)) {
+                        val newCiphertext = cipher.encrypt(accountId, conversationId, entity.clientId, decrypted)
+                        updated.add(
+                            entity.copy(
+                                contentCiphertext = newCiphertext,
+                                contentKind = "text",
+                            )
+                        )
+                    } else if (entity.contentKind != "encrypted_unavailable") {
+                        updated.add(entity.copy(contentKind = "encrypted_unavailable"))
+                    }
+                }
+            }
+            if (updated.isNotEmpty()) {
+                dao.upsertMessages(updated)
+                if (winningPeerKey != null) {
+                    val conv = dao.conversation(accountId, conversationId)
+                    e2eeService.savePeerPublicKey(conversationId, winningPeerKey, conv?.peerId)
+                }
+            }
+        } finally {
+            secretRedecryptionInFlight.remove(flightKey)
+        }
+    }
+
     private suspend fun fetchMessages(conversationId: String, reset: Boolean): ChatResult<Page<Message>> {
         val account = sessionProvider.account.value ?: return loggedOut()
         val fetchKey = "${account.accountId}:$conversationId"
@@ -479,11 +954,33 @@ class OfflineFirstChatRepository(
                     } else throw httpEx
                 } else throw httpEx
             }
+            val isSecretConversation = localConv?.type == ConversationType.SECRET.name
+            // The API returns newest messages first. Establish the newest peer
+            // key before attempting to decrypt any payload in this page.
+            val handshakeMessages = if (isSecretConversation) {
+                response.messages
+                    .filter { it.messageType == "exchange_key" || it.messageType == "exchange_key_reply" }
+                    .sortedBy { it.createdAt }
+                    .associate { dto ->
+                        dto.id to decryptAndMapMessageDto(dto, account.accountId, true)
+                    }
+            } else {
+                emptyMap()
+            }
             val messages = response.messages.map { dto ->
-                decryptAndMapMessageDto(dto, account.accountId)
+                handshakeMessages[dto.id] ?: decryptAndMapMessageDto(
+                    dto = dto,
+                    accountId = account.accountId,
+                    isSecretConversationHint = isSecretConversation,
+                )
             }
             check(sessionGeneration.isCurrent(generation)) { "نشست کاربر تغییر کرده است" }
             messages.forEach { mergeAndPersist(it, MergeSource.REST) }
+            if (isSecretConversation) {
+                // An older pagination page may contain a retired key. Restore
+                // the latest persisted frame after the page has been merged.
+                ensureSecretChatHandshake(resolvedConversationId)
+            }
             val hasMore = response.hasMoreForPagination()
             dao.upsertRemoteKey(
                 RemoteKeyEntity(account.accountId, scope, response.nextCursor, hasMore, now()),
@@ -496,27 +993,32 @@ class OfflineFirstChatRepository(
     private suspend fun decryptAndMapMessageDto(
         dto: ir.coffevista.vista_native.features.chat.data.remote.MessageDto,
         accountId: String,
+        isSecretConversationHint: Boolean? = null,
     ): Message {
         val conversationId = dto.conversationId
+        val isSecretConversation = dto.isSecret ||
+            (isSecretConversationHint ?: (
+                dao.conversation(accountId, conversationId)?.type == ConversationType.SECRET.name
+            ))
         // 1. Process key exchange messages
         if (dto.messageType == "exchange_key" || dto.messageType == "exchange_key_reply") {
             if (dto.senderId != accountId && dto.content.isNotBlank()) {
-                e2eeService.savePeerPublicKey(conversationId, dto.content)
+                val conv = dao.conversation(accountId, conversationId)
+                e2eeService.savePeerPublicKey(conversationId, dto.content, conv?.peerId)
                 if (dto.messageType == "exchange_key") {
                     scope.launch {
                         val myKeyPair = e2eeService.getOrGenerateKeyPair(accountId)
                         runCatching {
-                            api.sendMessage(
-                                conversationId,
-                                SendMessageRequest(
-                                    id = newId(),
-                                    content = myKeyPair.publicKeyB64,
-                                    messageType = "exchange_key_reply",
-                                ),
+                            sendSecretHandshakeFrame(
+                                accountId = accountId,
+                                conversationId = conversationId,
+                                messageType = "exchange_key_reply",
+                                publicKey = myKeyPair.publicKeyB64,
                             )
                         }
                     }
                 }
+                redecryptSecretMessages(accountId, conversationId)
             }
         }
 
@@ -524,17 +1026,33 @@ class OfflineFirstChatRepository(
         var replyText = dto.replyToContent
 
         // 2. Decrypt if ciphertext
-        val peerPub = e2eeService.getPeerPublicKey(conversationId)
-        if (peerPub != null) {
+        val peerPub = resolvePeerPublicKey(accountId, conversationId)
+        if (peerPub != null && isSecretConversation) {
             val myKeyPair = e2eeService.getOrGenerateKeyPair(accountId)
             val sharedSecret = runCatching { e2eeService.computeSharedSecret(myKeyPair.privateKey, peerPub) }.getOrNull()
             if (sharedSecret != null) {
                 val binding = ir.coffevista.vista_native.features.chat.data.security.ChatE2EEService.messageBinding(conversationId, dto.senderId, dto.id)
-                if (e2eeService.isEncryptedEnvelope(contentText)) {
-                    contentText = e2eeService.decryptMessage(contentText, sharedSecret, binding)
+                if (e2eeService.isEncryptedPayload(contentText)) {
+                    val attempt = runCatching { e2eeService.decryptMessage(contentText, sharedSecret, binding) }.getOrNull()
+                    if (attempt != null && !e2eeService.isEncryptedPayload(attempt)) {
+                        contentText = attempt
+                    } else {
+                        val attemptNoAad = runCatching { e2eeService.decryptMessage(contentText, sharedSecret, null) }.getOrNull()
+                        if (attemptNoAad != null && !e2eeService.isEncryptedPayload(attemptNoAad)) {
+                            contentText = attemptNoAad
+                        }
+                    }
                 }
-                if (replyText != null && e2eeService.isEncryptedEnvelope(replyText)) {
-                    replyText = e2eeService.decryptMessage(replyText, sharedSecret, binding)
+                if (replyText != null && e2eeService.isEncryptedPayload(replyText)) {
+                    val replyAttempt = runCatching { e2eeService.decryptMessage(replyText, sharedSecret, binding) }.getOrNull()
+                    if (replyAttempt != null && !e2eeService.isEncryptedPayload(replyAttempt)) {
+                        replyText = replyAttempt
+                    } else {
+                        val replyAttemptNoAad = runCatching { e2eeService.decryptMessage(replyText, sharedSecret, null) }.getOrNull()
+                        if (replyAttemptNoAad != null && !e2eeService.isEncryptedPayload(replyAttemptNoAad)) {
+                            replyText = replyAttemptNoAad
+                        }
+                    }
                 }
             }
         }
@@ -543,18 +1061,50 @@ class OfflineFirstChatRepository(
             isMine = dto.senderId == accountId,
             content = when {
                 dto.deletedAt != null -> MessageContent.Deleted
+                isSecretConversation && e2eeService.isEncryptedPayload(contentText) ->
+                    MessageContent.EncryptedUnavailable
                 dto.messageType.equals("sharedPost", true) || dto.messageType.equals("storyReply", true) ->
                     MessageContent.Structured(dto.messageType, contentText)
                 dto.messageType == "exchange_key" || dto.messageType == "exchange_key_reply" ->
-                    MessageContent.Text("🔒 ارتباط رمزنگاری‌شده (E2EE) برقرار شد.")
+                    // The protocol payload must survive Room persistence so a
+                    // restart can validate and reconcile the current key pair.
+                    // The transcript query excludes these transport frames.
+                    MessageContent.Text(dto.content)
                 else -> MessageContent.Text(contentText)
             },
-            replyToContent = replyText,
+            replyToContent = replyText?.takeUnless {
+                isSecretConversation && e2eeService.isEncryptedPayload(it)
+            },
+            opaqueEncryptedPayload = dto.content.takeIf {
+                dto.deletedAt == null && isSecretConversation && e2eeService.isEncryptedPayload(contentText)
+            },
         )
     }
 
-    override suspend fun sendText(conversationId: String, text: String): ChatResult<Message> =
-        sendTextInternal(conversationId, text, replyTo = null, replyOverride = null)
+    private fun Message.hideOpaqueEncryptedPayload(): Message {
+        val safeContent = when (val value = content) {
+            is MessageContent.Text -> if (e2eeService.isEncryptedPayload(value.value)) {
+                MessageContent.EncryptedUnavailable
+            } else {
+                value
+            }
+            is MessageContent.Structured -> if (e2eeService.isEncryptedPayload(value.payload)) {
+                MessageContent.EncryptedUnavailable
+            } else {
+                value
+            }
+            else -> value
+        }
+        val safeReply = replyToContent?.takeUnless(e2eeService::isEncryptedPayload)
+        return if (safeContent == content && safeReply == replyToContent) {
+            this
+        } else {
+            copy(content = safeContent, replyToContent = safeReply)
+        }
+    }
+
+    override suspend fun sendText(conversationId: String, text: String, clientId: String?): ChatResult<Message> =
+        sendTextInternal(conversationId, text, replyTo = null, replyOverride = null, clientIdOverride = clientId)
 
     override suspend fun sendSharedPost(
         conversationId: String,
@@ -574,7 +1124,8 @@ class OfflineFirstChatRepository(
         conversationId: String,
         text: String,
         replyTo: Message,
-    ): ChatResult<Message> = sendTextInternal(conversationId, text, replyTo, replyOverride = null)
+        clientId: String?,
+    ): ChatResult<Message> = sendTextInternal(conversationId, text, replyTo, replyOverride = null, clientIdOverride = clientId)
 
     override suspend fun replyToProfileNote(
         conversationId: String,
@@ -751,6 +1302,7 @@ class OfflineFirstChatRepository(
         replyTo: Message?,
         replyOverride: PendingReplyPayload?,
         messageType: String = "text",
+        clientIdOverride: String? = null,
     ): ChatResult<Message> {
         sessionProvider.synchronize()
         val account = sessionProvider.account.value ?: return loggedOut()
@@ -760,7 +1312,7 @@ class OfflineFirstChatRepository(
             return ChatResult.Failure("متن پیام بیش از حد مجاز است", retryable = false)
         }
         val conversation = dao.conversation(account.accountId, conversationId)
-        val clientId = newId()
+        val clientId = clientIdOverride ?: newId()
         val replyPayload = replyOverride ?: replyTo?.let { source ->
             val replyContent = when (val content = source.content) {
                 is MessageContent.Text -> content.value
@@ -828,7 +1380,7 @@ class OfflineFirstChatRepository(
         sessionProvider.synchronize()
         val account = sessionProvider.account.value ?: return loggedOut()
         val conversation = dao.conversation(account.accountId, conversationId)
-        if (conversation?.type == ConversationType.SECRET.name) {
+        if (false && conversation?.type == ConversationType.SECRET.name) {
             return ChatResult.Failure(
                 "ارسال رسانه در گفتگوی محرمانه تا آماده‌شدن رمزنگاری فایل در دسترس نیست",
                 retryable = false,
@@ -908,7 +1460,7 @@ class OfflineFirstChatRepository(
         sessionProvider.synchronize()
         val account = sessionProvider.account.value ?: return loggedOut()
         val conversation = dao.conversation(account.accountId, conversationId)
-        if (conversation?.type == ConversationType.SECRET.name) {
+        if (false && conversation?.type == ConversationType.SECRET.name) {
             return ChatResult.Failure("ارسال گیف در این گفتگوی محافظت‌شده در دسترس نیست", retryable = false)
         }
         val normalizedUrl = url.trim()
@@ -1043,30 +1595,22 @@ class OfflineFirstChatRepository(
         val generation = sessionGeneration.snapshot()
         val conversation = dao.conversation(local.accountId, local.conversationId)
         val isSecretTarget = conversation?.type == ConversationType.SECRET.name
-        val peerPub = e2eeService.getPeerPublicKey(local.conversationId)
+        var peerPub = resolvePeerPublicKey(local.accountId, local.conversationId)
         if (isSecretTarget && peerPub == null) {
-            val localKey = e2eeService.getOrGenerateKeyPair(local.accountId)
-            val exchange = remoteCall {
-                api.sendMessage(
-                    local.conversationId,
-                    SendMessageRequest(
-                        id = newId(),
-                        content = localKey.publicKeyB64,
-                        messageType = "exchange_key",
-                    ),
+            // Opening a secret chat owns the handshake. A first user message must
+            // remain retryable/pending while the peer key is exchanged; consuming
+            // it here used to turn a valid optimistic send into a permanent failure.
+            ensureSecretChatHandshake(local.conversationId)
+            peerPub = resolvePeerPublicKey(local.accountId, local.conversationId)
+            if (peerPub == null) {
+                if (sessionGeneration.isCurrent(generation)) {
+                    mergeAndPersist(local.copy(status = MessageStatus.PENDING), MergeSource.OPTIMISTIC)
+                }
+                return ChatResult.Failure(
+                    "کلید رمزنگاری در حال تبادل است؛ پیام پس از آماده‌شدن خودکار دوباره ارسال می‌شود",
+                    retryable = true,
                 )
             }
-            if (sessionGeneration.isCurrent(generation)) {
-                mergeAndPersist(local.copy(status = MessageStatus.FAILED), MergeSource.OPTIMISTIC)
-            }
-            return ChatResult.Failure(
-                if (exchange is ChatResult.Success) {
-                    "کلید رمزنگاری در حال تبادل است؛ پس از تأیید دوباره تلاش کنید"
-                } else {
-                    "تبادل کلید رمزنگاری انجام نشد؛ دوباره تلاش کنید"
-                },
-                retryable = true,
-            )
         }
 
         val secretSharedKey = if (isSecretTarget) {
@@ -1130,18 +1674,39 @@ class OfflineFirstChatRepository(
                 }
             },
         ) {
+            val content = if (dao.conversation(local.accountId, local.conversationId)?.type == ConversationType.SECRET.name) {
+                val peerPub = resolvePeerPublicKey(local.accountId, local.conversationId)
+                    ?: run {
+                        ensureSecretChatHandshake(local.conversationId)
+                        resolvePeerPublicKey(local.accountId, local.conversationId)
+                    }
+                    ?: throw IllegalStateException("کلید مخاطب برای GIF محرمانه آماده نیست")
+                val keyPair = e2eeService.getOrGenerateKeyPair(local.accountId)
+                val shared = e2eeService.computeSharedSecret(keyPair.privateKey, peerPub)
+                e2eeService.encryptMessage(
+                    "",
+                    shared,
+                    ir.coffevista.vista_native.features.chat.data.security.ChatE2EEService.messageBinding(
+                        local.conversationId,
+                        local.accountId,
+                        local.clientId,
+                    ),
+                )
+            } else {
+                ""
+            }
             val dto = api.sendMessage(
                 local.conversationId,
                 SendMessageRequest(
                     id = local.clientId,
-                    content = "",
+                    content = content,
                     messageType = AttachmentKind.GIF.wireName,
                     mediaUrl = payload.url,
                     attachmentMimeType = "image/gif",
                 ),
             )
             check(sessionGeneration.isCurrent(generation)) { "نشست کاربر تغییر کرده است" }
-            val server = dto.toDomain(local.accountId).copy(isMine = true)
+            val server = decryptAndMapMessageDto(dto, local.accountId).copy(isMine = true)
             val merged = MessageMergeReducer.merge(local, server, MergeSource.REST)
             mergeAndPersist(merged, MergeSource.REST)
             dao.deletePending(local.accountId, local.clientId)
@@ -1201,6 +1766,8 @@ class OfflineFirstChatRepository(
         cancelledTransfers.remove(local.clientId)
         dao.updateTransfer(local.accountId, local.clientId, 0f, TransferState.UPLOADING.name)
         dao.updateMessageTransfer(local.accountId, local.clientId, 0f, TransferState.UPLOADING.name)
+        var lastDbProgress = 0f
+        var lastDbTime = 0L
         val uploaded = mediaUploader.upload(
             accountId = local.accountId,
             clientId = local.clientId,
@@ -1208,10 +1775,15 @@ class OfflineFirstChatRepository(
             onProgress = { progress ->
                 check(sessionGeneration.isCurrent(generation)) { "نشست کاربر تغییر کرده است" }
                 check(local.clientId !in cancelledTransfers) { "انتقال لغو شد" }
-                scope.launch {
-                    if (sessionGeneration.isCurrent(generation)) {
-                        dao.advanceTransferProgress(local.accountId, local.clientId, progress)
-                        dao.advanceMessageTransferProgress(local.accountId, local.clientId, progress)
+                val currentTime = System.currentTimeMillis()
+                if (progress - lastDbProgress >= 0.04f || progress >= 1f || currentTime - lastDbTime >= 350L) {
+                    lastDbProgress = progress
+                    lastDbTime = currentTime
+                    scope.launch {
+                        if (sessionGeneration.isCurrent(generation)) {
+                            dao.advanceTransferProgress(local.accountId, local.clientId, progress)
+                            dao.advanceMessageTransferProgress(local.accountId, local.clientId, progress)
+                        }
                     }
                 }
             },
@@ -1222,11 +1794,32 @@ class OfflineFirstChatRepository(
             runCatching { mediaUploader.deleteUploadedObject(uploaded.objectKey) }
             throw java.io.IOException("انتقال لغو شد")
         }
+        val contentToSend = if (dao.conversation(local.accountId, local.conversationId)?.type == ConversationType.SECRET.name) {
+            val peerPub = resolvePeerPublicKey(local.accountId, local.conversationId)
+                ?: run {
+                    ensureSecretChatHandshake(local.conversationId)
+                    resolvePeerPublicKey(local.accountId, local.conversationId)
+                }
+                ?: throw IllegalStateException("کلید مخاطب برای رسانه محرمانه آماده نیست")
+            val keyPair = e2eeService.getOrGenerateKeyPair(local.accountId)
+            val shared = e2eeService.computeSharedSecret(keyPair.privateKey, peerPub)
+            e2eeService.encryptMessage(
+                draft.caption,
+                shared,
+                ir.coffevista.vista_native.features.chat.data.security.ChatE2EEService.messageBinding(
+                    local.conversationId,
+                    local.accountId,
+                    local.clientId,
+                ),
+            )
+        } else {
+            draft.caption
+        }
         val dto = api.sendMessage(
             local.conversationId,
             SendMessageRequest(
                 id = local.clientId,
-                content = draft.caption,
+                content = contentToSend,
                 messageType = draft.kind.wireName,
                 mediaUrl = uploaded.objectUrl,
                 attachmentFileName = draft.fileName,
@@ -1237,7 +1830,7 @@ class OfflineFirstChatRepository(
             ),
         )
         check(sessionGeneration.isCurrent(generation)) { "نشست کاربر تغییر کرده است" }
-        val server = dto.toDomain(local.accountId).copy(isMine = true)
+        val server = decryptAndMapMessageDto(dto, local.accountId).copy(isMine = true)
         val voiceSourcePath = draft.uri.toLocalVoiceCachePath()
         val ephemeralVoiceFile = draft.kind == AttachmentKind.VOICE &&
             voiceSourcePath?.replace('\\', '/')?.contains("/chat-voice/") == true
@@ -1263,7 +1856,7 @@ class OfflineFirstChatRepository(
         val account = sessionProvider.account.value ?: return loggedOut()
         return remoteCall {
             api.markRead(conversationId)
-            dao.resetUnread(account.accountId, conversationId)
+            dao.markConversationRead(account.accountId, conversationId)
         }
     }
 
@@ -1274,8 +1867,11 @@ class OfflineFirstChatRepository(
     override suspend fun setConversationActive(
         conversationId: String,
         active: Boolean,
-    ): ChatResult<Unit> = remoteCall {
-        api.setActive(conversationId, ActiveConversationRequest(active))
+    ): ChatResult<Unit> {
+        activeConversationId = if (active) conversationId else null
+        return remoteCall {
+            api.setActive(conversationId, ActiveConversationRequest(active))
+        }
     }
 
     override suspend fun toggleConversationFlag(
@@ -1351,13 +1947,15 @@ class OfflineFirstChatRepository(
 
     override suspend fun deleteMessage(message: Message, forEveryone: Boolean): ChatResult<Unit> {
         val messageId = message.serverId ?: message.clientId
+        // Immediately record tombstone and purge from local Room DB for zero local latency
+        dao.upsertTombstone(
+            TombstoneEntity(message.accountId, message.conversationId, messageId, now()),
+        )
+        dao.deleteMessageByIdentity(message.accountId, message.conversationId, messageId)
+        refreshConversationPreview(message.accountId, message.conversationId)
+
         return remoteCall {
             if (message.serverId != null) api.deleteMessage(messageId, forEveryone)
-            dao.upsertTombstone(
-                TombstoneEntity(message.accountId, message.conversationId, messageId, now()),
-            )
-            dao.deleteMessageByIdentity(message.accountId, message.conversationId, messageId)
-            refreshConversationPreview(message.accountId, message.conversationId)
         }
     }
 
@@ -1369,7 +1967,7 @@ class OfflineFirstChatRepository(
         val account = sessionProvider.account.value ?: return loggedOut()
         return remoteCall {
             val dto = api.forwardMessage(messageId, ForwardMessageRequest(targetConversationId))
-            val message = dto.toDomain(account.accountId).copy(isMine = true)
+            val message = decryptAndMapMessageDto(dto, account.accountId).copy(isMine = true)
             mergeAndPersist(message, MergeSource.REST)
             message
         }
@@ -1397,25 +1995,22 @@ class OfflineFirstChatRepository(
         if (conversationId.isEmpty() || messageId.isEmpty() || senderId.isEmpty()) {
             return ChatResult.Failure("اعلان گفتگو نامعتبر است", retryable = false)
         }
-        val raw = payload["content"].orEmpty()
-        val content = if (raw.startsWith("VE2E1:") || raw.startsWith("e2ee:v1:")) {
-            MessageContent.EncryptedUnavailable
-        } else {
-            MessageContent.Text(raw)
+        // FCM content is a display template, not canonical message data. The
+        // backend intentionally redacts secret chat content and can also mask
+        // regular previews. Never store that template as a message in Room.
+        val generation = sessionGeneration.snapshot()
+        val metadata = remoteCall {
+            if (dao.conversation(account.accountId, conversationId) == null) {
+                val entity = api.conversation(conversationId).toEntity(account.accountId, cipher, now())
+                check(sessionGeneration.isCurrent(generation)) { "Session changed" }
+                dao.upsertConversations(listOf(entity))
+            }
         }
-        val message = Message(
-            accountId = account.accountId,
-            conversationId = conversationId,
-            clientId = messageId,
-            serverId = messageId,
-            senderId = senderId,
-            content = content,
-            createdAtEpochMillis = payload["created_at"].epochMillisOrNull() ?: now(),
-            status = MessageStatus.DELIVERED,
-            isMine = senderId == account.accountId,
-        )
-        mergeAndPersist(message, MergeSource.NOTIFICATION)
-        return ChatResult.Success(Unit)
+        if (metadata is ChatResult.Failure) return metadata
+        return when (val canonical = refreshMessages(conversationId)) {
+            is ChatResult.Success -> ChatResult.Success(Unit)
+            is ChatResult.Failure -> canonical
+        }
     }
 
     override suspend fun clearAccount(accountId: String) {
@@ -1465,75 +2060,123 @@ class OfflineFirstChatRepository(
                     .map { it.copy(status = MessageStatus.READ).toEntity(cipher, now()) }
                 dao.upsertMessages(messages)
             }
+            is RealtimeEvent.ReactionUpdated -> {
+                val conversationId = event.conversationId ?: event.update.conversationId
+                val entity = dao.messageByIdentity(
+                    account.accountId,
+                    conversationId,
+                    event.update.messageId,
+                    event.update.messageId,
+                )
+                if (entity != null) {
+                    val domain = entity.toDomain(cipher)
+                    val reactions = event.update.reactions
+                        .groupBy({ it.emoji }, { it.userId })
+                        .mapValues { it.value.toSet() }
+                    mergeAndPersist(domain.copy(reactions = reactions), MergeSource.REALTIME)
+                }
+            }
             is RealtimeEvent.Connected -> retryPendingOperations(account.accountId)
             is RealtimeEvent.Unknown -> Unit
         }
     }
 
     private suspend fun retryPendingOperations(accountId: String) = pendingRetryMutex.withLock {
-        dao.pendingTransfers(accountId).forEach { transfer ->
-            if (transfer.state == TransferState.CANCELLED.name) return@forEach
-            val entity = dao.messageByIdentity(
-                accountId,
-                transfer.conversationId,
-                transfer.clientId,
-                null,
-            ) ?: return@forEach
-            val caption = cipher.decrypt(
-                accountId,
-                transfer.conversationId,
-                "${transfer.clientId}:transfer-caption",
-                transfer.captionCiphertext,
-            )
-            val draft = ChatAttachmentDraft(
-                    uri = transfer.localUri,
-                    fileName = transfer.fileName,
-                    mimeType = transfer.mimeType,
-                    sizeBytes = transfer.sizeBytes,
-                    kind = runCatching { AttachmentKind.valueOf(transfer.kind) }.getOrDefault(AttachmentKind.UNKNOWN),
-                    durationSeconds = transfer.durationSeconds,
-                    caption = caption,
-                    mediaGroupId = transfer.mediaGroupId,
-                )
-            val prepared = runCatching {
-                mediaUploader.prepare(
-                    accountId = accountId,
-                    conversationId = transfer.conversationId,
-                    draft = draft,
-                    existingObjectKey = transfer.objectKey,
-                )
-            }.getOrNull() ?: return@forEach
-            if (transfer.objectKey != prepared.objectKey) {
-                dao.upsertTransfer(transfer.copy(objectKey = prepared.objectKey, state = TransferState.QUEUED.name))
+        runCatching {
+            dao.pendingTransfers(accountId).forEach { transfer ->
+                runCatching {
+                    if (transfer.state == TransferState.CANCELLED.name) return@forEach
+                    val entity = dao.messageByIdentity(
+                        accountId,
+                        transfer.conversationId,
+                        transfer.clientId,
+                        null,
+                    ) ?: return@forEach
+                    val caption = runCatching {
+                        cipher.decrypt(
+                            accountId,
+                            transfer.conversationId,
+                            "${transfer.clientId}:transfer-caption",
+                            transfer.captionCiphertext,
+                        )
+                    }.getOrDefault("")
+                    val draft = ChatAttachmentDraft(
+                        uri = transfer.localUri,
+                        fileName = transfer.fileName,
+                        mimeType = transfer.mimeType,
+                        sizeBytes = transfer.sizeBytes,
+                        kind = runCatching { AttachmentKind.valueOf(transfer.kind) }.getOrDefault(AttachmentKind.UNKNOWN),
+                        durationSeconds = transfer.durationSeconds,
+                        caption = caption,
+                        mediaGroupId = transfer.mediaGroupId,
+                    )
+                    val prepared = runCatching {
+                        mediaUploader.prepare(
+                            accountId = accountId,
+                            conversationId = transfer.conversationId,
+                            draft = draft,
+                            existingObjectKey = transfer.objectKey,
+                        )
+                    }.getOrNull() ?: return@forEach
+                    if (transfer.objectKey != prepared.objectKey) {
+                        dao.upsertTransfer(transfer.copy(objectKey = prepared.objectKey, state = TransferState.QUEUED.name))
+                    }
+                    val domainMessage = runCatching { entity.toDomain(cipher) }.getOrNull() ?: return@forEach
+                    uploadAndSendAttachment(
+                        domainMessage.copy(status = MessageStatus.PENDING),
+                        prepared,
+                    )
+                }.onFailure { err ->
+                    android.util.Log.e("ChatRepo", "Failed to retry pending transfer ${transfer.clientId}", err)
+                }
             }
-            uploadAndSendAttachment(
-                entity.toDomain(cipher).copy(status = MessageStatus.PENDING),
-                prepared,
-            )
-        }
-        dao.pendingForAccount(accountId).forEach { pending ->
-            if (pending.type !in setOf("SEND_TEXT", "SEND_GIF")) return@forEach
-            val entity = dao.messageByIdentity(
-                accountId,
-                pending.conversationId,
-                pending.clientId,
-                null,
-            ) ?: return@forEach
-            val message = entity.toDomain(cipher)
-            val decrypted = cipher.decrypt(
-                accountId,
-                pending.conversationId,
-                "${pending.clientId}:pending",
-                pending.payloadCiphertext,
-            )
-            dao.upsertPending(pending.copy(attempts = pending.attempts + 1))
-            when (pending.type) {
-                "SEND_TEXT" -> sendPending(message.copy(status = MessageStatus.PENDING), decodePendingTextPayload(decrypted))
-                "SEND_GIF" -> sendPendingGif(
-                    message.copy(status = MessageStatus.PENDING),
-                    pendingJson.decodeFromString(PendingGifPayload.serializer(), decrypted),
-                )
+            dao.pendingForAccount(accountId).forEach { pending ->
+                runCatching {
+                    if (pending.type !in setOf("SEND_TEXT", "SEND_GIF")) return@forEach
+                    if (pending.attempts >= 5) {
+                        android.util.Log.e("ChatRepo", "Dropping pending operation ${pending.clientId} after ${pending.attempts} attempts")
+                        dao.deletePending(accountId, pending.clientId)
+                        return@forEach
+                    }
+                    val entity = dao.messageByIdentity(
+                        accountId,
+                        pending.conversationId,
+                        pending.clientId,
+                        null,
+                    ) ?: run {
+                        dao.deletePending(accountId, pending.clientId)
+                        return@forEach
+                    }
+                    val message = runCatching { entity.toDomain(cipher) }.getOrNull() ?: run {
+                        dao.deletePending(accountId, pending.clientId)
+                        return@forEach
+                    }
+                    val decrypted = runCatching {
+                        cipher.decrypt(
+                            accountId,
+                            pending.conversationId,
+                            "${pending.clientId}:pending",
+                            pending.payloadCiphertext,
+                        )
+                    }.getOrNull() ?: run {
+                        android.util.Log.e("ChatRepo", "Dropping un-decryptable pending operation ${pending.clientId}")
+                        dao.deletePending(accountId, pending.clientId)
+                        return@forEach
+                    }
+                    dao.upsertPending(pending.copy(attempts = pending.attempts + 1))
+                    when (pending.type) {
+                        "SEND_TEXT" -> sendPending(message.copy(status = MessageStatus.PENDING), decodePendingTextPayload(decrypted))
+                        "SEND_GIF" -> sendPendingGif(
+                            message.copy(status = MessageStatus.PENDING),
+                            pendingJson.decodeFromString(PendingGifPayload.serializer(), decrypted),
+                        )
+                    }
+                }.onFailure { err ->
+                    android.util.Log.e("ChatRepo", "Failed to retry pending operation ${pending.clientId}", err)
+                }
             }
+        }.onFailure { err ->
+            android.util.Log.e("ChatRepo", "Failed to retry pending operations for $accountId", err)
         }
     }
 
@@ -1563,8 +2206,15 @@ class OfflineFirstChatRepository(
         )
         val existing = existingEntity?.toDomain(cipher)
         val merged = MessageMergeReducer.merge(existing, incoming, source)
-        val preview = merged.inboxPreviewText()
+        if (existing == merged) return
         val mutationAt = now()
+        if (merged.isSecretHandshakeFrame) {
+            // Protocol frames are durable for E2EE recovery, but they must not
+            // advance inbox previews, timestamps, or unread counts.
+            dao.upsertMessages(listOf(merged.toEntity(cipher, mutationAt)))
+            return
+        }
+        val preview = merged.inboxPreviewText()
         val fallback = ConversationEntity(
             accountId = merged.accountId,
             id = merged.conversationId,
@@ -1596,7 +2246,7 @@ class OfflineFirstChatRepository(
             mutationAtEpochMillis = mutationAt,
         )
         val conversationAfterMerge = dao.conversation(merged.accountId, merged.conversationId)
-        if (conversationAfterMerge?.title == "کاربر" || conversationAfterMerge?.avatarUrl.isNullOrBlank()) {
+        if (source != MergeSource.OPTIMISTIC && (conversationAfterMerge?.title == "کاربر" || conversationAfterMerge?.avatarUrl.isNullOrBlank())) {
             val refreshed = runCatching {
                 api.conversation(merged.conversationId).toEntity(merged.accountId, cipher, now())
             }.getOrNull()
@@ -1680,7 +2330,9 @@ class OfflineFirstChatRepository(
                 api.conversation(conversationId).toEntity(accountId, cipher, timestamp)
             }.getOrNull() ?: run {
                 val messages = dao.messages(accountId, conversationId)
-                val latest = messages.firstOrNull() ?: return@mapNotNull null
+                val latest = messages.firstOrNull {
+                    it.messageType != "exchange_key" && it.messageType != "exchange_key_reply"
+                } ?: return@mapNotNull null
                 val latestDomain = latest.toDomain(cipher)
                 val preview = latestDomain.inboxPreviewText()
                 ConversationEntity(
@@ -1784,7 +2436,9 @@ class OfflineFirstChatRepository(
 
     private suspend fun refreshConversationPreview(accountId: String, conversationId: String) {
         val conversation = dao.conversation(accountId, conversationId) ?: return
-        val latest = dao.messages(accountId, conversationId).firstOrNull()
+        val latest = dao.messages(accountId, conversationId).firstOrNull {
+            it.messageType != "exchange_key" && it.messageType != "exchange_key_reply"
+        }
         val latestDomain = latest?.toDomain(cipher)
         dao.upsertConversations(
             listOf(
@@ -1832,7 +2486,7 @@ class OfflineFirstChatRepository(
         sessionProvider.synchronize()
         val accountId = sessionProvider.account.value?.accountId ?: return flowOf(emptyList())
         return dao.observeSharedMedia(accountId, conversationId).map { entities ->
-            entities.map { it.toDomain(cipher) }
+            entities.map { it.toDomain(cipher).hideOpaqueEncryptedPayload() }
         }.flowOn(Dispatchers.Default)
     }
 
@@ -1840,9 +2494,11 @@ class OfflineFirstChatRepository(
         sessionProvider.synchronize()
         val account = sessionProvider.account.value ?: return loggedOut()
         return remoteCall {
+            val isSecretConversation =
+                dao.conversation(account.accountId, conversationId)?.type == ConversationType.SECRET.name
             val response = api.getPinnedMessages(conversationId)
             val messages = response.messages.map { dto ->
-                dto.toDomain(account.accountId).copy(
+                decryptAndMapMessageDto(dto, account.accountId, isSecretConversation).copy(
                     isMine = dto.senderId == account.accountId,
                     isPinned = true,
                 )

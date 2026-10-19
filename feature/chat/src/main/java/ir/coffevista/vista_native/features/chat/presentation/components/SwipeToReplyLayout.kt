@@ -38,8 +38,8 @@ fun SwipeToReplyLayout(
     val density = LocalDensity.current
     val threshold = with(density) { 72.dp.toPx() }
     // Reply bubbles follow the app's chat gesture convention: peer bubbles
-    // respond to a left swipe and our bubbles respond to a right swipe.
-    val replyDirection = if (bubbleOnRight) 1f else -1f
+    // respond to a right swipe and our bubbles respond to a left swipe toward screen center.
+    val replyDirection = if (bubbleOnRight) -1f else 1f
     val swipePolicy = remember(threshold, bubbleOnRight) {
         ReplySwipePolicy(
             thresholdPx = threshold,

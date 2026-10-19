@@ -5,8 +5,8 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class FollowUserDto(
-    @SerialName("user_id") val userId: String,
-    val username: String,
+    @SerialName("user_id") val userId: String = "",
+    val username: String = "",
     @SerialName("full_name") val fullName: String? = null,
     @SerialName("avatar_url") val avatarUrl: String? = null,
     @SerialName("is_verified") val isVerified: Boolean = false,
@@ -18,7 +18,21 @@ data class FollowUserDto(
 
 @Serializable
 data class FollowListResponseDto(
-    val users: List<FollowUserDto> = emptyList(),
+    @SerialName("profiles") val profiles: List<FollowUserDto> = emptyList(),
+    @SerialName("users") val usersLegacy: List<FollowUserDto> = emptyList(),
     val total: Int = 0,
     @SerialName("has_more") val hasMore: Boolean = false,
-)
+) {
+    constructor(
+        users: List<FollowUserDto>,
+        total: Int = users.size,
+        hasMore: Boolean = false,
+    ) : this(
+        profiles = users,
+        usersLegacy = users,
+        total = total,
+        hasMore = hasMore,
+    )
+
+    val users: List<FollowUserDto> get() = profiles.ifEmpty { usersLegacy }
+}

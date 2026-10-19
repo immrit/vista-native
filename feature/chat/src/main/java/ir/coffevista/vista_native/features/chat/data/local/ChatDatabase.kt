@@ -251,9 +251,12 @@ interface ChatDao {
             conversationId = :conversationId
             OR conversationId IN (
                 SELECT id FROM chat_conversation
-                WHERE accountId = :accountId AND (id = :conversationId OR peerId = :conversationId)
+                WHERE accountId = :accountId AND (
+                    id = :conversationId OR (peerId = :conversationId AND UPPER(type) != 'SECRET')
+                )
             )
         )
+          AND LOWER(messageType) NOT IN ('exchange_key', 'exchange_key_reply')
           AND NOT EXISTS (
             SELECT 1 FROM chat_tombstone AS tombstone
             WHERE tombstone.accountId = chat_message.accountId
@@ -264,10 +267,30 @@ interface ChatDao {
     )
     fun observeMessages(accountId: String, conversationId: String): Flow<List<MessageEntity>>
 
-    @Query("SELECT * FROM chat_conversation WHERE accountId = :accountId AND (id = :conversationId OR peerId = :conversationId) LIMIT 1")
+    @Query(
+        """
+        SELECT * FROM chat_conversation 
+        WHERE accountId = :accountId AND (id = :conversationId OR peerId = :conversationId)
+        ORDER BY 
+            CASE WHEN id = :conversationId THEN 0 ELSE 1 END,
+            CASE WHEN UPPER(type) = 'PRIVATE' THEN 0 WHEN UPPER(type) = 'GROUP' THEN 1 ELSE 2 END,
+            lastMessageAtEpochMillis DESC
+        LIMIT 1
+        """,
+    )
     fun observeConversation(accountId: String, conversationId: String): Flow<ConversationEntity?>
 
-    @Query("SELECT * FROM chat_conversation WHERE accountId = :accountId AND (id = :conversationId OR peerId = :conversationId) LIMIT 1")
+    @Query(
+        """
+        SELECT * FROM chat_conversation 
+        WHERE accountId = :accountId AND (id = :conversationId OR peerId = :conversationId)
+        ORDER BY 
+            CASE WHEN id = :conversationId THEN 0 ELSE 1 END,
+            CASE WHEN UPPER(type) = 'PRIVATE' THEN 0 WHEN UPPER(type) = 'GROUP' THEN 1 ELSE 2 END,
+            lastMessageAtEpochMillis DESC
+        LIMIT 1
+        """,
+    )
     suspend fun conversation(accountId: String, conversationId: String): ConversationEntity?
 
     @Query(
@@ -300,6 +323,12 @@ interface ChatDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertConversations(items: List<ConversationEntity>)
 
+    @Query("UPDATE chat_message SET conversationId = :targetConversationId WHERE accountId = :accountId AND conversationId = :sourceConversationId")
+    suspend fun migrateMessages(accountId: String, sourceConversationId: String, targetConversationId: String)
+
+    @Query("DELETE FROM chat_conversation WHERE accountId = :accountId AND id IN (:ids)")
+    suspend fun deleteConversations(accountId: String, ids: List<String>)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertProfileNotes(items: List<ProfileNoteEntity>)
 
@@ -311,6 +340,22 @@ interface ChatDao {
 
     @Query("UPDATE chat_conversation SET unreadCount = 0 WHERE accountId = :accountId AND id = :conversationId")
     suspend fun resetUnread(accountId: String, conversationId: String)
+
+    @Query(
+        """
+        UPDATE chat_message SET status = 'READ'
+        WHERE accountId = :accountId AND conversationId = :conversationId
+          AND isMine = 0 AND status != 'READ'
+          AND LOWER(messageType) NOT IN ('exchange_key', 'exchange_key_reply')
+        """,
+    )
+    suspend fun markIncomingRead(accountId: String, conversationId: String)
+
+    @Transaction
+    suspend fun markConversationRead(accountId: String, conversationId: String) {
+        resetUnread(accountId, conversationId)
+        markIncomingRead(accountId, conversationId)
+    }
 
     @Query("UPDATE chat_conversation SET isMessageRequest = 0, requestStatus = :status WHERE accountId = :accountId AND id = :conversationId")
     suspend fun resolveMessageRequest(accountId: String, conversationId: String, status: String)

@@ -1,4 +1,4 @@
-﻿package ir.coffevista.vista_native.core.designsystem.component
+package ir.coffevista.vista_native.core.designsystem.component
 
 import android.content.Context
 import android.graphics.Bitmap
@@ -273,8 +273,11 @@ data class VistaEmojiTextSegment(
 )
 
 object VistaEmojiParser {
+    private val segmentCache = LruCache<String, List<VistaEmojiTextSegment>>(1000)
+
     fun parseSegments(text: String): List<VistaEmojiTextSegment> {
         if (text.isEmpty()) return emptyList()
+        segmentCache.get(text)?.let { return it }
         val segments = mutableListOf<VistaEmojiTextSegment>()
         var i = 0
         var plainBuffer = StringBuilder()
@@ -322,6 +325,7 @@ object VistaEmojiParser {
             segments.add(VistaEmojiTextSegment(plainBuffer.toString(), isEmoji = false))
         }
 
+        segmentCache.put(text, segments)
         return segments
     }
 }

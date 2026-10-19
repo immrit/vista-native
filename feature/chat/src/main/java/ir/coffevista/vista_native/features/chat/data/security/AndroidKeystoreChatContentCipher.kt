@@ -2,6 +2,7 @@ package ir.coffevista.vista_native.features.chat.data.security
 
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
+import android.util.LruCache
 import ir.coffevista.vista_native.features.chat.domain.repository.ChatContentCipher
 import java.nio.ByteBuffer
 import java.security.KeyStore
@@ -12,6 +13,10 @@ import javax.crypto.spec.GCMParameterSpec
 
 /** Encryption at rest for the Chat Room cache. This is not the E2EE protocol. */
 class AndroidKeystoreChatContentCipher : ChatContentCipher {
+    @Volatile
+    private var cachedKey: SecretKey? = null
+    private val plaintextCache = LruCache<String, String>(2048)
+
     override suspend fun encrypt(
         accountId: String,
         conversationId: String,
@@ -22,12 +27,17 @@ class AndroidKeystoreChatContentCipher : ChatContentCipher {
         cipher.init(Cipher.ENCRYPT_MODE, key())
         cipher.updateAAD(aad(accountId, conversationId, recordId))
         val encrypted = cipher.doFinal(plaintext.toByteArray(Charsets.UTF_8))
-        return ByteBuffer.allocate(2 + cipher.iv.size + encrypted.size)
+        val result = ByteBuffer.allocate(2 + cipher.iv.size + encrypted.size)
             .put(ENVELOPE_VERSION)
             .put(cipher.iv.size.toByte())
             .put(cipher.iv)
             .put(encrypted)
             .array()
+        val cacheKey = cacheKey(accountId, conversationId, recordId, result)
+        synchronized(plaintextCache) {
+            plaintextCache.put(cacheKey, plaintext)
+        }
+        return result
     }
 
     override suspend fun decrypt(
@@ -36,6 +46,11 @@ class AndroidKeystoreChatContentCipher : ChatContentCipher {
         recordId: String,
         ciphertext: ByteArray,
     ): String {
+        val cacheKey = cacheKey(accountId, conversationId, recordId, ciphertext)
+        synchronized(plaintextCache) {
+            val cached = plaintextCache.get(cacheKey)
+            if (cached != null) return cached
+        }
         require(ciphertext.size > 2) { "Malformed Chat cache envelope" }
         val buffer = ByteBuffer.wrap(ciphertext)
         require(buffer.get() == ENVELOPE_VERSION) { "Unsupported Chat cache envelope" }
@@ -46,14 +61,23 @@ class AndroidKeystoreChatContentCipher : ChatContentCipher {
         val cipher = Cipher.getInstance(TRANSFORMATION)
         cipher.init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(GCM_TAG_BITS, iv))
         cipher.updateAAD(aad(accountId, conversationId, recordId))
-        return cipher.doFinal(encrypted).toString(Charsets.UTF_8)
+        val decrypted = cipher.doFinal(encrypted).toString(Charsets.UTF_8)
+        synchronized(plaintextCache) {
+            plaintextCache.put(cacheKey, decrypted)
+        }
+        return decrypted
     }
 
     @Synchronized
     private fun key(): SecretKey {
+        cachedKey?.let { return it }
         val keyStore = KeyStore.getInstance(KEYSTORE_PROVIDER).apply { load(null) }
-        (keyStore.getKey(KEY_ALIAS, null) as? SecretKey)?.let { return it }
-        return KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, KEYSTORE_PROVIDER).run {
+        val existing = keyStore.getKey(KEY_ALIAS, null) as? SecretKey
+        if (existing != null) {
+            cachedKey = existing
+            return existing
+        }
+        val generated = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, KEYSTORE_PROVIDER).run {
             init(
                 KeyGenParameterSpec.Builder(
                     KEY_ALIAS,
@@ -66,7 +90,12 @@ class AndroidKeystoreChatContentCipher : ChatContentCipher {
             )
             generateKey()
         }
+        cachedKey = generated
+        return generated
     }
+
+    private fun cacheKey(accountId: String, conversationId: String, recordId: String, ciphertext: ByteArray): String =
+        "$accountId:$conversationId:$recordId:${ciphertext.contentHashCode()}"
 
     private fun aad(accountId: String, conversationId: String, recordId: String): ByteArray =
         "$accountId\u001f$conversationId\u001f$recordId".toByteArray(Charsets.UTF_8)

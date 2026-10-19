@@ -35,6 +35,10 @@ import java.io.File
 import java.util.UUID
 import javax.inject.Inject
 
+import ir.coffevista.vista_native.features.feed.music.MusicRepository
+import ir.coffevista.vista_native.features.feed.music.MusicTrack
+import ir.coffevista.vista_native.features.stories.domain.StoryMusic
+
 internal object StoryVideoUploadPolicy {
     const val MaxBytes: Long = 100L * 1024 * 1024
     const val MaxDurationMs: Long = 60_000L
@@ -54,6 +58,7 @@ data class StoryEditorUiState(
     val mediaUri: Uri? = null,
     val isVideo: Boolean = false,
     val elements: List<StoryElement> = emptyList(),
+    val musicTrack: MusicTrack? = null,
     val durationType: StoryDurationType = StoryDurationType.Hours24,
     val privacyType: StoryPrivacyType = StoryPrivacyType.Everyone,
     val closeFriendCandidates: List<StoryUser> = emptyList(),
@@ -72,6 +77,7 @@ data class StoryEditorUiState(
 @HiltViewModel
 class StoryEditorViewModel @Inject constructor(
     private val repository: StoryRepository,
+    val musicRepository: MusicRepository,
     private val uploader: PostMediaUploadGateway,
     private val authStateProvider: AuthenticationStateProvider,
     @ApplicationContext private val context: Context,
@@ -156,6 +162,26 @@ class StoryEditorViewModel @Inject constructor(
             y = -0.2f,
         )
         _uiState.update { it.copy(elements = it.elements + element) }
+    }
+
+    fun addMusicElement(track: MusicTrack) {
+        val element = StoryElement(
+            id = UUID.randomUUID().toString(),
+            type = "music",
+            music = StoryMusic(
+                musicUrl = track.musicUrl,
+                title = track.title,
+                artist = track.artist,
+                coverUrl = track.coverUrl,
+            ),
+            y = 0.35f,
+        )
+        _uiState.update {
+            it.copy(
+                musicTrack = track,
+                elements = it.elements.filterNot { el -> el.type == "music" } + element,
+            )
+        }
     }
 
     fun removeElement(id: String) {
@@ -267,6 +293,7 @@ class StoryEditorViewModel @Inject constructor(
                     },
                     allowedUserIds = state.selectedCloseFriendIds.toList(),
                     interactiveElements = state.elements,
+                    musicUrl = state.musicTrack?.musicUrl ?: state.elements.firstOrNull { it.type == "music" }?.music?.musicUrl,
                 )
 
                 val result = repository.createStory(createReq)

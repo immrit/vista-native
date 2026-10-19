@@ -119,5 +119,6 @@ class NavigationDeepLinkInstrumentationTest {
 private fun DeepLinkDeliveryState.pendingId(): Long = when (this) {
     is DeepLinkDeliveryState.PendingSession -> id
     is DeepLinkDeliveryState.PendingAuthentication -> id
+    is DeepLinkDeliveryState.Ready -> id
     else -> error("Expected a pending deep-link state, got $this")
 }

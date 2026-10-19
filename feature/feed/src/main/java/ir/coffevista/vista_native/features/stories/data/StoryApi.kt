@@ -67,7 +67,7 @@ interface StoryApi {
         @Query("offset") offset: Int = 0,
     ): StoryViewsResponseDto
 
-    @POST("v1/stories/{storyId}/react")
+    @POST("v1/stories/{storyId}/reaction")
     suspend fun reactToStory(
         @Path("storyId") storyId: String,
         @Body request: StoryReactRequestDto,
@@ -79,9 +79,10 @@ interface StoryApi {
         @Body request: StoryReplyRequestDto,
     )
 
-    @POST("v1/stories/{storyId}/poll/vote")
+    @POST("v1/stories/{storyId}/poll/{elementId}/vote")
     suspend fun votePoll(
         @Path("storyId") storyId: String,
+        @Path("elementId") elementId: String,
         @Body request: StoryVoteRequestDto,
     )
 }

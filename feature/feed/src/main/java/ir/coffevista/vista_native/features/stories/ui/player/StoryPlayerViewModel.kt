@@ -43,6 +43,12 @@ class StoryPlayerViewModel @Inject constructor(
         }
     }
 
+    fun votePoll(storyId: String, elementId: String, optionIndex: Int) {
+        viewModelScope.launch {
+            repository.votePoll(storyId, elementId, optionIndex)
+        }
+    }
+
     fun votePoll(storyId: String, optionId: String) {
         viewModelScope.launch {
             repository.votePoll(storyId, optionId)
