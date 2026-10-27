@@ -18,12 +18,16 @@ class FlutterMediaSettingsMigrationTest {
         val migrated = migrateFlutterMediaSettings(
             current,
             mapOf(
+                "flutter.onboarding_completed" to true,
+                "flutter.onboarding_version" to "1.0.0",
                 "flutter.data_upload_quality" to "data_saver",
                 "flutter.video_auto_play" to false,
                 "flutter.video_data_saver" to true,
             ),
         )
 
+        assertTrue(migrated.onboardingCompleted)
+        assertEquals("1.0.0", migrated.onboardingVersion)
         assertEquals("data_saver", migrated.mediaQuality)
         assertFalse(migrated.autoplayMedia)
         assertTrue(migrated.videoDataSaver)

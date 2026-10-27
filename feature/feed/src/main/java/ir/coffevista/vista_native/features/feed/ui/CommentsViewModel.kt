@@ -4,7 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import ir.coffevista.vista_native.features.feed.data.Comment
+import ir.coffevista.vista_native.features.feed.data.CommentMention
 import ir.coffevista.vista_native.features.feed.data.CommentRepository
+import ir.coffevista.vista_native.features.search.data.SearchRepository
 import ir.coffevista.vista_native.core.model.session.AuthenticationState
 import ir.coffevista.vista_native.core.model.session.AuthenticationStateProvider
 import ir.coffevista.vista_native.core.database.profile.OwnProfileDao
@@ -38,6 +40,7 @@ data class CommentsUiState(
     val currentUserFullName: String? = null,
     val currentUserRole: String? = null,
     val currentUserHasBlueBadge: Boolean = false,
+    val searchedMentions: List<CommentMention> = emptyList(),
 )
 
 @HiltViewModel
@@ -45,7 +48,19 @@ class CommentsViewModel @Inject constructor(
     private val repository: CommentRepository,
     private val authStateProvider: AuthenticationStateProvider,
     private val ownProfileDao: OwnProfileDao,
+    private val searchRepository: SearchRepository,
 ) : ViewModel() {
+
+    constructor(
+        repository: CommentRepository,
+        authStateProvider: AuthenticationStateProvider,
+        ownProfileDao: OwnProfileDao,
+    ) : this(
+        repository = repository,
+        authStateProvider = authStateProvider,
+        ownProfileDao = ownProfileDao,
+        searchRepository = NoOpSearchRepository,
+    )
 
     private val _uiState = MutableStateFlow(CommentsUiState())
     val uiState: StateFlow<CommentsUiState> = _uiState.asStateFlow()
@@ -425,6 +440,31 @@ class CommentsViewModel @Inject constructor(
         _uiState.update { it.copy(error = null, notice = null) }
     }
 
+    private var searchMentionsJob: Job? = null
+
+    fun searchMentions(query: String) {
+        searchMentionsJob?.cancel()
+        val trimmed = query.trim().removePrefix("@")
+        if (trimmed.length < 2) {
+            _uiState.update { it.copy(searchedMentions = emptyList()) }
+            return
+        }
+        searchMentionsJob = viewModelScope.launch {
+            try {
+                val page = searchRepository.searchUsers(trimmed, offset = 0)
+                val candidates = page.users.map { user ->
+                    CommentMention(
+                        userId = user.id,
+                        username = user.username,
+                    )
+                }
+                _uiState.update { it.copy(searchedMentions = candidates) }
+            } catch (_: Exception) {
+                // Keep existing candidates
+            }
+        }
+    }
+
     private fun descendantIdsOf(parentCommentId: String): Set<String> {
         val childrenByParent = flatLoaded.groupBy { it.parentCommentId }
         val ids = mutableSetOf<String>()
@@ -495,4 +535,18 @@ class CommentsViewModel @Inject constructor(
             }
         }
     }
+}
+
+private object NoOpSearchRepository : SearchRepository {
+    override suspend fun searchUsers(query: String, offset: Int) =
+        ir.coffevista.vista_native.features.search.data.UserSearchPage(emptyList(), 0)
+    override suspend fun searchPostsByHashtag(query: String) =
+        ir.coffevista.vista_native.features.search.data.PostSearchPage(emptyList(), false, null)
+    override suspend fun searchHashtags(query: String) = emptyList<ir.coffevista.vista_native.features.search.data.HashtagSuggestion>()
+    override suspend fun trendingHashtags() = emptyList<ir.coffevista.vista_native.features.search.data.HashtagSuggestion>()
+    override fun observeHistory(accountId: String) = kotlinx.coroutines.flow.emptyFlow<List<ir.coffevista.vista_native.features.search.data.SearchHistoryItem>>()
+    override suspend fun addHistory(accountId: String, query: String, type: ir.coffevista.vista_native.features.search.data.SearchHistoryType) {}
+    override suspend fun deleteHistory(accountId: String, query: String) {}
+    override suspend fun clearHistory(accountId: String) {}
+    override suspend fun clearAccount(accountId: String) {}
 }

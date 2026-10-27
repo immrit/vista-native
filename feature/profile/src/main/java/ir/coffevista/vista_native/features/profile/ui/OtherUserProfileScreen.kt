@@ -58,6 +58,7 @@ fun OtherUserProfileScreen(
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val highlights by viewModel.highlights.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(viewModel) {
@@ -73,6 +74,7 @@ fun OtherUserProfileScreen(
 
     OtherUserProfileContent(
         state = state,
+        highlights = highlights,
         snackbarHostState = snackbarHostState,
         postsState = postsState,
         onPostsRefresh = onPostsRefresh,
@@ -92,6 +94,7 @@ fun OtherUserProfileScreen(
 @Composable
 internal fun OtherUserProfileContent(
     state: OtherUserProfileUiState,
+    highlights: List<ir.coffevista.vista_native.features.profile.data.ProfileHighlightDto> = emptyList(),
     snackbarHostState: SnackbarHostState,
     onAction: (OtherUserProfileAction) -> Unit,
     modifier: Modifier = Modifier,
@@ -105,6 +108,10 @@ internal fun OtherUserProfileContent(
     onMessage: (() -> Unit)? = null,
     onOpenFollowers: ((userId: String, initialTab: Int) -> Unit)? = null,
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
+    var showOptionsSheet by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -116,6 +123,7 @@ internal fun OtherUserProfileContent(
             verified = state.profile?.isVerified == true,
             verificationType = state.profile?.verificationType,
             onBack = { onAction(OtherUserProfileAction.BackClicked) },
+            onMoreClick = { showOptionsSheet = true },
         )
         Box(Modifier.fillMaxSize()) {
             when {
@@ -173,6 +181,7 @@ internal fun OtherUserProfileContent(
                                 onLikeClick = onLikeClick,
                                 onSaveClick = onSaveClick,
                                 onLoadMore = onPostsLoadMore,
+                                onRefresh = onPostsRefresh,
                                 onMemberBadgeClick = {
                                     showAccountDetails = true
                                 },
@@ -189,6 +198,15 @@ internal fun OtherUserProfileContent(
                                         pending = state.followMutationPending,
                                         onAction = onAction,
                                         onMessage = onMessage,
+                                    )
+                                },
+                                highlightsContent = {
+                                    ProfileHighlightsRow(
+                                        highlights = highlights,
+                                        isOwnProfile = false,
+                                        onHighlightClick = { highlight ->
+                                            android.widget.Toast.makeText(context, highlight.title, android.widget.Toast.LENGTH_SHORT).show()
+                                        },
                                     )
                                 },
                             )
@@ -208,6 +226,31 @@ internal fun OtherUserProfileContent(
                     }
                 }
             }
+
+            if (showOptionsSheet && state.profile != null) {
+                ProfileOptionsBottomSheet(
+                    onDismiss = { showOptionsSheet = false },
+                    onShare = {
+                        val shareIntent = android.content.Intent().apply {
+                            action = android.content.Intent.ACTION_SEND
+                            putExtra(android.content.Intent.EXTRA_TEXT, "https://coffevista.ir/u/${state.profile.username ?: ""}")
+                            type = "text/plain"
+                        }
+                        context.startActivity(android.content.Intent.createChooser(shareIntent, "اشتراک‌گذاری پروفایل"))
+                    },
+                    onCopyLink = {
+                        clipboardManager.setText(androidx.compose.ui.text.AnnotatedString("https://coffevista.ir/u/${state.profile.username ?: ""}"))
+                        android.widget.Toast.makeText(context, "لینک پروفایل کپی شد", android.widget.Toast.LENGTH_SHORT).show()
+                    },
+                    onReport = {
+                        android.widget.Toast.makeText(context, "گزارش تخلف ثبت شد", android.widget.Toast.LENGTH_SHORT).show()
+                    },
+                    onBlock = {
+                        android.widget.Toast.makeText(context, "کاربر مسدود شد", android.widget.Toast.LENGTH_SHORT).show()
+                    },
+                )
+            }
+
             SnackbarHost(
                 hostState = snackbarHostState,
                 modifier = Modifier
@@ -225,6 +268,7 @@ private fun OtherProfileAppBar(
     verificationType: String? = null,
     role: String? = null,
     onBack: () -> Unit,
+    onMoreClick: () -> Unit = {},
 ) {
     Box(
         modifier = Modifier
@@ -263,16 +307,21 @@ private fun OtherProfileAppBar(
             Icon(
                 imageVector = ImageVector.vectorResource(R.drawable.ic_profile_back),
                 contentDescription = "بازگشت",
+                tint = MaterialTheme.colorScheme.onBackground,
             )
         }
-        Icon(
-            imageVector = ImageVector.vectorResource(R.drawable.ic_profile_more),
-            contentDescription = "گزینه‌های بیشتر",
+        IconButton(
+            onClick = onMoreClick,
             modifier = Modifier
                 .align(Alignment.CenterEnd)
-                .padding(horizontal = 16.dp),
-            tint = MaterialTheme.colorScheme.onBackground,
-        )
+                .padding(end = 4.dp),
+        ) {
+            Icon(
+                imageVector = ImageVector.vectorResource(R.drawable.ic_profile_more),
+                contentDescription = "گزینه‌های بیشتر",
+                tint = MaterialTheme.colorScheme.onBackground,
+            )
+        }
         HorizontalDivider(
             modifier = Modifier.align(Alignment.BottomCenter),
             thickness = .5.dp,

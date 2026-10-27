@@ -168,10 +168,15 @@ fun ChatComposerField(
             }
         }
         onDispose {
+            runCatching {
+                controller.onHideKeyboard?.invoke()
+                editTextRef?.clearFocus()
+            }
             controller.onInsertEmoji = null
             controller.onDispatchBackspace = null
             controller.onRequestKeyboard = null
             controller.onHideKeyboard = null
+            editTextRef = null
         }
     }
 

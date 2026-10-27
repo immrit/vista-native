@@ -18,13 +18,15 @@ import androidx.activity.result.contract.ActivityResultContracts
 import ir.coffevista.vista_native.features.chat.presentation.components.VoiceRecorderDock
 import ir.coffevista.vista_native.features.chat.presentation.components.SwipeToReplyLayout
 import ir.coffevista.vista_native.features.chat.presentation.components.VoicePlayerBubble
+import ir.coffevista.vista_native.features.chat.presentation.components.FullscreenMediaViewerDialog
+import ir.coffevista.vista_native.features.chat.presentation.components.MediaViewerItem
 import ir.coffevista.vista_native.features.chat.presentation.components.ChatAttachmentBottomSheet
 import ir.coffevista.vista_native.features.chat.presentation.components.ChatAttachmentReviewSheet
 import ir.coffevista.vista_native.features.chat.presentation.components.ChatLinkPreviewCard
 import ir.coffevista.vista_native.features.chat.presentation.components.ChatTextBubbleLayout
 import ir.coffevista.vista_native.features.chat.presentation.components.PinnedMessagesBar
 import ir.coffevista.vista_native.features.chat.presentation.components.SharedPostCard
-import ir.coffevista.vista_native.features.chat.presentation.components.SharedPostParser
+import ir.coffevista.vista_native.features.chat.domain.model.SharedPostParser
 import ir.coffevista.vista_native.features.chat.presentation.components.UnreadMessagesDivider
 import ir.coffevista.vista_native.features.chat.presentation.components.extractFirstUrl
 import androidx.compose.material.icons.outlined.AutoStories
@@ -197,6 +199,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -226,6 +229,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.BlendMode
@@ -318,6 +322,7 @@ fun ConversationListRoute(
     viewModel: ConversationsViewModel,
     onOpenConversation: (Conversation) -> Unit,
     onNewMessage: () -> Unit,
+    onNewSecretChat: () -> Unit = onNewMessage,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     ConversationListScreen(
@@ -327,6 +332,7 @@ fun ConversationListRoute(
         onOpenConversation = onOpenConversation,
         onShowArchived = viewModel::showArchived,
         onNewMessage = onNewMessage,
+        onNewSecretChat = onNewSecretChat,
         onSaveOwnNote = viewModel::saveOwnNote,
         onDeleteOwnNote = viewModel::deleteOwnNote,
         onReplyToNote = viewModel::replyToNote,
@@ -349,6 +355,7 @@ fun ConversationListScreen(
     onOpenConversation: (Conversation) -> Unit,
     onShowArchived: (Boolean) -> Unit = {},
     onNewMessage: () -> Unit = {},
+    onNewSecretChat: () -> Unit = onNewMessage,
     onSaveOwnNote: (String, (Boolean) -> Unit) -> Unit = { _, complete -> complete(false) },
     onDeleteOwnNote: ((Boolean) -> Unit) -> Unit = { complete -> complete(false) },
     onReplyToNote: (ProfileNote, Conversation, String, (Boolean) -> Unit) -> Unit = { _, _, _, complete -> complete(false) },
@@ -518,7 +525,7 @@ fun ConversationListScreen(
                                 leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
                                 onClick = {
                                     menuVisible = false
-                                    onNewMessage()
+                                    onNewSecretChat()
                                 },
                             )
                         }
@@ -552,11 +559,6 @@ fun ConversationListScreen(
                                         onOpenPeerNote = { note, conversation -> peerNoteReply = note to conversation },
                                     )
                                 }
-                            }
-                        }
-                        if (state.isOffline) {
-                            item(key = "offline") {
-                                ConnectionBanner("نمایش گفتگوهای ذخیره‌شده", onRetry = onRefresh)
                             }
                         }
                         if (requestConversations.isNotEmpty()) {
@@ -1686,6 +1688,7 @@ fun MessageDetailRoute(
     onBack: () -> Unit,
     onOpenProfile: (String) -> Unit = {},
     onStartSecretChat: (Conversation) -> Unit = {},
+    onOpenPost: (String) -> Unit = {},
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     LaunchedEffect(conversationId) { viewModel.bind(conversationId) }
@@ -1747,6 +1750,7 @@ fun MessageDetailRoute(
         onToggleMute = viewModel::toggleMute,
         onToggleBlock = viewModel::toggleBlock,
         onReportUser = viewModel::reportUser,
+        onDeleteConversation = { convId, complete -> viewModel.deleteConversation(convId) { success -> if (success) onBack(); complete(success) } },
         onStartDownload = viewModel::startDownload,
         onPauseDownload = viewModel::pauseDownload,
         onResumeDownload = viewModel::resumeDownload,
@@ -1756,6 +1760,8 @@ fun MessageDetailRoute(
         onStartSecretChat = { viewModel.startSecretChat(onStartSecretChat) },
         onSetSecretAutoDelete = viewModel::setSecretAutoDelete,
         onComputeSafetyNumber = viewModel::computeSafetyNumber,
+        onClearError = viewModel::clearError,
+        onOpenPost = onOpenPost,
     )
 }
 
@@ -1802,6 +1808,7 @@ fun MessageDetailScreen(
     onToggleMute: () -> Unit = {},
     onToggleBlock: (String, (Boolean) -> Unit) -> Unit = { _, complete -> complete(false) },
     onReportUser: (String, ModerationReason, String?, (Boolean) -> Unit) -> Unit = { _, _, _, complete -> complete(false) },
+    onDeleteConversation: (String, (Boolean) -> Unit) -> Unit = { _, complete -> complete(false) },
     onStartDownload: (Message) -> Unit = {},
     onPauseDownload: (String) -> Unit = {},
     onResumeDownload: (String) -> Unit = {},
@@ -1811,6 +1818,8 @@ fun MessageDetailScreen(
     onStartSecretChat: () -> Unit = {},
     onSetSecretAutoDelete: (Int) -> Unit = {},
     onComputeSafetyNumber: ((String?) -> Unit) -> Unit = {},
+    onClearError: () -> Unit = {},
+    onOpenPost: (String) -> Unit = {},
 ) = CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
     val context = LocalContext.current
     val localView = LocalView.current
@@ -1830,11 +1839,11 @@ fun MessageDetailScreen(
                 insetsController.isAppearanceLightStatusBars = !isDarkTheme
             }
         }
-        if (isSecretConversation && !isDebuggable) {
+        if (isSecretConversation) {
             runCatching { window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE) }
         }
         onDispose {
-            if (isSecretConversation && !isDebuggable) {
+            if (isSecretConversation) {
                 runCatching { window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE) }
             }
         }
@@ -1859,6 +1868,45 @@ fun MessageDetailScreen(
     val composerController = remember { ChatComposerController() }
     val focusRequester = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
+    val keyboardController = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+
+    LaunchedEffect(state.messages) {
+        val voiceIds = state.messages
+            .filter { it.attachment?.kind == AttachmentKind.VOICE || it.attachment?.kind == AttachmentKind.AUDIO }
+            .map { it.stableKey }
+        ir.coffevista.vista_native.features.chat.presentation.components.VoicePlaybackCoordinator.updateVoiceQueue(voiceIds)
+    }
+
+    val safeBack = {
+        runCatching {
+            focusManager.clearFocus(force = true)
+            keyboardController?.hide()
+            composerController.closeKeyboard()
+            val imm = context.getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as? android.view.inputmethod.InputMethodManager
+            val activity = context.findActivity()
+            activity?.currentFocus?.let { view ->
+                imm?.hideSoftInputFromWindow(view.windowToken, 0)
+                view.clearFocus()
+            }
+        }
+        onBack()
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            runCatching {
+                focusManager.clearFocus(force = true)
+                keyboardController?.hide()
+                composerController.closeKeyboard()
+                val imm = context.getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as? android.view.inputmethod.InputMethodManager
+                val activity = context.findActivity()
+                activity?.currentFocus?.let { view ->
+                    imm?.hideSoftInputFromWindow(view.windowToken, 0)
+                    view.clearFocus()
+                }
+            }
+        }
+    }
     var messageInteraction by remember(state.conversationId) {
         mutableStateOf<MessageInteractionState>(MessageInteractionState.Idle)
     }
@@ -1966,9 +2014,13 @@ fun MessageDetailScreen(
     }
 
     val isPanelActive = emojiPanelVisible || isSwitchingToKeyboard
+    BackHandler(enabled = !emojiPanelVisible && !isSwitchingToKeyboard && selectedMessageKeys.isEmpty()) {
+        safeBack()
+    }
     BackHandler(enabled = emojiPanelVisible || isSwitchingToKeyboard) {
         emojiPanelVisible = false
         isSwitchingToKeyboard = false
+        composerController.closeKeyboard()
     }
     // Back handlers are dispatched in reverse composition order. Register
     // selection after the composer panel so Back always leaves selection
@@ -2047,7 +2099,15 @@ fun MessageDetailScreen(
         searchResultIndex = 0
     }
     LaunchedEffect(state.error) {
-        state.error?.let { snackbarHostState.showSnackbar(it) }
+        val errorText = state.error ?: return@LaunchedEffect
+        if (!errorText.contains("اتصال برقرار نشد") &&
+            !errorText.contains("ارتباط با سرویس گفتگو") &&
+            !errorText.contains("خطا در برقراری ارتباط") &&
+            !errorText.contains("سرور در دسترس نیست")
+        ) {
+            snackbarHostState.showSnackbar(errorText)
+        }
+        onClearError()
     }
     LaunchedEffect(state.conversationId, state.messages.firstOrNull()?.stableKey) {
         val newest = state.messages.firstOrNull()
@@ -2124,13 +2184,22 @@ fun MessageDetailScreen(
                         composerController.closeKeyboard()
                     }
                 }
-                val displayedMessages = if (searchVisible && state.searchResults.isNotEmpty()) {
-                    listOf(state.searchResults[searchResultIndex.coerceIn(0, state.searchResults.lastIndex)])
-                } else {
-                    state.messages
-                }
+                val displayedMessages = state.messages
                 val displayedRenderItems = remember(displayedMessages) {
                     buildMessageRenderItems(displayedMessages).distinctBy { it.stableKey }
+                }
+                LaunchedEffect(searchVisible, searchResultIndex, state.searchResults) {
+                    if (searchVisible && state.searchResults.isNotEmpty()) {
+                        val targetMessage = state.searchResults.getOrNull(searchResultIndex)
+                        if (targetMessage != null) {
+                            val targetIndex = displayedRenderItems.indexOfFirst { item ->
+                                item.messages.any { it.stableKey == targetMessage.stableKey || it.clientId == targetMessage.clientId }
+                            }
+                            if (targetIndex >= 0) {
+                                listState.animateScrollToItem(targetIndex)
+                            }
+                        }
+                    }
                 }
                 val unreadWindow = remember(state.messages) { unreadMessageWindow(state.messages) }
                 val groupMemberById = remember(state.groupMembers) {
@@ -2164,8 +2233,6 @@ fun MessageDetailScreen(
                 when {
                     state.isInitialLoading && state.messages.isEmpty() -> CircularProgressIndicator(Modifier.align(Alignment.Center))
                     state.error != null && state.messages.isEmpty() -> ErrorState(state.error, onRefresh)
-                    searchVisible && state.searchQuery.trim().length >= 2 && !state.isSearching && state.searchResults.isEmpty() ->
-                        Text("نتیجه‌ای یافت نشد", Modifier.align(Alignment.Center))
                     state.messages.isEmpty() -> {
                         if (isSecretConversation) {
                             SecretChatIntroCard(
@@ -2209,15 +2276,19 @@ fun MessageDetailScreen(
                                 presentedMessageKeys = presentedMessageKeys,
                                 nowEpochMillis = messageEntrySnapshotTime,
                             )
-                            val older = if (searchVisible) {
-                                null
-                            } else {
-                                displayedMessages.getOrNull(index + renderItem.messages.size)
-                            }
-                            val oldestUnreadIndex = if (unreadWindow.count > 0) unreadWindow.count - 1 else null
-                            val isUnreadBoundary = !searchVisible &&
-                                oldestUnreadIndex != null &&
-                                oldestUnreadIndex in index until (index + renderItem.messages.size)
+                            val older = displayedMessages.getOrNull(index + renderItem.messages.size)
+                            val isUnreadBoundary = !searchVisible && (
+                                if (state.firstUnreadMessageId != null) {
+                                    renderItem.messages.any {
+                                        it.stableKey == state.firstUnreadMessageId ||
+                                            it.clientId == state.firstUnreadMessageId ||
+                                            it.serverId == state.firstUnreadMessageId
+                                    }
+                                } else {
+                                    val oldestUnreadIndex = if (unreadWindow.count > 0) unreadWindow.count - 1 else null
+                                    oldestUnreadIndex != null && oldestUnreadIndex in index until (index + renderItem.messages.size)
+                                }
+                            )
                             val isDateBoundary = !searchVisible && (
                                 older == null ||
                                 !isSameLocalDay(renderItem.oldest.createdAtEpochMillis, older.createdAtEpochMillis)
@@ -2240,25 +2311,72 @@ fun MessageDetailScreen(
                                     onOpenProfile = onOpenProfile,
                                 ) {
                                     if (renderItem.isAlbum) {
-                                        MediaAlbumBubble(
-                                            messages = renderItem.messages,
-                                            downloads = state.downloads,
-                                            selectionMode = selectedMessageKeys.isNotEmpty(),
-                                            selected = messageKeys.all(selectedMessageKeys::contains),
-                                            onToggleSelection = { toggleMessageSelection(messageKeys) },
-                                            onLongPress = {
-                                                if (messageInteraction is MessageInteractionState.Idle) {
-                                                    startSelection(messageKeys)
-                                                }
+                                        SwipeToReplyLayout(
+                                            enabled = messageInteraction is MessageInteractionState.Idle &&
+                                                message.content != MessageContent.Deleted,
+                                            bubbleOnRight = message.isMine,
+                                            onReply = {
+                                                replyingTo = message
+                                                editingMessage = null
                                             },
-                                            onRetry = onRetry,
-                                            onCancelTransfer = onCancelTransfer,
-                                            onStartDownload = onStartDownload,
-                                            onPauseDownload = onPauseDownload,
-                                            onResumeDownload = onResumeDownload,
-                                            onCancelDownload = onCancelDownload,
-                                            onAttachmentClick = { viewedAttachment = it },
-                                        )
+                                        ) {
+                                            Column(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalAlignment = if (message.isMine) Alignment.End else Alignment.Start,
+                                            ) {
+                                                MediaAlbumBubble(
+                                                    messages = renderItem.messages,
+                                                    downloads = state.downloads,
+                                                    selectionMode = selectedMessageKeys.isNotEmpty(),
+                                                    selected = messageKeys.all(selectedMessageKeys::contains),
+                                                    onToggleSelection = { toggleMessageSelection(messageKeys) },
+                                                    onLongPress = {
+                                                        if (messageInteraction is MessageInteractionState.Idle) {
+                                                            openMessageContext(message.stableKey, null)
+                                                        }
+                                                    },
+                                                    onRetry = onRetry,
+                                                    onCancelTransfer = onCancelTransfer,
+                                                    onStartDownload = onStartDownload,
+                                                    onPauseDownload = onPauseDownload,
+                                                    onResumeDownload = onResumeDownload,
+                                                    onCancelDownload = onCancelDownload,
+                                                    onAttachmentClick = { viewedAttachment = it },
+                                                )
+                                                if (message.reactions.isNotEmpty()) {
+                                                    LazyRow(
+                                                        modifier = Modifier.padding(top = 4.dp, start = 8.dp, end = 8.dp),
+                                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                                    ) {
+                                                        items(message.reactions.entries.toList(), key = { it.key }) { reaction ->
+                                                            val isMyReaction = message.accountId in reaction.value
+                                                            Row(
+                                                                modifier = Modifier
+                                                                    .clip(RoundedCornerShape(12.dp))
+                                                                    .background(
+                                                                        if (isMyReaction) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
+                                                                        else if (message.isMine) Color.White.copy(alpha = 0.16f)
+                                                                        else MaterialTheme.colorScheme.surfaceVariant
+                                                                    )
+                                                                    .clickable { onReact(message, reaction.key) }
+                                                                    .padding(horizontal = 7.dp, vertical = 2.dp),
+                                                                verticalAlignment = Alignment.CenterVertically,
+                                                                horizontalArrangement = Arrangement.spacedBy(3.dp),
+                                                            ) {
+                                                                TelegramEmoji(emoji = reaction.key, size = 13.dp)
+                                                                if (reaction.value.size > 1) {
+                                                                    Text(
+                                                                        reaction.value.size.toString().toPersianDigits(),
+                                                                        fontSize = 11.sp,
+                                                                        fontWeight = FontWeight.Medium,
+                                                                    )
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
                                     } else {
                                         SwipeToReplyLayout(
                                             enabled = messageInteraction is MessageInteractionState.Idle &&
@@ -2330,6 +2448,7 @@ fun MessageDetailScreen(
                                                         coroutineScope.launch { listState.animateScrollToItem(targetIndex) }
                                                     }
                                                 },
+                                                onOpenPost = onOpenPost,
                                             )
                                         }
                                     }
@@ -2560,7 +2679,17 @@ fun MessageDetailScreen(
             }
         }
 
-        val topBarBgColor = if (isDarkTheme) Color(0xFF17212B) else Color(0xFFFFFFFF)
+        val inSelectionMode = selectedMessageKeys.isNotEmpty()
+        val topBarBgColor = when {
+            inSelectionMode -> MaterialTheme.colorScheme.primary
+            isDarkTheme -> Color(0xFF17212B)
+            else -> Color(0xFFFFFFFF)
+        }
+        val topBarGlassAlpha = when {
+            inSelectionMode -> 0.95f
+            isDarkTheme -> 0.85f
+            else -> 0.88f
+        }
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -2574,12 +2703,8 @@ fun MessageDetailScreen(
         ) {
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                color = topBarBgColor,
-                shadowElevation = 2.dp,
-                border = BorderStroke(
-                    0.5.dp,
-                    if (isDarkTheme) Color(0x28FFFFFF) else Color(0x18000000),
-                ),
+                color = topBarBgColor.copy(alpha = topBarGlassAlpha),
+                shadowElevation = 0.dp,
             ) {
                 Box(modifier = Modifier.fillMaxWidth()) {
                     Box(
@@ -2589,11 +2714,12 @@ fun MessageDetailScreen(
                             .background(
                                 Brush.verticalGradient(
                                     listOf(
-                                        if (isDarkTheme) Color(0x18FFFFFF) else Color(0x55FFFFFF),
+                                        if (isDarkTheme) Color(0x20FFFFFF) else Color(0x45FFFFFF),
+                                        if (isDarkTheme) Color(0x08FFFFFF) else Color(0x15FFFFFF),
                                         Color.Transparent,
-                                    )
-                                )
-                            )
+                                    ),
+                                ),
+                            ),
                     )
                     Column(
                         modifier = Modifier
@@ -2606,7 +2732,7 @@ fun MessageDetailScreen(
                     TopAppBar(
                         windowInsets = WindowInsets(0, 0, 0, 0),
                         colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(
-                            containerColor = MaterialTheme.colorScheme.primary,
+                            containerColor = Color.Transparent,
                             titleContentColor = MaterialTheme.colorScheme.onPrimary,
                             navigationIconContentColor = MaterialTheme.colorScheme.onPrimary,
                             actionIconContentColor = MaterialTheme.colorScheme.onPrimary,
@@ -2799,7 +2925,7 @@ fun MessageDetailScreen(
                             }
                         },
                         navigationIcon = {
-                            IconButton(onClick = onBack) {
+                            IconButton(onClick = safeBack) {
                                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "بازگشت", modifier = Modifier.size(24.dp))
                             }
                         },
@@ -2916,23 +3042,35 @@ fun MessageDetailScreen(
                         },
                     )
                 }
+                HorizontalDivider(
+                    thickness = 0.5.dp,
+                    color = if (inSelectionMode) {
+                        Color.Transparent
+                    } else if (isDarkTheme) {
+                        Color(0x28FFFFFF)
+                    } else {
+                        Color(0x18000000)
+                    },
+                )
             }
         }
     }
+    val featherColor = if (isDarkTheme) Color(0xFF17212B) else Color(0xFFFFFFFF)
     Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(6.dp)
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(
-                                if (isDarkTheme) Color(0x30101419) else Color(0x15000000),
-                                Color.Transparent,
-                            )
-                        )
-                    )
-            )
-        }
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(8.dp)
+            .background(
+                Brush.verticalGradient(
+                    listOf(
+                        featherColor.copy(alpha = if (isDarkTheme) 0.35f else 0.40f),
+                        featherColor.copy(alpha = if (isDarkTheme) 0.12f else 0.15f),
+                        Color.Transparent,
+                    ),
+                ),
+            ),
+    )
+}
         SnackbarHost(snackbarHostState, Modifier.align(Alignment.BottomCenter))
         if (autoDeleteDialogVisible) {
             TelegramAutoDeleteDialog(
@@ -2973,6 +3111,9 @@ fun MessageDetailScreen(
                     searchVisible = true
                 },
                 onToggleBlock = onToggleBlock,
+                onReportUser = onReportUser,
+                onDeleteConversation = onDeleteConversation,
+                onAttachmentClick = { viewedAttachment = it },
             )
         }
 
@@ -3006,6 +3147,7 @@ fun MessageDetailScreen(
                 onRegenerateInvite = onRegenerateGroupInvite,
                 onLeave = { terminalGroupAction = "leave" },
                 onDelete = { terminalGroupAction = "delete" },
+                onAttachmentClick = { viewedAttachment = it },
             )
         }
     }
@@ -3157,7 +3299,41 @@ fun MessageDetailScreen(
         )
     }
     viewedAttachment?.let { attachment ->
-        AttachmentViewer(attachment = attachment, onDismiss = { viewedAttachment = null })
+        val activeMediaList = remember(state.messages) {
+            state.messages.mapNotNull { msg ->
+                msg.attachment?.takeIf {
+                    it.kind == AttachmentKind.IMAGE || it.kind == AttachmentKind.GIF || it.kind == AttachmentKind.VIDEO
+                }?.let { att ->
+                    val url = att.localUri?.takeIf(String::isNotBlank) ?: att.remoteUrl?.takeIf(String::isNotBlank)
+                    if (url != null) {
+                        MediaViewerItem(
+                            url = url,
+                            isVideo = att.kind == AttachmentKind.VIDEO,
+                            title = att.fileName,
+                            caption = (msg.content as? MessageContent.Text)?.value,
+                        )
+                    } else null
+                }
+            }
+        }
+        val targetUrl = attachment.localUri?.takeIf(String::isNotBlank) ?: attachment.remoteUrl?.takeIf(String::isNotBlank)
+        val initialIndex = activeMediaList.indexOfFirst { it.url == targetUrl }.coerceAtLeast(0)
+
+        if (attachment.kind == AttachmentKind.IMAGE || attachment.kind == AttachmentKind.GIF || attachment.kind == AttachmentKind.VIDEO) {
+            FullscreenMediaViewerDialog(
+                mediaItems = if (activeMediaList.isNotEmpty()) activeMediaList else listOf(
+                    MediaViewerItem(
+                        url = targetUrl.orEmpty(),
+                        isVideo = attachment.kind == AttachmentKind.VIDEO,
+                        title = attachment.fileName,
+                    )
+                ),
+                initialIndex = initialIndex,
+                onDismiss = { viewedAttachment = null },
+            )
+        } else {
+            AttachmentViewer(attachment = attachment, onDismiss = { viewedAttachment = null })
+        }
     }
 }
 
@@ -3718,6 +3894,7 @@ private fun MessageBubble(
     secretAutoDeleteSeconds: Int = 0,
     onAttachmentClick: (ir.coffevista.vista_native.features.chat.domain.model.Attachment) -> Unit,
     onJumpToRepliedMessage: () -> Unit = {},
+    onOpenPost: (String) -> Unit = {},
 ) {
     val isDeleted = message.content == MessageContent.Deleted
     val sharedPost = remember(message.content) {
@@ -3803,6 +3980,7 @@ private fun MessageBubble(
                             message.status == MessageStatus.FAILED ||
                                 attachment?.transferState == TransferState.FAILED ||
                                 attachment?.transferState == TransferState.CANCELLED -> onRetry(message)
+                            sharedPost != null -> onOpenPost(sharedPost.postId)
                             task?.state == DownloadState.COMPLETE && !task.localUri.isNullOrBlank() && attachment != null ->
                                 onAttachmentClick(attachment.copy(localUri = task.localUri))
                             attachment?.transferState == TransferState.COMPLETE && !attachment.localUri.isNullOrBlank() ->
@@ -4015,6 +4193,7 @@ private fun MessageBubble(
                         onPauseDownload = onPauseDownload,
                         onResumeDownload = onResumeDownload,
                         onCancelDownload = onCancelDownload,
+                        onAttachmentClick = onAttachmentClick,
                     )
                     if (text.isNotBlank()) Spacer(Modifier.height(6.dp))
                 }
@@ -4061,6 +4240,7 @@ private fun MessageBubble(
                         SharedPostCard(
                             post = sharedPost,
                             isMine = message.isMine,
+                            onViewPost = onOpenPost,
                         )
                         Spacer(Modifier.height(4.dp))
                         Box(Modifier.align(if (isRtlMessage) Alignment.Start else Alignment.End)) {
@@ -4758,6 +4938,9 @@ private fun ForwardMessageSheet(
     onDismiss: () -> Unit,
     onSelect: (Conversation) -> Unit,
 ) {
+    val eligibleConversations = remember(conversations) {
+        conversations.filter { it.type != ConversationType.SECRET }
+    }
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Text(
             "فوروارد به",
@@ -4765,7 +4948,7 @@ private fun ForwardMessageSheet(
             fontSize = 18.sp,
             fontWeight = FontWeight.Bold,
         )
-        if (conversations.isEmpty()) {
+        if (eligibleConversations.isEmpty()) {
             Text(
                 "گفتگوی دیگری در دسترس نیست",
                 modifier = Modifier.fillMaxWidth().padding(24.dp),
@@ -4774,7 +4957,7 @@ private fun ForwardMessageSheet(
             )
         } else {
             LazyColumn(Modifier.fillMaxWidth().heightIn(max = 460.dp)) {
-                items(conversations, key = { it.id }) { conversation ->
+                items(eligibleConversations, key = { it.id }) { conversation ->
                     Row(
                         Modifier.fillMaxWidth().clickable { onSelect(conversation) }.padding(horizontal = 18.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -4958,135 +5141,390 @@ private fun AttachmentBubble(
     onPauseDownload: (String) -> Unit = {},
     onResumeDownload: (String) -> Unit = {},
     onCancelDownload: (String) -> Unit = {},
+    onAttachmentClick: (ir.coffevista.vista_native.features.chat.domain.model.Attachment) -> Unit = {},
 ) {
     val foreground = if (message.isMine) Color.White else MaterialTheme.colorScheme.onSurface
-    val isActive = attachment.transferState == TransferState.UPLOADING ||
+    val isDownloaded = message.isMine ||
+        !attachment.localUri.isNullOrBlank() ||
+        (downloadTask?.state == DownloadState.COMPLETE && !downloadTask.localUri.isNullOrBlank())
+    val isDownloading = downloadTask?.state == DownloadState.DOWNLOADING || downloadTask?.state == DownloadState.QUEUED
+    val isFailed = downloadTask?.state == DownloadState.FAILED || downloadTask?.state == DownloadState.CANCELLED
+    val effectiveLocalUri = downloadTask?.localUri?.takeIf { it.isNotBlank() } ?: attachment.localUri
+    val mediaModel = effectiveLocalUri ?: attachment.remoteUrl
+
+    val isActiveUpload = attachment.transferState == TransferState.UPLOADING ||
         attachment.transferState == TransferState.QUEUED
+
     Column {
-    when (attachment.kind) {
-        AttachmentKind.IMAGE, AttachmentKind.GIF -> AsyncImage(
-            model = attachment.localUri ?: attachment.remoteUrl,
-            contentDescription = attachment.fileName ?: "تصویر پیوست",
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp, max = 280.dp).clip(RoundedCornerShape(12.dp)),
-        )
-        AttachmentKind.VIDEO -> Box(
-            Modifier.fillMaxWidth().height(180.dp).clip(RoundedCornerShape(12.dp))
-                .background(Color.Black.copy(alpha = 0.7f)),
-            contentAlignment = Alignment.Center,
-        ) { Icon(Icons.Default.PlayArrow, contentDescription = "پخش ویدیو", tint = Color.White, modifier = Modifier.size(48.dp)) }
-        AttachmentKind.VOICE, AttachmentKind.AUDIO -> {
-            val audioUrl = attachment.localUri ?: attachment.remoteUrl
-            if (!audioUrl.isNullOrBlank()) {
-                VoicePlayerBubble(
-                    audioUrl = audioUrl,
-                    durationSeconds = (attachment.durationSeconds ?: 1).coerceAtLeast(1),
-                    isOutgoing = message.isMine,
+        when (attachment.kind) {
+            AttachmentKind.IMAGE, AttachmentKind.GIF -> {
+                val imageBlurRadius by animateDpAsState(
+                    targetValue = if (isDownloaded) 0.dp else 25.dp,
+                    label = "telegram_image_blur",
                 )
-            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 140.dp, max = 280.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable {
+                            when {
+                                isDownloaded -> onAttachmentClick(attachment.copy(localUri = effectiveLocalUri))
+                                isDownloading -> downloadTask?.let { onCancelDownload(it.messageId) }
+                                isFailed -> downloadTask?.let { onResumeDownload(it.messageId) } ?: onStartDownload()
+                                else -> onStartDownload()
+                            }
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    AsyncImage(
+                        model = mediaModel,
+                        contentDescription = attachment.fileName ?: "تصویر پیوست",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .then(
+                                if (!isDownloaded) {
+                                    Modifier
+                                        .blur(imageBlurRadius)
+                                        .drawWithContent {
+                                            drawContent()
+                                            drawRect(Color.Black.copy(alpha = 0.40f))
+                                        }
+                                } else Modifier
+                            ),
+                    )
+
+                    if (!isDownloaded) {
+                        Box(
+                            modifier = Modifier
+                                .size(54.dp)
+                                .background(Color.Black.copy(alpha = 0.65f), CircleShape)
+                                .border(1.5.dp, Color.White.copy(alpha = 0.4f), CircleShape),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            when {
+                                isDownloading -> {
+                                    CircularProgressIndicator(
+                                        progress = { downloadTask?.progress?.takeIf { it > 0f } ?: 0.1f },
+                                        modifier = Modifier.size(46.dp),
+                                        strokeWidth = 3.dp,
+                                        color = Color.White,
+                                        trackColor = Color.White.copy(alpha = 0.25f),
+                                    )
+                                    Icon(
+                                        Icons.Default.Close,
+                                        contentDescription = "لغو دانلود",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(18.dp),
+                                    )
+                                }
+                                isFailed -> {
+                                    Icon(
+                                        Icons.Default.Refresh,
+                                        contentDescription = "تلاش مجدد",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(24.dp),
+                                    )
+                                }
+                                else -> {
+                                    Icon(
+                                        Icons.Default.ArrowDownward,
+                                        contentDescription = "دانلود",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(26.dp),
+                                    )
+                                }
+                            }
+                        }
+
+                        val badgeText = when {
+                            isDownloading -> "${((downloadTask?.progress ?: 0f) * 100).toInt()}%"
+                            attachment.sizeBytes != null && attachment.sizeBytes > 0 -> formatBytes(attachment.sizeBytes)
+                            else -> null
+                        }
+                        if (badgeText != null) {
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.BottomCenter)
+                                    .padding(bottom = 10.dp)
+                                    .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(12.dp))
+                                    .padding(horizontal = 8.dp, vertical = 3.dp),
+                            ) {
+                                Text(
+                                    text = badgeText,
+                                    color = Color.White,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Medium,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            AttachmentKind.VIDEO -> {
+                val videoBlurRadius by animateDpAsState(
+                    targetValue = if (isDownloaded) 0.dp else 25.dp,
+                    label = "telegram_video_blur",
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 160.dp, max = 260.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color(0xFF1E1E1E))
+                        .clickable {
+                            when {
+                                isDownloaded -> onAttachmentClick(attachment.copy(localUri = effectiveLocalUri))
+                                isDownloading -> downloadTask?.let { onCancelDownload(it.messageId) }
+                                isFailed -> downloadTask?.let { onResumeDownload(it.messageId) } ?: onStartDownload()
+                                else -> onStartDownload()
+                            }
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (!mediaModel.isNullOrBlank()) {
+                        AsyncImage(
+                            model = mediaModel,
+                            contentDescription = attachment.fileName ?: "ویدیو",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .then(
+                                    if (!isDownloaded) {
+                                        Modifier
+                                            .blur(videoBlurRadius)
+                                            .drawWithContent {
+                                                drawContent()
+                                                drawRect(Color.Black.copy(alpha = 0.40f))
+                                            }
+                                    } else Modifier
+                                ),
+                        )
+                    }
+                    Box(
+                        modifier = Modifier
+                            .size(54.dp)
+                            .background(Color.Black.copy(alpha = 0.65f), CircleShape)
+                            .border(1.5.dp, Color.White.copy(alpha = 0.4f), CircleShape),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        when {
+                            isDownloading -> {
+                                CircularProgressIndicator(
+                                    progress = { downloadTask?.progress?.takeIf { it > 0f } ?: 0.1f },
+                                    modifier = Modifier.size(46.dp),
+                                    strokeWidth = 3.dp,
+                                    color = Color.White,
+                                    trackColor = Color.White.copy(alpha = 0.25f),
+                                )
+                                Icon(
+                                    Icons.Default.Close,
+                                    contentDescription = "لغو دانلود ویدیو",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                            }
+                            !isDownloaded -> {
+                                Icon(
+                                    Icons.Default.ArrowDownward,
+                                    contentDescription = "دانلود ویدیو",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(26.dp),
+                                )
+                            }
+                            else -> {
+                                Icon(
+                                    Icons.Default.PlayArrow,
+                                    contentDescription = "پخش ویدیو",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(32.dp),
+                                )
+                            }
+                        }
+                    }
+                    val durationStr = formatDuration(attachment.durationSeconds)
+                    val sizeStr = formatBytes(attachment.sizeBytes)
+                    val badge = when {
+                        isDownloading -> "${((downloadTask?.progress ?: 0f) * 100).toInt()}%"
+                        durationStr.isNotBlank() && sizeStr.isNotBlank() -> "$durationStr • $sizeStr"
+                        durationStr.isNotBlank() -> durationStr
+                        else -> sizeStr.takeIf { it.isNotBlank() }
+                    }
+                    if (!badge.isNullOrBlank()) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.BottomStart)
+                                .padding(8.dp)
+                                .background(Color.Black.copy(alpha = 0.65f), RoundedCornerShape(10.dp))
+                                .padding(horizontal = 7.dp, vertical = 3.dp),
+                        ) {
+                            Text(badge, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                        }
+                    }
+                }
+            }
+            AttachmentKind.VOICE, AttachmentKind.AUDIO -> {
+                val audioUrl = effectiveLocalUri ?: attachment.remoteUrl
+                if (!audioUrl.isNullOrBlank()) {
+                    VoicePlayerBubble(
+                        audioUrl = audioUrl,
+                        durationSeconds = (attachment.durationSeconds ?: 1).coerceAtLeast(1),
+                        isOutgoing = message.isMine,
+                        isDownloaded = isDownloaded,
+                        downloadTask = downloadTask,
+                        waveformAmplitudes = attachment.parsedWaveform,
+                        messageId = message.stableKey,
+                        onStartDownload = onStartDownload,
+                        onCancelDownload = onCancelDownload,
+                    )
+                } else {
+                    Row(
+                        Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Icon(Icons.Default.PlayArrow, contentDescription = "پخش صدا", tint = foreground, modifier = Modifier.size(24.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(attachment.audioTitle ?: attachment.fileName ?: "پیام صوتی", color = foreground, maxLines = 1)
+                            Text(formatDuration(attachment.durationSeconds), color = foreground.copy(alpha = 0.7f), fontSize = 11.sp)
+                        }
+                    }
+                }
+            }
+            AttachmentKind.DOCUMENT, AttachmentKind.UNKNOWN -> {
+                val extension = (attachment.fileName ?: "").substringAfterLast('.', "").uppercase()
                 Row(
-                    Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(
+                            if (message.isMine) Color.White.copy(alpha = 0.12f)
+                            else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                        )
+                        .clickable {
+                            when {
+                                isDownloaded -> onAttachmentClick(attachment.copy(localUri = effectiveLocalUri))
+                                isDownloading -> downloadTask?.let { onCancelDownload(it.messageId) }
+                                isFailed -> downloadTask?.let { onResumeDownload(it.messageId) } ?: onStartDownload()
+                                else -> onStartDownload()
+                            }
+                        }
+                        .padding(10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    Icon(Icons.Default.PlayArrow, contentDescription = "پخش صدا", tint = foreground, modifier = Modifier.size(24.dp))
+                    Box(
+                        modifier = Modifier
+                            .size(44.dp)
+                            .background(
+                                when {
+                                    isDownloading -> Color.Transparent
+                                    isDownloaded -> if (message.isMine) Color.White.copy(alpha = 0.22f) else MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                                    else -> if (message.isMine) Color.White.copy(alpha = 0.25f) else MaterialTheme.colorScheme.primary
+                                },
+                                CircleShape
+                            ),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        when {
+                            isDownloading -> {
+                                CircularProgressIndicator(
+                                    progress = { downloadTask?.progress?.takeIf { it > 0f } ?: 0.1f },
+                                    modifier = Modifier.size(42.dp),
+                                    strokeWidth = 2.5.dp,
+                                    color = foreground,
+                                    trackColor = foreground.copy(alpha = 0.2f),
+                                )
+                                Icon(
+                                    Icons.Default.Close,
+                                    contentDescription = "لغو دانلود",
+                                    tint = foreground,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                            }
+                            !isDownloaded -> {
+                                Icon(
+                                    Icons.Default.ArrowDownward,
+                                    contentDescription = "دانلود فایل",
+                                    tint = if (message.isMine) Color.White else MaterialTheme.colorScheme.onPrimary,
+                                    modifier = Modifier.size(22.dp),
+                                )
+                            }
+                            else -> {
+                                Icon(
+                                    Icons.Default.Description,
+                                    contentDescription = "فایل",
+                                    tint = if (message.isMine) Color.White else MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(24.dp),
+                                )
+                            }
+                        }
+                    }
+
                     Column(Modifier.weight(1f)) {
-                        Text(attachment.audioTitle ?: attachment.fileName ?: "پیام صوتی", color = foreground, maxLines = 1)
-                        Text(formatDuration(attachment.durationSeconds), color = foreground.copy(alpha = 0.7f), fontSize = 11.sp)
+                        Text(
+                            text = attachment.fileName ?: "فایل پیوست",
+                            color = foreground,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 13.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Spacer(Modifier.height(2.dp))
+                        val subtitle = when {
+                            isDownloading -> {
+                                val pct = ((downloadTask?.progress ?: 0f) * 100).toInt()
+                                val downloaded = formatBytes(downloadTask?.receivedBytes)
+                                val total = formatBytes(attachment.sizeBytes)
+                                if (downloaded.isNotBlank() && total.isNotBlank()) "$pct٪ • $downloaded / $total"
+                                else "$pct٪ • در حال دانلود..."
+                            }
+                            !isDownloaded -> {
+                                val size = formatBytes(attachment.sizeBytes)
+                                if (size.isNotBlank()) "$size • برای دانلود لمس کنید" else "برای دانلود لمس کنید"
+                            }
+                            else -> {
+                                val size = formatBytes(attachment.sizeBytes)
+                                if (extension.isNotBlank() && size.isNotBlank()) "$size • $extension"
+                                else size.ifBlank { extension.ifBlank { "فایل دانلود شده" } }
+                            }
+                        }
+                        Text(
+                            text = subtitle,
+                            color = foreground.copy(alpha = 0.72f),
+                            fontSize = 11.sp,
+                        )
                     }
                 }
             }
         }
-        AttachmentKind.DOCUMENT, AttachmentKind.UNKNOWN -> Row(
-            Modifier.fillMaxWidth().padding(vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Icon(Icons.Default.Description, contentDescription = null, tint = foreground, modifier = Modifier.size(28.dp))
-            Column(Modifier.weight(1f)) {
-                Text(attachment.fileName ?: "فایل", color = foreground, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Text(formatBytes(attachment.sizeBytes), color = foreground.copy(alpha = 0.7f), fontSize = 11.sp)
-            }
-        }
-    }
-    if (isActive) {
-        Spacer(Modifier.height(6.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            LinearProgressIndicator(
-                progress = { attachment.progress.coerceIn(0f, 1f) },
-                modifier = Modifier.weight(1f).height(3.dp).clip(RoundedCornerShape(2.dp)),
-                color = foreground,
-                trackColor = foreground.copy(alpha = 0.25f),
-            )
-            IconButton(
-                onClick = onCancel,
-                modifier = Modifier.size(32.dp),
-            ) {
-                Icon(
-                    Icons.Default.Cancel,
-                    contentDescription = "لغو ارسال فایل",
-                    tint = foreground,
-                    modifier = Modifier.size(20.dp),
-                )
-            }
-        }
-    } else if (attachment.transferState == TransferState.FAILED) {
-        Text("ارسال فایل ناموفق بود؛ برای تلاش مجدد لمس کنید", color = Color(0xFFFFCDD2), fontSize = 11.sp)
-    } else if (attachment.transferState == TransferState.CANCELLED) {
-        Text("ارسال فایل لغو شد؛ برای تلاش مجدد لمس کنید", color = foreground.copy(alpha = 0.7f), fontSize = 11.sp)
-    }
-    val needsDownload = attachment.transferState == TransferState.COMPLETE &&
-        attachment.localUri.isNullOrBlank() && !attachment.remoteUrl.isNullOrBlank()
-    if (needsDownload) {
-        Spacer(Modifier.height(6.dp))
-        when (downloadTask?.state) {
-            null -> TextButton(onClick = onStartDownload) {
-                Icon(Icons.Default.ArrowDownward, contentDescription = null, tint = foreground, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(5.dp))
-                Text("دانلود", color = foreground, fontSize = 11.sp)
-            }
-            DownloadState.DOWNLOADING -> Row(verticalAlignment = Alignment.CenterVertically) {
-                CircularProgressIndicator(
-                    progress = { downloadTask.progress.takeIf { it > 0f } ?: 0f },
-                    modifier = Modifier.size(28.dp),
-                    strokeWidth = 2.5.dp,
+        if (isActiveUpload) {
+            Spacer(Modifier.height(6.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                LinearProgressIndicator(
+                    progress = { attachment.progress.coerceIn(0f, 1f) },
+                    modifier = Modifier.weight(1f).height(3.dp).clip(RoundedCornerShape(2.dp)),
                     color = foreground,
-                    trackColor = foreground.copy(alpha = 0.2f),
+                    trackColor = foreground.copy(alpha = 0.25f),
                 )
-                Spacer(Modifier.width(8.dp))
-                Text("${(downloadTask.progress * 100).toInt()}٪", color = foreground.copy(alpha = 0.75f), fontSize = 11.sp)
-                Spacer(Modifier.weight(1f))
-                IconButton(onClick = { onPauseDownload(downloadTask.messageId) }, modifier = Modifier.size(32.dp)) {
-                    Icon(Icons.Default.Pause, contentDescription = "توقف دانلود", tint = foreground, modifier = Modifier.size(20.dp))
-                }
-                IconButton(onClick = { onCancelDownload(downloadTask.messageId) }, modifier = Modifier.size(32.dp)) {
-                    Icon(Icons.Default.Cancel, contentDescription = "لغو دانلود", tint = foreground, modifier = Modifier.size(20.dp))
-                }
-            }
-            DownloadState.QUEUED, DownloadState.PAUSED -> Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    if (downloadTask.state == DownloadState.QUEUED) "در صف دانلود" else "دانلود متوقف شده",
-                    color = foreground.copy(alpha = 0.75f),
-                    fontSize = 11.sp,
-                )
-                Spacer(Modifier.weight(1f))
-                IconButton(onClick = { onResumeDownload(downloadTask.messageId) }, modifier = Modifier.size(32.dp)) {
-                    Icon(Icons.Default.PlayArrow, contentDescription = "ادامه دانلود", tint = foreground, modifier = Modifier.size(20.dp))
-                }
-                IconButton(onClick = { onCancelDownload(downloadTask.messageId) }, modifier = Modifier.size(32.dp)) {
-                    Icon(Icons.Default.Cancel, contentDescription = "لغو دانلود", tint = foreground, modifier = Modifier.size(20.dp))
+                IconButton(
+                    onClick = onCancel,
+                    modifier = Modifier.size(32.dp),
+                ) {
+                    Icon(
+                        Icons.Default.Cancel,
+                        contentDescription = "لغو ارسال فایل",
+                        tint = foreground,
+                        modifier = Modifier.size(20.dp),
+                    )
                 }
             }
-            DownloadState.FAILED, DownloadState.CANCELLED -> TextButton(
-                onClick = { onResumeDownload(downloadTask.messageId) },
-            ) {
-                Icon(Icons.Default.Refresh, contentDescription = null, tint = foreground, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(5.dp))
-                Text("تلاش مجدد دانلود", color = foreground, fontSize = 11.sp)
-            }
-            DownloadState.COMPLETE -> Text("آماده باز کردن", color = foreground.copy(alpha = 0.75f), fontSize = 11.sp)
+        } else if (attachment.transferState == TransferState.FAILED) {
+            Text("ارسال فایل ناموفق بود؛ برای تلاش مجدد لمس کنید", color = Color(0xFFFFCDD2), fontSize = 11.sp)
+        } else if (attachment.transferState == TransferState.CANCELLED) {
+            Text("ارسال فایل لغو شد؛ برای تلاش مجدد لمس کنید", color = foreground.copy(alpha = 0.7f), fontSize = 11.sp)
         }
-    }
     }
 }
 
@@ -5574,18 +6012,23 @@ private fun Composer(
 ) {
     val attachmentRotation = remember { Animatable(0f) }
     val composerScope = rememberCoroutineScope()
-    var isVoiceHolding by remember { mutableStateOf(false) }
+    var isVoiceActive by remember { mutableStateOf(false) }
 
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-        Row(
-            Modifier
+        Box(
+            modifier = Modifier
                 .fillMaxWidth()
                 .testTag("chat-composer-surface")
                 .padding(start = 6.dp, end = 6.dp, top = 2.dp, bottom = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            contentAlignment = Alignment.CenterEnd,
         ) {
-            if (!isVoiceHolding) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .graphicsLayer { alpha = if (isVoiceActive) 0f else 1f },
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
                 Row(
                     Modifier
                         .weight(1f)
@@ -5656,64 +6099,36 @@ private fun Composer(
                         }
                     }
                 }
+
+                if (isNotBlank) {
+                    IconButton(
+                        onClick = {
+                            onSend()
+                            controller.openKeyboard()
+                        },
+                        modifier = Modifier
+                            .focusProperties { canFocus = false }
+                            .size(48.dp)
+                            .shadow(4.dp, CircleShape)
+                            .clip(CircleShape)
+                            .background(Brush.linearGradient(listOf(VistaBrandColors.Indigo, VistaBrandColors.VioletDeep)))
+                            .semantics { contentDescription = "ارسال پیام" },
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                    }
+                } else {
+                    Spacer(Modifier.size(48.dp))
+                }
             }
 
-            if (attachmentsEnabled || isNotBlank) {
-                if (isVoiceHolding) {
-                    VoiceRecorderDock(
-                        modifier = Modifier.fillMaxWidth(),
-                        onSendVoice = onSendVoice,
-                        onPermissionRequired = onPermissionRequired,
-                        hasRecordPermission = hasRecordPermission,
-                        onHoldingStateChange = { isVoiceHolding = it },
-                    )
-                } else {
-                    AnimatedContent(
-                        targetState = isNotBlank,
-                        transitionSpec = {
-                            (scaleIn(
-                                initialScale = 0.60f,
-                                animationSpec = spring(
-                                    dampingRatio = Spring.DampingRatioMediumBouncy,
-                                    stiffness = Spring.StiffnessMediumLow,
-                                ),
-                            ) + fadeIn(animationSpec = tween(180)))
-                                .togetherWith(
-                                    scaleOut(
-                                        targetScale = 0.60f,
-                                        animationSpec = tween(120),
-                                    ) + fadeOut(animationSpec = tween(120))
-                                )
-                        },
-                        label = "composerActionMorph",
-                    ) { hasText ->
-                        if (hasText) {
-                            IconButton(
-                                onClick = {
-                                    onSend()
-                                    controller.openKeyboard()
-                                },
-                                modifier = Modifier
-                                    .focusProperties { canFocus = false }
-                                    .size(48.dp)
-                                    .shadow(4.dp, CircleShape)
-                                    .clip(CircleShape)
-                                    .background(Brush.linearGradient(listOf(VistaBrandColors.Indigo, VistaBrandColors.VioletDeep)))
-                                    .semantics { contentDescription = "ارسال پیام" },
-                            ) {
-                                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
-                            }
-                        } else {
-                            VoiceRecorderDock(
-                                modifier = Modifier,
-                                onSendVoice = onSendVoice,
-                                onPermissionRequired = onPermissionRequired,
-                                hasRecordPermission = hasRecordPermission,
-                                onHoldingStateChange = { isVoiceHolding = it },
-                            )
-                        }
-                    }
-                }
+            if (isBlank) {
+                VoiceRecorderDock(
+                    modifier = Modifier.fillMaxWidth(),
+                    onSendVoice = onSendVoice,
+                    onPermissionRequired = onPermissionRequired,
+                    hasRecordPermission = hasRecordPermission,
+                    onActiveStateChange = { isVoiceActive = it },
+                )
             }
         }
     }
@@ -5771,6 +6186,7 @@ private fun DateDivider(epochMillis: Long) {
 private fun ConnectionBanner(
     text: String,
     onRetry: (() -> Unit)? = null,
+    isRefreshing: Boolean = false,
 ) {
     Row(
         modifier = Modifier
@@ -5780,7 +6196,7 @@ private fun ConnectionBanner(
             .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (onRetry != null) {
+        if (onRetry != null && !isRefreshing) {
             TextButton(
                 onClick = onRetry,
                 colors = ButtonDefaults.textButtonColors(contentColor = Color.White),
@@ -5795,11 +6211,13 @@ private fun ConnectionBanner(
             style = MaterialTheme.typography.labelLarge,
             textAlign = TextAlign.Center,
         )
-        CircularProgressIndicator(
-            modifier = Modifier.size(18.dp),
-            color = Color.White,
-            strokeWidth = 2.dp,
-        )
+        if (isRefreshing) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(18.dp),
+                color = Color.White,
+                strokeWidth = 2.dp,
+            )
+        }
     }
 }
 
@@ -6278,6 +6696,9 @@ private fun PartnerDetailsScreen(
     onOpenProfile: (String) -> Unit,
     onOpenSearch: () -> Unit,
     onToggleBlock: (String, (Boolean) -> Unit) -> Unit,
+    onReportUser: (String, ModerationReason, String?, (Boolean) -> Unit) -> Unit = { _, _, _, complete -> complete(false) },
+    onDeleteConversation: (String, (Boolean) -> Unit) -> Unit = { _, complete -> complete(false) },
+    onAttachmentClick: (ir.coffevista.vista_native.features.chat.domain.model.Attachment) -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -6290,6 +6711,11 @@ private fun PartnerDetailsScreen(
         ?: displayName.removePrefix("@").trim()
     var selectedTabIndex by rememberSaveable(conversation?.id) { mutableIntStateOf(0) }
     var blockConfirmVisible by rememberSaveable(conversation?.id) { mutableStateOf(false) }
+    var partnerMenuExpanded by rememberSaveable(conversation?.id) { mutableStateOf(false) }
+    var reportDialogVisible by rememberSaveable(conversation?.id) { mutableStateOf(false) }
+    var selectedReportReason by remember(conversation?.id) { mutableStateOf(ModerationReason.SPAM) }
+    var reportDetails by remember(conversation?.id) { mutableStateOf("") }
+    var clearHistoryConfirmVisible by rememberSaveable(conversation?.id) { mutableStateOf(false) }
     val mediaMessages = state.sharedMedia.filter {
         it.attachment?.kind in setOf(AttachmentKind.IMAGE, AttachmentKind.VIDEO)
     }
@@ -6387,15 +6813,47 @@ private fun PartnerDetailsScreen(
                         tint = Color.White,
                     )
                 }
-                IconButton(
-                    onClick = { scope.launch { snackbarHostState.showSnackbar("گزینه‌های بیشتر به‌زودی اضافه می‌شود") } },
+                Box(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
                         .statusBarsPadding()
-                        .padding(8.dp)
-                        .background(Color.Black.copy(alpha = 0.30f), CircleShape),
+                        .padding(8.dp),
                 ) {
-                    Icon(Icons.Default.MoreVert, contentDescription = "گزینه‌های اطلاعات کاربر", tint = Color.White)
+                    IconButton(
+                        onClick = { partnerMenuExpanded = true },
+                        modifier = Modifier.background(Color.Black.copy(alpha = 0.30f), CircleShape),
+                    ) {
+                        Icon(Icons.Default.MoreVert, contentDescription = "گزینه‌های اطلاعات کاربر", tint = Color.White)
+                    }
+                    DropdownMenu(
+                        expanded = partnerMenuExpanded,
+                        onDismissRequest = { partnerMenuExpanded = false },
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("گزارش کاربر") },
+                            leadingIcon = { Icon(Icons.Default.Info, contentDescription = null) },
+                            onClick = {
+                                partnerMenuExpanded = false
+                                reportDialogVisible = true
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("مسدود کردن", color = MaterialTheme.colorScheme.error) },
+                            leadingIcon = { Icon(Icons.Default.Block, tint = MaterialTheme.colorScheme.error, contentDescription = null) },
+                            onClick = {
+                                partnerMenuExpanded = false
+                                blockConfirmVisible = true
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("پاک کردن تاریخچه گفتگو", color = MaterialTheme.colorScheme.error) },
+                            leadingIcon = { Icon(Icons.Default.Delete, tint = MaterialTheme.colorScheme.error, contentDescription = null) },
+                            onClick = {
+                                partnerMenuExpanded = false
+                                clearHistoryConfirmVisible = true
+                            },
+                        )
+                    }
                 }
                 Column(
                     modifier = Modifier
@@ -6502,7 +6960,14 @@ private fun PartnerDetailsScreen(
                     icon = Icons.Default.ChatBubbleOutline,
                     label = "پیام",
                     modifier = Modifier.weight(1f),
-                ) { onDismiss() }
+                ) {
+                    if (conversation?.type == ConversationType.SECRET && !conversation.peerId.isNullOrBlank()) {
+                        onDismiss()
+                        onOpenProfile(conversation.peerId)
+                    } else {
+                        onDismiss()
+                    }
+                }
                 PartnerDetailsAction(
                     icon = if (conversation?.isMuted == true) Icons.Default.NotificationsOff else Icons.Default.Notifications,
                     label = if (conversation?.isMuted == true) "صدادار" else "بی‌صدا",
@@ -6600,7 +7065,12 @@ private fun PartnerDetailsScreen(
                     ) {
                         gridItems(mediaMessages, key = { it.stableKey }) { message ->
                             val attachment = message.attachment
-                            Box(Modifier.aspectRatio(1f)) {
+                            Box(
+                                Modifier
+                                    .aspectRatio(1f)
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .clickable { message.attachment?.let(onAttachmentClick) }
+                            ) {
                                 AsyncImage(
                                     model = attachment?.localUri ?: attachment?.remoteUrl,
                                     contentDescription = attachment?.fileName ?: "رسانه",
@@ -6621,7 +7091,7 @@ private fun PartnerDetailsScreen(
                         }
                     }
                 } else {
-                    val selectedItems = when (selectedTabIndex) {
+                    val selectedItems: List<Message> = when (selectedTabIndex) {
                         0 -> mediaMessages
                         1 -> fileMessages
                         2 -> linkMessages
@@ -6630,10 +7100,22 @@ private fun PartnerDetailsScreen(
                         else -> emptyList()
                     }
                     if (selectedItems.isNotEmpty() && selectedTabIndex != 0) {
+                        val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
                         LazyColumn(Modifier.fillMaxSize()) {
-                            items(selectedItems, key = { it.stableKey }) { message ->
+                            items(selectedItems, key = { it.stableKey }) { message: Message ->
                                 Row(
-                                    Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            if (selectedTabIndex == 2) {
+                                                extractFirstUrl((message.content as? MessageContent.Text)?.value.orEmpty())?.let {
+                                                    runCatching { uriHandler.openUri(it) }
+                                                }
+                                            } else {
+                                                message.attachment?.let(onAttachmentClick)
+                                            }
+                                        }
+                                        .padding(horizontal = 12.dp, vertical = 8.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     Icon(
@@ -6714,6 +7196,77 @@ private fun PartnerDetailsScreen(
                 ) { Text(if (blocked) "رفع مسدودیت" else "مسدود کردن", color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = { TextButton(onClick = { blockConfirmVisible = false }) { Text("انصراف") } },
+        )
+    }
+
+    if (reportDialogVisible) {
+        AlertDialog(
+            onDismissRequest = { reportDialogVisible = false },
+            title = { Text("گزارش $displayName") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("دلیل گزارش را انتخاب کنید:", fontSize = 13.sp)
+                    ModerationReason.values().forEach { reason ->
+                        val selected = selectedReportReason == reason
+                        TextButton(
+                            onClick = { selectedReportReason = reason },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(
+                                    if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else Color.Transparent,
+                                    RoundedCornerShape(8.dp),
+                                ),
+                        ) {
+                            Text(reason.persianLabel(), color = MaterialTheme.colorScheme.onSurface)
+                        }
+                    }
+                    OutlinedTextField(
+                        value = reportDetails,
+                        onValueChange = { reportDetails = it.take(300) },
+                        label = { Text("توضیحات (اختیاری)") },
+                        modifier = Modifier.fillMaxWidth(),
+                        maxLines = 3,
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        conversation?.peerId?.let { peerId ->
+                            onReportUser(peerId, selectedReportReason, reportDetails.takeIf(String::isNotBlank)) { success ->
+                                reportDialogVisible = false
+                                if (success) {
+                                    scope.launch { snackbarHostState.showSnackbar("گزارش شما ارسال شد") }
+                                }
+                            }
+                        }
+                    },
+                ) { Text("ارسال گزارش", color = Color(0xFFF57C00)) }
+            },
+            dismissButton = { TextButton(onClick = { reportDialogVisible = false }) { Text("انصراف") } },
+        )
+    }
+
+    if (clearHistoryConfirmVisible) {
+        AlertDialog(
+            onDismissRequest = { clearHistoryConfirmVisible = false },
+            title = { Text("پاک کردن تاریخچه") },
+            text = { Text("آیا از پاک کردن تمامی پیام‌های این گفتگو اطمینان دارید؟ این عمل غیرقابل بازگشت است.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        conversation?.id?.let { convId ->
+                            onDeleteConversation(convId) { success ->
+                                clearHistoryConfirmVisible = false
+                                if (success) {
+                                    onDismiss()
+                                }
+                            }
+                        }
+                    },
+                ) { Text("پاک کردن", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { clearHistoryConfirmVisible = false }) { Text("انصراف") } },
         )
     }
 }

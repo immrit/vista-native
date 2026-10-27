@@ -219,6 +219,7 @@ class OkHttpAuthRemoteDataSource @Inject constructor(
             code = error.code,
             message = error.message,
             retryAfterSeconds = error.retryAfterSeconds,
+            feature = error.feature,
         )
     }
 }

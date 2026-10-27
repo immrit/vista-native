@@ -43,6 +43,7 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.coil.compose)
     implementation(libs.zxing.core)
+    implementation(libs.poolakey)
 
     testImplementation(project(":core:testing"))
     testImplementation(libs.junit)

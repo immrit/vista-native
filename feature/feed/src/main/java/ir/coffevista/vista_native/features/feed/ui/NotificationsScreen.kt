@@ -66,6 +66,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -116,8 +117,10 @@ fun NotificationsScreen(
     viewModel: NotificationsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    LaunchedEffect(Unit) {
-        viewModel.markAllAsRead()
+    DisposableEffect(Unit) {
+        onDispose {
+            viewModel.markAllAsRead()
+        }
     }
     NotificationsScreenContent(
         state = state,
@@ -431,7 +434,10 @@ private fun NotificationRow(
                             .clickable(onClick = onOpenActor),
                     )
                     if (notification.userIsVerified) {
-                        VerifiedMark(Modifier.padding(start = 4.dp))
+                        VerifiedMark(
+                            modifier = Modifier.padding(start = 4.dp),
+                            verificationType = notification.verificationType,
+                        )
                     }
                     if (isUnread) {
                         Box(
@@ -751,17 +757,7 @@ private fun groupTitleForDate(createdAt: String): String {
 }
 
 private fun formatNotificationTime(createdAt: String): String {
-    val instant = parseInstant(createdAt) ?: return ""
-    val diff = Duration.between(instant, Instant.now())
-    return when {
-        diff.isNegative || diff.toMinutes() < 1 -> "همین الان"
-        diff.toHours() < 1 -> "${diff.toMinutes()} دقیقه پیش"
-        diff.toDays() < 1 -> "${diff.toHours()} ساعت پیش"
-        diff.toDays() < 7 -> "${diff.toDays()} روز پیش"
-        else -> instant.atZone(ZoneId.systemDefault()).toLocalDate().let { date ->
-            "${date.year}/${date.monthValue.toString().padStart(2, '0')}/${date.dayOfMonth.toString().padStart(2, '0')}"
-        }
-    }
+    return ir.coffevista.vista_native.core.common.persianRelativeTime(createdAt).ifEmpty { "همین الان" }
 }
 
 private val NOTIF_DATE_FORMATS = listOf(
@@ -842,7 +838,7 @@ private fun openNotificationItem(
             }
         }
         "daily_suggestion_digest", "suggest_follow" -> onSuggestionsClick()
-        "moderation", "post_removed", "post_edited" -> {
+        "moderation", "post_removed", "post_edited", "post_admin_removed", "post_admin_edit" -> {
             notification.postId?.takeIf(String::isNotBlank)?.let(onAppealClick)
         }
         else -> Unit

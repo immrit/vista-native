@@ -40,6 +40,7 @@ data class SearchUiState(
     val isLoadingTrending: Boolean = false,
     val isLoadingSuggestions: Boolean = false,
     val isAppendingUsers: Boolean = false,
+    val isAppendingPosts: Boolean = false,
     val hasMoreUsers: Boolean = true,
     val nextUserOffset: Int = 0,
     val errorMessage: String? = null,

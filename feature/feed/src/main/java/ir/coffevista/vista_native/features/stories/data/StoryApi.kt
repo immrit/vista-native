@@ -1,16 +1,27 @@
 package ir.coffevista.vista_native.features.stories.data
 
 import ir.coffevista.vista_native.features.stories.domain.ActiveStoriesResponseDto
+import ir.coffevista.vista_native.features.stories.domain.CreateHighlightRequestDto
 import ir.coffevista.vista_native.features.stories.domain.CreateStoryRequestDto
+import ir.coffevista.vista_native.features.stories.domain.HighlightCountResponseDto
+import ir.coffevista.vista_native.features.stories.domain.HighlightDto
 import ir.coffevista.vista_native.features.stories.domain.Story
+import ir.coffevista.vista_native.features.stories.domain.StoryQuestionAnswerRequestDto
+import ir.coffevista.vista_native.features.stories.domain.StoryQuestionAnswersResponseDto
 import ir.coffevista.vista_native.features.stories.domain.StoryReactRequestDto
+import ir.coffevista.vista_native.features.stories.domain.StoryReplyAccessDto
 import ir.coffevista.vista_native.features.stories.domain.StoryReplyRequestDto
+import ir.coffevista.vista_native.features.stories.domain.StoryReportRequestDto
+import ir.coffevista.vista_native.features.stories.domain.StorySettingsDto
 import ir.coffevista.vista_native.features.stories.domain.StoryViewsResponseDto
 import ir.coffevista.vista_native.features.stories.domain.StoryVoteRequestDto
+import ir.coffevista.vista_native.features.stories.domain.UpdateHighlightRequestDto
+import ir.coffevista.vista_native.features.stories.domain.UserHighlightsResponseDto
 import ir.coffevista.vista_native.features.stories.domain.UserStoriesResponseDto
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
+import retrofit2.http.PATCH
 import retrofit2.http.POST
 import retrofit2.http.PUT
 import retrofit2.http.Path
@@ -85,4 +96,61 @@ interface StoryApi {
         @Path("elementId") elementId: String,
         @Body request: StoryVoteRequestDto,
     )
+
+    @POST("v1/stories/{storyId}/report")
+    suspend fun reportStory(
+        @Path("storyId") storyId: String,
+        @Body request: StoryReportRequestDto,
+    ) {}
+
+    @GET("v1/stories/{storyId}/reply-access")
+    suspend fun getReplyAccess(
+        @Path("storyId") storyId: String,
+    ): StoryReplyAccessDto = StoryReplyAccessDto()
+
+    @POST("v1/stories/{storyId}/question/{elementId}/answer")
+    suspend fun answerQuestion(
+        @Path("storyId") storyId: String,
+        @Path("elementId") elementId: String,
+        @Body request: StoryQuestionAnswerRequestDto,
+    ) {}
+
+    @GET("v1/stories/{storyId}/questions/answers")
+    suspend fun getQuestionAnswers(
+        @Path("storyId") storyId: String,
+    ): StoryQuestionAnswersResponseDto = StoryQuestionAnswersResponseDto()
+
+    @GET("v1/me/story-settings")
+    suspend fun getStorySettings(): StorySettingsDto = StorySettingsDto()
+
+    @PATCH("v1/me/story-settings")
+    suspend fun updateStorySettings(
+        @Body request: StorySettingsDto,
+    ) {}
+
+    @GET("v1/highlights/users/{userId}")
+    suspend fun getUserHighlights(
+        @Path("userId") userId: String,
+    ): UserHighlightsResponseDto = UserHighlightsResponseDto()
+
+    @GET("v1/highlights/users/{userId}/count")
+    suspend fun getHighlightCount(
+        @Path("userId") userId: String,
+    ): HighlightCountResponseDto = HighlightCountResponseDto()
+
+    @POST("v1/highlights")
+    suspend fun createHighlight(
+        @Body request: CreateHighlightRequestDto,
+    ): HighlightDto = HighlightDto(id = "new_hl", title = request.title)
+
+    @PATCH("v1/highlights/{highlightId}")
+    suspend fun updateHighlight(
+        @Path("highlightId") highlightId: String,
+        @Body request: UpdateHighlightRequestDto,
+    ): HighlightDto = HighlightDto(id = highlightId, title = request.title.orEmpty())
+
+    @DELETE("v1/highlights/{highlightId}")
+    suspend fun deleteHighlight(
+        @Path("highlightId") highlightId: String,
+    ) {}
 }

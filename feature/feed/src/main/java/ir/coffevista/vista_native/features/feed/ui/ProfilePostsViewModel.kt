@@ -97,12 +97,18 @@ class ProfilePostsViewModel @Inject constructor(
                     )
                 }
             } catch (error: Exception) {
+                val userFriendlyMessage = when {
+                    error is java.io.IOException -> "خطا در برقراری ارتباط با سرور. لطفاً اتصال اینترنت را بررسی کنید."
+                    error is kotlinx.serialization.SerializationException -> "خطا در پردازش اطلاعات پست‌ها"
+                    error.message?.contains("EOF", ignoreCase = true) == true -> "پاسخ سرور ناقص دریافت شد. لطفاً دوباره تلاش کنید."
+                    else -> "دریافت پست‌های نمایه ناموفق بود"
+                }
                 _uiState.update {
                     it.copy(
                         isInitialLoading = false,
                         isRefreshing = false,
                         isOffline = it.posts.isNotEmpty(),
-                        error = error.message ?: "دریافت پست‌های نمایه ناموفق بود",
+                        error = if (it.posts.isEmpty()) userFriendlyMessage else null,
                     )
                 }
             }
@@ -141,7 +147,7 @@ class ProfilePostsViewModel @Inject constructor(
                 _uiState.update {
                     it.copy(
                         isAppending = false,
-                        appendError = error.message ?: "بارگذاری پست‌های بیشتر ناموفق بود",
+                        appendError = "بارگذاری پست‌های بیشتر ناموفق بود",
                     )
                 }
             }

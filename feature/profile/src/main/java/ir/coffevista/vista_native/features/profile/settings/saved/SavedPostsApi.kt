@@ -17,7 +17,24 @@ interface SavedPostsApi {
 
     @POST("v1/posts/save/{postId}")
     suspend fun toggleSave(@Path("postId") postId: String): Response<SavePostResponseDto>
+
+    @POST("v1/posts/like/{postId}")
+    suspend fun toggleLike(
+        @Path("postId") postId: String,
+        @retrofit2.http.Body body: SavedPostLikeRequestDto = SavedPostLikeRequestDto(),
+    ): Response<SavedPostLikeResponseDto>
 }
+
+@Serializable
+data class SavedPostLikeRequestDto(
+    @SerialName("owner_id") val ownerId: String? = null,
+)
+
+@Serializable
+data class SavedPostLikeResponseDto(
+    @SerialName("is_liked") val isLiked: Boolean = false,
+    @SerialName("like_count") val likeCount: Long = 0,
+)
 
 @Serializable
 data class SavedPostsResponseDto(
@@ -33,12 +50,17 @@ data class SavedPostDto(
     @SerialName("image_url") val imageUrl: String? = null,
     @SerialName("image_urls") val imageUrls: List<String> = emptyList(),
     @SerialName("video_url") val videoUrl: String? = null,
+    @SerialName("video_thumbnail_url") val videoThumbnailUrl: String? = null,
     @SerialName("like_count") val likeCount: Long = 0,
     @SerialName("comment_count") val commentCount: Long = 0,
     @SerialName("is_liked") val isLiked: Boolean = false,
     @SerialName("created_at") val createdAt: String? = null,
-    val author: SavedPostAuthorDto = SavedPostAuthorDto(),
-)
+    @SerialName("author") val author: SavedPostAuthorDto = SavedPostAuthorDto(),
+    @SerialName("profiles") val profiles: SavedPostAuthorDto? = null,
+) {
+    val effectiveAuthor: SavedPostAuthorDto
+        get() = if (!author.username.isNullOrBlank()) author else (profiles ?: author)
+}
 
 @Serializable
 data class SavedPostAuthorDto(

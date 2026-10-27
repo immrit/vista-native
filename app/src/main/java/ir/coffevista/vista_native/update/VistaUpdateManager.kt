@@ -7,6 +7,7 @@ import android.os.Build
 import android.util.Log
 import androidx.core.content.FileProvider
 import dagger.hilt.android.qualifiers.ApplicationContext
+import ir.coffevista.vista_native.core.network.BootstrapApi
 import java.io.File
 import java.io.FileOutputStream
 import java.security.MessageDigest
@@ -30,7 +31,7 @@ data class UpdateCheckResult(
 @Singleton
 class VistaUpdateManager @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val httpClient: OkHttpClient,
+    @BootstrapApi private val httpClient: OkHttpClient,
 ) {
     private companion object {
         const val TAG = "VistaUpdateManager"

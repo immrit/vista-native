@@ -184,6 +184,27 @@ class StoryEditorViewModel @Inject constructor(
         }
     }
 
+    fun addQuestionElement(question: String) {
+        val element = StoryElement(
+            id = UUID.randomUUID().toString(),
+            type = "question",
+            content = question.ifBlank { "از من بپرسید" },
+            y = 0f,
+        )
+        _uiState.update { it.copy(elements = it.elements + element) }
+    }
+
+    fun updateElementPosition(id: String, deltaX: Float, deltaY: Float) {
+        _uiState.update { state ->
+            state.copy(
+                elements = state.elements.map { el ->
+                    if (el.id == id) el.copy(x = (el.x + deltaX).coerceIn(-1.5f, 1.5f), y = (el.y + deltaY).coerceIn(-1.5f, 1.5f))
+                    else el
+                },
+            )
+        }
+    }
+
     fun removeElement(id: String) {
         _uiState.update { it.copy(elements = it.elements.filterNot { el -> el.id == id }) }
     }

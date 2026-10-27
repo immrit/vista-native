@@ -34,4 +34,26 @@ class ErrorClassifierTest {
         assertNotNull(timeout.causeType)
         assertNotNull(tls.causeType)
     }
+
+    @Test
+    fun mapsBannedAndFeatureDisabledByFeature() {
+        val banned = ErrorClassifier.classify(
+            RemoteFailure(statusCode = 403, code = "banned", message = "banned"),
+            "گفتگو",
+        )
+        assertEquals(ErrorKind.ACCOUNT_DISABLED, banned.kind)
+        assertEquals("banned", banned.code)
+
+        val chatDisabled = ErrorClassifier.classify(
+            RemoteFailure(
+                statusCode = 403,
+                code = "FEATURE_DISABLED",
+                message = "This feature is temporarily disabled by the control plane.",
+                feature = "chat",
+            ),
+            "گفتگو",
+        )
+        assertEquals(ErrorKind.FORBIDDEN, chatDisabled.kind)
+        assertEquals("بخش گفتگو موقتاً غیرفعال شده است", chatDisabled.messageFa)
+    }
 }

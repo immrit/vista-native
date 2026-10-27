@@ -92,6 +92,9 @@ import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaBrandColors
 import ir.coffevista.vista_native.features.stories.data.StoryRepository
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.Add
+import ir.coffevista.vista_native.features.stories.domain.HighlightDto
 import ir.coffevista.vista_native.features.stories.domain.StoryMediaType
 import ir.coffevista.vista_native.features.stories.domain.StoryPrivacyType
 import ir.coffevista.vista_native.features.stories.domain.StoryUser
@@ -104,6 +107,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun StoryPlayerScreen(
     initialUserIndex: Int,
+    customStoryUsers: List<StoryUser>? = null,
     onClose: () -> Unit,
     onOpenProfile: (userId: String) -> Unit,
     onOpenLink: (url: String) -> Unit,
@@ -114,7 +118,8 @@ fun StoryPlayerScreen(
     val coroutineScope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
-    val storyUsers by viewModel.activeStoryUsers.collectAsStateWithLifecycle()
+    val activeStoryUsersFlow by viewModel.activeStoryUsers.collectAsStateWithLifecycle()
+    val storyUsers = customStoryUsers ?: activeStoryUsersFlow
     val currentUserId = viewModel.currentUserId
     val repository = viewModel.repository
     if (storyUsers.isEmpty()) {
@@ -144,13 +149,17 @@ fun StoryPlayerScreen(
     var showOptionsSheet by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showReportDialog by remember { mutableStateOf(false) }
+    var showAddToHighlightDialog by remember { mutableStateOf(false) }
+    var showNewHighlightDialog by remember { mutableStateOf(false) }
+    var newHighlightTitle by remember { mutableStateOf("") }
+    var userHighlights by remember { mutableStateOf<List<HighlightDto>>(emptyList()) }
     var currentProgress by remember { mutableFloatStateOf(0f) }
     var showViewersSheet by remember { mutableStateOf(false) }
     var replyText by remember { mutableStateOf("") }
     var isLiked by remember(activeStory.id) { mutableStateOf(false) }
     var floatingReaction by remember(activeStory.id) { mutableStateOf<String?>(null) }
 
-    val isPlaybackPaused = isPaused || showOptionsSheet || showDeleteDialog || showReportDialog || showViewersSheet
+    val isPlaybackPaused = isPaused || showOptionsSheet || showDeleteDialog || showReportDialog || showViewersSheet || showAddToHighlightDialog || showNewHighlightDialog
 
     LaunchedEffect(floatingReaction) {
         if (floatingReaction != null) {
@@ -159,12 +168,18 @@ fun StoryPlayerScreen(
         }
     }
 
+    val hasMusic = !activeStory.musicUrl.isNullOrBlank() ||
+        activeStory.interactiveElements.any { it.type == "music" }
+
     // Video Player
     val exoPlayer = remember(activeStory.id) {
         if (activeStory.mediaType == StoryMediaType.Video) {
             ExoPlayer.Builder(context).build().apply {
                 setMediaItem(MediaItem.fromUri(Uri.parse(activeStory.mediaUrl)))
                 videoScalingMode = C.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING
+                if (hasMusic) {
+                    volume = 0f
+                }
                 prepare()
                 playWhenReady = true
             }
@@ -315,13 +330,23 @@ fun StoryPlayerScreen(
                     )
                 }
 
-                // Interactive Elements Overlay (Poll, Mention, Link, etc.)
+                // Interactive Elements Overlay (Poll, Mention, Link, Question, etc.)
                 if (activeStory.interactiveElements.isNotEmpty()) {
                     StoryElementsOverlay(
                         elements = activeStory.interactiveElements,
                         onPollVote = { elementId, optionIndex ->
                             coroutineScope.launch {
                                 repository.votePoll(activeStory.id, elementId, optionIndex)
+                            }
+                        },
+                        onQuestionAnswer = { elementId, answer ->
+                            viewModel.answerQuestion(activeStory.id, elementId, answer) { success, err ->
+                                coroutineScope.launch {
+                                    snackbarHostState.showSnackbar(
+                                        if (success) "پاسخ شما با موفقیت ثبت شد"
+                                        else (err ?: "خطا در ثبت پاسخ"),
+                                    )
+                                }
                             }
                         },
                         onLinkClick = onOpenLink,
@@ -341,9 +366,11 @@ fun StoryPlayerScreen(
                                     onPress = {
                                         isPaused = true
                                         exoPlayer?.pause()
+                                        musicPlayer?.pause()
                                         tryAwaitRelease()
                                         isPaused = false
                                         exoPlayer?.play()
+                                        musicPlayer?.play()
                                     },
                                     onTap = { goToPreviousStory() },
                                 )
@@ -359,9 +386,11 @@ fun StoryPlayerScreen(
                                     onPress = {
                                         isPaused = true
                                         exoPlayer?.pause()
+                                        musicPlayer?.pause()
                                         tryAwaitRelease()
                                         isPaused = false
                                         exoPlayer?.play()
+                                        musicPlayer?.play()
                                     },
                                     onTap = { goToNextStory() },
                                 )
@@ -590,50 +619,68 @@ fun StoryPlayerScreen(
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                                 ) {
-                                OutlinedTextField(
-                                    value = replyText,
-                                    onValueChange = { replyText = it },
-                                    placeholder = {
-                                        Text(
-                                            text = "پاسخ به ${activeUser.username}…",
-                                            color = Color.White.copy(alpha = 0.6f),
-                                            fontSize = 13.sp,
-                                        )
-                                    },
-                                    modifier = Modifier.weight(1f).height(50.dp),
-                                    shape = RoundedCornerShape(25.dp),
-                                    colors = OutlinedTextFieldDefaults.colors(
-                                        focusedBorderColor = Color.White.copy(alpha = 0.8f),
-                                        unfocusedBorderColor = Color.White.copy(alpha = 0.4f),
-                                        focusedTextColor = Color.White,
-                                        unfocusedTextColor = Color.White,
-                                    ),
-                                    trailingIcon = {
-                                        if (replyText.isNotBlank()) {
-                                            IconButton(
-                                                onClick = {
-                                                    val msg = replyText
-                                                    replyText = ""
-                                                    coroutineScope.launch {
-                                                        val res = repository.replyToStory(activeStory.id, msg)
-                                                        if (res.isSuccess) {
-                                                            snackbarHostState.showSnackbar("پاسخ شما ارسال شد")
-                                                        } else {
-                                                            snackbarHostState.showSnackbar(res.exceptionOrNull()?.message ?: "خطا در ارسال پاسخ")
+                                if (activeStory.viewerCanReply) {
+                                    OutlinedTextField(
+                                        value = replyText,
+                                        onValueChange = { replyText = it },
+                                        placeholder = {
+                                            Text(
+                                                text = "پاسخ به ${activeUser.username}…",
+                                                color = Color.White.copy(alpha = 0.6f),
+                                                fontSize = 13.sp,
+                                            )
+                                        },
+                                        modifier = Modifier.weight(1f).height(50.dp),
+                                        shape = RoundedCornerShape(25.dp),
+                                        colors = OutlinedTextFieldDefaults.colors(
+                                            focusedBorderColor = Color.White.copy(alpha = 0.8f),
+                                            unfocusedBorderColor = Color.White.copy(alpha = 0.4f),
+                                            focusedTextColor = Color.White,
+                                            unfocusedTextColor = Color.White,
+                                        ),
+                                        trailingIcon = {
+                                            if (replyText.isNotBlank()) {
+                                                IconButton(
+                                                    onClick = {
+                                                        val msg = replyText
+                                                        replyText = ""
+                                                        coroutineScope.launch {
+                                                            val res = repository.replyToStory(activeStory.id, msg)
+                                                            if (res.isSuccess) {
+                                                                snackbarHostState.showSnackbar("پاسخ شما ارسال شد")
+                                                            } else {
+                                                                snackbarHostState.showSnackbar(res.exceptionOrNull()?.message ?: "خطا در ارسال پاسخ")
+                                                            }
                                                         }
-                                                    }
-                                                },
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Default.Send,
-                                                    contentDescription = "ارسال پاسخ",
-                                                    tint = VistaBrandColors.Pink,
-                                                )
+                                                    },
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Send,
+                                                        contentDescription = "ارسال پاسخ",
+                                                        tint = VistaBrandColors.Pink,
+                                                    )
+                                                }
                                             }
-                                        }
-                                    },
-                                    singleLine = true,
-                                )
+                                        },
+                                        singleLine = true,
+                                    )
+                                } else {
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .height(50.dp)
+                                            .clip(RoundedCornerShape(25.dp))
+                                            .background(Color.White.copy(alpha = 0.12f))
+                                            .padding(horizontal = 16.dp),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Text(
+                                            text = "امکان ارسال پاسخ برای این استوری غیرفعال است",
+                                            color = Color.White.copy(alpha = 0.6f),
+                                            fontSize = 12.sp,
+                                        )
+                                    }
+                                }
 
                                 IconButton(
                                     onClick = {
@@ -708,6 +755,22 @@ fun StoryPlayerScreen(
                                     .fillMaxWidth()
                                     .clickable {
                                         showOptionsSheet = false
+                                        viewModel.loadUserHighlights { userHighlights = it }
+                                        showAddToHighlightDialog = true
+                                    }
+                                    .padding(horizontal = 20.dp, vertical = 14.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(Icons.Default.Bookmark, contentDescription = null, tint = Color.White)
+                                Spacer(modifier = Modifier.width(16.dp))
+                                Text("افزودن به هایلایت", color = Color.White, fontSize = 15.sp)
+                            }
+
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        showOptionsSheet = false
                                         showDeleteDialog = true
                                     }
                                     .padding(horizontal = 20.dp, vertical = 14.dp),
@@ -756,6 +819,123 @@ fun StoryPlayerScreen(
                         }
                     }
                 }
+            }
+
+            // Add to Highlight Dialog
+            if (showAddToHighlightDialog) {
+                AlertDialog(
+                    onDismissRequest = { showAddToHighlightDialog = false },
+                    containerColor = Color(0xFF212121),
+                    shape = RoundedCornerShape(16.dp),
+                    title = {
+                        Text(
+                            text = "افزودن به هایلایت",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        showAddToHighlightDialog = false
+                                        newHighlightTitle = ""
+                                        showNewHighlightDialog = true
+                                    }
+                                    .padding(vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(Icons.Default.Add, contentDescription = null, tint = VistaBrandColors.Pink)
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Text("هایلایت جدید…", color = VistaBrandColors.Pink, fontWeight = FontWeight.Bold)
+                            }
+                            userHighlights.forEach { highlight ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            showAddToHighlightDialog = false
+                                            viewModel.addToHighlight(highlight, activeStory.id) { success ->
+                                                coroutineScope.launch {
+                                                    snackbarHostState.showSnackbar(
+                                                        if (success) "به هایلایت «${highlight.title}» اضافه شد"
+                                                        else "خطا در افزودن به هایلایت",
+                                                    )
+                                                }
+                                            }
+                                        }
+                                        .padding(vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Icon(Icons.Default.Bookmark, contentDescription = null, tint = Color.White)
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Text(highlight.title, color = Color.White, fontSize = 14.sp)
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = {},
+                    dismissButton = {
+                        TextButton(onClick = { showAddToHighlightDialog = false }) {
+                            Text("انصراف", color = Color.White)
+                        }
+                    },
+                )
+            }
+
+            // New Highlight Dialog
+            if (showNewHighlightDialog) {
+                AlertDialog(
+                    onDismissRequest = { showNewHighlightDialog = false },
+                    containerColor = Color(0xFF212121),
+                    shape = RoundedCornerShape(16.dp),
+                    title = {
+                        Text(
+                            text = "عنوان هایلایت جدید",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    },
+                    text = {
+                        OutlinedTextField(
+                            value = newHighlightTitle,
+                            onValueChange = { newHighlightTitle = it },
+                            placeholder = { Text("مثلاً: خاطرات، سفر، کار…", color = Color.Gray) },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                if (newHighlightTitle.isNotBlank()) {
+                                    val title = newHighlightTitle
+                                    showNewHighlightDialog = false
+                                    viewModel.createHighlight(
+                                        title = title,
+                                        coverUrl = activeStory.thumbnailUrl ?: activeStory.mediaUrl,
+                                        storyId = activeStory.id,
+                                    ) { success ->
+                                        coroutineScope.launch {
+                                            snackbarHostState.showSnackbar(
+                                                if (success) "هایلایت «$title» ایجاد شد"
+                                                else "خطا در ایجاد هایلایت",
+                                            )
+                                        }
+                                    }
+                                }
+                            },
+                        ) {
+                            Text("ایجاد", color = VistaBrandColors.Pink, fontWeight = FontWeight.Bold)
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showNewHighlightDialog = false }) {
+                            Text("انصراف", color = Color.White)
+                        }
+                    },
+                )
             }
 
             // Delete Confirmation Dialog
@@ -838,8 +1018,13 @@ fun StoryPlayerScreen(
                                         .fillMaxWidth()
                                         .clickable {
                                             showReportDialog = false
-                                            coroutineScope.launch {
-                                                snackbarHostState.showSnackbar("گزارش شما ثبت شد")
+                                            viewModel.reportStory(activeStory.id, reason) { success, err ->
+                                                coroutineScope.launch {
+                                                    snackbarHostState.showSnackbar(
+                                                        if (success) "گزارش شما با موفقیت ثبت شد"
+                                                        else (err ?: "خطا در ثبت گزارش"),
+                                                    )
+                                                }
                                             }
                                         }
                                         .padding(vertical = 10.dp, horizontal = 4.dp),
@@ -890,20 +1075,7 @@ private fun StoryVerificationBadge(
 
 private fun formatStoryTimeAgo(createdAt: String?): String {
     if (createdAt.isNullOrBlank()) return "به‌تازگی"
-    return try {
-        val instant = java.time.Instant.parse(createdAt)
-        val now = java.time.Instant.now()
-        val duration = java.time.Duration.between(instant, now)
-        val seconds = duration.seconds
-        when {
-            seconds < 60 -> "چند لحظه پیش"
-            seconds < 3600 -> "${seconds / 60} دقیقه پیش"
-            seconds < 86400 -> "${seconds / 3600} ساعت پیش"
-            else -> "${seconds / 86400} روز پیش"
-        }
-    } catch (_: Exception) {
-        "به‌تازگی"
-    }
+    return ir.coffevista.vista_native.core.common.persianRelativeTime(createdAt).ifEmpty { "به‌تازگی" }
 }
 
 private data class StoryQuickReaction(val apiValue: String, val emoji: String)

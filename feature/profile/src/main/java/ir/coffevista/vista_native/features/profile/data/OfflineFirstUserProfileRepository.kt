@@ -201,6 +201,19 @@ class OfflineFirstUserProfileRepository @Inject constructor(
         return FollowMutationResult.Success(FollowState.NotFollowing)
     }
 
+    override suspend fun getUserHighlights(profileUserId: String): List<ProfileHighlightDto> {
+        return try {
+            val response = api.getUserHighlights(profileUserId)
+            if (response.isSuccessful) {
+                response.body()?.highlights.orEmpty()
+            } else {
+                emptyList()
+            }
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
     private fun Response<*>.toAppError(contextFa: String): AppError {
         val parsed = BackendErrorParser.parse(
             rawBody = errorBody()?.string().orEmpty(),

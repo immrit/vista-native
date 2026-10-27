@@ -363,11 +363,21 @@ private fun trimVideoFast(
 
     val indexMap = HashMap<Int, Int>(trackCount)
     var bufferSize = 1024 * 1024
+    var videoTrackIndex = -1
 
     for (i in 0 until trackCount) {
         val format = extractor.getTrackFormat(i)
         val mime = format.getString(MediaFormat.KEY_MIME) ?: continue
-        if (mime.startsWith("video/") || mime.startsWith("audio/")) {
+        if (mime.startsWith("video/")) {
+            extractor.selectTrack(i)
+            val muxerTrackIndex = muxer.addTrack(format)
+            indexMap[i] = muxerTrackIndex
+            videoTrackIndex = i
+            if (format.containsKey(MediaFormat.KEY_MAX_INPUT_SIZE)) {
+                val size = format.getInteger(MediaFormat.KEY_MAX_INPUT_SIZE)
+                if (size > bufferSize) bufferSize = size
+            }
+        } else if (mime.startsWith("audio/")) {
             extractor.selectTrack(i)
             val muxerTrackIndex = muxer.addTrack(format)
             indexMap[i] = muxerTrackIndex
@@ -386,20 +396,48 @@ private fun trimVideoFast(
     val bufferInfo = MediaCodec.BufferInfo()
 
     try {
+        var basePtsUs = startUs
+        if (videoTrackIndex >= 0) {
+            extractor.seekTo(startUs, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
+            val actualKeyTime = extractor.sampleTime
+            if (actualKeyTime in 0..startUs) {
+                basePtsUs = actualKeyTime
+            }
+        }
+
         for (i in 0 until trackCount) {
             val muxerTrack = indexMap[i] ?: continue
-            extractor.seekTo(startUs, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
+            extractor.seekTo(basePtsUs, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
+            var firstKeyframeWritten = false
 
             while (true) {
                 bufferInfo.offset = 0
                 bufferInfo.size = extractor.readSampleData(buffer, 0)
                 if (bufferInfo.size < 0) break
 
-                bufferInfo.presentationTimeUs = extractor.sampleTime
-                if (extractor.sampleTrackIndex == i) {
-                    if (bufferInfo.presentationTimeUs > endUs) break
-                    if (bufferInfo.presentationTimeUs >= startUs) {
-                        bufferInfo.flags = extractor.sampleFlags
+                val sampleTrack = extractor.sampleTrackIndex
+                val sampleTime = extractor.sampleTime
+                val flags = extractor.sampleFlags
+
+                if (sampleTrack == i) {
+                    if (sampleTime > endUs) break
+
+                    if (i == videoTrackIndex) {
+                        val isKeyframe = (flags and MediaCodec.BUFFER_FLAG_KEY_FRAME) != 0
+                        if (!firstKeyframeWritten) {
+                            if (isKeyframe) {
+                                firstKeyframeWritten = true
+                                basePtsUs = sampleTime
+                            } else {
+                                extractor.advance()
+                                continue
+                            }
+                        }
+                    }
+
+                    if (sampleTime >= basePtsUs) {
+                        bufferInfo.presentationTimeUs = (sampleTime - basePtsUs).coerceAtLeast(0L)
+                        bufferInfo.flags = flags
                         muxer.writeSampleData(muxerTrack, buffer, bufferInfo)
                     }
                 }
@@ -411,6 +449,11 @@ private fun trimVideoFast(
         runCatching { muxer.release() }
         extractor.release()
         fd.close()
+    }
+
+    if (!outputFile.exists() || outputFile.length() == 0L) {
+        outputFile.delete()
+        throw IllegalStateException("خطا در ایجاد فایل ویدیو برش‌خورده")
     }
 
     return outputFile

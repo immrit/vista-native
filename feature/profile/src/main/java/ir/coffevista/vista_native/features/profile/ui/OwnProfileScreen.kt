@@ -74,6 +74,7 @@ fun OwnProfileScreen(
     modifier: Modifier = Modifier,
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val highlights by viewModel.highlights.collectAsStateWithLifecycle()
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     var showOptionsSheet by rememberSaveable { mutableStateOf(false) }
     var showVistaIdCard by rememberSaveable { mutableStateOf(false) }
@@ -185,6 +186,7 @@ fun OwnProfileScreen(
                                 onLikeClick = onLikeClick,
                                 onSaveClick = onSaveClick,
                                 onLoadMore = onPostsLoadMore,
+                                onRefresh = onPostsRefresh,
                                 onAvatarAddClick = onAddStory ?: {
                                     Toast.makeText(context, "افزودن استوری در دسترس نیست", Toast.LENGTH_SHORT).show()
                                 },
@@ -206,6 +208,18 @@ fun OwnProfileScreen(
                                         },
                                         onShareProfile = onShareProfile ?: {
                                             showVistaIdCard = true
+                                        },
+                                    )
+                                },
+                                highlightsContent = {
+                                    ProfileHighlightsRow(
+                                        highlights = highlights,
+                                        isOwnProfile = true,
+                                        onAddClick = {
+                                            onAddStory?.invoke()
+                                        },
+                                        onHighlightClick = { highlight ->
+                                            Toast.makeText(context, highlight.title, Toast.LENGTH_SHORT).show()
                                         },
                                     )
                                 },
@@ -253,9 +267,6 @@ fun OwnProfileScreen(
                             val link = "https://coffevista.ir/u/${currentUsername ?: ""}"
                             clipboardManager.setText(AnnotatedString(link))
                             Toast.makeText(context, "لینک پروفایل کپی شد", Toast.LENGTH_SHORT).show()
-                        },
-                        onReport = {
-                            Toast.makeText(context, "گزارش ارسال شد", Toast.LENGTH_SHORT).show()
                         },
                     )
                 }

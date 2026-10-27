@@ -36,21 +36,48 @@ object DeepLinkParser {
         if (uri.scheme?.lowercase() != SCHEME) {
             return DeepLinkParseResult.Rejected(DeepLinkFailureReason.UNSUPPORTED)
         }
-        val kind = when (uri.host?.lowercase()) {
+        val host = uri.host?.lowercase()
+        val segments = uri.path.orEmpty()
+            .split('/')
+            .filter(String::isNotBlank)
+        if (host == "payment" && segments == listOf("callback")) {
+            return DeepLinkParseResult.Supported(
+                PendingDestination(
+                    kind = DeferredFeatureKind.PROFILE,
+                    reference = "payment_callback",
+                    secondaryReference = uri.rawQuery,
+                ),
+            )
+        }
+        if (host == "appeal") {
+            val postId = segments.singleOrNull()?.takeIf(REFERENCE_PATTERN::matches)
+                ?: return DeepLinkParseResult.Rejected(DeepLinkFailureReason.INVALID_ARGUMENT)
+            return DeepLinkParseResult.Supported(
+                PendingDestination(
+                    kind = DeferredFeatureKind.POST,
+                    reference = postId,
+                    secondaryReference = "appeal",
+                ),
+            )
+        }
+        val kind = when (host) {
             "post" -> DeferredFeatureKind.POST
             "profile" -> DeferredFeatureKind.PROFILE
             "group" -> DeferredFeatureKind.GROUP
             "chat" -> DeferredFeatureKind.CHAT
             else -> return DeepLinkParseResult.Rejected(DeepLinkFailureReason.UNSUPPORTED)
         }
-        val segments = uri.path.orEmpty()
-            .split('/')
-            .filter(String::isNotBlank)
-        if (segments.size != 1 || !REFERENCE_PATTERN.matches(segments.single())) {
+        val allowedPattern = if (kind == DeferredFeatureKind.PROFILE) {
+            USERNAME_REFERENCE_PATTERN
+        } else {
+            REFERENCE_PATTERN
+        }
+        if (segments.size != 1 || !allowedPattern.matches(segments.single())) {
             return DeepLinkParseResult.Rejected(DeepLinkFailureReason.INVALID_ARGUMENT)
         }
         val secondaryReference = when {
             uri.rawQuery == null -> null
+            kind == DeferredFeatureKind.POST && uri.rawQuery in setOf("appeal=1", "appeal=true") -> "appeal"
             kind != DeferredFeatureKind.CHAT ->
                 return DeepLinkParseResult.Rejected(DeepLinkFailureReason.UNSUPPORTED)
             else -> parseChatMessageReference(uri.rawQuery)
@@ -66,26 +93,49 @@ object DeepLinkParser {
     }
 
     private fun parseVistaWebLink(uri: URI): DeepLinkParseResult {
-        if (uri.host?.lowercase() !in VISTA_WEB_HOSTS || uri.rawQuery != null) {
+        if (uri.host?.lowercase() !in VISTA_WEB_HOSTS) {
             return DeepLinkParseResult.Rejected(DeepLinkFailureReason.UNSUPPORTED)
         }
         val segments = uri.path.orEmpty()
             .split('/')
             .filter(String::isNotBlank)
-        val kind = when (segments.firstOrNull()?.lowercase()) {
+        if (segments.size == 2 && segments[0].equals("payment", ignoreCase = true) && segments[1].equals("callback", ignoreCase = true)) {
+            return DeepLinkParseResult.Supported(
+                PendingDestination(
+                    kind = DeferredFeatureKind.PROFILE,
+                    reference = "payment_callback",
+                    secondaryReference = uri.rawQuery,
+                ),
+            )
+        }
+        if (uri.rawQuery != null) {
+            return DeepLinkParseResult.Rejected(DeepLinkFailureReason.UNSUPPORTED)
+        }
+        val firstSegment = segments.firstOrNull()?.lowercase()
+        val kind = when (firstSegment) {
             "post" -> DeferredFeatureKind.POST
-            "profile" -> DeferredFeatureKind.PROFILE
-            "group" -> DeferredFeatureKind.GROUP
+            "profile", "u" -> DeferredFeatureKind.PROFILE
+            "group", "join" -> DeferredFeatureKind.GROUP
             else -> return DeepLinkParseResult.Rejected(DeepLinkFailureReason.UNSUPPORTED)
         }
+        val allowedPattern = if (kind == DeferredFeatureKind.PROFILE) {
+            USERNAME_REFERENCE_PATTERN
+        } else {
+            REFERENCE_PATTERN
+        }
         val reference = segments.getOrNull(1)
-            ?.takeIf(REFERENCE_PATTERN::matches)
+            ?.takeIf(allowedPattern::matches)
             ?: return DeepLinkParseResult.Rejected(DeepLinkFailureReason.INVALID_ARGUMENT)
         if (segments.size != 2) {
             return DeepLinkParseResult.Rejected(DeepLinkFailureReason.INVALID_ARGUMENT)
         }
+        val secondaryReference = if (firstSegment == "join") "invite_code" else null
         return DeepLinkParseResult.Supported(
-            PendingDestination(kind = kind, reference = reference),
+            PendingDestination(
+                kind = kind,
+                reference = reference,
+                secondaryReference = secondaryReference,
+            ),
         )
     }
 
@@ -98,9 +148,16 @@ object DeepLinkParser {
     }
 
     private val REFERENCE_PATTERN = Regex("[A-Za-z0-9_-]{1,128}")
+    private val USERNAME_REFERENCE_PATTERN = Regex("[A-Za-z0-9_.-]{1,128}")
     private const val SCHEME = "vista"
     private const val HTTPS_SCHEME = "https"
-    private val VISTA_WEB_HOSTS = setOf("cafevista.ir", "www.cafevista.ir", "vista.me")
+    private val VISTA_WEB_HOSTS = setOf(
+        "cafevista.ir",
+        "www.cafevista.ir",
+        "coffevista.ir",
+        "www.coffevista.ir",
+        "vista.me",
+    )
 }
 
 sealed interface DeepLinkDeliveryState {

@@ -100,6 +100,8 @@ interface ChatRepository {
     suspend fun joinGroup(inviteCode: String): ChatResult<Conversation> = ChatResult.Failure("عضویت گروه در دسترس نیست", false)
     suspend fun leaveGroup(conversationId: String): ChatResult<Unit> = ChatResult.Failure("ترک گروه در دسترس نیست", false)
     suspend fun deleteGroup(conversationId: String): ChatResult<Unit> = ChatResult.Failure("حذف گروه در دسترس نیست", false)
+    suspend fun conversationKeys(conversationId: String): ChatResult<List<String>> =
+        ChatResult.Failure("کلیدهای گفتگو در دسترس نیست", false)
 
     fun observeMessages(conversationId: String): Flow<List<Message>>
     fun observeConversation(conversationId: String): Flow<Conversation?>
@@ -108,6 +110,8 @@ interface ChatRepository {
     suspend fun searchMessages(conversationId: String, query: String): ChatResult<List<Message>>
     suspend fun presence(userId: String): ChatResult<PresenceState> =
         ChatResult.Failure("وضعیت حضور در دسترس نیست", false)
+    suspend fun updatePresence(status: String = "online"): ChatResult<Unit> =
+        ChatResult.Success(Unit)
     suspend fun partnerProfile(userId: String): ChatResult<ChatPartnerProfile> =
         ChatResult.Failure("اطلاعات کاربر در دسترس نیست", false)
 

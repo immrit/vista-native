@@ -16,6 +16,9 @@ import retrofit2.http.Query
 interface ChatApi {
     @GET("v1/presence/{userId}")
     suspend fun presence(@Path("userId") userId: String): PresenceDto
+
+    @POST("v1/presence/update")
+    suspend fun updatePresence(@retrofit2.http.Body body: PresenceUpdateRequest): PresenceDto
     @GET("v1/chat/conversations")
     suspend fun conversations(
         @Query("limit") limit: Int,
@@ -73,6 +76,9 @@ interface ChatApi {
         @Query("q") query: String,
         @Query("limit") limit: Int = 50,
     ): MessagePageDto
+
+    @GET("v1/chat/conversations/{conversationId}/keys")
+    suspend fun conversationKeys(@Path("conversationId") conversationId: String): ConversationKeysDto
 
     @PUT("v1/chat/messages/{messageId}")
     suspend fun editMessage(
@@ -233,6 +239,11 @@ interface ChatApi {
         @Body request: ProfileBatchRequest,
     ): Map<String, ProfileNoteDto>
 }
+
+@Serializable
+data class PresenceUpdateRequest(
+    val status: String = "online",
+)
 
 @Serializable
 data class PresenceDto(
@@ -519,3 +530,8 @@ data class ProfileNoteDto(
 
 @Serializable
 data class UpsertProfileNoteRequest(val content: String)
+
+@Serializable
+data class ConversationKeysDto(
+    val participants: List<String> = emptyList(),
+)

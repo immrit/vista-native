@@ -9,9 +9,14 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -98,6 +103,8 @@ import ir.coffevista.vista_native.core.model.session.AuthenticationState
 import ir.coffevista.vista_native.core.model.session.AuthenticationStateProvider
 import ir.coffevista.vista_native.features.feed.data.FeedPost
 import ir.coffevista.vista_native.features.feed.data.FeedRepository
+import ir.coffevista.vista_native.core.common.toPersianDigits
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -136,6 +143,31 @@ class ReelsViewModel @Inject constructor(
         }
     }
 
+    fun setInitialPostId(postId: String?) {
+        if (postId.isNullOrBlank()) return
+        viewModelScope.launch {
+            val userId = (authStateProvider.state.value as? AuthenticationState.SignedIn)?.context?.userId.orEmpty()
+            feedRepository.getPostById(userId, postId).firstOrNull()?.let { targetPost ->
+                if (!targetPost.videoUrl.isNullOrBlank()) {
+                    _uiState.update { state ->
+                        if (state.reels.none { it.id == targetPost.id }) {
+                            state.copy(reels = listOf(targetPost) + state.reels)
+                        } else state
+                    }
+                }
+            }
+        }
+    }
+
+    fun loadMore() {
+        val state = _uiState.value
+        if (state.isLoading) return
+        viewModelScope.launch {
+            val userId = (authStateProvider.state.value as? AuthenticationState.SignedIn)?.context?.userId.orEmpty()
+            feedRepository.loadMoreFeed(userId, ir.coffevista.vista_native.features.feed.data.FeedKind.Explore)
+        }
+    }
+
     fun toggleMute() {
         _uiState.update { it.copy(isMuted = !it.isMuted) }
     }
@@ -170,6 +202,14 @@ fun ReelsViewerScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val reels = uiState.reels
+    var showCommentsForPostId by remember { mutableStateOf<String?>(null) }
+    var showShareForPost by remember { mutableStateOf<FeedPost?>(null) }
+
+    LaunchedEffect(initialPostId) {
+        if (!initialPostId.isNullOrBlank()) {
+            viewModel.setInitialPostId(initialPostId)
+        }
+    }
 
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
         Box(
@@ -200,6 +240,12 @@ fun ReelsViewerScreen(
                 }
                 val pagerState = rememberPagerState(initialPage = initialIndex, pageCount = { reels.size })
 
+                LaunchedEffect(pagerState.currentPage, reels.size) {
+                    if (reels.isNotEmpty() && pagerState.currentPage >= reels.size - 2) {
+                        viewModel.loadMore()
+                    }
+                }
+
                 VerticalPager(
                     state = pagerState,
                     modifier = Modifier.fillMaxSize(),
@@ -212,8 +258,8 @@ fun ReelsViewerScreen(
                         isCurrentPage = isCurrentPage,
                         isMuted = uiState.isMuted,
                         onLikeClick = { viewModel.toggleLike(reel.id) },
-                        onCommentsClick = { onCommentsClick(reel.id) },
-                        onShareClick = { onShareClick(reel.id) },
+                        onCommentsClick = { showCommentsForPostId = reel.id },
+                        onShareClick = { showShareForPost = reel },
                         onAuthorClick = { onAuthorClick(reel.userId) },
                     )
                 }
@@ -250,6 +296,27 @@ fun ReelsViewerScreen(
                         )
                     }
                 }
+            }
+
+            if (showCommentsForPostId != null) {
+                ir.coffevista.vista_native.features.feed.ui.CommentsBottomSheet(
+                    postId = showCommentsForPostId!!,
+                    onDismissRequest = { showCommentsForPostId = null },
+                    viewModel = hiltViewModel(),
+                    onAuthorClick = { username ->
+                        showCommentsForPostId = null
+                        onAuthorClick(username)
+                    },
+                )
+            }
+
+            if (showShareForPost != null) {
+                val post = showShareForPost!!
+                ir.coffevista.vista_native.features.feed.ui.PostShareBottomSheet(
+                    post = post,
+                    onDismiss = { showShareForPost = null },
+                    onShared = { showShareForPost = null },
+                )
             }
         }
     }
@@ -523,6 +590,18 @@ private fun ReelsVideoItem(
             }
         }
 
+        val haptics = LocalHapticFeedback.current
+        var reelsLikeScale by remember { mutableStateOf(1f) }
+        val animatedReelsLikeScale by animateFloatAsState(
+            targetValue = reelsLikeScale,
+            animationSpec = spring(
+                dampingRatio = Spring.DampingRatioMediumBouncy,
+                stiffness = Spring.StiffnessLow,
+            ),
+            finishedListener = { reelsLikeScale = 1f },
+            label = "reelsLikeScale",
+        )
+
         // Right/Side Action Buttons Column
         Column(
             modifier = Modifier
@@ -533,7 +612,16 @@ private fun ReelsVideoItem(
         ) {
             // Like Action
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                IconButton(onClick = onLikeClick, modifier = Modifier.size(44.dp)) {
+                IconButton(
+                    onClick = {
+                        reelsLikeScale = 1.35f
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onLikeClick()
+                    },
+                    modifier = Modifier
+                        .size(44.dp)
+                        .graphicsLayer(scaleX = animatedReelsLikeScale, scaleY = animatedReelsLikeScale),
+                ) {
                     Icon(
                         imageVector = if (post.isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
                         contentDescription = "پسندیدن",
@@ -542,7 +630,7 @@ private fun ReelsVideoItem(
                     )
                 }
                 Text(
-                    text = if (post.likeCount > 0) post.likeCount.toString() else "لایک",
+                    text = if (post.hideLikeCount) "پسندیدن" else if (post.likeCount > 0) post.likeCount.toString().toPersianDigits() else "لایک",
                     color = Color.White,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium,
@@ -560,7 +648,7 @@ private fun ReelsVideoItem(
                     )
                 }
                 Text(
-                    text = if (post.commentCount > 0) post.commentCount.toString() else "نظر",
+                    text = if (post.hideCommentCount) "دیدگاه" else if (post.commentCount > 0) post.commentCount.toString().toPersianDigits() else "نظر",
                     color = Color.White,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium,

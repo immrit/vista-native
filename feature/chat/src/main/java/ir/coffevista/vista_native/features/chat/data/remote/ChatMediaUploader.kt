@@ -139,7 +139,8 @@ class ChatMediaUploader(
             AttachmentKind.IMAGE, AttachmentKind.GIF -> "images"
             AttachmentKind.VOICE, AttachmentKind.AUDIO -> "audio"
             AttachmentKind.DOCUMENT -> "documents"
-            AttachmentKind.VIDEO, AttachmentKind.UNKNOWN -> "files"
+            AttachmentKind.VIDEO -> "videos"
+            AttachmentKind.UNKNOWN -> "files"
         }
         return "chat/${accountId.safeSegment("user")}/${conversationId.safeSegment("chat")}/$folder/${System.currentTimeMillis()}_${UUID.randomUUID().toString().take(8)}.$extension"
     }

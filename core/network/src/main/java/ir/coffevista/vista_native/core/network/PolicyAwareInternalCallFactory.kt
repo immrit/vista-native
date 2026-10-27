@@ -81,14 +81,42 @@ class PolicyAwareInternalCallFactory(
         val baseBuilder = OkHttpClient.Builder()
             // Internal REST/realtime must not inherit a stale debugging proxy.
             .proxy(Proxy.NO_PROXY)
-            .connectTimeout(12, TimeUnit.SECONDS)
-            .readTimeout(15, TimeUnit.SECONDS)
-            .writeTimeout(15, TimeUnit.SECONDS)
-            .callTimeout(25, TimeUnit.SECONDS)
+            .connectTimeout(20, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
+            .writeTimeout(25, TimeUnit.SECONDS)
+            .callTimeout(45, TimeUnit.SECONDS)
             .pingInterval(20, TimeUnit.SECONDS)
-            .retryOnConnectionFailure(false)
+            .retryOnConnectionFailure(true)
             .addInterceptor(BoundedRetryInterceptor())
             .addInterceptor(authorizationInterceptor)
+            .addInterceptor { chain ->
+                val response = chain.proceed(chain.request())
+                if (response.request.url.host == host) {
+                    when (response.code) {
+                        503 -> {
+                            val raw = runCatching { response.peekBody(4096).string() }.getOrNull().orEmpty()
+                            val parsed = BackendErrorParser.parse(raw)
+                            if (parsed.code.equals("maintenance_mode", ignoreCase = true) ||
+                                parsed.message.equals("maintenance_mode", ignoreCase = true)
+                            ) {
+                                SystemGateMonitor.reportMaintenance(true)
+                            }
+                        }
+                        403 -> {
+                            val raw = runCatching { response.peekBody(4096).string() }.getOrNull().orEmpty()
+                            val parsed = BackendErrorParser.parse(raw)
+                            val code = parsed.code?.lowercase()
+                            if (code in setOf("banned", "account_banned", "account_suspended") ||
+                                parsed.message.equals("banned", ignoreCase = true)
+                            ) {
+                                val reason = parsed.message?.takeIf { !it.equals("banned", ignoreCase = true) }
+                                SystemGateMonitor.reportBanned(reason)
+                            }
+                        }
+                    }
+                }
+                response
+            }
 
         if (authenticator != null) {
             baseBuilder.authenticator(authenticator)

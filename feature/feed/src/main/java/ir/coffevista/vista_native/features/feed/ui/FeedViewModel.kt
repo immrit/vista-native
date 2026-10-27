@@ -38,6 +38,7 @@ class FeedViewModel @Inject constructor(
     private val notificationRepository: NotificationRepository,
     private val authStateProvider: AuthenticationStateProvider,
     private val ownProfileDao: OwnProfileDao? = null,
+    private val postUploadManager: ir.coffevista.vista_native.features.feed.data.PostUploadManager? = null,
 ) : ViewModel() {
 
     // Test constructor
@@ -75,6 +76,21 @@ class FeedViewModel @Inject constructor(
     )
 
     val activeStoryUsers = storyRepository.activeStoryUsers
+    val postUploadState: StateFlow<ir.coffevista.vista_native.features.feed.data.PostUploadState> =
+        postUploadManager?.uploadState ?: MutableStateFlow(ir.coffevista.vista_native.features.feed.data.PostUploadState())
+
+    fun retryPostUpload() {
+        postUploadManager?.retry()
+    }
+
+    fun cancelPostUpload() {
+        postUploadManager?.cancel()
+    }
+
+    fun dismissPostUpload() {
+        postUploadManager?.dismiss()
+    }
+
     val unreadNotificationCount: StateFlow<Int> = notificationRepository.unreadCount.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),

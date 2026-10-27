@@ -51,8 +51,12 @@ interface PostMediaUploadGateway {
         userId: String,
         uri: Uri,
         maxBytes: Long = 15L * 1024 * 1024,
+        startMs: Int = 0,
+        endMs: Int = 0,
         onProgress: (Float) -> Unit = {},
     ): UploadedMediaResult
+
+    suspend fun deleteUpload(objectKey: String): Boolean
 }
 
 @Singleton
@@ -189,31 +193,55 @@ class PostMediaUploader @Inject constructor(
         userId: String,
         uri: Uri,
         maxBytes: Long,
+        startMs: Int,
+        endMs: Int,
         onProgress: (Float) -> Unit,
     ): UploadedMediaResult = withContext(Dispatchers.IO) {
         require(userId.isNotBlank()) { "شناسه کاربر نامعتبر است" }
-        val mimeType = resolver.getType(uri)?.takeIf { it.startsWith("audio/") }
-            ?: throw IOException("فایل انتخاب‌شده صوتی نیست")
-        val extension = when (mimeType) {
-            "audio/mp4" -> "m4a"
-            "audio/ogg" -> "ogg"
-            "audio/wav", "audio/x-wav" -> "wav"
-            "audio/aac" -> "aac"
-            else -> "mp3"
-        }
-        val temporaryAudio = File.createTempFile("post-audio-", ".$extension", cacheDir)
-        try {
-            resolver.openInputStream(uri)?.use { input ->
-                temporaryAudio.outputStream().use { output -> input.copyTo(output) }
+        val trimmedAudio = if (endMs > startMs && endMs > 0) {
+            trimAudioFast(uri, startMs.toLong(), endMs.toLong())
+        } else null
+
+        val (audioFile, extension, mimeType) = if (trimmedAudio != null) {
+            Triple(trimmedAudio, "m4a", "audio/mp4")
+        } else {
+            val rawMime = resolver.getType(uri)
+            val mime = if (rawMime?.startsWith("audio/") == true) {
+                rawMime
+            } else {
+                val name = uri.lastPathSegment?.lowercase().orEmpty()
+                when {
+                    name.endsWith(".m4a") -> "audio/mp4"
+                    name.endsWith(".ogg") -> "audio/ogg"
+                    name.endsWith(".wav") -> "audio/wav"
+                    name.endsWith(".aac") -> "audio/aac"
+                    name.endsWith(".flac") -> "audio/flac"
+                    else -> "audio/mpeg"
+                }
             }
-                ?: throw IOException("فایل صوتی قابل خواندن نیست")
-            require(temporaryAudio.length() > 0L && temporaryAudio.length() <= maxBytes) {
+            val ext = when (mime) {
+                "audio/mp4" -> "m4a"
+                "audio/ogg" -> "ogg"
+                "audio/wav", "audio/x-wav" -> "wav"
+                "audio/aac" -> "aac"
+                "audio/flac" -> "flac"
+                else -> "mp3"
+            }
+            val temp = File.createTempFile("post-audio-", ".$ext", cacheDir)
+            resolver.openInputStream(uri)?.use { input ->
+                temp.outputStream().use { output -> input.copyTo(output) }
+            } ?: throw IOException("فایل صوتی قابل خواندن نیست")
+            Triple(temp, ext, mime)
+        }
+
+        try {
+            require(audioFile.length() > 0L && audioFile.length() <= maxBytes) {
                 "حجم فایل صوتی بیش از حد مجاز است"
             }
             val objectKey = "music/${userId.safeSegment()}/${System.currentTimeMillis()}_audio.$extension"
-            val presign = api.presignUpload(PostPresignRequestDto(objectKey, mimeType, temporaryAudio.length()))
+            val presign = api.presignUpload(PostPresignRequestDto(objectKey, mimeType, audioFile.length()))
             val request = Request.Builder().url(presign.url)
-                .put(ProgressRequestBody(temporaryAudio, mimeType, onProgress))
+                .put(ProgressRequestBody(audioFile, mimeType, onProgress))
             presign.headers.forEach { (name, value) ->
                 if (!name.equals("host", true) && !name.equals("content-length", true)) request.header(name, value)
             }
@@ -223,8 +251,97 @@ class PostMediaUploader @Inject constructor(
             onProgress(1f)
             UploadedMediaResult(url = presign.objectUrl, objectKey = presign.objectKey)
         } finally {
-            temporaryAudio.delete()
+            audioFile.delete()
         }
+    }
+
+    override suspend fun deleteUpload(objectKey: String): Boolean = withContext(Dispatchers.IO) {
+        if (objectKey.isBlank()) return@withContext false
+        runCatching {
+            api.deleteUpload(DeleteUploadRequestDto(objectKey)).success
+        }.getOrDefault(false)
+    }
+
+    private fun trimAudioFast(
+        audioUri: Uri,
+        startMs: Long,
+        endMs: Long,
+    ): File? {
+        return runCatching {
+            val extractor = android.media.MediaExtractor()
+            val fd = resolver.openFileDescriptor(audioUri, "r") ?: return null
+            extractor.setDataSource(fd.fileDescriptor)
+            val trackCount = extractor.trackCount
+            var audioTrackIndex = -1
+            var audioFormat: android.media.MediaFormat? = null
+
+            for (i in 0 until trackCount) {
+                val format = extractor.getTrackFormat(i)
+                val mime = format.getString(android.media.MediaFormat.KEY_MIME) ?: continue
+                if (mime.startsWith("audio/")) {
+                    extractor.selectTrack(i)
+                    audioTrackIndex = i
+                    audioFormat = format
+                    break
+                }
+            }
+            if (audioTrackIndex < 0 || audioFormat == null) {
+                extractor.release()
+                fd.close()
+                return null
+            }
+
+            val outputFile = File.createTempFile("trimmed-audio-", ".m4a", cacheDir)
+            val muxer = android.media.MediaMuxer(outputFile.absolutePath, android.media.MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+            val muxerTrack = muxer.addTrack(audioFormat)
+            muxer.start()
+
+            val startUs = startMs * 1000L
+            val endUs = endMs * 1000L
+            var bufferSize = 256 * 1024
+            if (audioFormat.containsKey(android.media.MediaFormat.KEY_MAX_INPUT_SIZE)) {
+                val sz = audioFormat.getInteger(android.media.MediaFormat.KEY_MAX_INPUT_SIZE)
+                if (sz > bufferSize) bufferSize = sz
+            }
+            val buffer = java.nio.ByteBuffer.allocate(bufferSize)
+            val bufferInfo = android.media.MediaCodec.BufferInfo()
+
+            try {
+                extractor.seekTo(startUs, android.media.MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
+                var basePtsUs = startUs
+                var isFirstSample = true
+
+                while (true) {
+                    bufferInfo.offset = 0
+                    bufferInfo.size = extractor.readSampleData(buffer, 0)
+                    if (bufferInfo.size < 0) break
+
+                    val sampleTrack = extractor.sampleTrackIndex
+                    val sampleTime = extractor.sampleTime
+
+                    if (sampleTrack == audioTrackIndex) {
+                        if (sampleTime > endUs) break
+                        if (sampleTime >= startUs) {
+                            if (isFirstSample) {
+                                basePtsUs = sampleTime
+                                isFirstSample = false
+                            }
+                            bufferInfo.presentationTimeUs = (sampleTime - basePtsUs).coerceAtLeast(0L)
+                            bufferInfo.flags = extractor.sampleFlags
+                            muxer.writeSampleData(muxerTrack, buffer, bufferInfo)
+                        }
+                    }
+                    extractor.advance()
+                }
+            } finally {
+                runCatching { muxer.stop() }
+                runCatching { muxer.release() }
+                extractor.release()
+                fd.close()
+            }
+
+            if (outputFile.exists() && outputFile.length() > 0L) outputFile else null
+        }.getOrNull()
     }
 
     private fun compressImageToJpeg(uri: Uri, maxBytes: Long): File {
@@ -247,14 +364,57 @@ class PostMediaUploader @Inject constructor(
         }
 
         val options = BitmapFactory.Options().apply { inSampleSize = sampleSize }
-        val bitmap = (resolver.openInputStream(uri) ?: throw IOException("فایل تصویر قابل خواندن نیست")).use {
+        val rawBitmap = (resolver.openInputStream(uri) ?: throw IOException("فایل تصویر قابل خواندن نیست")).use {
             BitmapFactory.decodeStream(it, null, options)
         } ?: throw IOException("دیکود تصویر ناموفق بود")
+
+        val matrix = android.graphics.Matrix()
+        runCatching {
+            resolver.openInputStream(uri)?.use { stream ->
+                val exif = android.media.ExifInterface(stream)
+                when (exif.getAttributeInt(android.media.ExifInterface.TAG_ORIENTATION, android.media.ExifInterface.ORIENTATION_NORMAL)) {
+                    android.media.ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> matrix.postScale(-1f, 1f)
+                    android.media.ExifInterface.ORIENTATION_ROTATE_180 -> matrix.postRotate(180f)
+                    android.media.ExifInterface.ORIENTATION_FLIP_VERTICAL -> matrix.postScale(1f, -1f)
+                    android.media.ExifInterface.ORIENTATION_TRANSPOSE -> {
+                        matrix.postRotate(90f)
+                        matrix.postScale(-1f, 1f)
+                    }
+                    android.media.ExifInterface.ORIENTATION_ROTATE_90 -> matrix.postRotate(90f)
+                    android.media.ExifInterface.ORIENTATION_TRANSVERSE -> {
+                        matrix.postRotate(270f)
+                        matrix.postScale(-1f, 1f)
+                    }
+                    android.media.ExifInterface.ORIENTATION_ROTATE_270 -> matrix.postRotate(270f)
+                }
+            }
+        }
+        val oriented = if (!matrix.isIdentity) {
+            val rotated = Bitmap.createBitmap(rawBitmap, 0, 0, rawBitmap.width, rawBitmap.height, matrix, true)
+            if (rotated != rawBitmap) rawBitmap.recycle()
+            rotated
+        } else rawBitmap
+
+        val finalBitmap = if (oriented.width > MAX_IMAGE_DIMENSION || oriented.height > MAX_IMAGE_DIMENSION) {
+            val ratio = oriented.width.toFloat() / oriented.height.toFloat()
+            val targetW: Int
+            val targetH: Int
+            if (ratio > 1f) {
+                targetW = MAX_IMAGE_DIMENSION
+                targetH = (MAX_IMAGE_DIMENSION / ratio).toInt().coerceAtLeast(1)
+            } else {
+                targetH = MAX_IMAGE_DIMENSION
+                targetW = (MAX_IMAGE_DIMENSION * ratio).toInt().coerceAtLeast(1)
+            }
+            val scaled = Bitmap.createScaledBitmap(oriented, targetW, targetH, true)
+            if (scaled != oriented) oriented.recycle()
+            scaled
+        } else oriented
 
         val file = File.createTempFile("post-media-", ".jpg", cacheDir)
         return try {
             file.outputStream().use { output ->
-                if (!bitmap.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, output)) {
+                if (!finalBitmap.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, output)) {
                     throw IOException("فشرده‌سازی تصویر ناموفق بود")
                 }
             }
@@ -267,7 +427,7 @@ class PostMediaUploader @Inject constructor(
             file.delete()
             throw e
         } finally {
-            bitmap.recycle()
+            finalBitmap.recycle()
         }
     }
 

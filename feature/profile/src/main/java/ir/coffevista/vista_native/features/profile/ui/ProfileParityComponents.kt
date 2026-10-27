@@ -1,5 +1,17 @@
 package ir.coffevista.vista_native.features.profile.ui
 
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
+import android.widget.Toast
+import android.content.Intent
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
@@ -7,6 +19,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,11 +39,20 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Star
+import ir.coffevista.vista_native.features.profile.data.ProfileHighlightDto
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -54,6 +76,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.luminance
@@ -112,10 +135,12 @@ internal fun ProfileParityList(
     onLikeClick: (String, Boolean, Long) -> Unit,
     onSaveClick: (String, Boolean) -> Unit,
     onLoadMore: () -> Unit,
+    onRefresh: () -> Unit = {},
     onAvatarAddClick: (() -> Unit)? = null,
     onMemberBadgeClick: (() -> Unit)? = null,
     onFollowersClick: (() -> Unit)? = null,
     onFollowingClick: (() -> Unit)? = null,
+    highlightsContent: (@Composable () -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val listState = rememberLazyListState()
@@ -160,6 +185,9 @@ internal fun ProfileParityList(
             ) {
                 actionContent()
             }
+            if (highlightsContent != null) {
+                highlightsContent()
+            }
             ProfileTabStrip(
                 selectedTab = selectedTab,
                 onTabSelected = onTabSelected,
@@ -174,7 +202,10 @@ internal fun ProfileParityList(
             profilePostsSkeleton()
         } else if (postsState.posts.isEmpty() && postsState.error != null) {
             item(key = "posts-error") {
-                ProfilePostsError(postsState.error)
+                ProfilePostsError(
+                    message = postsState.error,
+                    onRetry = onRefresh,
+                )
             }
         } else {
             when (selectedTab) {
@@ -400,39 +431,44 @@ internal fun MemberOrderBadge(
     // 101-1000: Early (از اولین هزار نفر) -> Blue gradient + RocketLaunch icon
     // 1001-10000: Pioneer (عضو پیشگام) -> Purple gradient + ElectricBolt icon
     // >10000: Member (عضو شماره) -> Slate gradient + AutoAwesome icon
+    val isDark = isSystemInDarkTheme() || MaterialTheme.colorScheme.background.luminance() < 0.5f
     val (gradientColors, borderColor, textColor, badgeResId, label) = when {
         joinOrder <= 100 -> {
             Tuple5(
-                listOf(Color(0xFFFFFBEB), Color(0xFFFEF3C7)),
-                Color(0xFFF59E0B),
-                Color(0xFFB45309),
+                if (isDark) listOf(Color(0xFF3D2800), Color(0xFF5A3A00))
+                else listOf(Color(0xFFFFFBEB), Color(0xFFFEF3C7)),
+                if (isDark) Color(0xFFB8860B) else Color(0xFFF59E0B),
+                if (isDark) Color(0xFFFBBF24) else Color(0xFFB45309),
                 R.drawable.ic_badge_founder,
                 "عضو بنیان‌گذار ویستا \u200E#$joinOrder",
             )
         }
         joinOrder <= 1000 -> {
             Tuple5(
-                listOf(Color(0xFFEFF6FF), Color(0xFFDBEAFE)),
-                Color(0xFF3B82F6),
-                Color(0xFF1D4ED8),
+                if (isDark) listOf(Color(0xFF001A3D), Color(0xFF002D6B))
+                else listOf(Color(0xFFEFF6FF), Color(0xFFDBEAFE)),
+                if (isDark) Color(0xFF1565C0) else Color(0xFF3B82F6),
+                if (isDark) Color(0xFF82BBFF) else Color(0xFF1D4ED8),
                 R.drawable.ic_badge_rocket,
                 "از اولین هزار نفر \u200E#$joinOrder",
             )
         }
         joinOrder <= 10000 -> {
             Tuple5(
-                listOf(Color(0xFFFAF5FF), Color(0xFFF3E8FF)),
-                Color(0xFF8B5CF6),
-                Color(0xFF6D28D9),
+                if (isDark) listOf(Color(0xFF1A0030), Color(0xFF2D0050))
+                else listOf(Color(0xFFFAF5FF), Color(0xFFF3E8FF)),
+                if (isDark) Color(0xFF7B2FBE) else Color(0xFF8B5CF6),
+                if (isDark) Color(0xFFD08BFF) else Color(0xFF6D28D9),
                 R.drawable.ic_badge_bolt,
                 "عضو پیشگام \u200E#$joinOrder",
             )
         }
         else -> {
             Tuple5(
-                listOf(Color(0xFFF8FAFC), Color(0xFFF1F5F9)),
-                Color(0xFF94A3B8),
-                Color(0xFF475569),
+                if (isDark) listOf(Color(0xFF1E1E1E), Color(0xFF252525))
+                else listOf(Color(0xFFF8FAFC), Color(0xFFF1F5F9)),
+                if (isDark) Color(0xFF404040) else Color(0xFF94A3B8),
+                if (isDark) Color(0xFF999999) else Color(0xFF475569),
                 R.drawable.ic_badge_star,
                 "عضو شماره \u200E#$joinOrder",
             )
@@ -662,7 +698,12 @@ internal fun ProfilePostCard(
     onClick: () -> Unit,
     onLikeClick: () -> Unit,
     onSaveClick: () -> Unit,
+    onDeletePost: (() -> Unit)? = null,
 ) {
+    val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
+    var showMenu by remember { mutableStateOf(false) }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -721,16 +762,52 @@ internal fun ProfilePostCard(
                     )
                 }
             }
-            IconButton(
-                onClick = { /* post options */ },
-                modifier = Modifier.size(32.dp),
-            ) {
-                Icon(
-                    imageVector = Icons.Default.MoreVert,
-                    contentDescription = "گزینه‌های بیشتر",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(18.dp),
-                )
+            Box {
+                IconButton(
+                    onClick = { showMenu = true },
+                    modifier = Modifier.size(32.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.MoreVert,
+                        contentDescription = "گزینه‌های بیشتر",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+                DropdownMenu(
+                    expanded = showMenu,
+                    onDismissRequest = { showMenu = false },
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("اشتراک‌گذاری") },
+                        onClick = {
+                            showMenu = false
+                            val shareIntent = Intent().apply {
+                                action = Intent.ACTION_SEND
+                                putExtra(Intent.EXTRA_TEXT, "https://coffevista.ir/p/${post.id}")
+                                type = "text/plain"
+                            }
+                            context.startActivity(Intent.createChooser(shareIntent, "اشتراک‌گذاری پست"))
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("کپی لینک پست") },
+                        onClick = {
+                            showMenu = false
+                            clipboardManager.setText(AnnotatedString("https://coffevista.ir/p/${post.id}"))
+                            Toast.makeText(context, "لینک پست کپی شد", Toast.LENGTH_SHORT).show()
+                        },
+                    )
+                    if (onDeletePost != null) {
+                        DropdownMenuItem(
+                            text = { Text("حذف پست", color = Color(0xFFE53935)) },
+                            onClick = {
+                                showMenu = false
+                                onDeletePost()
+                            },
+                        )
+                    }
+                }
             }
         }
 
@@ -748,17 +825,74 @@ internal fun ProfilePostCard(
         }
 
         // Post Media
-        post.imageUrl?.let { imgUrl ->
-            AsyncImage(
-                model = imgUrl,
-                contentDescription = if (post.videoUrl == null) "تصویر پست" else "ویدیو",
+        val images = if (post.imageUrls.isNotEmpty()) post.imageUrls else listOfNotNull(post.imageUrl)
+        if (images.isNotEmpty() || !post.videoUrl.isNullOrBlank()) {
+            val ratio = post.aspectRatio?.coerceIn(0.75f, 1.91f)
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 6.dp)
-                    .height(260.dp)
-                    .clip(RoundedCornerShape(14.dp)),
-                contentScale = ContentScale.Crop,
-            )
+                    .then(
+                        if (ratio != null) Modifier.aspectRatio(ratio)
+                        else Modifier.height(260.dp)
+                    )
+                    .clip(RoundedCornerShape(14.dp))
+                    .clickable { onClick() },
+                contentAlignment = Alignment.Center,
+            ) {
+                if (images.size > 1) {
+                    val pagerState = rememberPagerState(pageCount = { images.size })
+                    HorizontalPager(
+                        state = pagerState,
+                        modifier = Modifier.fillMaxSize(),
+                    ) { page ->
+                        AsyncImage(
+                            model = images[page],
+                            contentDescription = "تصویر ${page + 1}",
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop,
+                        )
+                    }
+                    Surface(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(8.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color.Black.copy(alpha = 0.65f),
+                    ) {
+                        Text(
+                            text = "${(pagerState.currentPage + 1).toString().toPersianDigits()} / ${images.size.toString().toPersianDigits()}",
+                            color = Color.White,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                        )
+                    }
+                } else if (images.isNotEmpty()) {
+                    AsyncImage(
+                        model = images.first(),
+                        contentDescription = if (post.videoUrl == null) "تصویر پست" else "ویدیو",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop,
+                    )
+                }
+                if (!post.videoUrl.isNullOrBlank()) {
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(CircleShape)
+                            .background(Color.Black.copy(alpha = 0.6f)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.PlayArrow,
+                            contentDescription = "پخش ویدیو",
+                            tint = Color.White,
+                            modifier = Modifier.size(28.dp),
+                        )
+                    }
+                }
+            }
         }
 
         // Action Buttons Row
@@ -776,7 +910,7 @@ internal fun ProfilePostCard(
             )
             if (!post.hideLikeCount) {
                 Text(
-                    text = post.likeCount.toString(),
+                    text = post.likeCount.toString().toPersianDigits(),
                     modifier = Modifier.padding(start = 5.dp),
                     fontSize = 13.sp,
                     color = MaterialTheme.colorScheme.onBackground,
@@ -786,11 +920,14 @@ internal fun ProfilePostCard(
             Image(
                 painter = painterResource(DesignSystemR.drawable.vista_post_comment),
                 contentDescription = "دیدگاه",
-                modifier = Modifier.size(19.dp),
+                modifier = Modifier
+                    .size(19.dp)
+                    .clickable { onClick() },
+                colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.onBackground),
             )
             if (!post.hideCommentCount) {
                 Text(
-                    text = post.commentCount.toString(),
+                    text = post.commentCount.toString().toPersianDigits(),
                     modifier = Modifier.padding(start = 5.dp),
                     fontSize = 13.sp,
                     color = MaterialTheme.colorScheme.onBackground,
@@ -800,7 +937,17 @@ internal fun ProfilePostCard(
             Image(
                 painter = painterResource(DesignSystemR.drawable.vista_post_send),
                 contentDescription = "ارسال",
-                modifier = Modifier.size(19.dp),
+                modifier = Modifier
+                    .size(19.dp)
+                    .clickable {
+                        val shareIntent = Intent().apply {
+                            action = Intent.ACTION_SEND
+                            putExtra(Intent.EXTRA_TEXT, "https://coffevista.ir/p/${post.id}")
+                            type = "text/plain"
+                        }
+                        context.startActivity(Intent.createChooser(shareIntent, "اشتراک‌گذاری پست"))
+                    },
+                colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.onBackground),
             )
             Spacer(Modifier.weight(1f))
             BookmarkIcon(
@@ -952,7 +1099,8 @@ internal fun ProfileOptionsBottomSheet(
     onDismiss: () -> Unit,
     onShare: () -> Unit,
     onCopyLink: () -> Unit,
-    onReport: () -> Unit,
+    onReport: (() -> Unit)? = null,
+    onBlock: (() -> Unit)? = null,
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -983,15 +1131,28 @@ internal fun ProfileOptionsBottomSheet(
                     onCopyLink()
                 },
             )
-            ProfileBottomSheetItem(
-                icon = ImageVector.vectorResource(R.drawable.ic_profile_report),
-                title = "گزارش",
-                tint = Color(0xFFE53935),
-                onClick = {
-                    onDismiss()
-                    onReport()
-                },
-            )
+            if (onReport != null) {
+                ProfileBottomSheetItem(
+                    icon = ImageVector.vectorResource(R.drawable.ic_profile_report),
+                    title = "گزارش کاربر",
+                    tint = Color(0xFFE53935),
+                    onClick = {
+                        onDismiss()
+                        onReport()
+                    },
+                )
+            }
+            if (onBlock != null) {
+                ProfileBottomSheetItem(
+                    icon = ImageVector.vectorResource(R.drawable.ic_profile_report),
+                    title = "مسدود کردن کاربر",
+                    tint = Color(0xFFE53935),
+                    onClick = {
+                        onDismiss()
+                        onBlock()
+                    },
+                )
+            }
             Spacer(Modifier.height(24.dp))
         }
     }
@@ -1049,37 +1210,17 @@ internal fun ProfileFAB(
     }
 }
 
-enum class ResolvedVerificationBadgeType {
-    NONE,
-    BLUE_TICK,
-    GOLD_TICK,
-    BLACK_TICK,
-}
+typealias ResolvedVerificationBadgeType = ir.coffevista.vista_native.core.designsystem.component.ResolvedVerificationBadgeType
 
-fun parseVerificationBadgeType(raw: String?): ResolvedVerificationBadgeType {
-    if (raw.isNullOrBlank()) return ResolvedVerificationBadgeType.NONE
-    val value = if (raw.contains('.')) raw.substringAfterLast('.') else raw
-    val normalized = value.lowercase().replace(Regex("[^a-z]"), "")
-    return when (normalized) {
-        "blue", "bluetick" -> ResolvedVerificationBadgeType.BLUE_TICK
-        "gold", "goldtick" -> ResolvedVerificationBadgeType.GOLD_TICK
-        "black", "blacktick" -> ResolvedVerificationBadgeType.BLACK_TICK
-        else -> ResolvedVerificationBadgeType.NONE
-    }
-}
+fun parseVerificationBadgeType(raw: String?): ResolvedVerificationBadgeType =
+    ir.coffevista.vista_native.core.designsystem.component.parseVerificationBadgeType(raw)
 
 fun resolveVerificationBadgeType(
     isVerified: Boolean,
     verificationType: String? = null,
     role: String? = null,
-): ResolvedVerificationBadgeType {
-    if (!isVerified) return ResolvedVerificationBadgeType.NONE
-    val parsed = parseVerificationBadgeType(verificationType)
-    if (parsed == ResolvedVerificationBadgeType.NONE) {
-        return ResolvedVerificationBadgeType.BLUE_TICK
-    }
-    return parsed
-}
+): ResolvedVerificationBadgeType =
+    ir.coffevista.vista_native.core.designsystem.component.resolveVerificationBadgeType(isVerified, verificationType, role)
 
 @Composable
 internal fun VerificationBadgeIcon(
@@ -1089,26 +1230,12 @@ internal fun VerificationBadgeIcon(
     modifier: Modifier = Modifier,
     size: androidx.compose.ui.unit.Dp = 18.dp,
 ) {
-    val resolvedType = resolveVerificationBadgeType(
+    ir.coffevista.vista_native.core.designsystem.component.VistaVerificationBadge(
         isVerified = isVerified,
         verificationType = verificationType,
         role = role,
-    )
-    if (resolvedType == ResolvedVerificationBadgeType.NONE) return
-
-    val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
-    val badgeColor = when (resolvedType) {
-        ResolvedVerificationBadgeType.BLUE_TICK -> Color(0xFF2196F3)
-        ResolvedVerificationBadgeType.GOLD_TICK -> Color(0xFFFFB300)
-        ResolvedVerificationBadgeType.BLACK_TICK -> if (isDark) Color.White else Color.Black
-        ResolvedVerificationBadgeType.NONE -> Color.Transparent
-    }
-
-    Icon(
-        imageVector = ImageVector.vectorResource(R.drawable.ic_profile_verified),
-        contentDescription = "تأیید شده",
-        modifier = modifier.size(size),
-        tint = badgeColor,
+        modifier = modifier,
+        size = size,
     )
 }
 
@@ -1156,20 +1283,7 @@ private fun String.toPersianDigits(): String = buildString(length) {
     }
 }
 
-private fun profileRelativeTime(raw: String): String = runCatching {
-    val published = Instant.parse(raw)
-    val elapsed = Duration.between(published, Instant.now()).coerceAtLeast(Duration.ZERO)
-    when {
-        elapsed.toMinutes() < 1 -> "هم اکنون"
-        elapsed.toMinutes() < 60 -> "${elapsed.toMinutes().toPersianDigits()} دقیقه پیش"
-        elapsed.toHours() < 24 -> "${elapsed.toHours().toPersianDigits()} ساعت پیش"
-        elapsed.toDays() < 7 -> "${elapsed.toDays().toPersianDigits()} روز پیش"
-        else -> {
-            val zdt = published.atZone(TehranZone)
-            "${zdt.monthValue}/${zdt.dayOfMonth}".toPersianDigits()
-        }
-    }
-}.getOrDefault(raw.take(10))
+private fun profileRelativeTime(raw: String): String = ir.coffevista.vista_native.core.common.persianRelativeTime(raw)
 
 internal object ProfileParityTestTags {
     const val List = "profile-parity-list"
@@ -1246,12 +1360,33 @@ private fun ProfileLockedState() = ProfileEmptyView(
 )
 
 @Composable
-private fun ProfilePostsError(message: String) = ProfileEmptyView(
+private fun ProfilePostsError(
+    message: String,
+    onRetry: (() -> Unit)? = null,
+) = ProfileEmptyView(
     iconVector = null,
     iconText = "!",
     title = "دریافت پست‌ها ناموفق بود",
     subtitle = message,
     tag = ProfileParityTestTags.Error,
+    action = if (onRetry != null) {
+        {
+            Button(
+                onClick = onRetry,
+                modifier = Modifier.padding(top = 16.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                ),
+            ) {
+                Text(
+                    text = "تلاش مجدد",
+                    style = MaterialTheme.typography.labelLarge,
+                )
+            }
+        }
+    } else null,
 )
 
 @Composable
@@ -1262,6 +1397,7 @@ private fun ProfileEmptyView(
     iconVector: ImageVector? = null,
     iconRes: Int? = null,
     iconText: String? = null,
+    action: (@Composable () -> Unit)? = null,
 ) {
     Column(
         modifier = Modifier
@@ -1287,6 +1423,7 @@ private fun ProfileEmptyView(
                         painter = painterResource(iconRes),
                         contentDescription = null,
                         modifier = Modifier.size(36.dp),
+                        colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.onSurfaceVariant),
                     )
                     iconText != null -> Text(iconText, fontSize = 36.sp)
                 }
@@ -1306,5 +1443,108 @@ private fun ProfileEmptyView(
             fontSize = 13.sp,
             textAlign = TextAlign.Center,
         )
+        if (action != null) {
+            action()
+        }
     }
 }
+
+@Composable
+fun ProfileHighlightsRow(
+    highlights: List<ProfileHighlightDto>,
+    isOwnProfile: Boolean,
+    onAddClick: () -> Unit = {},
+    onHighlightClick: (ProfileHighlightDto) -> Unit = {},
+    modifier: Modifier = Modifier,
+) {
+    if (highlights.isEmpty() && !isOwnProfile) return
+
+    LazyRow(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        contentPadding = PaddingValues(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (isOwnProfile) {
+            item(key = "new_highlight_btn") {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.clickable { onAddClick() },
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(64.dp)
+                            .clip(CircleShape)
+                            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f), CircleShape),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = "هایلایت جدید",
+                            tint = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(26.dp),
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "جدید",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.Medium,
+                    )
+                }
+            }
+        }
+
+        items(
+            items = highlights,
+            key = { it.id },
+        ) { highlight ->
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.clickable { onHighlightClick(highlight) },
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(64.dp)
+                        .clip(CircleShape)
+                        .border(1.5.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f), CircleShape)
+                        .padding(3.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (!highlight.coverUrl.isNullOrBlank()) {
+                        coil.compose.AsyncImage(
+                            model = highlight.coverUrl,
+                            contentDescription = highlight.title,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop,
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.Star,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = highlight.title,
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    fontWeight = FontWeight.Normal,
+                    modifier = Modifier.widthIn(max = 68.dp),
+                    textAlign = TextAlign.Center,
+                )
+            }
+        }
+    }
+}
+

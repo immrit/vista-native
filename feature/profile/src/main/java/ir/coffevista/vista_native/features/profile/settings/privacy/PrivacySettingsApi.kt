@@ -16,7 +16,58 @@ interface PrivacySettingsApi {
 
     @POST("v1/me/profile/update")
     suspend fun updatePrivateAccount(@Body request: PrivateAccountRequestDto): Response<Unit>
+
+    @GET("v1/me/story-settings")
+    suspend fun getStorySettings(): Response<StorySettingsDto>
+
+    @retrofit2.http.PATCH("v1/me/story-settings")
+    suspend fun updateStorySettings(@Body settings: StorySettingsDto): Response<Unit>
+
+    @POST("v1/auth/account-deletion/request-otp")
+    suspend fun requestAccountDeletionOtp(@Body request: RequestAccountDeletionOtpDto): Response<AccountDeletionOtpResponseDto> = Response.success(AccountDeletionOtpResponseDto())
+
+    @POST("v1/auth/account-deletion/confirm")
+    suspend fun confirmAccountDeletion(@Body request: ConfirmAccountDeletionDto): Response<ConfirmAccountDeletionResponseDto> = Response.success(ConfirmAccountDeletionResponseDto())
+
+    @POST("v1/auth/2fa/remove")
+    suspend fun remove2FA(@Body request: Remove2FADto): Response<Map<String, Boolean>> = Response.success(mapOf("success" to true))
 }
+
+@Serializable
+data class RequestAccountDeletionOtpDto(
+    val reason: String,
+)
+
+@Serializable
+data class AccountDeletionOtpResponseDto(
+    val success: Boolean = true,
+    val message: String? = null,
+    @kotlinx.serialization.SerialName("expires_in_seconds") val expiresInSeconds: Long = 120,
+)
+
+@Serializable
+data class ConfirmAccountDeletionDto(
+    @kotlinx.serialization.SerialName("otp_code") val otpCode: String,
+    val password: String = "",
+    val reason: String,
+)
+
+@Serializable
+data class ConfirmAccountDeletionResponseDto(
+    val success: Boolean = true,
+    val message: String? = null,
+    @kotlinx.serialization.SerialName("grace_period_days") val gracePeriodDays: Int = 30,
+)
+
+@Serializable
+data class Remove2FADto(
+    @kotlinx.serialization.SerialName("current_password") val currentPassword: String,
+)
+
+@Serializable
+data class StorySettingsDto(
+    @kotlinx.serialization.SerialName("reply_permission") val reply_permission: String = "everyone",
+)
 
 @Serializable
 data class PrivacySettingsDto(

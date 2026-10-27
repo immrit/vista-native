@@ -48,7 +48,14 @@ import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Videocam
+import androidx.compose.material3.Switch
+import androidx.compose.runtime.DisposableEffect
+import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
+import androidx.media3.exoplayer.ExoPlayer
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -131,7 +138,24 @@ fun AddPostScreen(
 
     var showLocationDialog by remember { mutableStateOf(false) }
     var showMusicTrimSheet by remember { mutableStateOf(false) }
+    var showDiscardDraftDialog by remember { mutableStateOf(false) }
     var selectedImageIndex by remember { mutableIntStateOf(0) }
+
+    val hasUnsavedContent = remember(uiState.content, uiState.selectedImages, uiState.selectedVideo, uiState.selectedMusicUri) {
+        uiState.content.isNotBlank() || uiState.selectedImages.isNotEmpty() || uiState.selectedVideo != null || uiState.selectedMusicUri != null
+    }
+
+    androidx.activity.compose.BackHandler(enabled = hasUnsavedContent) {
+        showDiscardDraftDialog = true
+    }
+
+    fun handleBack() {
+        if (hasUnsavedContent) {
+            showDiscardDraftDialog = true
+        } else {
+            onBack()
+        }
+    }
 
     // Share intent / preloaded media
     LaunchedEffect(preloadedRequestId, preloadedText, preloadedMediaUris) {
@@ -175,7 +199,6 @@ fun AddPostScreen(
         contract = ActivityResultContracts.PickVisualMedia(),
     ) { uri ->
         if (uri != null) {
-            viewModel.onVideoSelected(uri)
             onNavigateToTrimmer(uri)
         }
     }
@@ -225,7 +248,7 @@ fun AddPostScreen(
                         )
                     },
                     navigationIcon = {
-                        IconButton(onClick = onBack) {
+                        IconButton(onClick = ::handleBack) {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                                 contentDescription = "بازگشت",
@@ -387,8 +410,8 @@ fun AddPostScreen(
                         .padding(horizontal = 16.dp, vertical = 6.dp),
                 ) {
                     when {
-                        // Video Selected
-                        uiState.isVideo && uiState.selectedVideo != null -> {
+                        // Video Selected (either file or uri)
+                        uiState.isVideo && (uiState.selectedVideo != null || uiState.selectedVideoUri != null) -> {
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -397,12 +420,55 @@ fun AddPostScreen(
                                     .background(Color.Black),
                                 contentAlignment = Alignment.Center,
                             ) {
-                                Text(
-                                    text = "ویدیو انتخاب و آماده شد\n(${uiState.selectedVideo?.name})",
-                                    color = Color.White,
-                                    textAlign = TextAlign.Center,
-                                    fontSize = 14.sp,
-                                )
+                                val previewVideoUriString = remember(uiState.selectedVideo, uiState.selectedVideoUri) {
+                                    uiState.selectedVideo?.let { Uri.fromFile(it).toString() } ?: uiState.selectedVideoUri?.toString()
+                                }
+                                if (previewVideoUriString != null) {
+                                    ir.coffevista.vista_native.features.feed.ui.components.VistaFeedVideoPlayer(
+                                        videoUrl = previewVideoUriString,
+                                        modifier = Modifier.fillMaxSize(),
+                                        aspectRatio = uiState.aspectRatio.floatValue,
+                                        autoPlay = false,
+                                        initiallyMuted = false,
+                                        showMuteToggle = true,
+                                    )
+                                } else {
+                                    AsyncImage(
+                                        model = uiState.selectedVideo ?: uiState.selectedVideoUri,
+                                        contentDescription = "ویدیو",
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = ContentScale.Crop,
+                                    )
+                                }
+
+                                // Top video filename badge
+                                Surface(
+                                    color = Color.Black.copy(alpha = 0.6f),
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier
+                                        .align(Alignment.TopStart)
+                                        .padding(12.dp),
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Videocam,
+                                            contentDescription = null,
+                                            tint = Color.White,
+                                            modifier = Modifier.size(14.dp),
+                                        )
+                                        Text(
+                                            text = uiState.selectedVideo?.name ?: "ویدیو آماده است",
+                                            color = Color.White,
+                                            fontSize = 11.sp,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
+                                }
 
                                 // Action buttons over video
                                 Row(
@@ -416,7 +482,8 @@ fun AddPostScreen(
                                             uiState.selectedVideoUri?.let(onNavigateToTrimmer)
                                         },
                                         colors = ButtonDefaults.buttonColors(
-                                            containerColor = Color.Black.copy(alpha = 0.7f),
+                                            containerColor = Color.Black.copy(alpha = 0.75f),
+                                            contentColor = Color.White,
                                         ),
                                         shape = RoundedCornerShape(10.dp),
                                     ) {
@@ -432,7 +499,8 @@ fun AddPostScreen(
                                     Button(
                                         onClick = viewModel::removeVideo,
                                         colors = ButtonDefaults.buttonColors(
-                                            containerColor = Color(0xFFD32F2F).copy(alpha = 0.8f),
+                                            containerColor = Color(0xFFD32F2F).copy(alpha = 0.85f),
+                                            contentColor = Color.White,
                                         ),
                                         shape = RoundedCornerShape(10.dp),
                                     ) {
@@ -450,20 +518,75 @@ fun AddPostScreen(
 
                         // Images Selected
                         uiState.selectedImages.isNotEmpty() -> {
-                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            val activeImageIndex = selectedImageIndex.coerceIn(0, uiState.selectedImages.size - 1)
+                            val activeImageUri = uiState.selectedImages.getOrNull(activeImageIndex) ?: uiState.selectedImages.first()
+
+                            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                // 1. Large Main Preview Box with chosen Aspect Ratio
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .aspectRatio(uiState.aspectRatio.floatValue)
+                                        .clip(RoundedCornerShape(16.dp))
+                                        .border(
+                                            width = 1.dp,
+                                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                                            shape = RoundedCornerShape(16.dp),
+                                        )
+                                        .background(if (isDark) Color(0xFF161622) else Color(0xFFF5F5F7)),
+                                ) {
+                                    AsyncImage(
+                                        model = activeImageUri,
+                                        contentDescription = null,
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = ContentScale.Crop,
+                                    )
+
+                                    // Floating Counter Badge
+                                    Surface(
+                                        color = Color.Black.copy(alpha = 0.6f),
+                                        shape = RoundedCornerShape(12.dp),
+                                        modifier = Modifier
+                                            .align(Alignment.TopStart)
+                                            .padding(10.dp),
+                                    ) {
+                                        Text(
+                                            text = "${activeImageIndex + 1} از ${uiState.selectedImages.size}",
+                                            color = Color.White,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                        )
+                                    }
+
+                                    // Instagram-Style Floating Music Overlay on Photos
+                                    if (uiState.selectedMusicUri != null || uiState.selectedMusicTitle != null) {
+                                        MusicOverlayPill(
+                                            title = uiState.selectedMusicTitle ?: "موسیقی انتخاب‌شده",
+                                            onTap = { showMusicTrimSheet = true },
+                                            onRemove = { viewModel.onMusicSelected(null, null) },
+                                            modifier = Modifier
+                                                .align(Alignment.BottomCenter)
+                                                .padding(bottom = 12.dp),
+                                        )
+                                    }
+                                }
+
+                                // 2. Carousel / Thumbnail Strip below preview
                                 LazyRow(
                                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                                     modifier = Modifier.fillMaxWidth(),
                                 ) {
                                     itemsIndexed(uiState.selectedImages) { idx, imageUri ->
+                                        val isSelected = idx == activeImageIndex
                                         Box(
                                             modifier = Modifier
-                                                .size(140.dp)
-                                                .clip(RoundedCornerShape(14.dp))
+                                                .size(76.dp)
+                                                .clip(RoundedCornerShape(12.dp))
                                                 .border(
-                                                    width = 1.dp,
-                                                    color = MaterialTheme.colorScheme.outlineVariant,
-                                                    shape = RoundedCornerShape(14.dp),
+                                                    width = if (isSelected) 2.5.dp else 1.dp,
+                                                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+                                                    shape = RoundedCornerShape(12.dp),
                                                 )
                                                 .clickable { selectedImageIndex = idx },
                                         ) {
@@ -474,41 +597,27 @@ fun AddPostScreen(
                                                 contentScale = ContentScale.Crop,
                                             )
 
-                                            // Scrim on top
-                                            Box(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .height(36.dp)
-                                                    .background(Color.Black.copy(alpha = 0.25f)),
-                                            )
-
                                             IconButton(
-                                                onClick = { viewModel.removeImage(imageUri) },
+                                                onClick = {
+                                                    viewModel.removeImage(imageUri)
+                                                    if (selectedImageIndex >= uiState.selectedImages.size - 1) {
+                                                        selectedImageIndex = maxOf(0, uiState.selectedImages.size - 2)
+                                                    }
+                                                },
                                                 modifier = Modifier
                                                     .align(Alignment.TopEnd)
-                                                    .padding(4.dp)
-                                                    .size(24.dp)
+                                                    .padding(3.dp)
+                                                    .size(20.dp)
                                                     .clip(CircleShape)
-                                                    .background(Color.Black.copy(alpha = 0.6f)),
+                                                    .background(Color.Black.copy(alpha = 0.65f)),
                                             ) {
                                                 Icon(
                                                     imageVector = Icons.Default.Close,
                                                     contentDescription = "حذف",
                                                     tint = Color.White,
-                                                    modifier = Modifier.size(14.dp),
+                                                    modifier = Modifier.size(12.dp),
                                                 )
                                             }
-
-                                            // Counter badge
-                                            Text(
-                                                text = "${idx + 1}/${uiState.selectedImages.size}",
-                                                color = Color.White,
-                                                fontSize = 10.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                modifier = Modifier
-                                                    .align(Alignment.TopStart)
-                                                    .padding(6.dp),
-                                            )
                                         }
                                     }
 
@@ -516,8 +625,8 @@ fun AddPostScreen(
                                         item {
                                             Box(
                                                 modifier = Modifier
-                                                    .size(140.dp)
-                                                    .clip(RoundedCornerShape(14.dp))
+                                                    .size(76.dp)
+                                                    .clip(RoundedCornerShape(12.dp))
                                                     .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
                                                     .clickable {
                                                         imagePickerLauncher.launch(
@@ -530,21 +639,96 @@ fun AddPostScreen(
                                                     imageVector = Icons.Default.Add,
                                                     contentDescription = "افزودن عکس بیشتر",
                                                     tint = MaterialTheme.colorScheme.primary,
-                                                    modifier = Modifier.size(32.dp),
+                                                    modifier = Modifier.size(26.dp),
                                                 )
                                             }
                                         }
                                     }
                                 }
+                            }
+                        }
 
-                                // Instagram-Style Floating Music Overlay on Photos
-                                if (uiState.selectedMusicUri != null || uiState.selectedMusicTitle != null) {
-                                    MusicOverlayPill(
-                                        title = uiState.selectedMusicTitle ?: "موسیقی انتخاب‌شده",
-                                        onTap = { showMusicTrimSheet = true },
-                                        onRemove = { viewModel.onMusicSelected(null, null) },
-                                        modifier = Modifier.padding(top = 4.dp),
-                                    )
+                        // Music Only (No Images / No Video)
+                        uiState.selectedMusicUri != null || uiState.selectedMusicTitle != null -> {
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(16.dp)),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (isDark) Color(0xFF1E1E2E) else Color(0xFFF1F5F9),
+                                ),
+                                border = androidx.compose.foundation.BorderStroke(
+                                    1.dp,
+                                    if (isDark) Color.White.copy(alpha = 0.12f) else Color.Black.copy(alpha = 0.08f),
+                                ),
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(16.dp),
+                                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                    ) {
+                                        RotatingVinylDisc(size = 44.dp)
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = uiState.selectedMusicTitle ?: "موسیقی انتخاب‌شده",
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 15.sp,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                            )
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            Text(
+                                                text = "بازه: ${uiState.musicStartMs / 1000} تا ${uiState.musicEndMs / 1000} ثانیه (از ${(uiState.musicDurationMs / 1000)} ثانیه)",
+                                                fontSize = 12.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        }
+                                        AnimatedEqualizerBars(
+                                            barCount = 4,
+                                            height = 20.dp,
+                                            color = MaterialTheme.colorScheme.primary,
+                                        )
+                                    }
+
+                                    HorizontalDivider(color = if (isDark) Color.White.copy(alpha = 0.08f) else Color.Black.copy(alpha = 0.06f))
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            TextButton(onClick = { showMusicTrimSheet = true }) {
+                                                Icon(imageVector = Icons.Default.ContentCut, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Text("تنظیم بازه", fontSize = 12.sp)
+                                            }
+                                            TextButton(
+                                                onClick = { viewModel.onMusicSelected(null, null) },
+                                                colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFE53935)),
+                                            ) {
+                                                Icon(imageVector = Icons.Default.Close, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Text("حذف موزیک", fontSize = 12.sp)
+                                            }
+                                        }
+
+                                        TextButton(
+                                            onClick = {
+                                                imagePickerLauncher.launch(
+                                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                                                )
+                                            },
+                                        ) {
+                                            Icon(imageVector = Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text("افزودن تصویر", fontSize = 12.sp)
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -716,13 +900,67 @@ fun AddPostScreen(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("مخفی کردن تعداد لایک‌ها", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("مخفی کردن تعداد لایک‌ها", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                                if (!uiState.isPremium) {
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Surface(
+                                        shape = RoundedCornerShape(4.dp),
+                                        color = Color(0xFFFFB300),
+                                    ) {
+                                        Text(
+                                            text = "پریمیوم",
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.Black,
+                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                                        )
+                                    }
+                                }
+                            }
                             Text("تعداد لایک‌های این پست برای دیگران نمایش داده نمی‌شود", fontSize = 11.sp, color = Color.Gray)
                         }
                         Spacer(modifier = Modifier.width(12.dp))
                         ir.coffevista.vista_native.core.designsystem.component.VistaSwitch(
                             checked = uiState.hideLikeCount,
-                            onCheckedChange = { viewModel.toggleHideLikeCount(it) },
+                            enabled = uiState.isPremium,
+                            onCheckedChange = { if (uiState.isPremium) viewModel.toggleHideLikeCount(it) },
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 6.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("مخفی کردن تعداد نظرات", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                                if (!uiState.isPremium) {
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Surface(
+                                        shape = RoundedCornerShape(4.dp),
+                                        color = Color(0xFFFFB300),
+                                    ) {
+                                        Text(
+                                            text = "پریمیوم",
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.Black,
+                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                                        )
+                                    }
+                                }
+                            }
+                            Text("تعداد نظرات این پست برای دیگران نمایش داده نمی‌شود", fontSize = 11.sp, color = Color.Gray)
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        ir.coffevista.vista_native.core.designsystem.component.VistaSwitch(
+                            checked = uiState.hideCommentCount,
+                            enabled = uiState.isPremium,
+                            onCheckedChange = { if (uiState.isPremium) viewModel.toggleHideCommentCount(it) },
                         )
                     }
 
@@ -773,7 +1011,7 @@ fun AddPostScreen(
                                 fontWeight = FontWeight.Bold,
                             )
                             Text(
-                                text = "۴۰۰ کاراکتر بنویسید",
+                                text = "تا ۱۰۰۰ کاراکتر بنویسید",
                                 color = Color.White.copy(alpha = 0.75f),
                                 fontSize = 10.sp,
                             )
@@ -792,6 +1030,53 @@ fun AddPostScreen(
     }
 
         // Location Dialog
+        if (showDiscardDraftDialog) {
+            AlertDialog(
+                onDismissRequest = { showDiscardDraftDialog = false },
+                title = {
+                    Text(
+                        text = "ذخیره پیش‌نویس؟",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp,
+                    )
+                },
+                text = {
+                    Text(
+                        text = "می‌توانید پست خود را ذخیره کنید تا بعداً به تکمیل آن ادامه دهید.",
+                        fontSize = 14.sp,
+                        lineHeight = 20.sp,
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            viewModel.saveDraft()
+                            showDiscardDraftDialog = false
+                            onBack()
+                        },
+                    ) {
+                        Text("ذخیره پیش‌نویس", fontWeight = FontWeight.Bold)
+                    }
+                },
+                dismissButton = {
+                    Row {
+                        TextButton(
+                            onClick = {
+                                viewModel.discardDraft()
+                                showDiscardDraftDialog = false
+                                onBack()
+                            },
+                        ) {
+                            Text("حذف", color = MaterialTheme.colorScheme.error)
+                        }
+                        TextButton(onClick = { showDiscardDraftDialog = false }) {
+                            Text("انصراف")
+                        }
+                    }
+                },
+            )
+        }
+
         if (showLocationDialog) {
             var customCity by remember { mutableStateOf(uiState.selectedLocation.orEmpty()) }
             val quickCities = listOf("تهران، ایران", "شیراز، فارس", "اصفهان", "مشهد، خراسان", "تبریز، آذربایجان", "کیش، هرمزگان")
@@ -847,23 +1132,86 @@ fun AddPostScreen(
         // Music Trim Bottom Sheet
         if (showMusicTrimSheet && uiState.selectedMusicUri != null && uiState.musicDurationMs > 0) {
             val maxClipMs = if (uiState.isPremium) 60_000 else 15_000
+            val sheetContext = LocalContext.current
+            val previewPlayer = remember(uiState.selectedMusicUri) {
+                ExoPlayer.Builder(sheetContext).build().apply {
+                    setMediaItem(MediaItem.fromUri(uiState.selectedMusicUri!!))
+                    prepare()
+                }
+            }
+            var isAudioPlaying by remember { mutableStateOf(false) }
             var trimRange by remember(uiState.selectedMusicUri) {
                 mutableStateOf(uiState.musicStartMs.toFloat()..uiState.musicEndMs.toFloat())
             }
-            ModalBottomSheet(onDismissRequest = { showMusicTrimSheet = false }) {
+
+            DisposableEffect(previewPlayer) {
+                val listener = object : Player.Listener {
+                    override fun onIsPlayingChanged(playing: Boolean) {
+                        isAudioPlaying = playing
+                    }
+                }
+                previewPlayer.addListener(listener)
+                onDispose {
+                    previewPlayer.removeListener(listener)
+                    previewPlayer.release()
+                }
+            }
+
+            LaunchedEffect(isAudioPlaying, trimRange) {
+                if (isAudioPlaying) {
+                    while (isAudioPlaying) {
+                        kotlinx.coroutines.delay(100L)
+                        if (previewPlayer.currentPosition >= trimRange.endInclusive.toLong()) {
+                            previewPlayer.seekTo(trimRange.start.toLong())
+                        }
+                    }
+                }
+            }
+
+            ModalBottomSheet(onDismissRequest = {
+                previewPlayer.pause()
+                showMusicTrimSheet = false
+            }) {
                 Column(
                     modifier = Modifier.fillMaxWidth().padding(20.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
                     Text("برش موسیقی", fontWeight = FontWeight.Bold, fontSize = 18.sp)
                     Text(uiState.selectedMusicTitle.orEmpty(), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("بازه: ${(trimRange.start / 1000).toInt()} تا ${(trimRange.endInclusive / 1000).toInt()} ثانیه")
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("بازه: ${(trimRange.start / 1000).toInt()} تا ${(trimRange.endInclusive / 1000).toInt()} ثانیه")
+                        IconButton(
+                            onClick = {
+                                if (isAudioPlaying) {
+                                    previewPlayer.pause()
+                                } else {
+                                    previewPlayer.seekTo(trimRange.start.toLong())
+                                    previewPlayer.play()
+                                }
+                            },
+                        ) {
+                            Icon(
+                                if (isAudioPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                contentDescription = if (isAudioPlaying) "توقف پیش‌نمایش" else "پخش پیش‌نمایش",
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                    }
+
                     RangeSlider(
                         value = trimRange,
                         onValueChange = { value ->
                             val start = value.start.coerceAtLeast(0f)
                             val end = value.endInclusive.coerceAtMost(uiState.musicDurationMs.toFloat())
                             trimRange = start..minOf(end, start + maxClipMs)
+                            if (isAudioPlaying) {
+                                previewPlayer.seekTo(start.toLong())
+                            }
                         },
                         valueRange = 0f..uiState.musicDurationMs.toFloat(),
                     )
@@ -872,8 +1220,22 @@ fun AddPostScreen(
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("پخش به صورت موزیک پس‌زمینه", style = MaterialTheme.typography.bodyMedium)
+                        Switch(
+                            checked = uiState.isMusicBackgroundMode,
+                            onCheckedChange = viewModel::toggleMusicBackgroundMode,
+                        )
+                    }
+
                     Button(
                         onClick = {
+                            previewPlayer.pause()
                             viewModel.onMusicTrimChanged(trimRange.start.toInt(), trimRange.endInclusive.toInt())
                             showMusicTrimSheet = false
                         },
@@ -881,6 +1243,7 @@ fun AddPostScreen(
                     ) { Text("تایید برش") }
                     TextButton(
                         onClick = {
+                            previewPlayer.pause()
                             viewModel.onMusicSelected(null, null)
                             showMusicTrimSheet = false
                         },

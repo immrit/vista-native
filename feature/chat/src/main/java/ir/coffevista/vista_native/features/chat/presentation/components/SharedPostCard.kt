@@ -3,6 +3,7 @@ package ir.coffevista.vista_native.features.chat.presentation.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,18 +24,19 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChatBubble
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -42,11 +44,16 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import ir.coffevista.vista_native.core.designsystem.component.ResolvedVerificationBadgeType
+import ir.coffevista.vista_native.core.designsystem.component.VistaVerificationBadge
+import ir.coffevista.vista_native.core.designsystem.component.resolveVerificationBadgeType
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaBrandColors
 import ir.coffevista.vista_native.features.chat.domain.model.SharedPostDraft
+import ir.coffevista.vista_native.features.chat.domain.model.SharedPostParser
 import ir.coffevista.vista_native.features.chat.presentation.toPersianDigits
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -67,6 +74,7 @@ fun SharedPostCard(
     modifier: Modifier = Modifier,
     onViewPost: (String) -> Unit = {},
 ) {
+    val isDarkTheme = isSystemInDarkTheme()
     val primaryTextColor = if (isMine) Color.White else MaterialTheme.colorScheme.onSurface
     val secondaryTextColor = if (isMine) Color.White.copy(alpha = 0.75f) else MaterialTheme.colorScheme.onSurfaceVariant
     val cardBackground = if (isMine) {
@@ -96,30 +104,40 @@ fun SharedPostCard(
                 .padding(horizontal = 10.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // آواتار با حاشیه گرادیانت ویستا
+            // آواتار با حاشیه گرادیانت استوری (فقط در صورتی که کاربر استوری فعال داشته باشد)
+            val hasStory = post.hasStory
             Box(
                 modifier = Modifier
                     .size(36.dp)
                     .clip(CircleShape)
-                    .background(
-                        Brush.linearGradient(
-                            listOf(
-                                Color(0xFFAB47BC),
-                                Color(0xFFEC407A),
-                                Color(0xFFFFA726),
-                            ),
-                        ),
-                    )
-                    .padding(1.5.dp)
-                    .clip(CircleShape)
-                    .background(if (isMine) VistaBrandColors.VioletDeep else MaterialTheme.colorScheme.surface),
+                    .then(
+                        if (hasStory) {
+                            Modifier
+                                .background(
+                                    Brush.linearGradient(
+                                        listOf(
+                                            Color(0xFFAB47BC),
+                                            Color(0xFFEC407A),
+                                            Color(0xFFFFA726),
+                                        ),
+                                    ),
+                                )
+                                .padding(1.5.dp)
+                                .clip(CircleShape)
+                                .background(if (isMine) VistaBrandColors.VioletDeep else MaterialTheme.colorScheme.surface)
+                        } else {
+                            Modifier.background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                        }
+                    ),
                 contentAlignment = Alignment.Center,
             ) {
                 if (!post.authorAvatar.isNullOrBlank()) {
                     AsyncImage(
                         model = post.authorAvatar,
                         contentDescription = post.authorName,
-                        modifier = Modifier.size(33.dp).clip(CircleShape),
+                        modifier = Modifier
+                            .size(if (hasStory) 33.dp else 36.dp)
+                            .clip(CircleShape),
                         contentScale = ContentScale.Crop,
                     )
                 } else {
@@ -134,34 +152,50 @@ fun SharedPostCard(
 
             Spacer(Modifier.width(8.dp))
 
-            Column(modifier = Modifier.weight(1f)) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.Center,
+            ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = post.authorName.ifBlank { "کاربر" },
                         color = primaryTextColor,
                         fontWeight = FontWeight.Bold,
                         fontSize = 13.sp,
+                        lineHeight = 16.sp,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                     if (post.isVerified) {
                         Spacer(Modifier.width(3.dp))
-                        Icon(
-                            imageVector = Icons.Default.Verified,
-                            contentDescription = "حساب تایید شده",
-                            tint = if (isMine) Color(0xFF90CAF9) else Color(0xFF1E88E5),
-                            modifier = Modifier.size(13.dp),
+                        VistaVerificationBadge(
+                            isVerified = post.isVerified,
+                            verificationType = post.verificationType,
+                            role = post.role,
+                            size = 13.dp,
+                            isDarkSurface = isMine || isDarkTheme,
+                            overrideColor = if (isMine) {
+                                when (resolveVerificationBadgeType(post.isVerified, post.verificationType, post.role)) {
+                                    ResolvedVerificationBadgeType.BLUE_TICK -> Color(0xFF90CAF9)
+                                    ResolvedVerificationBadgeType.GOLD_TICK -> Color(0xFFFFD54F)
+                                    ResolvedVerificationBadgeType.BLACK_TICK -> Color.White
+                                    ResolvedVerificationBadgeType.NONE -> Color.Transparent
+                                }
+                            } else null,
                         )
                     }
                 }
                 if (post.authorUsername.isNotBlank()) {
-                    Text(
-                        text = "@${post.authorUsername.removePrefix("@")}",
-                        color = secondaryTextColor,
-                        fontSize = 11.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                        Text(
+                            text = "@${post.authorUsername.removePrefix("@")}",
+                            color = secondaryTextColor,
+                            fontSize = 11.sp,
+                            lineHeight = 13.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
             }
         }
@@ -291,114 +325,22 @@ fun SharedPostCard(
                 }
             }
 
-            Text(
-                text = "مشاهده پست ‹",
-                color = if (isMine) Color.White.copy(alpha = 0.9f) else VistaBrandColors.Indigo,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 11.sp,
-            )
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .clickable(role = Role.Button) { onViewPost(post.postId) }
+                    .padding(horizontal = 4.dp, vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "مشاهده پست ‹",
+                    color = if (isMine) Color.White.copy(alpha = 0.9f) else VistaBrandColors.Indigo,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 11.sp,
+                )
+            }
         }
     }
 }
 
-/**
- * تحلیل‌گر هوشمند برای خواندن SharedPostDraft از ساختارهای مختلف JSON و داده‌های قدیمی فلاتر.
- */
-object SharedPostParser {
-    private val json = Json { ignoreUnknownKeys = true; isLenient = true }
-
-    fun tryParse(raw: String?): SharedPostDraft? {
-        if (raw.isNullOrBlank()) return null
-        val trimmed = raw.trim()
-        if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) return null
-
-        return runCatching {
-            json.decodeFromString(SharedPostDraft.serializer(), trimmed)
-        }.recoverCatching {
-            val root = Json.parseToJsonElement(trimmed).jsonObject
-            val target = if (root.containsKey("shared_post_data") && root["shared_post_data"] is kotlinx.serialization.json.JsonObject) {
-                root["shared_post_data"]!!.jsonObject
-            } else if (root.containsKey("sharedPostData") && root["sharedPostData"] is kotlinx.serialization.json.JsonObject) {
-                root["sharedPostData"]!!.jsonObject
-            } else {
-                root
-            }
-
-            val postId = target["postId"]?.jsonPrimitive?.contentOrNull
-                ?: target["post_id"]?.jsonPrimitive?.contentOrNull
-                ?: target["id"]?.jsonPrimitive?.contentOrNull
-                ?: return@recoverCatching null
-
-            val authorName = target["authorName"]?.jsonPrimitive?.contentOrNull
-                ?: target["post_author_name"]?.jsonPrimitive?.contentOrNull
-                ?: target["postAuthorName"]?.jsonPrimitive?.contentOrNull
-                ?: "کاربر"
-
-            val authorUsername = target["authorUsername"]?.jsonPrimitive?.contentOrNull
-                ?: target["post_author_username"]?.jsonPrimitive?.contentOrNull
-                ?: target["postAuthorUsername"]?.jsonPrimitive?.contentOrNull
-                ?: ""
-
-            val authorAvatar = target["authorAvatar"]?.jsonPrimitive?.contentOrNull
-                ?: target["post_author_avatar"]?.jsonPrimitive?.contentOrNull
-                ?: target["postAuthorAvatar"]?.jsonPrimitive?.contentOrNull
-
-            val content = target["content"]?.jsonPrimitive?.contentOrNull
-                ?: target["post_content"]?.jsonPrimitive?.contentOrNull
-                ?: target["postContent"]?.jsonPrimitive?.contentOrNull
-                ?: ""
-
-            val mediaUrls = mutableListOf<String>()
-            val rawMedia = target["mediaUrls"] ?: target["media_urls"]
-            if (rawMedia is JsonArray) {
-                mediaUrls.addAll(rawMedia.mapNotNull { it.jsonPrimitive.contentOrNull })
-            }
-            val singleImg = target["post_image_url"]?.jsonPrimitive?.contentOrNull
-                ?: target["postImageUrl"]?.jsonPrimitive?.contentOrNull
-                ?: target["imageUrl"]?.jsonPrimitive?.contentOrNull
-                ?: target["thumbnailUrl"]?.jsonPrimitive?.contentOrNull
-            if (singleImg != null && singleImg !in mediaUrls) {
-                mediaUrls.add(0, singleImg)
-            }
-
-            val likes = target["likesCount"]?.jsonPrimitive?.longOrNull
-                ?: target["like_count"]?.jsonPrimitive?.longOrNull
-                ?: target["likeCount"]?.jsonPrimitive?.longOrNull
-                ?: 0L
-
-            val comments = target["commentsCount"]?.jsonPrimitive?.longOrNull
-                ?: target["comment_count"]?.jsonPrimitive?.longOrNull
-                ?: target["commentCount"]?.jsonPrimitive?.longOrNull
-                ?: 0L
-
-            val createdAt = target["createdAt"]?.jsonPrimitive?.contentOrNull
-                ?: target["post_created_at"]?.jsonPrimitive?.contentOrNull
-                ?: target["postCreatedAt"]?.jsonPrimitive?.contentOrNull
-                ?: ""
-
-            val isVerified = target["isVerified"]?.jsonPrimitive?.booleanOrNull
-                ?: target["is_verified"]?.jsonPrimitive?.booleanOrNull
-                ?: false
-
-            val verificationType = target["verificationType"]?.jsonPrimitive?.contentOrNull
-                ?: target["verification_type"]?.jsonPrimitive?.contentOrNull
-                ?: "none"
-
-            SharedPostDraft(
-                postId = postId,
-                authorName = authorName,
-                authorUsername = authorUsername,
-                authorAvatar = authorAvatar,
-                content = content,
-                mediaUrls = mediaUrls,
-                postVideoUrl = target["postVideoUrl"]?.jsonPrimitive?.contentOrNull ?: target["post_video_url"]?.jsonPrimitive?.contentOrNull,
-                likesCount = likes,
-                commentsCount = comments,
-                createdAt = createdAt,
-                isVerified = isVerified,
-                verificationType = verificationType,
-                role = target["role"]?.jsonPrimitive?.contentOrNull,
-            )
-        }.getOrNull()
-    }
-}
+val SharedPostParser = ir.coffevista.vista_native.features.chat.domain.model.SharedPostParser

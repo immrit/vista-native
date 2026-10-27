@@ -1,5 +1,6 @@
 package ir.coffevista.vista_native.features.auth
 
+import ir.coffevista.vista_native.core.model.auth.AuthPayload
 import ir.coffevista.vista_native.core.model.session.AuthenticatedContext
 import ir.coffevista.vista_native.core.model.session.AuthenticationState
 import ir.coffevista.vista_native.core.model.session.AuthenticationStateProvider
@@ -16,6 +17,19 @@ class AuthenticationStateOwner @Inject constructor() : AuthenticationStateProvid
 
     fun accept(context: AuthenticatedContext) {
         mutableState.value = AuthenticationState.SignedIn(context)
+    }
+
+    fun refreshSession(payload: AuthPayload) {
+        val current = (mutableState.value as? AuthenticationState.SignedIn)?.context
+        mutableState.value = AuthenticationState.SignedIn(
+            AuthenticatedContext(
+                userId = payload.user.id,
+                profileCompleted = payload.user.profileCompleted,
+                passwordRequired = payload.user.passwordRequired,
+                offline = false,
+                displayName = payload.user.welcomeName.ifBlank { current?.displayName ?: "کاربر ویستا" },
+            ),
+        )
     }
 
     fun signOut() {

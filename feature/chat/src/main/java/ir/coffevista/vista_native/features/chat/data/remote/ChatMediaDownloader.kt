@@ -38,7 +38,7 @@ class ChatMediaDownloader(
         fileName: String,
         mimeType: String?,
     ): DownloadTaskEntity {
-        require(remoteUrl.startsWith("https://")) { "نشانی دانلود فایل معتبر نیست" }
+        require(remoteUrl.startsWith("https://") || remoteUrl.startsWith("http://")) { "نشانی دانلود فایل معتبر نیست" }
         val existing = dao.download(accountId, messageId)
         if (existing?.state == DownloadState.COMPLETE.name && existing.localPath?.let(::File)?.isFile == true) {
             return existing

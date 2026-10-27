@@ -99,6 +99,7 @@ object ProfileDataModule {
             override suspend fun updateAvatar(request: ProfileAvatarUpdateRequestDto): retrofit2.Response<ProfileDto> = remote.updateAvatar(request)
             override suspend fun presignUpload(request: ProfileMediaPresignRequestDto): ProfileMediaPresignResponseDto = remote.presignUpload(request)
             override suspend fun deleteUpload(request: ProfileMediaDeleteRequestDto): ProfileMediaDeleteResponseDto = remote.deleteUpload(request)
+            override suspend fun requestVerification(request: VerificationRequestDto): retrofit2.Response<VerificationResponseDto> = remote.requestVerification(request)
         }
     }
 
@@ -172,6 +173,10 @@ object ProfileDataModule {
                 limit: Int,
                 offset: Int,
             ): retrofit2.Response<FollowListResponseDto> = remote.getFollowing(userId, limit, offset)
+
+            override suspend fun getUserHighlights(
+                userId: String,
+            ): retrofit2.Response<ProfileHighlightsResponseDto> = remote.getUserHighlights(userId)
         }
     }
 

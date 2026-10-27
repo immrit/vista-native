@@ -137,4 +137,5 @@ private fun FeedPost.toSharedPostDraft() = SharedPostDraft(
     isVerified = authorIsVerified,
     verificationType = authorVerificationType.orEmpty().ifBlank { "none" },
     hashtags = tags,
+    authorId = userId,
 )

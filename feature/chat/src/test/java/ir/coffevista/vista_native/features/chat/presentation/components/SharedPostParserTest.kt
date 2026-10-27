@@ -35,6 +35,29 @@ class SharedPostParserTest {
         assertEquals(42L, parsed?.likesCount)
         assertEquals(7L, parsed?.commentsCount)
         assertEquals(true, parsed?.isVerified)
+        assertEquals("none", parsed?.verificationType)
+        assertEquals(false, parsed?.hasStory)
+    }
+
+    @Test
+    fun `parses verificationType and hasStory when present`() {
+        val json = """
+            {
+              "postId": "post-verified-creator",
+              "authorName": "Ahmad",
+              "authorUsername": "ahmad",
+              "content": "سلام",
+              "createdAt": "2026-10-22T08:00:00Z",
+              "isVerified": true,
+              "verificationType": "blackTick",
+              "hasStory": true
+            }
+        """.trimIndent()
+        val parsed = SharedPostParser.tryParse(json)
+        assertNotNull(parsed)
+        assertEquals(true, parsed?.isVerified)
+        assertEquals("blackTick", parsed?.verificationType)
+        assertEquals(true, parsed?.hasStory)
     }
 
     @Test
@@ -63,6 +86,8 @@ class SharedPostParserTest {
         assertEquals(88L, parsed?.likesCount)
         assertEquals(12L, parsed?.commentsCount)
         assertEquals(true, parsed?.isVerified)
+        assertEquals("none", parsed?.verificationType)
+        assertEquals(false, parsed?.hasStory)
     }
 
     @Test

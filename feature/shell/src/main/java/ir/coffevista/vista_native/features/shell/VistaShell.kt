@@ -78,6 +78,14 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
+import android.content.Context
+import android.view.inputmethod.InputMethodManager
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.core.view.WindowInsetsCompat
+import androidx.navigation.NavController
 import androidx.navigation.NavDestination
 import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.NavDestination.Companion.hierarchy
@@ -127,7 +135,35 @@ fun VistaShell(
             ShellRoutes.SearchWorkspace,
             ShellRoutes.ServicesDetailRoute,
         )
-    var isBottomIslandVisible by rememberSaveable { mutableStateOf(true) }
+    val isBottomIslandVisibleState = rememberSaveable { mutableStateOf(true) }
+    var isBottomIslandVisible by isBottomIslandVisibleState
+
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val androidContext = LocalContext.current
+
+    DisposableEffect(navController) {
+        val listener = NavController.OnDestinationChangedListener { _, _, _ ->
+            runCatching {
+                focusManager.clearFocus(force = true)
+                keyboardController?.hide()
+                val imm = androidContext.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+                val activity = androidContext as? Activity
+                activity?.currentFocus?.let { view ->
+                    imm?.hideSoftInputFromWindow(view.windowToken, 0)
+                    view.clearFocus()
+                }
+                if (activity?.window != null) {
+                    WindowCompat.getInsetsController(activity.window, activity.window.decorView)
+                        .hide(WindowInsetsCompat.Type.ime())
+                }
+            }
+        }
+        navController.addOnDestinationChangedListener(listener)
+        onDispose {
+            navController.removeOnDestinationChangedListener(listener)
+        }
+    }
 
     LaunchedEffect(selectedTab, backStackEntry?.destination?.route) {
         isBottomIslandVisible = true
@@ -137,6 +173,10 @@ fun VistaShell(
     var activeChatTitle by rememberSaveable { mutableStateOf("پیام‌ها") }
 
     fun selectTab(tab: ShellTab) {
+        runCatching {
+            focusManager.clearFocus(force = true)
+            keyboardController?.hide()
+        }
         val startDestinationId = navController.graph.findStartDestination().id
         navController.navigate(tab.graphRoute()) {
             popUpTo(startDestinationId) {
@@ -153,20 +193,30 @@ fun VistaShell(
 
 
         when (request.kind) {
-            ShellDeferredKind.POST, ShellDeferredKind.GROUP -> {
+            ShellDeferredKind.POST -> {
                 if (request.reference == "share") {
                     selectTab(ShellTab.Feed)
                     navController.navigate(ShellRoutes.AddPost)
                 } else if (request.reference == "share_story") {
                     selectTab(ShellTab.Feed)
                     navController.navigate(ShellRoutes.storyCreate(null))
+                } else if (request.secondaryReference == "appeal") {
+                    selectTab(ShellTab.Feed)
+                    navController.navigate(ShellRoutes.appeal(request.reference))
                 } else {
                     selectTab(ShellTab.Feed)
                     navController.navigate(ShellRoutes.postDetail(request.reference))
                 }
             }
+            ShellDeferredKind.GROUP -> {
+                selectTab(ShellTab.Chat)
+                navController.navigate(ShellRoutes.chatDetail(request.reference))
+            }
             ShellDeferredKind.PROFILE -> {
-                if (request.reference == context.userId) {
+                if (request.reference == "payment_callback") {
+                    selectTab(ShellTab.Profile)
+                    navController.navigate(ShellRoutes.PricingPage)
+                } else if (request.reference == context.userId) {
                     selectTab(ShellTab.Profile)
                 } else {
                     navController.navigate(ShellRoutes.userProfile(request.reference))
@@ -391,13 +441,22 @@ fun VistaShell(
             }
             navigation(route = ShellRoutes.SearchGraph, startDestination = ShellRoutes.SearchRoot) {
                 composable(ShellRoutes.SearchRoot) {
-                    content.searchRoot(
-                        {
-                            navController.navigate(ShellRoutes.SearchWorkspace)
+                    content.searchWorkspace(
+                        { userId ->
+                            navController.navigate(
+                                if (userId == context.userId) {
+                                    ShellRoutes.OwnProfileOverlay
+                                } else {
+                                    ShellRoutes.userProfile(userId)
+                                },
+                            )
                         },
-                        {
-                            navController.navigate(ShellRoutes.QrScanner)
+                        { postId ->
+                            navController.navigate(ShellRoutes.postDetail(postId))
                         },
+                        { tag -> navController.navigate(ShellRoutes.hashtag(tag)) },
+                        null,
+                        { navController.navigate(ShellRoutes.QrScanner) },
                     )
                 }
                 composable(ShellRoutes.SearchWorkspace) {
@@ -415,6 +474,8 @@ fun VistaShell(
                             navController.navigate(ShellRoutes.postDetail(postId))
                         },
                         { tag -> navController.navigate(ShellRoutes.hashtag(tag)) },
+                        { navController.popBackStack() },
+                        { navController.navigate(ShellRoutes.QrScanner) },
                     )
                 }
             }
@@ -443,13 +504,19 @@ fun VistaShell(
                         { navController.popBackStack() },
                         { navController.navigate(ShellRoutes.ServicesNearbyLikes) },
                         { userId, _ -> navController.navigate(ShellRoutes.userProfile(userId)) },
-                        { _, otherUserId, _, _ -> navController.navigate(ShellRoutes.chatDetail(otherUserId)) },
+                        { _, otherUserId, _, _ ->
+                            selectTab(ShellTab.Chat)
+                            navController.navigate(ShellRoutes.chatDetail(otherUserId))
+                        },
                     )
                 }
                 composable(ShellRoutes.ServicesNearbyLikes) {
                     content.servicesNearbyLikes(
                         { navController.popBackStack() },
-                        { _, otherUserId, _, _ -> navController.navigate(ShellRoutes.chatDetail(otherUserId)) },
+                        { _, otherUserId, _, _ ->
+                            selectTab(ShellTab.Chat)
+                            navController.navigate(ShellRoutes.chatDetail(otherUserId))
+                        },
                     )
                 }
                 composable(ShellRoutes.ServicesContacts) {
@@ -461,7 +528,10 @@ fun VistaShell(
                 composable(ShellRoutes.ServicesTopGroups) {
                     content.servicesTopGroups(
                         { navController.popBackStack() },
-                        { groupId -> navController.navigate(ShellRoutes.servicesDetail("group/$groupId")) },
+                        { groupId ->
+                            selectTab(ShellTab.Chat)
+                            navController.navigate(ShellRoutes.chatDetail(groupId))
+                        },
                     )
                 }
                 composable(ShellRoutes.ServicesGameLaunch) {
@@ -530,6 +600,7 @@ fun VistaShell(
                             activeChatTitle = title.ifBlank { "گفتگوی محرمانه" }
                             navController.navigate(ShellRoutes.chatDetail(conversationId))
                         },
+                        { postId -> navController.navigate(ShellRoutes.postDetail(postId)) },
                     )
                 }
             }
@@ -557,6 +628,9 @@ fun VistaShell(
                         },
                         { postId ->
                             navController.navigate(ShellRoutes.reels(postId))
+                        },
+                        {
+                            navController.navigate(ShellRoutes.AddPost)
                         },
                     )
                 }
@@ -743,6 +817,9 @@ fun VistaShell(
                     },
                     { postId ->
                         navController.navigate(ShellRoutes.reels(postId))
+                    },
+                    {
+                        navController.navigate(ShellRoutes.AddPost)
                     },
                 )
             }
@@ -1005,7 +1082,7 @@ private fun VistaBottomIsland(
                                 )
                                 if (tab == ShellTab.Chat && chatBadgeCount > 0) {
                                     VistaBadge(
-                                        label = if (chatBadgeCount > 9) "۹+" else chatBadgeCount.toString(),
+                                        label = if (chatBadgeCount > 99) "۹۹+" else chatBadgeCount.toString(),
                                         modifier = Modifier
                                             .align(Alignment.TopEnd)
                                             .testTag("shell-chat-badge"),

@@ -13,7 +13,7 @@ interface FeedApiFixture {
     suspend fun responseOrNull(limit: Int, offset: Int): FeedResponseDto?
     suspend fun followingResponseOrNull(
         limit: Int,
-        cursor: String?,
+        offset: Int,
     ): FeedResponseDto? = null
 
     suspend fun postResponseOrNull(postId: String): FeedPostDto? = null

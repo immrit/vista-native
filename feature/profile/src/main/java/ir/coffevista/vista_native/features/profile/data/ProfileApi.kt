@@ -22,4 +22,7 @@ suspend fun fetchOwnProfile(): Response<ProfileDto>
 
     @POST("v1/uploads/delete")
     suspend fun deleteUpload(@Body request: ProfileMediaDeleteRequestDto): ProfileMediaDeleteResponseDto
+
+    @POST("v1/me/verify")
+    suspend fun requestVerification(@Body request: VerificationRequestDto): Response<VerificationResponseDto> = Response.success(VerificationResponseDto())
 }

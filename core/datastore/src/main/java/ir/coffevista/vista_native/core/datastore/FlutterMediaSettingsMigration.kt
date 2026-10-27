@@ -33,6 +33,14 @@ internal fun migrateFlutterMediaSettings(
     flutterValues: Map<String, *>,
 ): AppPreferences {
     val builder = current.toBuilder().setFlutterMediaSettingsMigrated(true)
+    if (!current.onboardingCompleted) {
+        val completed = flutterValues["flutter.onboarding_completed"] as? Boolean ?: false
+        val version = (flutterValues["flutter.onboarding_version"] as? String).orEmpty()
+        if (isCurrentOnboardingCompletion(completed, version)) {
+            builder.setOnboardingCompleted(true)
+            builder.setOnboardingVersion(version)
+        }
+    }
     (flutterValues["flutter.data_upload_quality"] as? String)
         ?.takeIf { it in setOf("high", "standard", "data_saver") }
         ?.let(builder::setMediaQuality)

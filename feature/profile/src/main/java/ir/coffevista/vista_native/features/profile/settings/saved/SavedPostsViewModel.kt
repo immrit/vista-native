@@ -42,6 +42,28 @@ class SavedPostsViewModel @Inject constructor(
         }
     }
 
+    fun toggleLike(post: SavedPostUiModel) = viewModelScope.launch {
+        val newIsLiked = !post.isLiked
+        val newLikesCount = if (newIsLiked) post.likesCount + 1 else (post.likesCount - 1).coerceAtLeast(0)
+        mutableUiState.update { state ->
+            state.copy(
+                posts = state.posts.map {
+                    if (it.id == post.id) it.copy(isLiked = newIsLiked, likesCount = newLikesCount) else it
+                }
+            )
+        }
+        val response = runCatching { api.toggleLike(post.id) }.getOrNull()
+        if (response == null || !response.isSuccessful) {
+            mutableUiState.update { state ->
+                state.copy(
+                    posts = state.posts.map {
+                        if (it.id == post.id) it.copy(isLiked = post.isLiked, likesCount = post.likesCount) else it
+                    }
+                )
+            }
+        }
+    }
+
     private fun load(reset: Boolean) {
         val current = mutableUiState.value
         if (!reset && (!current.hasMore || current.isLoadingMore)) return
@@ -76,20 +98,23 @@ class SavedPostsViewModel @Inject constructor(
         }
     }
 
-    private fun toUi(post: SavedPostDto) = SavedPostUiModel(
-        id = post.id,
-        authorUsername = post.author.username.orEmpty(),
-        authorFullName = post.author.fullName.orEmpty(),
-        authorAvatarUrl = post.author.avatarUrl,
-        authorIsVerified = post.author.isVerified,
-        timeAgo = post.createdAt.orEmpty(),
-        caption = post.caption.orEmpty(),
-        mediaUrl = post.imageUrls.firstOrNull() ?: post.imageUrl ?: post.videoUrl,
-        isVideo = !post.videoUrl.isNullOrBlank(),
-        likesCount = post.likeCount.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
-        commentsCount = post.commentCount.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
-        isLiked = post.isLiked,
-    )
+    private fun toUi(post: SavedPostDto): SavedPostUiModel {
+        val author = post.effectiveAuthor
+        return SavedPostUiModel(
+            id = post.id,
+            authorUsername = author.username.orEmpty(),
+            authorFullName = author.fullName.orEmpty(),
+            authorAvatarUrl = author.avatarUrl,
+            authorIsVerified = author.isVerified,
+            timeAgo = ir.coffevista.vista_native.core.common.persianRelativeTime(post.createdAt),
+            caption = post.caption.orEmpty(),
+            mediaUrl = post.imageUrls.firstOrNull() ?: post.imageUrl ?: post.videoThumbnailUrl ?: post.videoUrl,
+            isVideo = !post.videoUrl.isNullOrBlank(),
+            likesCount = post.likeCount.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+            commentsCount = post.commentCount.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+            isLiked = post.isLiked,
+        )
+    }
 
     private companion object { const val PAGE_SIZE = 20 }
 }

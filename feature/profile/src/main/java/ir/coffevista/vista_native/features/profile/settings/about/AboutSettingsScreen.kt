@@ -63,6 +63,7 @@ fun AboutSettingsScreen(
     onContactUsClick: () -> Unit,
     onPrivacyPolicyClick: () -> Unit,
     onFaqClick: () -> Unit,
+    onCheckForUpdate: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -198,7 +199,9 @@ fun AboutSettingsScreen(
                         title = "بررسی به‌روزرسانی",
                         subtitle = "جستجو برای نسخه جدید",
                         onClick = {
-                            if (!openVistaBazaarPage(context)) {
+                            if (onCheckForUpdate != null) {
+                                onCheckForUpdate()
+                            } else if (!openVistaBazaarPage(context)) {
                                 scope.launch {
                                     snackbarHostState.showSnackbar("امکان باز کردن صفحهٔ ویستا در کافه‌بازار وجود ندارد")
                                 }

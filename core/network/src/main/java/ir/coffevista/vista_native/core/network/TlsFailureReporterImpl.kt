@@ -1,5 +1,6 @@
 package ir.coffevista.vista_native.core.network
 
+import ir.coffevista.vista_native.core.common.DeviceIdProvider
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -19,7 +20,7 @@ import javax.inject.Singleton
 @Singleton
 class HttpTlsFailureReporter @Inject constructor(
     @BootstrapApi private val bootstrapClient: OkHttpClient,
-    @InternalEnvironment environment: AppEnvironment,
+    @InternalEnvironment private val environment: AppEnvironment,
 ) : TlsFailureReporter {
     private val reportUrl = environment.internalBaseUrl.trimEnd('/') +
         "/api/v1/system/tls-report"
@@ -36,11 +37,16 @@ class HttpTlsFailureReporter @Inject constructor(
             put("host", failure.host)
             put("seen_fingerprint", failure.seenFingerprint)
             put("reason", failure.reason.name.lowercase())
+            put("app_version", environment.appVersion)
         }.toString()
-        val request = Request.Builder()
+        val requestBuilder = Request.Builder()
             .url(reportUrl)
             .post(payload.toRequestBody(JSON_MEDIA_TYPE))
-            .build()
+        val deviceId = DeviceIdProvider.current?.deviceId()?.takeIf(String::isNotBlank)
+        if (deviceId != null) {
+            requestBuilder.header(InternalAuthorizationInterceptor.HEADER_DEVICE_ID, deviceId)
+        }
+        val request = requestBuilder.build()
         bootstrapClient.newCall(request).enqueue(object : Callback {
             override fun onFailure(call: Call, exception: IOException) {
                 inFlight.set(false)

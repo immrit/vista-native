@@ -69,7 +69,7 @@
         </provider>
 
         <activity
-            android:name=".MainActivity"
+            android:name="ir.coffevista.vista.MainActivity"
             android:exported="true"
             android:launchMode="singleTop"
             android:windowSoftInputMode="adjustNothing">
@@ -90,6 +90,8 @@
                 <data android:host="profile" />
                 <data android:host="group" />
                 <data android:host="chat" />
+                <data android:host="appeal" />
+                <data android:host="payment" />
             </intent-filter>
 
             <intent-filter android:autoVerify="true">
@@ -100,6 +102,9 @@
 
                 <data android:scheme="https" />
                 <data android:host="cafevista.ir" />
+                <data android:host="www.cafevista.ir" />
+                <data android:host="coffevista.ir" />
+                <data android:host="www.coffevista.ir" />
                 <data android:host="vista.me" />
                 <data android:pathPattern="/.*" />
             </intent-filter>
@@ -147,6 +152,11 @@
                 <data android:mimeType="*/*" />
             </intent-filter>
         </activity>
+
+        <activity-alias
+            android:name="ir.coffevista.vista_native.MainActivity"
+            android:exported="true"
+            android:targetActivity="ir.coffevista.vista.MainActivity" />
 
         <service
             android:name=".notifications.VistaFirebaseMessagingService"

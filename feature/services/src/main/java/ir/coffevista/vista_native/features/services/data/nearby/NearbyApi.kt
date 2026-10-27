@@ -64,4 +64,9 @@ interface NearbyApi {
     suspend fun report(
         @Body request: NearbyReportRequestDto,
     ): Response<Unit>
+
+    @POST("/v1/nearby/undo")
+    suspend fun undo(
+        @Body request: NearbyUndoRequestDto,
+    ): Response<Unit> = Response.success(Unit)
 }

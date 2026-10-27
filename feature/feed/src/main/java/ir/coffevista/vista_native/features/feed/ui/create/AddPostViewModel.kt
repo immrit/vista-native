@@ -7,12 +7,14 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import ir.coffevista.vista_native.core.database.feed.FeedDao
 import ir.coffevista.vista_native.core.database.profile.OwnProfileDao
 import ir.coffevista.vista_native.core.model.session.AuthenticationState
 import ir.coffevista.vista_native.core.model.session.AuthenticationStateProvider
 import ir.coffevista.vista_native.features.feed.data.CreatePostRequestDto
 import ir.coffevista.vista_native.features.feed.data.FeedApi
 import ir.coffevista.vista_native.features.feed.data.PostMentions
+import ir.coffevista.vista_native.features.feed.data.asEntity
 import kotlinx.coroutines.CancellationException
 import ir.coffevista.vista_native.features.feed.data.HashtagSuggestionDto
 import ir.coffevista.vista_native.features.feed.data.PostMediaUploadGateway
@@ -71,7 +73,7 @@ data class AddPostUiState(
     val maxUploadBytes: Long get() = if (isPremium) 100L * 1024 * 1024 else 15L * 1024 * 1024
     val maxVideoDurationMs: Long get() = if (isPremium) 120_000L else 60_000L
     val canSubmit: Boolean get() = !isUploading && (
-        content.isNotBlank() || selectedImages.isNotEmpty() || selectedVideo != null || selectedMusicUri != null || !selectedMusicUrl.isNullOrBlank()
+        content.isNotBlank() || selectedImages.isNotEmpty() || selectedVideo != null || selectedVideoUri != null || selectedMusicUri != null || !selectedMusicUrl.isNullOrBlank()
     )
 }
 
@@ -82,7 +84,11 @@ class AddPostViewModel @Inject constructor(
     private val authStateProvider: AuthenticationStateProvider,
     private val ownProfileDao: OwnProfileDao,
     private val postMentions: PostMentions,
-    @ApplicationContext private val appContext: Context?,
+    private val feedDao: FeedDao? = null,
+    @ApplicationContext private val appContext: Context? = null,
+    private val savedStateHandle: androidx.lifecycle.SavedStateHandle? = null,
+    private val postUploadManager: ir.coffevista.vista_native.features.feed.data.PostUploadManager? = null,
+    private val draftStore: ir.coffevista.vista_native.features.feed.data.AddPostDraftStore? = null,
 ) : ViewModel() {
 
     constructor(
@@ -91,7 +97,7 @@ class AddPostViewModel @Inject constructor(
         authStateProvider: AuthenticationStateProvider,
         ownProfileDao: OwnProfileDao,
         postMentions: PostMentions,
-    ) : this(api, uploader, authStateProvider, ownProfileDao, postMentions, null)
+    ) : this(api, uploader, authStateProvider, ownProfileDao, postMentions, null, null, null, null, null)
 
     private var hashtagSearchJob: Job? = null
 
@@ -102,6 +108,32 @@ class AddPostViewModel @Inject constructor(
         get() = (authStateProvider.state.value as? AuthenticationState.SignedIn)?.context?.userId.orEmpty()
 
     init {
+        draftStore?.getDraft()?.let { draft ->
+            _uiState.update { current ->
+                if (current.content.isBlank()) {
+                    current.copy(
+                        content = draft.content,
+                        selectedLocation = draft.location,
+                        hideLikeCount = draft.hideLikeCount,
+                        hideCommentCount = draft.hideCommentCount,
+                        commentsDisabled = draft.commentsDisabled,
+                    )
+                } else current
+            }
+        }
+        savedStateHandle?.getStateFlow<String?>("trimmed_video_path", null)?.let { flow ->
+            viewModelScope.launch {
+                flow.collect { path ->
+                    if (!path.isNullOrBlank()) {
+                        val file = File(path)
+                        if (file.exists()) {
+                            onVideoTrimmed(file)
+                            savedStateHandle["trimmed_video_path"] = null
+                        }
+                    }
+                }
+            }
+        }
         viewModelScope.launch {
             val userId = currentUserId
             if (userId.isNotBlank()) {
@@ -184,10 +216,10 @@ class AddPostViewModel @Inject constructor(
     fun onImagesSelected(uris: List<Uri>) {
         if (uris.isEmpty()) return
         val currentMax = _uiState.value.maxGalleryImages
-        val limited = uris.take(currentMax)
-        _uiState.update {
-            it.copy(
-                selectedImages = limited,
+        _uiState.update { current ->
+            val combined = (current.selectedImages + uris).distinct().take(currentMax)
+            current.copy(
+                selectedImages = combined,
                 selectedVideo = null,
                 selectedVideoUri = null,
                 isVideo = false,
@@ -227,9 +259,32 @@ class AddPostViewModel @Inject constructor(
                 errorMessage = null,
             )
         }
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            if (appContext != null) {
+                try {
+                    val tempFile = File(appContext.cacheDir, "post_video_${System.currentTimeMillis()}.mp4")
+                    appContext.contentResolver.openInputStream(uri)?.use { input ->
+                        tempFile.outputStream().use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+                    if (tempFile.exists() && tempFile.length() > 0) {
+                        _uiState.update { current ->
+                            if (current.selectedVideo == null) {
+                                current.copy(selectedVideo = tempFile)
+                            } else current
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
+        }
     }
 
     fun onVideoTrimmed(trimmedFile: File) {
+        val oldFile = _uiState.value.selectedVideo
+        if (oldFile != null && oldFile.absolutePath != trimmedFile.absolutePath) {
+            runCatching { oldFile.delete() }
+        }
         _uiState.update {
             it.copy(
                 selectedVideo = trimmedFile,
@@ -241,12 +296,21 @@ class AddPostViewModel @Inject constructor(
     }
 
     fun removeVideo() {
+        val oldFile = _uiState.value.selectedVideo
+        runCatching { oldFile?.delete() }
         _uiState.update {
             it.copy(
                 selectedVideo = null,
                 selectedVideoUri = null,
                 isVideo = false,
             )
+        }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        runCatching {
+            _uiState.value.selectedVideo?.delete()
         }
     }
 
@@ -270,6 +334,26 @@ class AddPostViewModel @Inject constructor(
         _uiState.update { it.copy(selectedLocation = location) }
     }
 
+    fun saveDraft() {
+        val state = _uiState.value
+        if (state.content.isNotBlank() || state.selectedLocation != null) {
+            draftStore?.saveDraft(
+                ir.coffevista.vista_native.features.feed.data.PostDraft(
+                    content = state.content,
+                    location = state.selectedLocation,
+                    aspectRatio = state.aspectRatio.ratioValue,
+                    hideLikeCount = state.hideLikeCount,
+                    hideCommentCount = state.hideCommentCount,
+                    commentsDisabled = state.commentsDisabled,
+                )
+            )
+        }
+    }
+
+    fun discardDraft() {
+        draftStore?.clearDraft()
+    }
+
     fun onMusicSelected(title: String?, url: String?) {
         _uiState.update {
             if (title == null && url == null) {
@@ -289,32 +373,54 @@ class AddPostViewModel @Inject constructor(
 
     fun onMusicFileSelected(uri: Uri) {
         viewModelScope.launch {
-            val durationMs = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val (durationMs, extractedTitle) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                var dur = 0
+                var title: String? = null
                 if (appContext != null) {
                     val retriever = MediaMetadataRetriever()
                     try {
                         retriever.setDataSource(appContext, uri)
-                        retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toIntOrNull() ?: 0
+                        dur = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toIntOrNull() ?: 0
+                        val titleMeta = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)?.trim()
+                        val artistMeta = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)?.trim()
+                        if (!artistMeta.isNullOrBlank() && !titleMeta.isNullOrBlank()) {
+                            title = "$artistMeta - $titleMeta"
+                        } else if (!titleMeta.isNullOrBlank()) {
+                            title = titleMeta
+                        }
+                    } catch (_: Exception) {
                     } finally {
                         runCatching { retriever.release() }
                     }
-                } else {
-                    15_000
+
+                    if (title.isNullOrBlank()) {
+                        runCatching {
+                            appContext.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                                if (cursor.moveToFirst()) {
+                                    val idx = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                                    if (idx >= 0) {
+                                        val displayName = cursor.getString(idx)
+                                        if (!displayName.isNullOrBlank()) {
+                                            title = displayName.substringBeforeLast('.').trim()
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
+                Pair(dur, title)
             }
-            if (durationMs <= 0) {
-                _uiState.update { it.copy(errorMessage = "مدت فایل صوتی قابل تشخیص نیست") }
-                return@launch
-            }
-            val title = uri.lastPathSegment?.substringAfterLast('/')?.substringBeforeLast('.')?.ifBlank { "موسیقی" } ?: "موسیقی"
+            val finalDurationMs = if (durationMs > 0) durationMs else 30_000
+            val finalTitle = extractedTitle ?: uri.lastPathSegment?.substringAfterLast('/')?.substringBeforeLast('.')?.ifBlank { "موسیقی" } ?: "موسیقی"
             _uiState.update {
                 it.copy(
                     selectedMusicUri = uri,
                     selectedMusicUrl = null,
-                    selectedMusicTitle = title,
-                    musicDurationMs = durationMs,
+                    selectedMusicTitle = finalTitle,
+                    musicDurationMs = finalDurationMs,
                     musicStartMs = 0,
-                    musicEndMs = minOf(durationMs, 15_000),
+                    musicEndMs = minOf(finalDurationMs, 15_000),
                 )
             }
         }
@@ -343,6 +449,34 @@ class AddPostViewModel @Inject constructor(
             return
         }
 
+        draftStore?.clearDraft()
+
+        if (postUploadManager != null) {
+            postUploadManager.startUpload(
+                ir.coffevista.vista_native.features.feed.data.PendingPostUpload(
+                    userId = userId,
+                    content = state.content,
+                    images = state.selectedImages,
+                    videoFile = state.selectedVideo,
+                    videoUri = state.selectedVideoUri,
+                    isVideo = state.isVideo,
+                    aspectRatio = state.aspectRatio.ratioValue,
+                    location = state.selectedLocation,
+                    musicUri = state.selectedMusicUri,
+                    musicUrl = state.selectedMusicUrl,
+                    musicTitle = state.selectedMusicTitle,
+                    musicStartMs = state.musicStartMs,
+                    musicEndMs = state.musicEndMs,
+                    hideLikeCount = state.hideLikeCount,
+                    hideCommentCount = state.hideCommentCount,
+                    commentsDisabled = state.commentsDisabled,
+                    maxUploadBytes = state.maxUploadBytes,
+                )
+            )
+            _uiState.update { it.copy(isSuccess = true) }
+            return
+        }
+
         viewModelScope.launch {
             _uiState.update {
                 it.copy(
@@ -360,17 +494,31 @@ class AddPostViewModel @Inject constructor(
                 val finalImageUrls = mutableListOf<String>()
                 val finalMusicUrl = state.selectedMusicUri?.let { audioUri ->
                     _uiState.update { it.copy(uploadStatusMessage = "در حال آپلود موسیقی…") }
-                    uploader.uploadAudio(userId, audioUri, state.maxUploadBytes) { progress ->
+                    uploader.uploadAudio(
+                        userId = userId,
+                        uri = audioUri,
+                        maxBytes = state.maxUploadBytes,
+                        startMs = state.musicStartMs,
+                        endMs = state.musicEndMs,
+                    ) { progress ->
                         _uiState.update { it.copy(uploadProgress = 0.05f + progress * 0.25f) }
                     }.url
                 } ?: state.selectedMusicUrl
 
                 // 1. Upload Video if present
-                if (state.isVideo && state.selectedVideo != null) {
+                if (state.isVideo && (state.selectedVideo != null || state.selectedVideoUri != null)) {
                     _uiState.update { it.copy(uploadStatusMessage = "در حال آپلود ویدیو…") }
+                    val videoFile = state.selectedVideo ?: run {
+                        val uri = state.selectedVideoUri ?: throw java.io.IOException("فایل ویدیو یافت نشد")
+                        val temp = File(appContext?.cacheDir ?: File.createTempFile("post-vid-", ".mp4").parentFile, "post_video_${System.currentTimeMillis()}.mp4")
+                        appContext?.contentResolver?.openInputStream(uri)?.use { input ->
+                            temp.outputStream().use { output -> input.copyTo(output) }
+                        } ?: throw java.io.IOException("امکان خواندن فایل ویدیو وجود ندارد")
+                        temp
+                    }
                     val result = uploader.uploadVideo(
                         userId = userId,
-                        videoFile = state.selectedVideo,
+                        videoFile = videoFile,
                         maxBytes = state.maxUploadBytes,
                         onProgress = { progress ->
                             _uiState.update { it.copy(uploadProgress = 0.1f + progress * 0.7f) }
@@ -422,28 +570,30 @@ class AddPostViewModel @Inject constructor(
                     musicEndMs = state.musicEndMs.takeIf { finalMusicUrl != null },
                     aspectRatio = state.aspectRatio.ratioValue,
                     tags = hashtags,
+                    location = state.selectedLocation,
                     hideLikeCount = state.hideLikeCount,
                     hideCommentCount = state.hideCommentCount,
                     commentsDisabled = state.commentsDisabled,
                 )
 
-                val response = api.createPost(createReq)
-                if (response.success || response.post != null) {
-                    (response.post?.id ?: response.id)?.let { postMentions.attach(it, mentionIds) }
-                    _uiState.update {
-                        it.copy(
-                            isUploading = false,
-                            uploadProgress = 1f,
-                            isSuccess = true,
-                        )
+                val postDto = api.createPost(createReq)
+                postMentions.attach(postDto.id, mentionIds)
+
+                val userId = currentUserId
+                if (userId.isNotBlank() && feedDao != null) {
+                    runCatching {
+                        val exploreEntity = postDto.asEntity(accountId = userId, sortOrder = -1L)
+                        val followingEntity = postDto.asEntity(accountId = "$userId\u001Ffollowing", sortOrder = -1L)
+                        feedDao.insertPosts(listOf(exploreEntity, followingEntity))
                     }
-                } else {
-                    _uiState.update {
-                        it.copy(
-                            isUploading = false,
-                            errorMessage = response.message ?: "انتشار پست با خطا مواجه شد",
-                        )
-                    }
+                }
+
+                _uiState.update {
+                    it.copy(
+                        isUploading = false,
+                        uploadProgress = 1f,
+                        isSuccess = true,
+                    )
                 }
             } catch (e: CancellationException) {
                 throw e

@@ -66,3 +66,8 @@
 # Crypto and security providers
 -keepclassmembers class * extends java.security.Provider { *; }
 
+# Cafe Bazaar Poolakey In-App Billing
+-keep class ir.cafebazaar.poolakey.** { *; }
+-keep class com.android.vending.billing.** { *; }
+
+

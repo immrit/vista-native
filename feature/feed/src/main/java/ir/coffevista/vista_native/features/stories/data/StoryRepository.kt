@@ -1,13 +1,21 @@
 package ir.coffevista.vista_native.features.stories.data
 
+import ir.coffevista.vista_native.features.stories.domain.CreateHighlightRequestDto
 import ir.coffevista.vista_native.features.stories.domain.CreateStoryRequestDto
 import ir.coffevista.vista_native.features.stories.domain.CloseFriendsUpdateRequestDto
+import ir.coffevista.vista_native.features.stories.domain.HighlightDto
 import ir.coffevista.vista_native.features.stories.domain.Story
+import ir.coffevista.vista_native.features.stories.domain.StoryQuestionAnswerDto
+import ir.coffevista.vista_native.features.stories.domain.StoryQuestionAnswerRequestDto
 import ir.coffevista.vista_native.features.stories.domain.StoryReactRequestDto
+import ir.coffevista.vista_native.features.stories.domain.StoryReplyAccessDto
 import ir.coffevista.vista_native.features.stories.domain.StoryReplyRequestDto
+import ir.coffevista.vista_native.features.stories.domain.StoryReportRequestDto
+import ir.coffevista.vista_native.features.stories.domain.StorySettingsDto
 import ir.coffevista.vista_native.features.stories.domain.StoryUser
 import ir.coffevista.vista_native.features.stories.domain.StoryView
 import ir.coffevista.vista_native.features.stories.domain.StoryVoteRequestDto
+import ir.coffevista.vista_native.features.stories.domain.UpdateHighlightRequestDto
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -126,6 +134,48 @@ class StoryRepository internal constructor(
     }
 
     suspend fun votePoll(storyId: String, elementId: String, optionIndex: Int): Result<Unit> = withContext(ioDispatcher) {
+        // Optimistic in-memory update
+        _activeStoryUsers.update { users ->
+            users.map { user ->
+                user.copy(
+                    stories = user.stories.map { story ->
+                        if (story.id == storyId) {
+                            val updatedPoll = story.poll?.let { poll ->
+                                val updatedOptions = poll.options.mapIndexed { idx, opt ->
+                                    if (idx == optionIndex) opt.copy(votesCount = opt.votesCount + 1, isVoted = true)
+                                    else opt
+                                }
+                                poll.copy(
+                                    options = updatedOptions,
+                                    totalVotes = poll.totalVotes + 1,
+                                    userVotedOptionId = poll.options.getOrNull(optionIndex)?.id,
+                                )
+                            }
+                            val updatedElements = story.interactiveElements.map { elem ->
+                                if ((elem.id == elementId || elem.type == "poll") && elem.poll != null) {
+                                    val poll = elem.poll
+                                    val updatedOptions = poll.options.mapIndexed { idx, opt ->
+                                        if (idx == optionIndex) opt.copy(votesCount = opt.votesCount + 1, isVoted = true)
+                                        else opt
+                                    }
+                                    elem.copy(
+                                        poll = poll.copy(
+                                            options = updatedOptions,
+                                            totalVotes = poll.totalVotes + 1,
+                                            userVotedOptionId = poll.options.getOrNull(optionIndex)?.id,
+                                        ),
+                                    )
+                                } else elem
+                            }
+                            story.copy(
+                                poll = updatedPoll ?: story.poll,
+                                interactiveElements = updatedElements,
+                            )
+                        } else story
+                    },
+                )
+            }
+        }
         try {
             api.votePoll(storyId, elementId, StoryVoteRequestDto(optionIndex))
             Result.success(Unit)
@@ -136,6 +186,86 @@ class StoryRepository internal constructor(
 
     suspend fun votePoll(storyId: String, optionId: String): Result<Unit> =
         votePoll(storyId, elementId = "poll", optionIndex = optionId.toIntOrNull() ?: 0)
+
+    suspend fun reportStory(storyId: String, reason: String, details: String = ""): Result<Unit> = withContext(ioDispatcher) {
+        runCatching {
+            api.reportStory(storyId, StoryReportRequestDto(reason = reason, details = details))
+        }
+    }
+
+    suspend fun getReplyAccess(storyId: String): Result<StoryReplyAccessDto> = withContext(ioDispatcher) {
+        runCatching {
+            api.getReplyAccess(storyId)
+        }
+    }
+
+    suspend fun answerQuestion(storyId: String, elementId: String, answer: String): Result<Unit> = withContext(ioDispatcher) {
+        runCatching {
+            api.answerQuestion(storyId, elementId, StoryQuestionAnswerRequestDto(answer))
+        }
+    }
+
+    suspend fun getQuestionAnswers(storyId: String): Result<List<StoryQuestionAnswerDto>> = withContext(ioDispatcher) {
+        runCatching {
+            api.getQuestionAnswers(storyId).answers
+        }
+    }
+
+    suspend fun getStorySettings(): Result<StorySettingsDto> = withContext(ioDispatcher) {
+        runCatching {
+            api.getStorySettings()
+        }
+    }
+
+    suspend fun updateStorySettings(replyPermission: String): Result<Unit> = withContext(ioDispatcher) {
+        runCatching {
+            api.updateStorySettings(StorySettingsDto(replyPermission))
+        }
+    }
+
+    suspend fun getUserHighlights(userId: String): Result<List<HighlightDto>> = withContext(ioDispatcher) {
+        runCatching {
+            api.getUserHighlights(userId).highlights
+        }
+    }
+
+    suspend fun getHighlightCount(userId: String): Result<Int> = withContext(ioDispatcher) {
+        runCatching {
+            api.getHighlightCount(userId).count
+        }
+    }
+
+    suspend fun createHighlight(title: String, coverUrl: String?, storyIds: List<String>): Result<HighlightDto> = withContext(ioDispatcher) {
+        runCatching {
+            api.createHighlight(CreateHighlightRequestDto(title = title, coverUrl = coverUrl, storyIds = storyIds))
+        }
+    }
+
+    suspend fun updateHighlight(
+        highlightId: String,
+        title: String? = null,
+        coverUrl: String? = null,
+        storyIds: List<String>? = null,
+    ): Result<HighlightDto> = withContext(ioDispatcher) {
+        runCatching {
+            api.updateHighlight(
+                highlightId = highlightId,
+                request = UpdateHighlightRequestDto(title = title, coverUrl = coverUrl, storyIds = storyIds),
+            )
+        }
+    }
+
+    suspend fun deleteHighlight(highlightId: String): Result<Unit> = withContext(ioDispatcher) {
+        runCatching {
+            api.deleteHighlight(highlightId)
+        }
+    }
+
+    suspend fun getStoryById(storyId: String): Result<Story> = withContext(ioDispatcher) {
+        runCatching {
+            api.getStoryById(storyId)
+        }
+    }
 
     suspend fun getStoryViews(storyId: String, limit: Int = 50, offset: Int = 0): Result<List<StoryView>> = withContext(ioDispatcher) {
         try {

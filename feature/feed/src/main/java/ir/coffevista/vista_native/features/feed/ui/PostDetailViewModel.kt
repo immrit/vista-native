@@ -88,6 +88,14 @@ class PostDetailViewModel @Inject constructor(
         }
     }
 
+    fun refresh() {
+        viewModelScope.launch {
+            val authState = authStateProvider.state.value
+            val accountId = (authState as? AuthenticationState.SignedIn)?.context?.userId ?: return@launch
+            refresh(accountId)
+        }
+    }
+
     private suspend fun refresh(accountId: String) {
         val cached = (_uiState.value as? PostDetailUiState.Content)?.post
         if (cached != null) {

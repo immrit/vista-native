@@ -237,3 +237,76 @@ data class StoryVoteRequestDto(
     @SerialName("option_index") val optionIndex: Int = 0,
     @SerialName("option_id") val legacyOptionId: String? = null,
 )
+
+@Serializable
+data class StoryReportRequestDto(
+    val reason: String,
+    val details: String = "",
+)
+
+@Serializable
+data class StoryReplyAccessDto(
+    @SerialName("can_reply") val canReply: Boolean = true,
+    val reason: String? = null,
+)
+
+@Serializable
+data class StoryQuestionAnswerRequestDto(
+    val answer: String,
+)
+
+@Serializable
+data class StoryQuestionAnswerDto(
+    val id: String = "",
+    @SerialName("story_id") val storyId: String = "",
+    @SerialName("user_id") val userId: String = "",
+    val answer: String = "",
+    @SerialName("created_at") val createdAt: String = "",
+    val profile: StoryViewProfileDto? = null,
+)
+
+@Serializable
+data class StoryQuestionAnswersResponseDto(
+    val answers: List<StoryQuestionAnswerDto> = emptyList(),
+)
+
+@Serializable
+data class StorySettingsDto(
+    @SerialName("reply_permission") val replyPermission: String = "everyone",
+)
+
+@Serializable
+data class HighlightDto(
+    val id: String,
+    @SerialName("user_id") val userId: String = "",
+    val title: String,
+    @SerialName("cover_url") val coverUrl: String? = null,
+    @SerialName("story_ids") val storyIds: List<String> = emptyList(),
+    @SerialName("created_at") val createdAt: String? = null,
+    @SerialName("updated_at") val updatedAt: String? = null,
+)
+
+@Serializable
+data class CreateHighlightRequestDto(
+    val title: String,
+    @SerialName("cover_url") val coverUrl: String? = null,
+    @SerialName("story_ids") val storyIds: List<String>,
+)
+
+@Serializable
+data class UpdateHighlightRequestDto(
+    val title: String? = null,
+    @SerialName("cover_url") val coverUrl: String? = null,
+    @SerialName("story_ids") val storyIds: List<String>? = null,
+)
+
+@Serializable
+data class UserHighlightsResponseDto(
+    val highlights: List<HighlightDto> = emptyList(),
+)
+
+@Serializable
+data class HighlightCountResponseDto(
+    val count: Int = 0,
+)
+

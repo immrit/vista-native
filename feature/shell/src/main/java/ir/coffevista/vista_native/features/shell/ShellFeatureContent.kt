@@ -38,6 +38,8 @@ data class ShellFeatureContent(
         onUserClick: (String) -> Unit,
         onPostClick: (String) -> Unit,
         onHashtagClick: (String) -> Unit,
+        onBack: (() -> Unit)?,
+        onOpenQrScanner: () -> Unit,
     ) -> Unit,
     val ownProfile: @Composable (
         onPostClick: (String) -> Unit,
@@ -48,6 +50,7 @@ data class ShellFeatureContent(
         onEditProfile: () -> Unit,
         onAddStory: () -> Unit,
         onReelClick: (String) -> Unit,
+        onAddPost: () -> Unit,
     ) -> Unit,
     val postDetail: @Composable (
         onBack: () -> Unit,
@@ -143,6 +146,7 @@ data class ShellFeatureContent(
             onBack: () -> Unit,
             onOpenProfile: (String) -> Unit,
             onOpenChat: (String, String) -> Unit,
+            onOpenPost: (String) -> Unit,
         ) -> Unit
     ),
     val chatBadgeCount: Int = 0,

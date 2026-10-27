@@ -43,14 +43,28 @@ class PushTokenRegistrar @Inject constructor(
 
     companion object {
         private const val KEY_LAST_SYNCED_TOKEN = "last_synced_fcm_token"
+        private const val KEY_LAST_SYNCED_USER_ID = "last_synced_fcm_user_id"
+        private const val KEY_LAST_RESYNC_EPOCH = "last_fcm_resync_epoch"
     }
 
-    fun syncTokenAsync() {
+    fun onControlPlaneEpoch(epoch: Long) {
+        if (epoch <= 0L) return
+        val lastEpoch = prefs.getLong(KEY_LAST_RESYNC_EPOCH, 0L)
+        if (epoch > lastEpoch) {
+            prefs.edit()
+                .remove(KEY_LAST_SYNCED_TOKEN)
+                .putLong(KEY_LAST_RESYNC_EPOCH, epoch)
+                .apply()
+            syncTokenAsync()
+        }
+    }
+
+    fun syncTokenAsync(userId: String? = null) {
         scope.launch {
             try {
                 val token = FirebaseMessaging.getInstance().token.await()
                 if (!token.isNullOrBlank()) {
-                    registerToken(token)
+                    registerToken(token = token, userId = userId)
                 }
             } catch (_: Exception) {
                 // Non-fatal if FCM token lookup fails (e.g. offline)
@@ -58,9 +72,33 @@ class PushTokenRegistrar @Inject constructor(
         }
     }
 
-    suspend fun registerToken(token: String): Boolean = withContext(Dispatchers.IO) {
+    fun unregisterTokenAsync() {
+        scope.launch {
+            val token = prefs.getString(KEY_LAST_SYNCED_TOKEN, null)
+                ?: runCatching { FirebaseMessaging.getInstance().token.await() }.getOrNull()
+            prefs.edit()
+                .remove(KEY_LAST_SYNCED_TOKEN)
+                .remove(KEY_LAST_SYNCED_USER_ID)
+                .apply()
+            if (!token.isNullOrBlank()) {
+                try {
+                    val payload = Json.encodeToString(mapOf("token" to token))
+                    val request = Request.Builder()
+                        .url("${environment.internalBaseUrl.trimEnd('/')}/v1/fcm/token")
+                        .delete(payload.toRequestBody("application/json".toMediaType()))
+                        .build()
+                    client.newCall(request).execute().close()
+                } catch (_: Exception) {
+                    // Best-effort unregister on logout
+                }
+            }
+        }
+    }
+
+    suspend fun registerToken(token: String, userId: String? = null): Boolean = withContext(Dispatchers.IO) {
         val lastToken = prefs.getString(KEY_LAST_SYNCED_TOKEN, null)
-        if (token == lastToken) {
+        val lastUserId = prefs.getString(KEY_LAST_SYNCED_USER_ID, null)
+        if (token == lastToken && (userId == null || userId == lastUserId)) {
             return@withContext true
         }
 
@@ -75,7 +113,14 @@ class PushTokenRegistrar @Inject constructor(
 
             client.newCall(request).execute().use { response ->
                 if (response.isSuccessful) {
-                    prefs.edit().putString(KEY_LAST_SYNCED_TOKEN, token).apply()
+                    prefs.edit()
+                        .putString(KEY_LAST_SYNCED_TOKEN, token)
+                        .apply {
+                            if (!userId.isNullOrBlank()) {
+                                putString(KEY_LAST_SYNCED_USER_ID, userId)
+                            }
+                        }
+                        .apply()
                     true
                 } else {
                     false

@@ -33,3 +33,8 @@ fun CommentResponseDto.asExternalModel(replies: List<Comment> = emptyList()) = C
     parentCommentId = parentCommentId,
     replies = replies,
 )
+
+data class CommentMention(
+    val userId: String,
+    val username: String,
+)

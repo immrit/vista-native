@@ -12,7 +12,9 @@ import ir.coffevista.vista_native.core.model.session.AuthenticationState
 import ir.coffevista.vista_native.core.model.session.AuthenticationStateProvider
 import ir.coffevista.vista_native.features.profile.data.OwnProfileRepository
 import ir.coffevista.vista_native.features.profile.data.ProfileAvatarUploader
+import ir.coffevista.vista_native.features.profile.data.ProfileHighlightDto
 import ir.coffevista.vista_native.features.profile.data.ProfileUpdateRequestDto
+import ir.coffevista.vista_native.features.profile.data.UserProfileRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -26,7 +28,18 @@ class OwnProfileViewModel @Inject constructor(
     private val repository: OwnProfileRepository,
     private val authStateProvider: AuthenticationStateProvider,
     private val avatarUploader: ProfileAvatarUploader? = null,
+    private val userProfileRepository: UserProfileRepository? = null,
 ) : ViewModel() {
+
+    private val _highlights = MutableStateFlow<List<ProfileHighlightDto>>(emptyList())
+    val highlights: StateFlow<List<ProfileHighlightDto>> = _highlights.asStateFlow()
+
+    fun loadHighlights() {
+        val userId = currentUserId ?: return
+        viewModelScope.launch {
+            _highlights.value = userProfileRepository?.getUserHighlights(userId).orEmpty()
+        }
+    }
 
     suspend fun updateProfile(request: ProfileUpdateRequestDto): Outcome<Unit> =
         repository.updateOwnProfile(request)
@@ -96,6 +109,7 @@ class OwnProfileViewModel @Inject constructor(
 
     private fun observeProfile(userId: String) {
         viewModelScope.launch {
+            loadHighlights()
             // Initiate network fetch without awaiting, flow collection handles the rest
             launch { fetchProfile(userId) }
             

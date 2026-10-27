@@ -2,10 +2,18 @@ package ir.coffevista.vista_native.features.feed.data
 
 import ir.coffevista.vista_native.core.database.feed.FeedDao
 import ir.coffevista.vista_native.core.database.feed.FeedPageStateEntity
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
+import java.util.Collections
+import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -17,9 +25,30 @@ class OfflineFirstFeedRepository @Inject constructor(
 
     private val exploreLimit = 15
     private val followingLimit = 20
-    private val profileLimit = 30
+    private val profileLimit = 15
     private val hashtagLimit = 24
     private val appendMutexes = mutableMapOf<String, Mutex>()
+    private val pendingEvents = ConcurrentHashMap<String, FeedEventRequestDto>()
+    private val sentViewEvents = Collections.newSetFromMap(ConcurrentHashMap<String, Boolean>())
+    private val repositoryScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    init {
+        repositoryScope.launch {
+            while (isActive) {
+                delay(2000L)
+                flushPendingEvents()
+            }
+        }
+    }
+
+    private suspend fun flushPendingEvents() {
+        if (pendingEvents.isEmpty()) return
+        val snapshot = ArrayList(pendingEvents.values)
+        pendingEvents.clear()
+        for (event in snapshot) {
+            runCatching { feedApi.trackFeedEvent(event) }
+        }
+    }
 
     override fun observeFeed(accountId: String, kind: FeedKind): Flow<FeedSnapshot> =
         observePage(storageKey(accountId, kind))
@@ -52,10 +81,20 @@ class OfflineFirstFeedRepository @Inject constructor(
     ): FeedRefreshResult {
         val storageAccountId = storageKey(accountId, kind)
         val response = when (kind) {
-            FeedKind.Explore -> feedApi.getExploreFeed(limit = exploreLimit, offset = 0)
+            FeedKind.Explore -> {
+                if (accountId.isNotBlank() && accountId != "guest") {
+                    try {
+                        feedApi.getPersonalizedFeed(limit = exploreLimit, offset = 0)
+                    } catch (e: Exception) {
+                        feedApi.getExploreFeed(limit = exploreLimit, offset = 0)
+                    }
+                } else {
+                    feedApi.getExploreFeed(limit = exploreLimit, offset = 0)
+                }
+            }
             FeedKind.Following -> feedApi.getFollowingFeed(
                 limit = followingLimit,
-                cursor = null,
+                offset = 0,
             )
         }
         return replaceFirstPage(storageAccountId, response)
@@ -67,12 +106,22 @@ class OfflineFirstFeedRepository @Inject constructor(
     ): FeedAppendResult {
         val storageAccountId = storageKey(accountId, kind)
         val limit = if (kind == FeedKind.Explore) exploreLimit else followingLimit
-        return appendPage(storageAccountId) { state, offset ->
+        return appendPage(storageAccountId) { _, offset ->
             when (kind) {
-                FeedKind.Explore -> feedApi.getExploreFeed(limit = limit, offset = offset)
+                FeedKind.Explore -> {
+                    if (accountId.isNotBlank() && accountId != "guest") {
+                        try {
+                            feedApi.getPersonalizedFeed(limit = limit, offset = offset)
+                        } catch (e: Exception) {
+                            feedApi.getExploreFeed(limit = limit, offset = offset)
+                        }
+                    } else {
+                        feedApi.getExploreFeed(limit = limit, offset = offset)
+                    }
+                }
                 FeedKind.Following -> feedApi.getFollowingFeed(
                     limit = limit,
-                    cursor = state?.nextCursor,
+                    offset = offset,
                 )
             }
         }
@@ -279,7 +328,11 @@ class OfflineFirstFeedRepository @Inject constructor(
 
     override suspend fun trackFeedEvent(postId: String, eventType: String) {
         if (postId.isBlank() || eventType !in ALLOWED_FEED_EVENTS) return
-        runCatching { feedApi.trackFeedEvent(FeedEventRequestDto(postId, eventType)) }
+        val key = "$postId:$eventType"
+        if (eventType == "view") {
+            if (!sentViewEvents.add(postId)) return
+        }
+        pendingEvents[key] = FeedEventRequestDto(postId, eventType)
     }
 
     private fun storageKey(accountId: String, kind: FeedKind): String = when (kind) {

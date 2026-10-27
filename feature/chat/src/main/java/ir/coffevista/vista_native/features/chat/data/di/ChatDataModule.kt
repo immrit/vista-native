@@ -77,7 +77,13 @@ object ChatDataModule {
         sessionStore: SessionStore,
         @ApplicationContext context: Context,
         refresher: ChatSessionRefresher,
-    ): ChatSessionProvider = StoredSessionChatSessionProvider(sessionStore, context, refresher)
+        deviceIdProvider: ir.coffevista.vista_native.core.common.DeviceIdProvider,
+    ): ChatSessionProvider = StoredSessionChatSessionProvider(
+        sessionStore = sessionStore,
+        context = context,
+        refresher = refresher,
+        deviceIdProvider = deviceIdProvider,
+    )
 
     @Provides
     @Singleton
@@ -114,11 +120,13 @@ object ChatDataModule {
         sessionProvider: ChatSessionProvider,
         socketFactory: ChatWebSocketFactory,
         @InternalEnvironment environment: AppEnvironment,
+        networkMonitor: ir.coffevista.vista_native.core.network.NetworkMonitor,
     ): ChatRealtimeCoordinator = ChatRealtimeCoordinator(
         scope = scope,
         sessionProvider = sessionProvider,
         socketFactory = socketFactory,
         internalBaseUrl = environment.internalBaseUrl,
+        networkMonitor = networkMonitor,
     )
 
     @Provides
@@ -155,14 +163,16 @@ private class StoredSessionChatSessionProvider(
     private val sessionStore: SessionStore,
     context: Context,
     private val refresher: ChatSessionRefresher,
+    deviceIdProvider: ir.coffevista.vista_native.core.common.DeviceIdProvider? = null,
 ) : ChatSessionProvider {
-    private val deviceId = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
-        .let { preferences ->
-            preferences.getString(DEVICE_ID, null)?.takeIf(String::isNotBlank)
-                ?: UUID.randomUUID().toString().also { generated ->
-                    check(preferences.edit().putString(DEVICE_ID, generated).commit())
-                }
-        }
+    private val deviceId = deviceIdProvider?.deviceId()?.takeIf(String::isNotBlank)
+        ?: context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+            .let { preferences ->
+                preferences.getString(DEVICE_ID, null)?.takeIf(String::isNotBlank)
+                    ?: UUID.randomUUID().toString().also { generated ->
+                        check(preferences.edit().putString(DEVICE_ID, generated).commit())
+                    }
+            }
     private val mutableAccount = MutableStateFlow(readAccount())
     override val account: StateFlow<ChatAccount?> = mutableAccount
 

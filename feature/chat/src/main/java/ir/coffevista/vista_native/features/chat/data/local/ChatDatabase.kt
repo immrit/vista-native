@@ -270,10 +270,10 @@ interface ChatDao {
     @Query(
         """
         SELECT * FROM chat_conversation 
-        WHERE accountId = :accountId AND (id = :conversationId OR peerId = :conversationId)
+        WHERE accountId = :accountId AND (id = :conversationId OR (peerId = :conversationId AND UPPER(type) != 'SECRET'))
         ORDER BY 
-            CASE WHEN id = :conversationId THEN 0 ELSE 1 END,
             CASE WHEN UPPER(type) = 'PRIVATE' THEN 0 WHEN UPPER(type) = 'GROUP' THEN 1 ELSE 2 END,
+            CASE WHEN id = :conversationId THEN 0 ELSE 1 END,
             lastMessageAtEpochMillis DESC
         LIMIT 1
         """,
@@ -283,15 +283,25 @@ interface ChatDao {
     @Query(
         """
         SELECT * FROM chat_conversation 
-        WHERE accountId = :accountId AND (id = :conversationId OR peerId = :conversationId)
+        WHERE accountId = :accountId AND (id = :conversationId OR (peerId = :conversationId AND UPPER(type) != 'SECRET'))
         ORDER BY 
-            CASE WHEN id = :conversationId THEN 0 ELSE 1 END,
             CASE WHEN UPPER(type) = 'PRIVATE' THEN 0 WHEN UPPER(type) = 'GROUP' THEN 1 ELSE 2 END,
+            CASE WHEN id = :conversationId THEN 0 ELSE 1 END,
             lastMessageAtEpochMillis DESC
         LIMIT 1
         """,
     )
     suspend fun conversation(accountId: String, conversationId: String): ConversationEntity?
+
+    @Query(
+        """
+        SELECT * FROM chat_conversation 
+        WHERE accountId = :accountId AND (id = :conversationId OR peerId = :conversationId) AND UPPER(type) = UPPER(:type)
+        ORDER BY lastMessageAtEpochMillis DESC
+        LIMIT 1
+        """,
+    )
+    suspend fun conversationByType(accountId: String, conversationId: String, type: String): ConversationEntity?
 
     @Query(
         """
@@ -319,6 +329,23 @@ interface ChatDao {
         """,
     )
     suspend fun orphanConversationIds(accountId: String): List<String>
+
+    @Query(
+        """
+        SELECT DISTINCT message.conversationId
+        FROM chat_message AS message
+        WHERE message.accountId = :accountId
+          AND LOWER(message.contentKind) != 'encrypted_unavailable'
+          AND LOWER(message.messageType) NOT IN ('exchange_key', 'exchange_key_reply')
+          AND NOT EXISTS (
+            SELECT 1 FROM chat_conversation AS c
+            WHERE c.accountId = message.accountId
+              AND (c.id = message.conversationId OR c.peerId = message.conversationId)
+              AND UPPER(c.type) = 'PRIVATE'
+          )
+        """,
+    )
+    suspend fun orphanPlainConversationIds(accountId: String): List<String>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertConversations(items: List<ConversationEntity>)
@@ -350,6 +377,31 @@ interface ChatDao {
         """,
     )
     suspend fun markIncomingRead(accountId: String, conversationId: String)
+
+    @Query(
+        """
+        UPDATE chat_message SET status = 'READ'
+        WHERE accountId = :accountId AND conversationId = :conversationId
+          AND isMine = 1 AND createdAtEpochMillis <= :readAtEpochMillis
+          AND status != 'READ'
+        """,
+    )
+    suspend fun markOutgoingReadUpTo(accountId: String, conversationId: String, readAtEpochMillis: Long)
+
+    @Query(
+        """
+        UPDATE chat_conversation SET lastMessageStatus = 'READ'
+        WHERE accountId = :accountId AND id = :conversationId
+          AND lastMessageIsMine = 1 AND lastMessageAtEpochMillis <= :readAtEpochMillis
+        """,
+    )
+    suspend fun markConversationLastMessageRead(accountId: String, conversationId: String, readAtEpochMillis: Long)
+
+    @Transaction
+    suspend fun markOutgoingRead(accountId: String, conversationId: String, readAtEpochMillis: Long) {
+        markOutgoingReadUpTo(accountId, conversationId, readAtEpochMillis)
+        markConversationLastMessageRead(accountId, conversationId, readAtEpochMillis)
+    }
 
     @Transaction
     suspend fun markConversationRead(accountId: String, conversationId: String) {
@@ -593,20 +645,36 @@ interface ChatDao {
         if (replacedClientId != null && replacedClientId != message.clientId) {
             deleteMessage(message.accountId, message.conversationId, replacedClientId)
         }
-        upsertMessage(message)
-        val current = conversation(message.accountId, message.conversationId)
+        val current = conversationByType(message.accountId, message.conversationId, fallbackConversation.type)
+            ?: conversation(message.accountId, message.conversationId)?.takeIf { it.type.equals(fallbackConversation.type, ignoreCase = true) }
         val base = current ?: fallbackConversation
-        val replacePreview = base.lastMessageAtEpochMillis == null ||
-            message.createdAtEpochMillis >= base.lastMessageAtEpochMillis
+        val resolvedTitle = if (base.title == "کاربر" && fallbackConversation.title != "کاربر") {
+            fallbackConversation.title
+        } else {
+            base.title
+        }
+        val resolvedAvatar = base.avatarUrl ?: fallbackConversation.avatarUrl
+        val nextLastMessageAt = maxOf(
+            message.createdAtEpochMillis,
+            mutationAtEpochMillis,
+            base.lastMessageAtEpochMillis ?: 0L,
+        )
+        val finalMessage = if (message.conversationId != base.id) {
+            message.copy(conversationId = base.id)
+        } else {
+            message
+        }
+        upsertMessage(finalMessage)
         upsertConversations(
             listOf(
                 base.copy(
-                    lastMessageCiphertext = if (replacePreview) previewCiphertext else base.lastMessageCiphertext,
-                    lastMessageAtEpochMillis = if (replacePreview) {
-                        message.createdAtEpochMillis
-                    } else {
-                        base.lastMessageAtEpochMillis
-                    },
+                    title = resolvedTitle,
+                    avatarUrl = resolvedAvatar,
+                    lastMessageCiphertext = previewCiphertext,
+                    lastMessageAtEpochMillis = nextLastMessageAt,
+                    lastMessageStatus = if (message.isMine) message.status else "READ",
+                    lastMessageIsMine = message.isMine,
+                    isArchived = if (message.isMine || !base.isMuted) false else base.isArchived,
                     unreadCount = base.unreadCount + if (incrementUnread) 1 else 0,
                     lastSyncedAtEpochMillis = mutationAtEpochMillis,
                 ),

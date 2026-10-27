@@ -40,4 +40,9 @@ interface PublicProfileApi {
         @retrofit2.http.Query("limit") limit: Int = 30,
         @retrofit2.http.Query("offset") offset: Int = 0,
     ): Response<FollowListResponseDto>
+
+    @GET("v1/highlights/users/{userId}")
+    suspend fun getUserHighlights(
+        @Path("userId") userId: String,
+    ): Response<ProfileHighlightsResponseDto> = Response.success(ProfileHighlightsResponseDto())
 }

@@ -30,6 +30,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
@@ -46,6 +53,7 @@ import kotlin.math.roundToInt
 fun StoryElementsOverlay(
     elements: List<StoryElement>,
     onPollVote: (elementId: String, optionIndex: Int) -> Unit = { _, _ -> },
+    onQuestionAnswer: (elementId: String, answer: String) -> Unit = { _, _ -> },
     onLinkClick: (url: String) -> Unit = {},
     onMentionClick: (userId: String) -> Unit = {},
     modifier: Modifier = Modifier,
@@ -53,6 +61,91 @@ fun StoryElementsOverlay(
     Box(modifier = modifier.fillMaxSize()) {
         elements.forEach { element ->
             when (element.type) {
+                "question" -> {
+                    var showAnswerDialog by remember { mutableStateOf(false) }
+                    var answerText by remember { mutableStateOf("") }
+
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .offset { IntOffset((element.x * 200).roundToInt(), (element.y * 300).roundToInt()) }
+                            .padding(horizontal = 24.dp),
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth(0.85f)
+                                .clip(RoundedCornerShape(18.dp))
+                                .background(Color.White)
+                                .padding(16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Text(
+                                text = element.content?.ifBlank { null } ?: "از من بپرسید",
+                                color = Color.Black,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp,
+                                textAlign = TextAlign.Center,
+                            )
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(Color(0xFFF3F4F6))
+                                    .clickable { showAnswerDialog = true }
+                                    .padding(vertical = 10.dp, horizontal = 12.dp),
+                                contentAlignment = Alignment.CenterStart,
+                            ) {
+                                Text(
+                                    text = "پاسخ خود را بنویسید…",
+                                    color = Color.Gray,
+                                    fontSize = 13.sp,
+                                )
+                            }
+                        }
+                    }
+
+                    if (showAnswerDialog) {
+                        AlertDialog(
+                            onDismissRequest = { showAnswerDialog = false },
+                            containerColor = Color(0xFF2A2A2A),
+                            title = {
+                                Text(
+                                    text = element.content?.ifBlank { null } ?: "پاسخ به سوال",
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                            },
+                            text = {
+                                OutlinedTextField(
+                                    value = answerText,
+                                    onValueChange = { answerText = it },
+                                    placeholder = { Text("پاسخ خود را اینجا بنویسید…", color = Color.Gray) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                            },
+                            confirmButton = {
+                                TextButton(
+                                    onClick = {
+                                        if (answerText.isNotBlank()) {
+                                            onQuestionAnswer(element.id, answerText)
+                                            answerText = ""
+                                            showAnswerDialog = false
+                                        }
+                                    },
+                                ) {
+                                    Text("ارسال", color = VistaBrandColors.Pink)
+                                }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { showAnswerDialog = false }) {
+                                    Text("انصراف", color = Color.White)
+                                }
+                            },
+                        )
+                    }
+                }
+
                 "poll" -> {
                     element.poll?.let { poll ->
                         Box(

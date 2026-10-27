@@ -196,7 +196,7 @@ class OfflineFirstFeedRepositoryTest {
     }
 
     @Test
-    fun followingAppendUsesServerCursor() = runTest {
+    fun followingAppendUsesOffset() = runTest {
         api.response = response("first", hasMore = true)
         repository.refreshFeed("account-a", FeedKind.Following)
         api.response = response("second", hasMore = false)
@@ -204,8 +204,8 @@ class OfflineFirstFeedRepositoryTest {
         repository.loadMoreFeed("account-a", FeedKind.Following)
 
         assertEquals(
-            listOf(null, "2026-07-27T17:21:5Z"),
-            api.followingCursors,
+            listOf(0, 1),
+            api.followingOffsets,
         )
     }
 
@@ -314,7 +314,7 @@ private class FakeFeedApi : FeedApi {
     var failure: IOException? = null
     var handler: (suspend (Int, Int) -> FeedResponseDto)? = null
     val calls = mutableListOf<Pair<Int, Int>>()
-    val followingCursors = mutableListOf<String?>()
+    val followingOffsets = mutableListOf<Int>()
 
     override suspend fun getExploreFeed(limit: Int, offset: Int): FeedResponseDto {
         calls += limit to offset
@@ -322,11 +322,17 @@ private class FakeFeedApi : FeedApi {
         return handler?.invoke(limit, offset) ?: response
     }
 
+    override suspend fun getPersonalizedFeed(limit: Int, offset: Int): FeedResponseDto {
+        calls += limit to offset
+        failure?.let { throw it }
+        return handler?.invoke(limit, offset) ?: response
+    }
+
     override suspend fun getFollowingFeed(
         limit: Int,
-        cursor: String?,
+        offset: Int,
     ): FeedResponseDto {
-        followingCursors += cursor
+        followingOffsets += offset
         failure?.let { throw it }
         return response
     }
@@ -368,7 +374,8 @@ private class FakeFeedApi : FeedApi {
     override suspend fun submitAppeal(body: SubmitAppealRequestDto) = Unit
     override suspend fun trackFeedEvent(body: FeedEventRequestDto) = Unit
     override suspend fun presignUpload(request: PostPresignRequestDto): PostPresignResponseDto = error("unused")
-    override suspend fun createPost(request: CreatePostRequestDto): CreatePostResponseDto = error("unused")
+    override suspend fun deleteUpload(request: DeleteUploadRequestDto): DeleteUploadResponseDto = DeleteUploadResponseDto(true)
+    override suspend fun createPost(request: CreatePostRequestDto): FeedPostDto = error("unused")
 }
 
 private class FakeFeedDao : FeedDao {

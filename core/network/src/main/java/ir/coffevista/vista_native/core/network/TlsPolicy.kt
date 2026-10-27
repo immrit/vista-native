@@ -1,11 +1,15 @@
 package ir.coffevista.vista_native.core.network
 
+import android.net.http.X509TrustManagerExtensions
 import ir.coffevista.vista_native.core.common.EpochClock
+import java.net.Socket
 import java.security.MessageDigest
 import java.security.cert.CertificateException
 import java.security.cert.X509Certificate
 import java.util.concurrent.atomic.AtomicReference
 import javax.inject.Inject
+import javax.net.ssl.SSLEngine
+import javax.net.ssl.X509ExtendedTrustManager
 import javax.net.ssl.X509TrustManager
 
 enum class TlsMode {
@@ -58,8 +62,27 @@ class TlsPolicyStore(
 
     fun current(): TlsPolicy = policy.get()
 
+    fun hydrateFromDisk(savedPolicy: TlsPolicy) {
+        val normalized = savedPolicy.normalized()
+        policy.updateAndGet { current ->
+            if (current.revision == 0L && normalized.revision > 0L) normalized else current
+        }
+    }
+
     fun update(candidate: TlsPolicy, signatureVerified: Boolean): TlsPolicyUpdate {
         val retained = policy.get()
+        if (
+            signatureVerified &&
+            candidate.contractVersion == SUPPORTED_CONTRACT_VERSION &&
+            retained.revision > 0L &&
+            candidate.mode == retained.mode &&
+            candidate.currentPinSha256.normalizedPin() == retained.currentPinSha256.normalizedPin() &&
+            candidate.nextPinSha256.normalizedPin() == retained.nextPinSha256.normalizedPin() &&
+            candidate.expiresAtEpochSeconds == retained.expiresAtEpochSeconds &&
+            candidate.revision == retained.revision
+        ) {
+            return TlsPolicyUpdate.Accepted(retained)
+        }
         val rejection = when {
             !signatureVerified -> TlsPolicyRejection.UNSIGNED
             candidate.contractVersion != SUPPORTED_CONTRACT_VERSION ->
@@ -141,23 +164,112 @@ class PolicyTrustManager(
     private val policyStore: TlsPolicyStore,
     private val evaluator: TlsPolicyEvaluator,
     private val reporter: TlsFailureReporter,
-) : X509TrustManager {
+) : X509ExtendedTrustManager() {
+    private val trustManagerExtensions: X509TrustManagerExtensions? =
+        runCatching { X509TrustManagerExtensions(delegate) }.getOrNull()
+
     override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) {
         delegate.checkClientTrusted(chain, authType)
     }
 
+    override fun checkClientTrusted(
+        chain: Array<out X509Certificate>?,
+        authType: String?,
+        socket: Socket?,
+    ) {
+        if (delegate is X509ExtendedTrustManager) {
+            delegate.checkClientTrusted(chain, authType, socket)
+        } else {
+            delegate.checkClientTrusted(chain, authType)
+        }
+    }
+
+    override fun checkClientTrusted(
+        chain: Array<out X509Certificate>?,
+        authType: String?,
+        engine: SSLEngine?,
+    ) {
+        if (delegate is X509ExtendedTrustManager) {
+            delegate.checkClientTrusted(chain, authType, engine)
+        } else {
+            delegate.checkClientTrusted(chain, authType)
+        }
+    }
+
     override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) {
-        delegate.checkServerTrusted(chain, authType)
-        val leaf = chain?.firstOrNull() ?: throw CertificateException("Missing server certificate")
-        val seen = MessageDigest.getInstance("SHA-256")
-            .digest(leaf.encoded)
-            .joinToString("") { byte -> "%02x".format(byte) }
-        val decision = evaluator.evaluate(policyStore.current(), seen)
+        verifyServerTrusted(chain, authType, host)
+    }
+
+    override fun checkServerTrusted(
+        chain: Array<out X509Certificate>?,
+        authType: String?,
+        socket: Socket?,
+    ) {
+        val peerHost = socket?.inetAddress?.hostName?.takeIf(String::isNotBlank) ?: host
+        verifyServerTrusted(chain, authType, peerHost)
+    }
+
+    override fun checkServerTrusted(
+        chain: Array<out X509Certificate>?,
+        authType: String?,
+        engine: SSLEngine?,
+    ) {
+        val peerHost = engine?.peerHost?.takeIf(String::isNotBlank) ?: host
+        verifyServerTrusted(chain, authType, peerHost)
+    }
+
+    fun checkServerTrusted(
+        chain: Array<out X509Certificate>?,
+        authType: String?,
+        hostName: String?,
+    ): List<X509Certificate> {
+        val targetHost = hostName?.takeIf(String::isNotBlank) ?: host
+        return verifyServerTrusted(chain, authType, targetHost)
+    }
+
+    private fun verifyServerTrusted(
+        chain: Array<out X509Certificate>?,
+        authType: String?,
+        targetHost: String,
+    ): List<X509Certificate> {
+        val certs = chain?.map { it }?.toTypedArray()
+            ?: throw CertificateException("Missing server certificate")
+        val verifiedChain = try {
+            val ext = trustManagerExtensions
+            if (ext != null) {
+                ext.checkServerTrusted(certs, authType, targetHost)
+            } else {
+                delegate.checkServerTrusted(certs, authType)
+                certs.toList()
+            }
+        } catch (e: RuntimeException) {
+            if (e is CertificateException) throw e
+            delegate.checkServerTrusted(certs, authType)
+            certs.toList()
+        }
+        val leaf = verifiedChain.firstOrNull() ?: certs.firstOrNull()
+            ?: throw CertificateException("Missing server certificate")
+        val certSha256 = sha256Hex(leaf.encoded)
+        val spkiSha256 = runCatching { sha256Hex(leaf.publicKey.encoded) }.getOrNull()
+        val policy = policyStore.current()
+        val validPins = policy.validPins()
+        val matchedFingerprint = when {
+            certSha256 in validPins -> certSha256
+            spkiSha256 != null && spkiSha256 in validPins -> spkiSha256
+            else -> certSha256
+        }
+        val decision = evaluator.evaluate(policy, matchedFingerprint)
         decision.report?.let { reason ->
-            reporter.report(TlsFailureReport(host, seen, reason))
+            reporter.report(TlsFailureReport(targetHost, certSha256, reason))
         }
         if (!decision.allow) throw CertificateException("TLS policy rejected certificate")
+        return verifiedChain
     }
+
+    private fun sha256Hex(bytes: ByteArray): String =
+        MessageDigest.getInstance("SHA-256")
+            .digest(bytes)
+            .joinToString("") { byte -> "%02x".format(byte) }
 
     override fun getAcceptedIssuers(): Array<X509Certificate> = delegate.acceptedIssuers
 }

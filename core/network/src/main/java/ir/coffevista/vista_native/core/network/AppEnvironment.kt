@@ -9,6 +9,7 @@ data class AppEnvironment(
     val name: EnvironmentName,
     val internalBaseUrl: String,
     val debugBuild: Boolean,
+    val appVersion: String = "1.0.0",
 ) {
     init {
         require(internalBaseUrl.startsWith("https://")) {

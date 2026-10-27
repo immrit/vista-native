@@ -67,7 +67,6 @@ import ir.coffevista.vista_native.features.profile.settings.about.FAQScreen
 import ir.coffevista.vista_native.features.profile.settings.about.TermsAndConditionsScreen
 import ir.coffevista.vista_native.features.profile.settings.about.PrivacyPolicyScreen
 import ir.coffevista.vista_native.features.search.data.SearchRepository
-import ir.coffevista.vista_native.features.search.ui.SearchLauncherScreen
 import ir.coffevista.vista_native.features.search.ui.SearchWorkspaceScreen
 import ir.coffevista.vista_native.features.shell.ShellDeepLinkRequest
 import ir.coffevista.vista_native.features.shell.ShellDeferredKind
@@ -85,6 +84,7 @@ import ir.coffevista.vista_native.features.startup.StartupViewModel
 import ir.coffevista.vista_native.ui.components.VistaBrandAsset
 import ir.coffevista.vista_native.ui.components.VistaBrandMark
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaBrandColors
+import ir.coffevista.vista_native.core.network.SystemGateMonitor
 import ir.coffevista.vista_native.core.security.SessionStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -112,13 +112,49 @@ fun VistaApp(
     biometricAuthenticator: ir.coffevista.vista_native.core.security.BiometricAuthenticator? = null,
     routedSharedContent: ir.coffevista.vista_native.share.RoutedSharedContent? = null,
     onSharedContentConsumed: (String) -> Unit = {},
+    onCheckForUpdate: (() -> Unit)? = null,
     onExitRequested: () -> Unit,
 ) {
     val navController = rememberNavController()
     val authState by authenticationStateOwner.state.collectAsStateWithLifecycle()
     val deepLinkState by deepLinkCoordinator.state.collectAsStateWithLifecycle()
+    val maintenanceActive by SystemGateMonitor.maintenanceActive.collectAsStateWithLifecycle()
+    val isBanned by SystemGateMonitor.isBanned.collectAsStateWithLifecycle()
+    val bannedReasonFa by SystemGateMonitor.bannedReasonFa.collectAsStateWithLifecycle()
+    val sessionTerminated by SystemGateMonitor.sessionTerminated.collectAsStateWithLifecycle()
     var shellDeepLinkRequest by remember { mutableStateOf<ShellDeepLinkRequest?>(null) }
     val applicationScope = rememberCoroutineScope()
+
+    LaunchedEffect(sessionTerminated) {
+        if (sessionTerminated) {
+            SystemGateMonitor.reportSessionTerminated(false)
+            runCatching(sessionStore::clear)
+            authenticationStateOwner.signOut()
+            navController.navigate(AppRoute.Authentication) {
+                popUpTo(0) { inclusive = true }
+                launchSingleTop = true
+            }
+        }
+    }
+
+    LaunchedEffect(isBanned, bannedReasonFa) {
+        if (isBanned) {
+            runCatching(sessionStore::clear)
+            authenticationStateOwner.signOut()
+            navController.navigate(AppRoute.Banned(bannedReasonFa)) {
+                popUpTo(0) { inclusive = true }
+                launchSingleTop = true
+            }
+        }
+    }
+
+    LaunchedEffect(maintenanceActive) {
+        if (maintenanceActive && !isBanned) {
+            navController.navigate(AppRoute.Maintenance) {
+                launchSingleTop = true
+            }
+        }
+    }
     val authVisuals = AuthVisuals(
         backIcon = painterResource(R.drawable.ic_auth_arrow_back),
         personIcon = painterResource(R.drawable.ic_person_outline),
@@ -280,6 +316,7 @@ fun VistaApp(
         composable<AppRoute.Maintenance> {
             MaintenanceScreen(
                 onRetry = {
+                    SystemGateMonitor.reportMaintenance(false)
                     navController.navigate(AppRoute.Startup) {
                         popUpTo<AppRoute.Maintenance> { inclusive = true }
                     }
@@ -412,6 +449,9 @@ fun VistaApp(
                     }
                 }
             } else {
+                val conversations by chatRepository.observeConversations().collectAsStateWithLifecycle(initialValue = emptyList())
+                val chatBadgeCount = remember(conversations) { conversations.sumOf { it.unreadCount } }
+
                 VistaShell(
                     context = signedIn.context,
                     deepLinkRequest = shellDeepLinkRequest,
@@ -548,21 +588,32 @@ fun VistaApp(
                             )
                         },
                         searchRoot = { onOpenWorkspace, onOpenQrScanner ->
-                            SearchLauncherScreen(
+                            SearchWorkspaceScreen(
                                 viewModel = hiltViewModel(),
-                                onOpenWorkspace = onOpenWorkspace,
+                                onUserClick = { user ->
+                                    navController.navigate(ShellRoutes.userProfile(user.id))
+                                },
+                                onPostClick = { post ->
+                                    navController.navigate(ShellRoutes.postDetail(post.id))
+                                },
+                                onHashtagClick = { hashtag ->
+                                    navController.navigate(ShellRoutes.hashtag(hashtag))
+                                },
+                                onBack = null,
                                 onOpenQrScanner = onOpenQrScanner,
                             )
                         },
-                        searchWorkspace = { onUserClick, onPostClick, onHashtagClick ->
+                        searchWorkspace = { onUserClick, onPostClick, onHashtagClick, onBack, onOpenQrScanner ->
                             SearchWorkspaceScreen(
                                 viewModel = hiltViewModel(),
                                 onUserClick = { onUserClick(it.id) },
                                 onPostClick = { onPostClick(it.id) },
                                 onHashtagClick = onHashtagClick,
+                                onBack = onBack,
+                                onOpenQrScanner = onOpenQrScanner,
                             )
                         },
-                        ownProfile = { onPostClick, onSettingsClick, logout, onOpenFollowers, onOpenQrScanner, onEditProfile, onAddStory, onReelClick ->
+                        ownProfile = { onPostClick, onSettingsClick, logout, onOpenFollowers, onOpenQrScanner, onEditProfile, onAddStory, onReelClick, onAddPost ->
                             val postsViewModel = hiltViewModel<ProfilePostsViewModel>()
                             val postsState by postsViewModel.uiState.collectAsStateWithLifecycle()
                             LaunchedEffect(signedIn.context.userId) {
@@ -576,6 +627,7 @@ fun VistaApp(
                                 onOpenQrScanner = onOpenQrScanner,
                                 onEditProfile = onEditProfile,
                                 onAddStory = onAddStory,
+                                onAddPost = onAddPost,
                                 postsState = postsState.toPresentationState(),
                                 onPostsRefresh = postsViewModel::refresh,
                                 onPostsLoadMore = postsViewModel::loadMore,
@@ -671,6 +723,7 @@ fun VistaApp(
                                 onContactUsClick = onContactUs,
                                 onPrivacyPolicyClick = onPrivacyPolicy,
                                 onFaqClick = onFaq,
+                                onCheckForUpdate = onCheckForUpdate,
                             )
                         },
                         aboutSlideshow = { onClose ->
@@ -842,7 +895,7 @@ fun VistaApp(
                                 sharedContentSummary = shared?.content?.destinationSummary,
                             )
                         },
-                        chatDetail = { conversationId, messageId, title, onBack, onOpenProfile, onOpenChat ->
+                        chatDetail = { conversationId, messageId, title, onBack, onOpenProfile, onOpenChat, onOpenPost ->
                             val shared = routedSharedContent?.takeIf {
                                 it.destination == ir.coffevista.vista_native.share.SharedContentDestination.CHAT
                             }
@@ -860,8 +913,10 @@ fun VistaApp(
                                 onStartSecretChat = { secretConversation ->
                                     onOpenChat(secretConversation.id, secretConversation.title)
                                 },
+                                onOpenPost = onOpenPost,
                             )
                         },
+                        chatBadgeCount = chatBadgeCount,
                     ),
                 )
             }
@@ -899,8 +954,16 @@ private fun FeedPost.toProfilePostUiModel() = ProfilePostUiModel(
     authorVerificationType = authorVerificationType,
     content = content,
     imageUrl = videoThumbnailUrl ?: primaryImageUrl,
+    imageUrls = imageUrls,
     videoUrl = videoUrl,
-    aspectRatio = aspectRatio?.toFloatOrNull(),
+    aspectRatio = aspectRatio?.let { str ->
+        val parts = str.split(":")
+        if (parts.size == 2) {
+            val w = parts[0].trim().toFloatOrNull()
+            val h = parts[1].trim().toFloatOrNull()
+            if (w != null && h != null && h > 0f) w / h else null
+        } else str.toFloatOrNull()
+    },
     musicUrl = musicUrl,
     musicTitle = musicTitle,
     viewsCount = 0L,

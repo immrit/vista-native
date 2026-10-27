@@ -8,18 +8,29 @@ import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import ir.coffevista.vista_native.core.designsystem.component.VistaButton
+import kotlinx.coroutines.delay
 
 @Composable
 fun MaintenanceScreen(
     onRetry: () -> Unit,
     modifier: Modifier = Modifier,
+    autoRetryIntervalMillis: Long = 10_000L,
 ) {
+    LaunchedEffect(onRetry, autoRetryIntervalMillis) {
+        if (autoRetryIntervalMillis > 0L) {
+            while (true) {
+                delay(autoRetryIntervalMillis)
+                onRetry()
+            }
+        }
+    }
     Column(
         modifier = modifier
             .fillMaxSize()

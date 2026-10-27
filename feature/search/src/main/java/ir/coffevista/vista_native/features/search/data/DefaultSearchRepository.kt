@@ -50,13 +50,16 @@ class DefaultSearchRepository(
         )
     }
 
-    override suspend fun searchPostsByHashtag(query: String): PostSearchPage {
+    override suspend fun searchPostsByHashtag(query: String): PostSearchPage =
+        searchPostsByHashtag(query, 0)
+
+    override suspend fun searchPostsByHashtag(query: String, offset: Int): PostSearchPage {
         val tag = normalizeHashtag(query)
         if (tag.isEmpty()) return PostSearchPage(emptyList(), false, null)
         val response = api.searchPostsByHashtag(
             tag = tag,
             limit = SearchRepository.POST_LIMIT,
-            offset = 0,
+            offset = offset,
         ).bodyOrThrow("search_posts_empty")
         return PostSearchPage(
             posts = response.posts

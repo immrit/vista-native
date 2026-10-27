@@ -53,6 +53,11 @@ internal fun Message.contextActionPolicy(
 ): MessageContextActionPolicy {
     val isDeleted = content is MessageContent.Deleted || deletedAtEpochMillis != null
     val isTextOnly = content is MessageContent.Text && attachment == null
+    val hasText = when (val c = content) {
+        is MessageContent.Text -> c.value.isNotBlank()
+        is MessageContent.Structured -> c.payload.isNotBlank()
+        else -> false
+    }
     val isAttachmentTransferComplete = attachment?.transferState == null ||
         attachment.transferState == TransferState.COMPLETE
     val isServerConfirmed = serverId != null && status !in setOf(
@@ -64,7 +69,7 @@ internal fun Message.contextActionPolicy(
     return MessageContextActionPolicy(
         canReact = canInteractRemotely && capabilities.allowsReactions,
         canReply = canInteractRemotely,
-        canCopy = !isDeleted && isTextOnly && capabilities.conversationType != ConversationType.SECRET,
+        canCopy = !isDeleted && (isTextOnly || hasText) && capabilities.conversationType != ConversationType.SECRET,
         // Secret conversations must never expose a forwarding or pin route.
         // The API remains authoritative for all other conversation policies.
         canForward = canInteractRemotely &&
@@ -73,7 +78,7 @@ internal fun Message.contextActionPolicy(
         canTogglePinned = canInteractRemotely &&
             capabilities.allowsPinning &&
             capabilities.conversationType != ConversationType.SECRET,
-        canEdit = canInteractRemotely && isMine && isTextOnly,
+        canEdit = canInteractRemotely && isMine && (isTextOnly || (attachment != null && hasText)),
         canSelect = !isDeleted,
         canViewInfo = isServerConfirmed,
         canDelete = !isDeleted,

@@ -8,6 +8,7 @@ import ir.coffevista.vista_native.core.network.ErrorClassifier
 import ir.coffevista.vista_native.core.model.session.AuthenticationState
 import ir.coffevista.vista_native.core.model.session.AuthenticationStateProvider
 import ir.coffevista.vista_native.features.search.data.SearchHistoryType
+import ir.coffevista.vista_native.features.search.data.SearchPost
 import ir.coffevista.vista_native.features.search.data.SearchRepository
 import ir.coffevista.vista_native.features.search.data.SearchUser
 import ir.coffevista.vista_native.features.search.data.canSearchAsTag
@@ -205,6 +206,53 @@ class SearchViewModel @Inject constructor(
                     it.copy(
                         isAppendingUsers = false,
                         appendErrorMessage = friendly(error, "ادامه جستجوی کاربران"),
+                    )
+                }
+            }
+        }
+    }
+
+    fun loadMorePosts() {
+        val current = mutableState.value
+        if (
+            current.isAppendingPosts ||
+            !current.postHasMore ||
+            current.query.trim().isEmpty() ||
+            current.phase == SearchPhase.Loading
+        ) {
+            return
+        }
+        val generation = requestGeneration
+        val query = current.query.trim()
+        appendJob?.cancel()
+        mutableState.update {
+            it.copy(isAppendingPosts = true, appendErrorMessage = null)
+        }
+        appendJob = viewModelScope.launch {
+            try {
+                val page = repository.searchPostsByHashtag(query, current.posts.size)
+                if (generation != requestGeneration || mutableState.value.query.trim() != query) {
+                    return@launch
+                }
+                mutableState.update { latest ->
+                    val existing = latest.posts.associateBy(SearchPost::id).toMutableMap()
+                    page.posts.forEach { existing.putIfAbsent(it.id, it) }
+                    latest.copy(
+                        posts = existing.values.toList(),
+                        isAppendingPosts = false,
+                        postHasMore = page.hasMore,
+                        postNextCursor = page.nextCursor,
+                        appendErrorMessage = null,
+                    )
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                if (generation != requestGeneration) return@launch
+                mutableState.update {
+                    it.copy(
+                        isAppendingPosts = false,
+                        appendErrorMessage = friendly(error, "ادامه جستجوی پست‌ها"),
                     )
                 }
             }

@@ -6,6 +6,8 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import ir.coffevista.vista_native.core.model.session.AuthenticationState
 import ir.coffevista.vista_native.core.model.session.AuthenticationStateProvider
 import ir.coffevista.vista_native.features.stories.data.StoryRepository
+import ir.coffevista.vista_native.features.stories.domain.HighlightDto
+import ir.coffevista.vista_native.features.stories.domain.StoryQuestionAnswerDto
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -52,6 +54,49 @@ class StoryPlayerViewModel @Inject constructor(
     fun votePoll(storyId: String, optionId: String) {
         viewModelScope.launch {
             repository.votePoll(storyId, optionId)
+        }
+    }
+
+    fun reportStory(storyId: String, reason: String, details: String = "", onResult: (Boolean, String?) -> Unit) {
+        viewModelScope.launch {
+            repository.reportStory(storyId, reason, details)
+                .onSuccess { onResult(true, null) }
+                .onFailure { onResult(false, it.message) }
+        }
+    }
+
+    fun answerQuestion(storyId: String, elementId: String, answer: String, onResult: (Boolean, String?) -> Unit) {
+        viewModelScope.launch {
+            repository.answerQuestion(storyId, elementId, answer)
+                .onSuccess { onResult(true, null) }
+                .onFailure { onResult(false, it.message) }
+        }
+    }
+
+    fun loadUserHighlights(onResult: (List<HighlightDto>) -> Unit) {
+        viewModelScope.launch {
+            val res = repository.getUserHighlights(currentUserId)
+            onResult(res.getOrDefault(emptyList()))
+        }
+    }
+
+    fun addToHighlight(highlight: HighlightDto, storyId: String, onResult: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            val updatedStoryIds = (highlight.storyIds + storyId).distinct()
+            repository.updateHighlight(
+                highlightId = highlight.id,
+                storyIds = updatedStoryIds,
+            ).onSuccess { onResult(true) }.onFailure { onResult(false) }
+        }
+    }
+
+    fun createHighlight(title: String, coverUrl: String?, storyId: String, onResult: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            repository.createHighlight(
+                title = title,
+                coverUrl = coverUrl,
+                storyIds = listOf(storyId),
+            ).onSuccess { onResult(true) }.onFailure { onResult(false) }
         }
     }
 }

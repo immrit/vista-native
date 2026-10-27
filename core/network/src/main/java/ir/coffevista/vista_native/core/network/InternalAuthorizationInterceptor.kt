@@ -8,16 +8,19 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import java.util.UUID
 import javax.inject.Inject
 
-class InternalAuthorizationInterceptor(
+class InternalAuthorizationInterceptor @Inject constructor(
     @InternalEnvironment environment: AppEnvironment,
     private val accessTokenProvider: AccessTokenProvider,
-    private val deviceIdProvider: DeviceIdProvider? = null,
+    private val deviceIdProvider: DeviceIdProvider,
 ) : Interceptor {
-    @Inject
     constructor(
-        @InternalEnvironment environment: AppEnvironment,
+        environment: AppEnvironment,
         accessTokenProvider: AccessTokenProvider,
-    ) : this(environment, accessTokenProvider, null)
+    ) : this(
+        environment = environment,
+        accessTokenProvider = accessTokenProvider,
+        deviceIdProvider = DeviceIdProvider { DeviceIdProvider.current?.deviceId() },
+    )
 
     private val allowedHost = environment.internalBaseUrl.toHttpUrl().host
 

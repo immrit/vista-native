@@ -92,7 +92,7 @@ interface FeedDao {
     @Query("UPDATE feed_post SET is_saved = :isSaved WHERE id = :postId")
     suspend fun updateSaveState(postId: String, isSaved: Boolean)
 
-    @Query("UPDATE feed_post SET comment_count = comment_count + :delta WHERE id = :postId")
+    @Query("UPDATE feed_post SET comment_count = MAX(0, comment_count + :delta) WHERE id = :postId")
     suspend fun updateCommentCount(postId: String, delta: Long)
 
     @Query("UPDATE feed_post SET content = COALESCE(:content, content), hide_like_count = COALESCE(:hideLikeCount, hide_like_count), hide_comment_count = COALESCE(:hideCommentCount, hide_comment_count) WHERE id = :postId")

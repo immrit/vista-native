@@ -11,10 +11,16 @@ interface FeedApi {
         @Query("offset") offset: Int,
     ): FeedResponseDto
 
+    @GET("v1/feed")
+    suspend fun getPersonalizedFeed(
+        @Query("limit") limit: Int,
+        @Query("offset") offset: Int,
+    ): FeedResponseDto
+
     @GET("v1/feed/following")
     suspend fun getFollowingFeed(
         @Query("limit") limit: Int,
-        @Query("cursor") cursor: String?,
+        @Query("offset") offset: Int,
     ): FeedResponseDto
 
     @GET("v1/posts/{postId}")
@@ -80,6 +86,9 @@ interface FeedApi {
     @retrofit2.http.POST("v1/uploads/presign")
     suspend fun presignUpload(@retrofit2.http.Body request: PostPresignRequestDto): PostPresignResponseDto
 
+    @retrofit2.http.POST("v1/uploads/delete")
+    suspend fun deleteUpload(@retrofit2.http.Body request: DeleteUploadRequestDto): DeleteUploadResponseDto
+
     @retrofit2.http.POST("v1/posts")
-    suspend fun createPost(@retrofit2.http.Body request: CreatePostRequestDto): CreatePostResponseDto
+    suspend fun createPost(@retrofit2.http.Body request: CreatePostRequestDto): FeedPostDto
 }

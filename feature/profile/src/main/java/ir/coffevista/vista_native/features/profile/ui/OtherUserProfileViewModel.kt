@@ -7,6 +7,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import ir.coffevista.vista_native.core.model.session.AuthenticationState
 import ir.coffevista.vista_native.core.model.session.AuthenticationStateProvider
 import ir.coffevista.vista_native.features.profile.data.FollowMutationResult
+import ir.coffevista.vista_native.features.profile.data.ProfileHighlightDto
 import ir.coffevista.vista_native.features.profile.data.ProfileRefreshResult
 import ir.coffevista.vista_native.features.profile.data.UserProfileRepository
 import kotlinx.coroutines.channels.Channel
@@ -32,6 +33,9 @@ class OtherUserProfileViewModel @Inject constructor(
 
     private val mutableUiState = MutableStateFlow(OtherUserProfileUiState())
     val uiState: StateFlow<OtherUserProfileUiState> = mutableUiState.asStateFlow()
+
+    private val _highlights = MutableStateFlow<List<ProfileHighlightDto>>(emptyList())
+    val highlights: StateFlow<List<ProfileHighlightDto>> = _highlights.asStateFlow()
 
     private val effectChannel = Channel<OtherUserProfileEffect>(Channel.BUFFERED)
     val effects = effectChannel.receiveAsFlow()
@@ -94,6 +98,7 @@ class OtherUserProfileViewModel @Inject constructor(
 
     private fun refresh(viewer: String) {
         viewModelScope.launch {
+            _highlights.value = repository.getUserHighlights(profileUserId)
             val hadContent = mutableUiState.value.profile != null
             mutableUiState.update {
                 it.copy(

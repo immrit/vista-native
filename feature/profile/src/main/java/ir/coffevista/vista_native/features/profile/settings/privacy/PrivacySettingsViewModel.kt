@@ -20,6 +20,7 @@ import javax.inject.Inject
 
 data class PrivacySettingsUiState(
     val settings: PrivacySettingsDto = PrivacySettingsDto(),
+    val storyReplyPermission: String = "everyone",
     val isLoading: Boolean = true,
     val hasLoaded: Boolean = false,
     val isSaving: Boolean = false,
@@ -80,13 +81,15 @@ class PrivacySettingsViewModel @Inject constructor(
 
     fun refresh() = viewModelScope.launch {
         mutableUiState.update { it.copy(isLoading = true, errorMessage = null) }
+        val storyResp = runCatching { api.getStorySettings() }.getOrNull()
+        val storyPerm = storyResp?.body()?.reply_permission ?: mutableUiState.value.storyReplyPermission
         val response = runCatching { api.getSettings() }.getOrNull()
         val settings = response?.body()
         if (response?.isSuccessful == true && settings != null) {
             currentOwnerId()?.let { ownerId ->
                 runCatching { cache.write(ownerId, settings.toSnapshot()) }
             }
-            mutableUiState.update { it.copy(settings = settings, isLoading = false, hasLoaded = true) }
+            mutableUiState.update { it.copy(settings = settings, storyReplyPermission = storyPerm, isLoading = false, hasLoaded = true) }
             return@launch
         }
 
@@ -97,6 +100,7 @@ class PrivacySettingsViewModel @Inject constructor(
             mutableUiState.update {
                 it.copy(
                     settings = cached,
+                    storyReplyPermission = storyPerm,
                     isLoading = false,
                     hasLoaded = true,
                     errorMessage = "تنظیمات ذخیره‌شده نمایش داده می‌شوند؛ اتصال برقرار نیست",
@@ -105,9 +109,95 @@ class PrivacySettingsViewModel @Inject constructor(
         } else {
             mutableUiState.update {
                 it.copy(
+                    storyReplyPermission = storyPerm,
                     isLoading = false,
                     errorMessage = if (response == null) "اتصال برای دریافت تنظیمات حریم خصوصی برقرار نشد" else "دریافت تنظیمات حریم خصوصی ناموفق بود",
                 )
+            }
+        }
+    }
+
+    fun setStoryReplyPermission(permission: String) {
+        val previous = mutableUiState.value.storyReplyPermission
+        mutableUiState.update { it.copy(storyReplyPermission = permission) }
+        viewModelScope.launch {
+            val res = runCatching { api.updateStorySettings(StorySettingsDto(permission)) }.getOrNull()
+            if (res?.isSuccessful != true) {
+                mutableUiState.update {
+                    it.copy(storyReplyPermission = previous, errorMessage = "ذخیره تنظیمات پاسخ استوری ناموفق بود")
+                }
+            }
+        }
+    }
+
+    fun requestAccountDeletionOtp(
+        reason: String,
+        onSent: () -> Unit = {},
+        onError: (String) -> Unit = {},
+    ) {
+        viewModelScope.launch {
+            mutableUiState.update { it.copy(isSaving = true, errorMessage = null) }
+            val res = runCatching {
+                api.requestAccountDeletionOtp(RequestAccountDeletionOtpDto(reason))
+            }.getOrNull()
+            mutableUiState.update { it.copy(isSaving = false) }
+            if (res?.isSuccessful == true && res.body()?.success != false) {
+                onSent()
+            } else {
+                val msg = res?.body()?.message ?: "ارسال کد تایید حذف حساب ناموفق بود"
+                mutableUiState.update { it.copy(errorMessage = msg) }
+                onError(msg)
+            }
+        }
+    }
+
+    fun confirmAccountDeletion(
+        otpCode: String,
+        password: String,
+        reason: String,
+        onSuccess: (gracePeriodDays: Int) -> Unit = {},
+        onError: (String) -> Unit = {},
+    ) {
+        viewModelScope.launch {
+            mutableUiState.update { it.copy(isSaving = true, errorMessage = null) }
+            val res = runCatching {
+                api.confirmAccountDeletion(
+                    ConfirmAccountDeletionDto(
+                        otpCode = otpCode,
+                        password = password,
+                        reason = reason,
+                    ),
+                )
+            }.getOrNull()
+            mutableUiState.update { it.copy(isSaving = false) }
+            if (res?.isSuccessful == true && res.body()?.success != false) {
+                val grace = res.body()?.gracePeriodDays ?: 30
+                onSuccess(grace)
+            } else {
+                val msg = res?.body()?.message ?: "کد تایید یا رمز عبور نامعتبر است"
+                mutableUiState.update { it.copy(errorMessage = msg) }
+                onError(msg)
+            }
+        }
+    }
+
+    fun remove2FA(
+        currentPassword: String,
+        onSuccess: () -> Unit = {},
+        onError: (String) -> Unit = {},
+    ) {
+        viewModelScope.launch {
+            mutableUiState.update { it.copy(isSaving = true, errorMessage = null) }
+            val res = runCatching {
+                api.remove2FA(Remove2FADto(currentPassword))
+            }.getOrNull()
+            mutableUiState.update { it.copy(isSaving = false) }
+            if (res?.isSuccessful == true) {
+                onSuccess()
+            } else {
+                val msg = "رمز عبور فعلی نادرست است یا خطایی رخ داد"
+                mutableUiState.update { it.copy(errorMessage = msg) }
+                onError(msg)
             }
         }
     }

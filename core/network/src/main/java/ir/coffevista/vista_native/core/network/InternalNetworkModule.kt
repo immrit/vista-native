@@ -69,11 +69,11 @@ object InternalNetworkModule {
     }
 
     private fun baseClientBuilder(): OkHttpClient.Builder = OkHttpClient.Builder()
-        .connectTimeout(12, TimeUnit.SECONDS)
-        .readTimeout(15, TimeUnit.SECONDS)
-        .writeTimeout(15, TimeUnit.SECONDS)
-        .callTimeout(25, TimeUnit.SECONDS)
-        .retryOnConnectionFailure(false)
+        .connectTimeout(20, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .writeTimeout(25, TimeUnit.SECONDS)
+        .callTimeout(45, TimeUnit.SECONDS)
+        .retryOnConnectionFailure(true)
         .addInterceptor(BoundedRetryInterceptor())
 
     private fun String.ensureTrailingSlash(): String =

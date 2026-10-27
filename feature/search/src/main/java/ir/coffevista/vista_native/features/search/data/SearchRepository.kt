@@ -4,7 +4,8 @@ import kotlinx.coroutines.flow.Flow
 
 interface SearchRepository {
     suspend fun searchUsers(query: String, offset: Int): UserSearchPage
-    suspend fun searchPostsByHashtag(query: String): PostSearchPage
+    suspend fun searchPostsByHashtag(query: String): PostSearchPage = searchPostsByHashtag(query, 0)
+    suspend fun searchPostsByHashtag(query: String, offset: Int): PostSearchPage = PostSearchPage(emptyList(), false, null)
     suspend fun searchHashtags(query: String): List<HashtagSuggestion>
     suspend fun trendingHashtags(): List<HashtagSuggestion>
 

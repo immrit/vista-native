@@ -1,6 +1,7 @@
 package ir.coffevista.vista_native.features.feed.ui
 
 import ir.coffevista.vista_native.features.feed.data.Comment
+import ir.coffevista.vista_native.features.feed.data.CommentMention
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

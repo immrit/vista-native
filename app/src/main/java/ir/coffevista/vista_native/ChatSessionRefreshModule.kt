@@ -27,8 +27,11 @@ object ChatSessionRefreshModule {
         if (refreshToken.startsWith("debug-")) {
             return@ChatSessionRefresher true
         }
-        when (coordinator.refresh(refreshToken)) {
-            is RefreshResolution.Refreshed -> true
+        when (val resolution = coordinator.refresh(refreshToken)) {
+            is RefreshResolution.Refreshed -> {
+                authenticationStateOwner.refreshSession(resolution.payload)
+                true
+            }
             RefreshResolution.TerminalSession -> {
                 authenticationStateOwner.signOut()
                 false

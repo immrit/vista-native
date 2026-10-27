@@ -19,6 +19,7 @@ interface NearbyRepository {
     suspend fun openChat(matchId: String): String
     suspend fun getLikesReceived(limit: Int = 50): NearbyReceivedLikes
     suspend fun report(targetId: String, reason: String)
+    suspend fun undo(targetId: String) {}
 }
 
 @Singleton
@@ -100,6 +101,10 @@ class DefaultNearbyRepository @Inject constructor(
 
     override suspend fun report(targetId: String, reason: String) {
         api.report(NearbyReportRequestDto(targetId = targetId, reason = reason)).bodyOrThrow("report_failed")
+    }
+
+    override suspend fun undo(targetId: String) {
+        api.undo(NearbyUndoRequestDto(targetId = targetId)).bodyOrThrow("undo_failed")
     }
 
     private fun <T> Response<T>.bodyOrThrow(emptyCode: String): T {

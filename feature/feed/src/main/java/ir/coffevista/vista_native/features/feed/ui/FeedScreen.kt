@@ -20,6 +20,7 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import ir.coffevista.vista_native.core.designsystem.component.LocalBottomBarVisibility
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
@@ -83,6 +84,12 @@ import ir.coffevista.vista_native.features.feed.ui.components.ReportReasonDialog
 import ir.coffevista.vista_native.core.designsystem.component.VistaEmojiText
 import ir.coffevista.vista_native.core.designsystem.component.VistaFloatingActionButton
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Error
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.TextButton
+import ir.coffevista.vista_native.features.feed.data.PostUploadState
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -185,6 +192,7 @@ fun FeedScreen(
 
     val storyUsers by viewModel.activeStoryUsers.collectAsStateWithLifecycle()
     val ownProfile by viewModel.ownProfile.collectAsStateWithLifecycle()
+    val postUploadState by viewModel.postUploadState.collectAsStateWithLifecycle()
 
     FeedScreenContent(
         uiState = uiState,
@@ -193,15 +201,28 @@ fun FeedScreen(
         unreadNotificationCount = unreadNotificationCount,
         selectedKind = selectedKind,
         storyUsers = storyUsers,
+        postUploadState = postUploadState,
+        onRetryUpload = viewModel::retryPostUpload,
+        onCancelUpload = viewModel::cancelPostUpload,
+        onDismissUpload = viewModel::dismissPostUpload,
         onKindSelected = viewModel::selectKind,
         onRefresh = viewModel::refresh,
         onLoadMore = viewModel::loadMore,
-        onPostClick = onPostClick,
-        onVideoClick = onVideoClick,
+        onPostClick = { postId ->
+            viewModel.trackEvent(postId, "open")
+            onPostClick(postId)
+        },
+        onVideoClick = { postId ->
+            viewModel.trackEvent(postId, "open")
+            onVideoClick(postId)
+        },
         onAuthorClick = onAuthorClick,
         onLikeClick = viewModel::toggleLike,
         onSaveClick = viewModel::toggleSave,
-        onCommentClick = { showCommentsForPostId = it },
+        onCommentClick = { postId ->
+            viewModel.trackEvent(postId, "comment")
+            showCommentsForPostId = postId
+        },
         onShareClick = { post -> showShareForPost = post },
         onEditPost = { post -> editPostTarget = post },
         onDeletePost = viewModel::deletePost,
@@ -218,6 +239,7 @@ fun FeedScreen(
         onCreateStory = onCreateStory,
         onBarsVisibilityChange = bottomBarVisibilityCallback,
         homeTabClickFlow = homeTabClickFlow,
+        onTrackEvent = viewModel::trackEvent,
     )
 
     showCommentsForPostId?.let { postId ->
@@ -297,15 +319,23 @@ internal fun FeedScreenContent(
     onCreatePostClick: () -> Unit = {},
     onOpenStoryPlayer: (Int) -> Unit = {},
     onCreateStory: () -> Unit = {},
+    postUploadState: PostUploadState = PostUploadState(),
+    onRetryUpload: () -> Unit = {},
+    onCancelUpload: () -> Unit = {},
+    onDismissUpload: () -> Unit = {},
     selectedKind: FeedKind = FeedKind.Explore,
     onKindSelected: (FeedKind) -> Unit = {},
     onBarsVisibilityChange: (Boolean) -> Unit = {},
     homeTabClickFlow: SharedFlow<Unit>? = null,
+    onTrackEvent: (String, String) -> Unit = { _, _ -> },
 ) {
-    val listState = rememberLazyListState()
+    val exploreListState = rememberLazyListState()
+    val followingListState = rememberLazyListState()
+    val listState = if (selectedKind == FeedKind.Explore) exploreListState else followingListState
     var isBarsVisible by rememberSaveable { mutableStateOf(true) }
     val coroutineScope = rememberCoroutineScope()
     var idleJob by remember { mutableStateOf<Job?>(null) }
+    var fullscreenMedia by remember { mutableStateOf<Pair<List<String>, Int>?>(null) }
 
     fun updateBarsVisibility(visible: Boolean) {
         if (isBarsVisible != visible) {
@@ -426,6 +456,7 @@ internal fun FeedScreenContent(
                         onLoadMore = onLoadMore,
                         onPostClick = onPostClick,
                         onVideoClick = onVideoClick,
+                        onMediaClick = { imgs, idx -> fullscreenMedia = imgs to idx },
                         onAuthorClick = onAuthorClick,
                         onLikeClick = onLikeClick,
                         onSaveClick = onSaveClick,
@@ -439,6 +470,7 @@ internal fun FeedScreenContent(
                         onHashtagClick = onHashtagClick,
                         onMentionClick = onMentionClick,
                         onAppealClick = onAppealClick,
+                        onTrackEvent = onTrackEvent,
                         topPadding = topHeaderHeight + 8.dp,
                     )
                 }
@@ -501,6 +533,12 @@ internal fun FeedScreenContent(
                             onKindSelected(kind)
                         },
                     )
+                    FeedPostUploadBanner(
+                        uploadState = postUploadState,
+                        onRetry = onRetryUpload,
+                        onCancel = onCancelUpload,
+                        onDismiss = onDismissUpload,
+                    )
                     ir.coffevista.vista_native.features.stories.ui.tray.StoryTray(
                         storyUsers = storyUsers,
                         currentUserId = viewerUserId.orEmpty(),
@@ -517,6 +555,13 @@ internal fun FeedScreenContent(
                     )
                 }
             }
+        }
+        fullscreenMedia?.let { (images, initialIndex) ->
+            ir.coffevista.vista_native.features.feed.ui.components.VistaFullscreenImageViewer(
+                images = images,
+                initialIndex = initialIndex,
+                onDismiss = { fullscreenMedia = null },
+            )
         }
     }
 }
@@ -665,6 +710,7 @@ internal fun FeedContent(
     onLoadMore: () -> Unit,
     onPostClick: (String) -> Unit,
     onVideoClick: (String) -> Unit = onPostClick,
+    onMediaClick: ((List<String>, Int) -> Unit)? = null,
     onAuthorClick: (String) -> Unit,
     onLikeClick: (String, Boolean, Long) -> Unit,
     onSaveClick: (String, Boolean) -> Unit,
@@ -680,9 +726,62 @@ internal fun FeedContent(
     onAppealClick: (String) -> Unit = {},
     selectedKind: FeedKind = FeedKind.Explore,
     listState: LazyListState = rememberLazyListState(),
+    onTrackEvent: (String, String) -> Unit = { _, _ -> },
     topPadding: androidx.compose.ui.unit.Dp = 8.dp,
 ) {
     val navigationBarInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val viewedPostIds = remember { mutableSetOf<String>() }
+    val postVisibilityStartTimes = remember { mutableMapOf<String, Long>() }
+
+    LaunchedEffect(listState, state.posts) {
+        val activeJobs = mutableMapOf<String, Job>()
+        snapshotFlow {
+            val layoutInfo = listState.layoutInfo
+            val viewportStart = layoutInfo.viewportStartOffset
+            val viewportEnd = layoutInfo.viewportEndOffset
+            val visibleItems = layoutInfo.visibleItemsInfo
+
+            visibleItems.mapNotNull { itemInfo ->
+                val postId = itemInfo.key as? String ?: return@mapNotNull null
+                val itemTop = itemInfo.offset
+                val itemBottom = itemTop + itemInfo.size
+                val visibleTop = maxOf(viewportStart, itemTop)
+                val visibleBottom = minOf(viewportEnd, itemBottom)
+                val visibleHeight = (visibleBottom - visibleTop).coerceAtLeast(0)
+                val fraction = if (itemInfo.size > 0) visibleHeight.toFloat() / itemInfo.size else 0f
+                if (fraction >= 0.60f) postId else null
+            }.toSet()
+        }.collect { currentlyVisibleIds ->
+            val now = System.currentTimeMillis()
+
+            val leftIds = postVisibilityStartTimes.keys - currentlyVisibleIds
+            for (leftId in leftIds) {
+                activeJobs[leftId]?.cancel()
+                activeJobs.remove(leftId)
+                val startTime = postVisibilityStartTimes.remove(leftId)
+                if (startTime != null) {
+                    val dwellTime = now - startTime
+                    if (dwellTime >= 1500L) {
+                        onTrackEvent(leftId, "dwell")
+                    }
+                }
+            }
+
+            for (visibleId in currentlyVisibleIds) {
+                if (!postVisibilityStartTimes.containsKey(visibleId)) {
+                    postVisibilityStartTimes[visibleId] = now
+                }
+                if (!viewedPostIds.contains(visibleId) && !activeJobs.containsKey(visibleId)) {
+                    activeJobs[visibleId] = launch {
+                        delay(800L)
+                        viewedPostIds.add(visibleId)
+                        onTrackEvent(visibleId, "view")
+                    }
+                }
+            }
+        }
+    }
+
     LaunchedEffect(listState, state.posts.size, state.hasMore) {
         snapshotFlow {
             val layoutInfo = listState.layoutInfo
@@ -716,6 +815,7 @@ internal fun FeedContent(
                 showFollowState = selectedKind == FeedKind.Explore,
                 onPostClick = { onPostClick(post.id) },
                 onVideoClick = { onVideoClick(post.id) },
+                onMediaClick = onMediaClick,
                 onAuthorClick = { onAuthorClick(post.userId) },
                 onLikeClick = onLikeClick,
                 onSaveClick = onSaveClick,
@@ -804,6 +904,7 @@ fun VistaFeedPostCard(
     verticalMenu: Boolean = false,
     onPostClick: () -> Unit,
     onVideoClick: (() -> Unit)? = null,
+    onMediaClick: ((List<String>, Int) -> Unit)? = null,
     onAuthorClick: () -> Unit,
     onLikeClick: (String, Boolean, Long) -> Unit = { _, _, _ -> },
     onSaveClick: (String, Boolean) -> Unit = { _, _ -> },
@@ -856,7 +957,10 @@ fun VistaFeedPostCard(
                             ),
                         )
                         if (post.authorIsVerified) {
-                            VerifiedMark(Modifier.padding(start = 4.dp))
+                            VerifiedMark(
+                                modifier = Modifier.padding(start = 4.dp),
+                                verificationType = post.authorVerificationType,
+                            )
                         }
                         Text(
                             text = "•",
@@ -943,6 +1047,7 @@ fun VistaFeedPostCard(
 
         PostMedia(
             post = post,
+            onMediaClick = onMediaClick,
             onClick = {
                 if (!post.videoUrl.isNullOrBlank() && onVideoClick != null) {
                     onVideoClick()
@@ -1030,18 +1135,37 @@ private fun PostAvatar(post: FeedPost) {
     }
 }
 
+private fun parseAspectRatio(ratioStr: String?): Float {
+    if (ratioStr.isNullOrBlank() || ratioStr.equals("auto", ignoreCase = true)) return 1f
+    val parts = ratioStr.split(":")
+    if (parts.size == 2) {
+        val w = parts[0].trim().toFloatOrNull()
+        val h = parts[1].trim().toFloatOrNull()
+        if (w != null && h != null && h > 0f) {
+            return (w / h).coerceIn(0.55f, 1.91f)
+        }
+    }
+    return ratioStr.toFloatOrNull()?.coerceIn(0.55f, 1.91f) ?: 1f
+}
+
 @Composable
 private fun PostMedia(
     post: FeedPost,
     onClick: () -> Unit,
     onDoubleTap: () -> Unit,
+    onMediaClick: ((List<String>, Int) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val mediaUrl = post.videoThumbnailUrl ?: post.primaryImageUrl
     if (mediaUrl == null && post.videoUrl == null) return
-    val ratio = post.aspectRatio?.toFloatOrNull()?.coerceIn(0.55f, 1.91f) ?: 1f
+    val ratio = parseAspectRatio(post.aspectRatio)
     var heartBurstKey by remember(post.id) { mutableStateOf(0) }
     var showHeartBurst by remember(post.id) { mutableStateOf(false) }
+    val pagerState = if (post.imageUrls.size > 1) {
+        rememberPagerState(pageCount = { post.imageUrls.size })
+    } else {
+        null
+    }
     LaunchedEffect(heartBurstKey) {
         if (heartBurstKey > 0) {
             showHeartBurst = true
@@ -1060,7 +1184,17 @@ private fun PostMedia(
                         heartBurstKey += 1
                         onDoubleTap()
                     },
-                    onTap = { onClick() },
+                    onTap = {
+                        if (post.videoUrl.isNullOrBlank() && onMediaClick != null) {
+                            val images = post.imageUrls.ifEmpty { listOfNotNull(mediaUrl) }
+                            if (images.isNotEmpty()) {
+                                val page = pagerState?.currentPage ?: 0
+                                onMediaClick(images, page)
+                                return@detectTapGestures
+                            }
+                        }
+                        onClick()
+                    },
                 )
             }
             .testTag(FeedTestTags.media(post.id)),
@@ -1077,14 +1211,13 @@ private fun PostMedia(
                 modifier = Modifier.fillMaxWidth(),
             )
         } else {
-            val mediaHeight = (maxWidth / ratio).coerceAtMost(280.dp)
+            val mediaHeight = (maxWidth / ratio).coerceIn(180.dp, 560.dp)
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(mediaHeight),
             ) {
-                if (post.imageUrls.size > 1) {
-                    val pagerState = rememberPagerState(pageCount = { post.imageUrls.size })
+                if (post.imageUrls.size > 1 && pagerState != null) {
                     HorizontalPager(
                         state = pagerState,
                         modifier = Modifier.fillMaxSize(),
@@ -1215,24 +1348,12 @@ private fun PostMusicBubble(post: FeedPost) {
 
     val context = LocalContext.current
     var isPlaying by remember(post.id) { mutableStateOf(false) }
-    val player = remember(musicUrl) {
-        ExoPlayer.Builder(context).build().apply {
-            setMediaItem(MediaItem.fromUri(Uri.parse(musicUrl)))
-            repeatMode = Player.REPEAT_MODE_OFF
-            prepare()
-        }
-    }
+    var player by remember(musicUrl) { mutableStateOf<ExoPlayer?>(null) }
 
-    DisposableEffect(player) {
-        val listener = object : Player.Listener {
-            override fun onIsPlayingChanged(playing: Boolean) {
-                isPlaying = playing
-            }
-        }
-        player.addListener(listener)
+    DisposableEffect(musicUrl) {
         onDispose {
-            player.removeListener(listener)
-            player.release()
+            player?.release()
+            player = null
         }
     }
 
@@ -1241,10 +1362,21 @@ private fun PostMusicBubble(post: FeedPost) {
             .padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 8.dp)
             .fillMaxWidth()
             .clickable {
-                if (player.isPlaying) {
-                    player.pause()
+                val p = player ?: ExoPlayer.Builder(context).build().apply {
+                    setMediaItem(MediaItem.fromUri(Uri.parse(musicUrl)))
+                    repeatMode = Player.REPEAT_MODE_OFF
+                    addListener(object : Player.Listener {
+                        override fun onIsPlayingChanged(playing: Boolean) {
+                            isPlaying = playing
+                        }
+                    })
+                    prepare()
+                }.also { player = it }
+
+                if (p.isPlaying) {
+                    p.pause()
                 } else {
-                    player.play()
+                    p.play()
                 }
             },
         shape = RoundedCornerShape(18.dp),
@@ -1334,6 +1466,17 @@ private fun PostActionRow(
         label = "likeScale",
     )
 
+    var bookmarkScale by remember { mutableStateOf(1f) }
+    val animatedBookmarkScale by animateFloatAsState(
+        targetValue = bookmarkScale,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessLow,
+        ),
+        finishedListener = { bookmarkScale = 1f },
+        label = "bookmarkScale",
+    )
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1395,11 +1538,16 @@ private fun PostActionRow(
             inactiveColor = actionTint,
             modifier = Modifier
                 .size(19.dp)
+                .graphicsLayer(scaleX = animatedBookmarkScale, scaleY = animatedBookmarkScale)
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
-                    onClick = onSaveClick
-                )
+                    onClick = {
+                        bookmarkScale = 1.28f
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onSaveClick()
+                    },
+                ),
         )
         Spacer(Modifier.width(14.dp))
         Image(
@@ -1635,42 +1783,16 @@ private fun OfflineBanner() {
 }
 
 @Composable
-internal fun VerifiedMark(modifier: Modifier = Modifier) {
-    Canvas(
-        modifier = modifier
-            .size(16.dp)
-            .semantics {
-                contentDescription = "نشان تأیید"
-                role = Role.Image
-            },
-    ) {
-        val center = Offset(size.width / 2f, size.height / 2f)
-        val outer = size.minDimension * 0.50f
-        val inner = size.minDimension * 0.43f
-        val badge = Path().apply {
-            for (i in 0 until 24) {
-                val angle = -Math.PI / 2.0 + i * Math.PI / 12.0
-                val radius = if (i % 2 == 0) outer else inner
-                val point = Offset(
-                    x = center.x + kotlin.math.cos(angle).toFloat() * radius,
-                    y = center.y + kotlin.math.sin(angle).toFloat() * radius,
-                )
-                if (i == 0) moveTo(point.x, point.y) else lineTo(point.x, point.y)
-            }
-            close()
-        }
-        drawPath(badge, Color(0xFF2196F3))
-        val check = Path().apply {
-            moveTo(size.width * 0.28f, size.height * 0.52f)
-            lineTo(size.width * 0.43f, size.height * 0.67f)
-            lineTo(size.width * 0.74f, size.height * 0.34f)
-        }
-        drawPath(
-            path = check,
-            color = Color.White,
-            style = Stroke(width = size.minDimension * 0.12f, cap = StrokeCap.Round),
-        )
-    }
+internal fun VerifiedMark(
+    modifier: Modifier = Modifier,
+    verificationType: String? = null,
+) {
+    ir.coffevista.vista_native.core.designsystem.component.VistaVerificationBadge(
+        isVerified = true,
+        verificationType = verificationType,
+        size = 16.dp,
+        modifier = modifier,
+    )
 }
 
 @Composable
@@ -1893,5 +2015,98 @@ internal object FeedTestTags {
     fun follow(id: String) = "feed-follow-$id"
     fun likeCount(id: String) = "feed-like-count-$id"
     fun commentCount(id: String) = "feed-comment-count-$id"
+}
+
+@Composable
+private fun FeedPostUploadBanner(
+    uploadState: PostUploadState,
+    onRetry: () -> Unit,
+    onCancel: () -> Unit,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    AnimatedVisibility(
+        visible = uploadState.isUploading || uploadState.errorMessage != null || uploadState.isSuccess,
+        enter = expandVertically() + fadeIn(),
+        exit = shrinkVertically() + fadeOut(),
+        modifier = modifier,
+    ) {
+        androidx.compose.material3.Surface(
+            color = if (uploadState.errorMessage != null) MaterialTheme.colorScheme.errorContainer
+            else MaterialTheme.colorScheme.surfaceVariant,
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 6.dp),
+            shadowElevation = 2.dp,
+        ) {
+            Column(
+                modifier = Modifier.padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        if (uploadState.isUploading) {
+                            androidx.compose.material3.CircularProgressIndicator(
+                                progress = { uploadState.progress },
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp,
+                            )
+                        } else if (uploadState.isSuccess) {
+                            androidx.compose.material3.Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = Color(0xFF4CAF50),
+                                modifier = Modifier.size(18.dp),
+                            )
+                        } else {
+                            androidx.compose.material3.Icon(
+                                imageVector = Icons.Default.Error,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(18.dp),
+                            )
+                        }
+                        androidx.compose.material3.Text(
+                            text = uploadState.statusMessage ?: uploadState.errorMessage ?: "در حال پردازش…",
+                            fontSize = 13.sp,
+                            fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                        )
+                    }
+
+                    if (uploadState.errorMessage != null) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            TextButton(onClick = onRetry) {
+                                androidx.compose.material3.Text("تلاش مجدد", fontSize = 12.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                            }
+                            androidx.compose.material3.IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
+                                androidx.compose.material3.Icon(Icons.Default.Close, contentDescription = "بستن", modifier = Modifier.size(16.dp))
+                            }
+                        }
+                    }
+                }
+
+                if (uploadState.isUploading) {
+                    LinearProgressIndicator(
+                        progress = { uploadState.progress },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(3.dp)
+                            .clip(androidx.compose.foundation.shape.RoundedCornerShape(2.dp)),
+                    )
+                }
+            }
+        }
+    }
 }
 

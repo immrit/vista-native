@@ -71,14 +71,18 @@ object FeedApiModule {
                 return remote.getExploreFeed(limit, offset)
             }
 
+            override suspend fun getPersonalizedFeed(limit: Int, offset: Int): FeedResponseDto {
+                return remote.getPersonalizedFeed(limit, offset)
+            }
+
             override suspend fun getFollowingFeed(
                 limit: Int,
-                cursor: String?,
+                offset: Int,
             ): FeedResponseDto {
                 fixtures.forEach { fixture ->
-                    fixture.followingResponseOrNull(limit, cursor)?.let { return it }
+                    fixture.followingResponseOrNull(limit, offset)?.let { return it }
                 }
-                return remote.getFollowingFeed(limit, cursor)
+                return remote.getFollowingFeed(limit, offset)
             }
 
             override suspend fun getPost(postId: String): FeedPostDto {
@@ -132,7 +136,10 @@ object FeedApiModule {
             override suspend fun presignUpload(request: PostPresignRequestDto): PostPresignResponseDto =
                 remote.presignUpload(request)
 
-            override suspend fun createPost(request: CreatePostRequestDto): CreatePostResponseDto =
+            override suspend fun deleteUpload(request: DeleteUploadRequestDto): DeleteUploadResponseDto =
+                remote.deleteUpload(request)
+
+            override suspend fun createPost(request: CreatePostRequestDto): FeedPostDto =
                 remote.createPost(request)
         }
     }

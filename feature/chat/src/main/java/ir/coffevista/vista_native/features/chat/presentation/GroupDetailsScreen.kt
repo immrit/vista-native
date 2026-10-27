@@ -97,6 +97,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.ClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.AnnotatedString
@@ -114,6 +115,7 @@ import ir.coffevista.vista_native.features.chat.domain.model.ChatUser
 import ir.coffevista.vista_native.features.chat.domain.model.ConversationType
 import ir.coffevista.vista_native.features.chat.domain.model.GroupMember
 import ir.coffevista.vista_native.features.chat.domain.model.MessageContent
+import ir.coffevista.vista_native.features.chat.presentation.components.extractFirstUrl
 import ir.coffevista.vista_native.features.chat.presentation.messages.MessagesUiState
 import kotlinx.coroutines.launch
 
@@ -135,6 +137,7 @@ fun GroupDetailsScreen(
     onRegenerateInvite: () -> Unit,
     onLeave: () -> Unit,
     onDelete: () -> Unit,
+    onAttachmentClick: (ir.coffevista.vista_native.features.chat.domain.model.Attachment) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -878,7 +881,12 @@ fun GroupDetailsScreen(
                                 ) {
                                     gridItems(mediaMessages, key = { it.stableKey }) { msg ->
                                         val attachment = msg.attachment
-                                        Box(Modifier.aspectRatio(1f)) {
+                                        Box(
+                                            Modifier
+                                                .aspectRatio(1f)
+                                                .clip(RoundedCornerShape(4.dp))
+                                                .clickable { attachment?.let(onAttachmentClick) }
+                                        ) {
                                             AsyncImage(
                                                 model = attachment?.localUri ?: attachment?.remoteUrl,
                                                 contentDescription = attachment?.fileName ?: "رسانه",
@@ -915,6 +923,7 @@ fun GroupDetailsScreen(
                                         Row(
                                             Modifier
                                                 .fillMaxWidth()
+                                                .clickable { msg.attachment?.let(onAttachmentClick) }
                                                 .padding(horizontal = 12.dp, vertical = 8.dp),
                                             verticalAlignment = Alignment.CenterVertically,
                                         ) {
@@ -951,12 +960,19 @@ fun GroupDetailsScreen(
                         }
                         3 -> {
                             // Links Tab
+                            val uriHandler = LocalUriHandler.current
                             if (linkMessages.isNotEmpty()) {
                                 LazyColumn(Modifier.fillMaxSize()) {
                                     items(linkMessages, key = { it.stableKey }) { msg ->
+                                        val linkUrl = extractFirstUrl(msg.previewText())
                                         Row(
                                             Modifier
                                                 .fillMaxWidth()
+                                                .clickable {
+                                                    if (linkUrl != null) {
+                                                        runCatching { uriHandler.openUri(linkUrl) }
+                                                    }
+                                                }
                                                 .padding(horizontal = 12.dp, vertical = 8.dp),
                                             verticalAlignment = Alignment.CenterVertically,
                                         ) {

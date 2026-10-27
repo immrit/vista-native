@@ -34,6 +34,7 @@ biometric = "1.1.0"
 media3 = "1.5.1"
 firebaseMessaging = "24.1.0"
 zxing = "3.5.3"
+poolakey = "2.2.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -89,6 +90,7 @@ androidx-media3-exoplayer = { group = "androidx.media3", name = "media3-exoplaye
 androidx-media3-ui = { group = "androidx.media3", name = "media3-ui", version.ref = "media3" }
 firebase-messaging = { group = "com.google.firebase", name = "firebase-messaging-ktx", version.ref = "firebaseMessaging" }
 zxing-core = { group = "com.google.zxing", name = "core", version.ref = "zxing" }
+poolakey = { group = "com.github.cafebazaar.Poolakey", name = "poolakey", version.ref = "poolakey" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

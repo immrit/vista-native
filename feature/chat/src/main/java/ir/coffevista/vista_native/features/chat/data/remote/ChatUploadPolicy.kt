@@ -85,7 +85,7 @@ internal class ChatUploadPolicy(
                 AttachmentKind.AUDIO
             }
             AttachmentKind.DOCUMENT -> {
-                require(contentKind == AttachmentKind.DOCUMENT) { "فقط فایل PDF معتبر قابل ارسال است" }
+                require(contentKind == AttachmentKind.DOCUMENT) { "فرمت سند یا فایل انتخابی پشتیبانی نمی‌شود" }
                 AttachmentKind.DOCUMENT
             }
             AttachmentKind.UNKNOWN -> error("نوع فایل پشتیبانی نمی‌شود")
@@ -101,8 +101,8 @@ internal class ChatUploadPolicy(
         extension in IMAGE_EXTENSIONS && isImage(header, extension) ->
             if (extension == "gif") AttachmentKind.GIF else AttachmentKind.IMAGE
         extension in VIDEO_EXTENSIONS && isVideo(header) -> AttachmentKind.VIDEO
-        extension == "pdf" && header.startsWith(PDF) -> AttachmentKind.DOCUMENT
         extension in AUDIO_EXTENSIONS && isAudio(header, extension) -> AttachmentKind.AUDIO
+        extension in DOCUMENT_EXTENSIONS || extension.isNotBlank() -> AttachmentKind.DOCUMENT
         else -> AttachmentKind.UNKNOWN
     }
 
@@ -149,7 +149,7 @@ internal class ChatUploadPolicy(
             AttachmentKind.IMAGE, AttachmentKind.GIF -> mime.startsWith("image/")
             AttachmentKind.VIDEO -> mime.startsWith("video/")
             AttachmentKind.VOICE, AttachmentKind.AUDIO -> mime.startsWith("audio/")
-            AttachmentKind.DOCUMENT -> mime == "application/pdf"
+            AttachmentKind.DOCUMENT -> mime.startsWith("application/") || mime.startsWith("text/") || !mime.startsWith("image/")
             AttachmentKind.UNKNOWN -> false
         }
     }
@@ -165,6 +165,8 @@ internal class ChatUploadPolicy(
         "mp4" -> "video/mp4"
         "mov" -> "video/quicktime"
         "webm", "mkv" -> "video/webm"
+        "3gp" -> "video/3gpp"
+        "m4v" -> "video/x-m4v"
         "mp3" -> "audio/mpeg"
         "m4a" -> "audio/mp4"
         "aac" -> "audio/aac"
@@ -172,6 +174,22 @@ internal class ChatUploadPolicy(
         "ogg" -> "audio/ogg"
         "flac" -> "audio/flac"
         "pdf" -> "application/pdf"
+        "doc" -> "application/msword"
+        "docx" -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        "xls" -> "application/vnd.ms-excel"
+        "xlsx" -> "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        "ppt" -> "application/vnd.ms-powerpoint"
+        "pptx" -> "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        "txt" -> "text/plain"
+        "csv" -> "text/csv"
+        "json" -> "application/json"
+        "xml" -> "application/xml"
+        "zip" -> "application/zip"
+        "rar" -> "application/x-rar-compressed"
+        "7z" -> "application/x-7z-compressed"
+        "tar" -> "application/x-tar"
+        "gz" -> "application/gzip"
+        "apk" -> "application/vnd.android.package-archive"
         else -> when (kind) {
             AttachmentKind.IMAGE, AttachmentKind.GIF -> "image/*"
             AttachmentKind.VIDEO -> "video/*"
@@ -184,12 +202,23 @@ internal class ChatUploadPolicy(
         const val NORMAL_MAX_BYTES = 15L * 1024L * 1024L
         const val PREMIUM_MAX_BYTES = 100L * 1024L * 1024L
         private val IMAGE_EXTENSIONS = setOf("jpg", "jpeg", "png", "gif", "webp", "bmp", "heic", "heif")
-        private val VIDEO_EXTENSIONS = setOf("mp4", "mov", "webm", "mkv")
+        private val VIDEO_EXTENSIONS = setOf("mp4", "mov", "webm", "mkv", "3gp", "m4v")
         private val AUDIO_EXTENSIONS = setOf("mp3", "m4a", "aac", "wav", "ogg", "flac")
+        private val DOCUMENT_EXTENSIONS = setOf(
+            "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx",
+            "txt", "rtf", "csv", "json", "xml", "html",
+            "zip", "rar", "7z", "tar", "gz", "bz2", "xz",
+            "apk", "xapk", "bin",
+        )
         private val BLUE_BADGES = setOf("bluetick", "blue", "bluebadge")
         private val PREMIUM_BADGES = setOf("goldtick", "gold", "goldbadge", "blacktick", "black", "blackbadge")
         private val HEIF_BRANDS = setOf("heic", "heix", "hevc", "heif", "mif1")
-        private val VIDEO_BRANDS = setOf("isom", "iso2", "mp41", "mp42", "avc1", "qt  ", "mmp4")
+        private val VIDEO_BRANDS = setOf(
+            "isom", "iso2", "iso4", "iso5", "iso6",
+            "mp41", "mp42", "avc1", "qt  ", "mmp4",
+            "3gp4", "3gp5", "3gp6", "3g2a", "hevc", "hev1", "hvc1",
+            "dash", "cmf2", "msf1", "av01", "vp09", "mp4v",
+        )
         private val PDF = byteArrayOf(0x25, 0x50, 0x44, 0x46)
         private val JPEG = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte())
         private val PNG = byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47)
@@ -213,8 +242,16 @@ private fun ByteArray.isRiff(format: String): Boolean = size >= 12 &&
 
 private fun ByteArray.isIsoBaseMedia(allowedBrands: Set<String>? = null): Boolean {
     if (size < 12 || copyOfRange(4, 8).decodeToString() != "ftyp") return false
-    val brand = copyOfRange(8, 12).decodeToString().lowercase(Locale.US)
-    return allowedBrands == null || brand in allowedBrands
+    if (allowedBrands == null) return true
+    val majorBrand = copyOfRange(8, 12).decodeToString().lowercase(Locale.US)
+    if (majorBrand in allowedBrands) return true
+    var offset = 16
+    while (offset + 4 <= size) {
+        val brand = copyOfRange(offset, offset + 4).decodeToString().lowercase(Locale.US)
+        if (brand in allowedBrands) return true
+        offset += 4
+    }
+    return false
 }
 
 private fun ByteArray.hasMpegFrameSync(): Boolean = size >= 2 &&

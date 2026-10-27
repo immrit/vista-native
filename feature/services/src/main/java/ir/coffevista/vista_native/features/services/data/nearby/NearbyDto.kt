@@ -176,3 +176,8 @@ data class NearbyReportRequestDto(
     @SerialName("target_id") val targetId: String,
     @SerialName("reason") val reason: String,
 )
+
+@Serializable
+data class NearbyUndoRequestDto(
+    @SerialName("target_id") val targetId: String,
+)

@@ -77,6 +77,8 @@ data class FeedPostDto(
     val hideLikeCount: Boolean = false,
     @SerialName("hide_comment_count")
     val hideCommentCount: Boolean = false,
+    @SerialName("location")
+    val location: String? = null,
     @SerialName("author")
     val author: AuthorInfoDto,
     @SerialName("created_at")
@@ -217,6 +219,7 @@ data class CreatePostRequestDto(
     @SerialName("music_end_ms") val musicEndMs: Int? = null,
     @SerialName("aspect_ratio") val aspectRatio: String? = null,
     @SerialName("tags") val tags: List<String> = emptyList(),
+    @SerialName("location") val location: String? = null,
     @SerialName("hide_like_count") val hideLikeCount: Boolean = false,
     @SerialName("hide_comment_count") val hideCommentCount: Boolean = false,
     @SerialName("comments_disabled") val commentsDisabled: Boolean = false,
@@ -233,4 +236,14 @@ data class CreatePostResponseDto(
 data class SubmitAppealRequestDto(
     @SerialName("post_id") val postId: String,
     val reason: String,
+)
+
+@Serializable
+data class DeleteUploadRequestDto(
+    @SerialName("object_key") val objectKey: String,
+)
+
+@Serializable
+data class DeleteUploadResponseDto(
+    @SerialName("success") val success: Boolean = true,
 )

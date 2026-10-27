@@ -166,15 +166,27 @@ fun NearbyScreen(
             topBar = {
                 TopAppBar(
                     title = {
-                        Text(
-                            text = "اطراف من",
-                            style = MaterialTheme.typography.titleLarge.copy(
-                                fontFamily = VistaFontFamily,
-                                fontWeight = FontWeight.ExtraBold,
-                                fontSize = 20.sp,
-                                color = VistaBrandColors.Indigo,
-                            ),
-                        )
+                        Column {
+                            Text(
+                                text = "اطراف من",
+                                style = MaterialTheme.typography.titleLarge.copy(
+                                    fontFamily = VistaFontFamily,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 19.sp,
+                                    color = VistaBrandColors.Indigo,
+                                ),
+                            )
+                            if (!state.locationCity.isNullOrBlank()) {
+                                Text(
+                                    text = state.locationCity!!,
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontFamily = VistaFontFamily,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        fontSize = 11.sp,
+                                    ),
+                                )
+                            }
+                        }
                     },
                     navigationIcon = {
                         IconButton(onClick = onBack) {
@@ -300,7 +312,7 @@ fun NearbyScreen(
                             currentIndex = state.currentIndex,
                             onSwipeLeft = { viewModel.advance(forward = true) },
                             onSwipeRight = { viewModel.likeCurrent() },
-                            onRewind = { viewModel.advance(forward = false) },
+                            onRewind = { viewModel.undoLastSwipe() },
                             onLike = { viewModel.likeCurrent() },
                             onPass = { viewModel.passCurrent() },
                             onOpenProfile = { card -> onOpenProfile(card.userId, card.username) },
@@ -698,6 +710,18 @@ private fun LocationErrorView(
     }
 }
 
+private fun resolveCityAndProvince(context: Context, lat: Double, lng: Double): Pair<String?, String?> {
+    return runCatching {
+        @Suppress("DEPRECATION")
+        val geocoder = android.location.Geocoder(context, java.util.Locale("fa"))
+        val addresses = geocoder.getFromLocation(lat, lng, 1)
+        val addr = addresses?.firstOrNull()
+        val city = addr?.locality ?: addr?.subAdminArea
+        val province = addr?.adminArea
+        city to province
+    }.getOrDefault(null to null)
+}
+
 private fun checkAndAcquireLocation(context: Context, viewModel: NearbyViewModel) {
     val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
     val isGpsEnabled = locationManager?.isProviderEnabled(LocationManager.GPS_PROVIDER) == true ||
@@ -717,13 +741,15 @@ private fun checkAndAcquireLocation(context: Context, viewModel: NearbyViewModel
         val lastNetwork = locationManager?.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
         val loc = lastGps ?: lastNetwork
         if (loc != null) {
-            viewModel.onLocationAcquired(loc.latitude, loc.longitude)
+            val (city, province) = resolveCityAndProvince(context, loc.latitude, loc.longitude)
+            viewModel.onLocationAcquired(loc.latitude, loc.longitude, city, province)
         } else {
             locationManager?.requestSingleUpdate(
                 LocationManager.NETWORK_PROVIDER,
                 object : LocationListener {
                     override fun onLocationChanged(location: Location) {
-                        viewModel.onLocationAcquired(location.latitude, location.longitude)
+                        val (city, province) = resolveCityAndProvince(context, location.latitude, location.longitude)
+                        viewModel.onLocationAcquired(location.latitude, location.longitude, city, province)
                     }
                     @Deprecated("Deprecated in Java")
                     override fun onStatusChanged(provider: String?, status: Int, extras: android.os.Bundle?) {}

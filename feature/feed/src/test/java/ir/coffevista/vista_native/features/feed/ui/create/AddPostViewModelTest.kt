@@ -6,9 +6,11 @@ import ir.coffevista.vista_native.core.database.profile.OwnProfileEntity
 import ir.coffevista.vista_native.core.model.session.AuthenticatedContext
 import ir.coffevista.vista_native.core.model.session.AuthenticationState
 import ir.coffevista.vista_native.core.model.session.AuthenticationStateProvider
+import ir.coffevista.vista_native.features.feed.data.AuthorInfoDto
 import ir.coffevista.vista_native.features.feed.data.CreatePostRequestDto
 import ir.coffevista.vista_native.features.feed.data.CreatePostResponseDto
 import ir.coffevista.vista_native.features.feed.data.FeedApi
+import ir.coffevista.vista_native.features.feed.data.FeedPostDto
 import ir.coffevista.vista_native.features.feed.data.PostMediaUploadGateway
 import ir.coffevista.vista_native.features.feed.data.UploadedMediaResult
 import kotlinx.coroutines.Dispatchers
@@ -53,17 +55,27 @@ class AddPostViewModelTest {
         var lastCreateRequest: CreatePostRequestDto? = null
         var shouldSucceed: Boolean = true
 
-        override suspend fun createPost(request: CreatePostRequestDto): CreatePostResponseDto {
+        override suspend fun createPost(request: CreatePostRequestDto): FeedPostDto {
             lastCreateRequest = request
-            return if (shouldSucceed) {
-                CreatePostResponseDto(success = true, id = "created-post")
-            } else {
-                CreatePostResponseDto(success = false, message = "سرور در دسترس نیست")
+            if (!shouldSucceed) {
+                throw java.io.IOException("سرور در دسترس نیست")
             }
+            return FeedPostDto(
+                id = "created-post",
+                userId = "user-test",
+                content = request.content,
+                imageUrl = request.imageUrl,
+                imageUrls = request.imageUrls,
+                videoUrl = request.videoUrl,
+                author = AuthorInfoDto(userId = "user-test", fullName = "Test User"),
+                createdAt = "2026-07-27T17:21:05Z",
+                updatedAt = "2026-07-27T17:21:05Z",
+            )
         }
 
         override suspend fun getExploreFeed(limit: Int, offset: Int) = throw NotImplementedError()
-        override suspend fun getFollowingFeed(limit: Int, cursor: String?) = throw NotImplementedError()
+        override suspend fun getPersonalizedFeed(limit: Int, offset: Int) = throw NotImplementedError()
+        override suspend fun getFollowingFeed(limit: Int, offset: Int) = throw NotImplementedError()
         override suspend fun getPost(postId: String) = throw NotImplementedError()
         override suspend fun getUserPosts(userId: String, limit: Int, offset: Int) = throw NotImplementedError()
         override suspend fun getHashtagPosts(tag: String, limit: Int, offset: Int) = throw NotImplementedError()
@@ -79,6 +91,7 @@ class AddPostViewModelTest {
         override suspend fun submitAppeal(body: ir.coffevista.vista_native.features.feed.data.SubmitAppealRequestDto) = throw NotImplementedError()
         override suspend fun trackFeedEvent(body: ir.coffevista.vista_native.features.feed.data.FeedEventRequestDto) = throw NotImplementedError()
         override suspend fun presignUpload(request: ir.coffevista.vista_native.features.feed.data.PostPresignRequestDto) = throw NotImplementedError()
+        override suspend fun deleteUpload(request: ir.coffevista.vista_native.features.feed.data.DeleteUploadRequestDto) = ir.coffevista.vista_native.features.feed.data.DeleteUploadResponseDto(true)
     }
 
     private lateinit var fakeApi: FakeFeedApi
@@ -102,8 +115,12 @@ class AddPostViewModelTest {
             userId: String,
             uri: Uri,
             maxBytes: Long,
+            startMs: Int,
+            endMs: Int,
             onProgress: (Float) -> Unit,
         ): UploadedMediaResult = error("Media upload is not used by these tests")
+
+        override suspend fun deleteUpload(objectKey: String): Boolean = true
     }
     private class FakeOwnProfileDao : OwnProfileDao {
         override fun getOwnProfile(userId: String) = MutableStateFlow<OwnProfileEntity?>(null)
@@ -222,6 +239,27 @@ class AddPostViewModelTest {
         assertNotNull(request)
         assertEquals("پست تستی جدید #خبر #فوری", request?.content)
         assertEquals(listOf("خبر", "فوری"), request?.tags)
+    }
+
+    @Test
+    fun `video draft can be submitted after video selection`() {
+        val state = AddPostUiState(
+            selectedVideo = File("fake_video.mp4"),
+            isVideo = true,
+        )
+
+        assertTrue(state.canSubmit)
+    }
+
+    @Test
+    fun `trimmed video updates state and allows submission`() {
+        val testFile = File("fake_trimmed_video.mp4")
+        viewModel.onVideoTrimmed(testFile)
+
+        val state = viewModel.uiState.value
+        assertTrue(state.isVideo)
+        assertEquals(testFile, state.selectedVideo)
+        assertTrue(state.canSubmit)
     }
 
     @Test

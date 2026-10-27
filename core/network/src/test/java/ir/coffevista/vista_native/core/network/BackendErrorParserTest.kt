@@ -33,4 +33,24 @@ class BackendErrorParserTest {
         assertEquals("خطای قدیمی", parsed.message)
         assertEquals(12, parsed.retryAfterSeconds)
     }
+
+    @Test
+    fun parsesFlatPersianErrorAndPromotesBannedCode() {
+        val flatPersian = BackendErrorParser.parse(
+            """{"error":"به دلیل تنظیمات حریم خصوصی امکان ارسال پیام وجود ندارد"}""",
+        )
+        assertEquals("به دلیل تنظیمات حریم خصوصی امکان ارسال پیام وجود ندارد", flatPersian.message)
+
+        val banned = BackendErrorParser.parse(
+            """{"error":{"code":"error","message":"banned"}}""",
+        )
+        assertEquals("banned", banned.code)
+        assertEquals("banned", banned.message)
+
+        val featureDisabled = BackendErrorParser.parse(
+            """{"error":"feature_disabled","code":"FEATURE_DISABLED","feature":"chat","retry_after_seconds":60}""",
+        )
+        assertEquals("FEATURE_DISABLED", featureDisabled.code)
+        assertEquals("chat", featureDisabled.feature)
+    }
 }

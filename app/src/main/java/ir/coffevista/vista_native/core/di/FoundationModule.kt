@@ -9,6 +9,7 @@ import dagger.hilt.components.SingletonComponent
 import ir.coffevista.vista_native.BuildConfig
 import ir.coffevista.vista_native.core.common.ApplicationScope
 import ir.coffevista.vista_native.core.common.DefaultDispatcherProvider
+import ir.coffevista.vista_native.core.common.DeviceIdProvider
 import ir.coffevista.vista_native.core.common.DispatcherProvider
 import ir.coffevista.vista_native.core.common.EpochClock
 import ir.coffevista.vista_native.core.common.FoundationTelemetry
@@ -31,8 +32,8 @@ import ir.coffevista.vista_native.core.network.TlsPolicy
 import ir.coffevista.vista_native.core.network.TlsPolicyStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.plus
-import kotlinx.coroutines.runBlocking
 import javax.inject.Singleton
 
 @Module
@@ -48,6 +49,7 @@ object FoundationModule {
         },
         internalBaseUrl = BuildConfig.API_BASE_URL,
         debugBuild = BuildConfig.DEBUG,
+        appVersion = BuildConfig.VERSION_NAME,
     )
 
     @Provides
@@ -97,21 +99,22 @@ object FoundationModule {
     @Singleton
     fun provideTlsPolicyStore(
         dao: VerifiedTlsPolicyDao,
+        @ApplicationScope applicationScope: CoroutineScope,
         dispatchers: DispatcherProvider,
     ): TlsPolicyStore {
-        val initial = runCatching {
-            runBlocking(dispatchers.io) { dao.read() }
-        }.fold(
-            onSuccess = { entity -> entity?.toPolicy() ?: TlsPolicyStore.DEFAULT_POLICY },
-            onFailure = { TlsPolicyStore.FAIL_CLOSED_POLICY },
-        )
-        return TlsPolicyStore(initialPolicy = initial) { policy ->
-            runCatching {
-                runBlocking(dispatchers.io) {
-                    dao.replaceAtomically(policy.toEntity())
-                }
-            }.isSuccess
+        lateinit var store: TlsPolicyStore
+        store = TlsPolicyStore(initialPolicy = TlsPolicyStore.DEFAULT_POLICY) { policy ->
+            applicationScope.launch(dispatchers.io) {
+                runCatching { dao.replaceAtomically(policy.toEntity()) }
+            }
+            true
         }
+        applicationScope.launch(dispatchers.io) {
+            runCatching { dao.read() }.getOrNull()?.let { entity ->
+                store.hydrateFromDisk(entity.toPolicy())
+            }
+        }
+        return store
     }
 
     @Provides
@@ -122,6 +125,25 @@ object FoundationModule {
     @Provides
     @Singleton
     fun provideFoundationTelemetry(): FoundationTelemetry = NoOpFoundationTelemetry
+
+    @Provides
+    @Singleton
+    fun provideDeviceIdProvider(
+        @ApplicationContext context: Context,
+    ): DeviceIdProvider {
+        val preferences = context.getSharedPreferences(
+            DeviceIdProvider.PREFERENCES_NAME,
+            Context.MODE_PRIVATE,
+        )
+        val persistedId = preferences.getString(DeviceIdProvider.KEY_DEVICE_ID, null)
+            ?.takeIf(String::isNotBlank)
+            ?: java.util.UUID.randomUUID().toString().also { generated ->
+                preferences.edit().putString(DeviceIdProvider.KEY_DEVICE_ID, generated).apply()
+            }
+        return DeviceIdProvider { persistedId }.also { provider ->
+            DeviceIdProvider.current = provider
+        }
+    }
 }
 
 private fun VerifiedTlsPolicyEntity.toPolicy(): TlsPolicy = TlsPolicy(

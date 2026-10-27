@@ -1,5 +1,6 @@
 package ir.coffevista.vista_native.features.profile.settings.saved
 
+import ir.coffevista.vista_native.core.common.toPersianDigits
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -40,6 +41,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
@@ -83,6 +85,7 @@ fun SavedPostsScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val savedPosts = uiState.posts
+    val context = androidx.compose.ui.platform.LocalContext.current
 
     CompositionLocalProvider(LocalLayoutDirection provides LocalLayoutDirection.current) {
         Scaffold(
@@ -116,11 +119,16 @@ fun SavedPostsScreen(
                 )
             },
         ) { paddingValues ->
-            LazyColumn(
+            PullToRefreshBox(
+                isRefreshing = uiState.isLoading,
+                onRefresh = viewModel::refresh,
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(paddingValues),
             ) {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                ) {
                 if (uiState.isLoading) {
                     item {
                         Box(
@@ -294,40 +302,68 @@ fun SavedPostsScreen(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = if (post.isLiked) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
-                                        contentDescription = "لایک",
-                                        tint = if (post.isLiked) Color.Red else MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(20.dp),
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(
-                                        text = "${post.likesCount}",
-                                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
-                                    )
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .clickable { viewModel.toggleLike(post) }
+                                            .padding(4.dp),
+                                    ) {
+                                        Icon(
+                                            imageVector = if (post.isLiked) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                                            contentDescription = "لایک",
+                                            tint = if (post.isLiked) Color.Red else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(20.dp),
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = post.likesCount.toLong().toPersianDigits(),
+                                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                                        )
+                                    }
 
-                                    Spacer(modifier = Modifier.width(16.dp))
+                                    Spacer(modifier = Modifier.width(12.dp))
 
-                                    Icon(
-                                        imageVector = Icons.Outlined.ChatBubbleOutline,
-                                        contentDescription = "نظرات",
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(20.dp),
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(
-                                        text = "${post.commentsCount}",
-                                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
-                                    )
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .clickable { onPostClick(post.id) }
+                                            .padding(4.dp),
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.ChatBubbleOutline,
+                                            contentDescription = "نظرات",
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(20.dp),
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = post.commentsCount.toLong().toPersianDigits(),
+                                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                                        )
+                                    }
 
-                                    Spacer(modifier = Modifier.width(16.dp))
+                                    Spacer(modifier = Modifier.width(12.dp))
 
-                                    Icon(
-                                        imageVector = Icons.Outlined.Send,
-                                        contentDescription = "اشتراک‌گذاری",
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(20.dp),
-                                    )
+                                    IconButton(
+                                        onClick = {
+                                            val shareIntent = android.content.Intent().apply {
+                                                action = android.content.Intent.ACTION_SEND
+                                                putExtra(android.content.Intent.EXTRA_TEXT, "https://coffevista.ir/p/${post.id}\n${post.caption}")
+                                                type = "text/plain"
+                                            }
+                                            context.startActivity(android.content.Intent.createChooser(shareIntent, "اشتراک‌گذاری پست"))
+                                        },
+                                        modifier = Modifier.size(32.dp),
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.Send,
+                                            contentDescription = "اشتراک‌گذاری",
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(20.dp),
+                                        )
+                                    }
                                 }
 
                                 // Bookmark (Saved) Icon
@@ -358,6 +394,7 @@ fun SavedPostsScreen(
                 }
 
                 item { Spacer(modifier = Modifier.height(32.dp)) }
+            }
             }
         }
     }

@@ -1,5 +1,6 @@
 package ir.coffevista.vista_native.features.search.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
@@ -26,9 +27,14 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.height
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.outlined.Tag
 import androidx.compose.material.icons.rounded.QrCodeScanner
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
@@ -151,6 +157,7 @@ fun SearchLauncherScreen(
                 viewModel.selectHashtag(it)
                 onOpenWorkspace()
             },
+            onRefresh = viewModel::refreshTrending,
         )
     }
 }
@@ -161,6 +168,8 @@ fun SearchWorkspaceScreen(
     onUserClick: (SearchUser) -> Unit,
     onPostClick: (SearchPost) -> Unit,
     onHashtagClick: (String) -> Unit = {},
+    onBack: (() -> Unit)? = null,
+    onOpenQrScanner: (() -> Unit)? = null,
     autoFocus: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
@@ -189,6 +198,8 @@ fun SearchWorkspaceScreen(
         },
         onRetry = viewModel::retry,
         onLoadMoreUsers = viewModel::loadMoreUsers,
+        onBack = onBack,
+        onOpenQrScanner = onOpenQrScanner,
         autoFocus = autoFocus,
         modifier = modifier,
     )
@@ -210,11 +221,24 @@ internal fun SearchWorkspaceContent(
     onPost: (SearchPost) -> Unit,
     onRetry: () -> Unit,
     onLoadMoreUsers: () -> Unit,
+    onBack: (() -> Unit)? = null,
+    onOpenQrScanner: (() -> Unit)? = null,
     autoFocus: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val focusRequester = remember { FocusRequester() }
+    val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
+
+    BackHandler(enabled = onBack != null || state.hasQuery) {
+        keyboard?.hide()
+        focusManager.clearFocus()
+        if (state.hasQuery) {
+            onClearQuery()
+        } else {
+            onBack?.invoke()
+        }
+    }
 
     LaunchedEffect(autoFocus) {
         if (autoFocus) {
@@ -236,6 +260,8 @@ internal fun SearchWorkspaceContent(
             onSubmit = onSubmit,
             onFocusChanged = onFocusChanged,
             onClear = onClearQuery,
+            onBack = onBack,
+            onOpenQrScanner = onOpenQrScanner,
             focusRequester = focusRequester,
         )
         if (state.hasQuery) {
@@ -274,10 +300,13 @@ private fun SearchField(
     onSubmit: () -> Unit,
     onFocusChanged: (Boolean) -> Unit,
     onClear: () -> Unit,
+    onBack: (() -> Unit)? = null,
+    onOpenQrScanner: (() -> Unit)? = null,
     focusRequester: FocusRequester,
 ) {
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
+    val showBackIcon = onBack != null
     Box(
         modifier = Modifier
             .padding(start = 16.dp, top = 12.dp, end = 16.dp, bottom = 8.dp)
@@ -286,15 +315,43 @@ private fun SearchField(
             .clip(SearchFieldShape)
             .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.45f))
             .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.75f), SearchFieldShape)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+            ) {
+                focusRequester.requestFocus()
+                keyboard?.show()
+            }
             .padding(horizontal = 14.dp, vertical = 4.dp),
         contentAlignment = Alignment.Center,
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            SearchGlyph(
-                modifier = Modifier.size(23.dp),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(Modifier.width(10.dp))
+            if (showBackIcon) {
+                IconButton(
+                    onClick = {
+                        keyboard?.hide()
+                        focusManager.clearFocus()
+                        if (value.isNotEmpty()) {
+                            onClear()
+                        }
+                        onBack?.invoke()
+                    },
+                    modifier = Modifier.size(36.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "بازگشت",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Spacer(Modifier.width(4.dp))
+            } else {
+                SearchGlyph(
+                    modifier = Modifier.size(23.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.width(10.dp))
+            }
             BasicTextField(
                 value = value,
                 onValueChange = onValueChange,
@@ -350,7 +407,11 @@ private fun SearchField(
                 SmallIconButton(
                     description = "اسکن بارکد و QR",
                     tag = "search-scan-qr",
-                    onClick = { /* open scanner */ },
+                    onClick = {
+                        keyboard?.hide()
+                        focusManager.clearFocus()
+                        onOpenQrScanner?.invoke()
+                    },
                 ) { color ->
                     Icon(
                         imageVector = Icons.Rounded.QrCodeScanner,
@@ -364,31 +425,73 @@ private fun SearchField(
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
+@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
 private fun LauncherContent(
     state: SearchUiState,
     onHashtag: (String) -> Unit,
+    onRefresh: () -> Unit,
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(start = 16.dp, top = 12.dp, end = 16.dp, bottom = 24.dp),
+    PullToRefreshBox(
+        isRefreshing = state.isLoadingTrending,
+        onRefresh = onRefresh,
+        modifier = Modifier.fillMaxSize(),
     ) {
-        Text(
-            text = "ترندهای امروز",
-            style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.padding(bottom = 16.dp),
-        )
-        if (state.isLoadingTrending && state.trending.isEmpty()) {
-            Box(
-                Modifier.fillMaxWidth().height(56.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(start = 16.dp, top = 12.dp, end = 16.dp, bottom = 24.dp),
+        ) {
+            Text(
+                text = "ترندهای امروز",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(bottom = 16.dp),
+            )
+            when {
+                state.isLoadingTrending && state.trending.isEmpty() -> {
+                    Box(
+                        Modifier.fillMaxWidth().height(120.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+                    }
+                }
+                state.trending.isEmpty() -> {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 40.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Tag,
+                            contentDescription = null,
+                            modifier = Modifier.size(48.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        Text(
+                            text = "هنوز ترندی برای نمایش وجود ندارد",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            text = "با آغاز فعالیت کاربران، هشتگ‌های پرطرفدار در اینجا نمایش داده می‌شوند.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                            textAlign = TextAlign.Center,
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        TextButton(onClick = onRefresh) {
+                            Text("تلاش مجدد")
+                        }
+                    }
+                }
+                else -> {
+                    TrendingChips(state.trending, onHashtag)
+                }
             }
-        } else {
-            TrendingChips(state.trending, onHashtag)
         }
     }
 }
@@ -946,7 +1049,12 @@ private fun UserRow(user: SearchUser, onClick: (SearchUser) -> Unit) {
                 )
                 if (user.isVerified) {
                     Spacer(Modifier.width(4.dp))
-                    VerifiedBadge()
+                    ir.coffevista.vista_native.core.designsystem.component.VistaVerificationBadge(
+                        isVerified = user.isVerified,
+                        verificationType = user.verificationType,
+                        role = user.role,
+                        size = 15.dp,
+                    )
                 }
             }
             androidx.compose.runtime.CompositionLocalProvider(
@@ -1025,18 +1133,6 @@ private fun PostTile(
     }
 }
 
-@Composable
-private fun VerifiedBadge() {
-    Box(
-        Modifier
-            .size(16.dp)
-            .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.primary),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text("✓", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-    }
-}
 
 @Composable
 private fun SmallIconButton(

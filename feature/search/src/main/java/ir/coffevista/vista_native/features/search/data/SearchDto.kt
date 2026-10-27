@@ -19,6 +19,12 @@ data class SearchUserDto(
     val fullName: String? = null,
     @SerialName("avatar_url")
     val avatarUrl: String? = null,
+    @SerialName("is_verified")
+    val isVerified: Boolean = false,
+    @SerialName("verification_type")
+    val verificationType: String? = null,
+    @SerialName("role")
+    val role: String? = null,
 )
 
 @Serializable
@@ -87,9 +93,9 @@ internal fun SearchUserDto.toDomainOrNull(): SearchUser? {
         username = normalizedUsername,
         fullName = normalizedFullName.ifEmpty { normalizedUsername },
         avatarUrl = avatarUrl?.trim()?.takeIf(String::isNotEmpty),
-        isVerified = false,
-        verificationType = null,
-        role = null,
+        isVerified = isVerified,
+        verificationType = verificationType?.trim()?.takeIf(String::isNotEmpty),
+        role = role?.trim()?.takeIf(String::isNotEmpty),
     )
 }
 

@@ -37,3 +37,32 @@ data class ProfileDto(
     @SerialName("created_at") val createdAt: String? = null,
     @SerialName("updated_at") val updatedAt: String? = null
 )
+
+@Keep
+@Serializable
+data class ProfileHighlightDto(
+    val id: String,
+    val title: String,
+    @SerialName("cover_url") val coverUrl: String? = null,
+    @SerialName("story_ids") val storyIds: List<String> = emptyList(),
+)
+
+@Keep
+@Serializable
+data class ProfileHighlightsResponseDto(
+    val highlights: List<ProfileHighlightDto> = emptyList(),
+)
+
+@Keep
+@Serializable
+data class VerificationRequestDto(
+    val category: String,
+    @SerialName("document_url") val documentUrl: String,
+    val notes: String? = null,
+)
+
+@Keep
+@Serializable
+data class VerificationResponseDto(
+    val success: Boolean = true,
+)

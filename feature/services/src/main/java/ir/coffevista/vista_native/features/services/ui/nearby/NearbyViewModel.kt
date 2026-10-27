@@ -35,6 +35,7 @@ data class NearbyUiState(
     val receivedLikes: List<NearbyReceivedLike> = emptyList(),
     val matches: List<NearbyMatch> = emptyList(),
     val isLoadingLikesMatches: Boolean = false,
+    val locationCity: String? = null,
 )
 
 @HiltViewModel
@@ -46,6 +47,7 @@ class NearbyViewModel @Inject constructor(
     val uiState: StateFlow<NearbyUiState> = _uiState.asStateFlow()
 
     private var currentZone: String? = null
+    private var lastSwipedCandidate: NearbyCandidate? = null
 
     init {
         initBootstrap()
@@ -71,11 +73,27 @@ class NearbyViewModel @Inject constructor(
         _uiState.update { it.copy(locationError = error, isLocating = false) }
     }
 
-    fun onLocationAcquired(lat: Double, lng: Double) {
+    fun onLocationAcquired(
+        lat: Double,
+        lng: Double,
+        cityName: String? = null,
+        provinceName: String? = null,
+    ) {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLocating = true, locationError = null) }
+            _uiState.update {
+                it.copy(
+                    isLocating = true,
+                    locationError = null,
+                    locationCity = cityName ?: it.locationCity,
+                )
+            }
             runCatching {
-                repository.updateLocation(lat = lat, lng = lng)
+                repository.updateLocation(
+                    lat = lat,
+                    lng = lng,
+                    cityName = cityName,
+                    provinceName = provinceName,
+                )
             }
             loadCards(reset = true)
             loadReceivedLikesBadge()
@@ -192,6 +210,7 @@ class NearbyViewModel @Inject constructor(
         val state = _uiState.value
         if (state.isLiking || state.currentIndex < 0 || state.currentIndex >= state.cards.size) return
         val card = state.cards[state.currentIndex]
+        lastSwipedCandidate = card
 
         viewModelScope.launch {
             _uiState.update { it.copy(isLiking = true) }
@@ -219,10 +238,26 @@ class NearbyViewModel @Inject constructor(
         val state = _uiState.value
         if (state.currentIndex < 0 || state.currentIndex >= state.cards.size) return
         val card = state.cards[state.currentIndex]
+        lastSwipedCandidate = card
 
         viewModelScope.launch {
             runCatching { repository.like(card.userId, action = "pass") }
             advance(forward = true)
+        }
+    }
+
+    fun undoLastSwipe() {
+        val last = lastSwipedCandidate
+        if (last != null) {
+            viewModelScope.launch {
+                runCatching {
+                    repository.undo(last.userId)
+                }
+                lastSwipedCandidate = null
+                advance(forward = false)
+            }
+        } else {
+            advance(forward = false)
         }
     }
 

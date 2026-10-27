@@ -11,6 +11,7 @@ data class ProfilePostUiModel(
     val authorRole: String? = null,
     val content: String?,
     val imageUrl: String?,
+    val imageUrls: List<String> = emptyList(),
     val videoUrl: String?,
     val aspectRatio: Float? = null,
     val musicUrl: String? = null,

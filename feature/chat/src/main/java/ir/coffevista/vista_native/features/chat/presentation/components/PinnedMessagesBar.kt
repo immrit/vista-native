@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ir.coffevista.vista_native.features.chat.domain.model.Message
 import ir.coffevista.vista_native.features.chat.domain.model.MessageContent
+import ir.coffevista.vista_native.features.chat.domain.model.SharedPostParser
 
 /**
  * نوار پیام‌های پین‌شده به سبک تلگرام با قابلیت جابجایی بین چندین پیام پین‌شده.
@@ -68,8 +69,16 @@ fun PinnedMessagesBar(
     }
 
     val previewText = when (val content = currentMessage.content) {
-        is MessageContent.Text -> content.value
-        is MessageContent.Structured -> content.payload
+        is MessageContent.Text -> {
+            SharedPostParser.tryParse(content.value)?.let { post ->
+                "پست ${post.authorName}: ${post.content.ifBlank { "رسانه پیوست" }}"
+            } ?: content.value
+        }
+        is MessageContent.Structured -> {
+            SharedPostParser.tryParse(content.payload)?.let { post ->
+                "پست ${post.authorName}: ${post.content.ifBlank { "رسانه پیوست" }}"
+            } ?: content.payload
+        }
         MessageContent.Deleted -> "پیام حذف شده"
         MessageContent.EncryptedUnavailable -> "پیام رمزگذاری‌شده"
     }.ifBlank {

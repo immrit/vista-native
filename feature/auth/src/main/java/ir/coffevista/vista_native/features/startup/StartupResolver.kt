@@ -12,6 +12,7 @@ import ir.coffevista.vista_native.core.security.StoredSession
 import ir.coffevista.vista_native.core.network.AssumeOnlineNetworkMonitor
 import ir.coffevista.vista_native.core.network.NetworkMonitor
 import ir.coffevista.vista_native.core.network.NetworkState
+import ir.coffevista.vista_native.core.network.SystemGateMonitor
 import ir.coffevista.vista_native.features.auth.domain.AuthRepository
 import ir.coffevista.vista_native.features.auth.DirectSessionRefreshCoordinator
 import ir.coffevista.vista_native.features.auth.RefreshResolution
@@ -35,10 +36,19 @@ class StartupResolver @Inject constructor(
 
         val isOnline = networkMonitor.currentState() == NetworkState.ONLINE
         if (isOnline) {
-            val maintenance = authRepository.maintenanceMode()
-            if (maintenance is Outcome.Success && maintenance.value) {
-                return StartupDestination.Maintenance
+            when (val maintenance = authRepository.maintenanceMode()) {
+                is Outcome.Success -> if (maintenance.value) {
+                    return StartupDestination.Maintenance
+                }
+                is Outcome.Failure -> if (
+                    maintenance.error.code?.lowercase() in setOf("banned", "account_banned", "account_suspended")
+                ) {
+                    return StartupDestination.Banned(maintenance.error.messageFa)
+                }
             }
+        }
+        if (SystemGateMonitor.isBanned.value) {
+            return StartupDestination.Banned(SystemGateMonitor.bannedReasonFa.value)
         }
 
         val stored = runCatching(sessionStore::read).getOrElse {
@@ -75,6 +85,10 @@ class StartupResolver @Inject constructor(
 
         return when (val refresh = refreshCoordinator.refresh(stored.refreshToken)) {
             is RefreshResolution.Refreshed -> {
+                if (refresh.payload.user.accountStatus.lowercase() in setOf("banned", "suspended")) {
+                    sessionStore.clear()
+                    return StartupDestination.Banned("حساب کاربری شما به دلیل تخلف از قوانین مسدود شده است.")
+                }
                 StartupDestination.Authenticated(
                     AuthenticatedContext(
                         userId = refresh.payload.user.id,
@@ -85,7 +99,13 @@ class StartupResolver @Inject constructor(
                     ),
                 )
             }
-            RefreshResolution.TerminalSession -> unauthenticatedDestination()
+            RefreshResolution.TerminalSession -> {
+                if (SystemGateMonitor.isBanned.value) {
+                    StartupDestination.Banned(SystemGateMonitor.bannedReasonFa.value)
+                } else {
+                    unauthenticatedDestination()
+                }
+            }
             RefreshResolution.TransientFailure -> if (stored.requiresOnlineValidation) {
                 StartupDestination.RecoverableError(
                     "تأیید نشست منتقل‌شده ممکن نشد. لطفاً دوباره تلاش کنید",

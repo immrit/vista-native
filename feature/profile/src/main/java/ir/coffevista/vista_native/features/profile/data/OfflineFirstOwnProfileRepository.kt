@@ -85,6 +85,29 @@ class OfflineFirstOwnProfileRepository @Inject constructor(
         dao.deleteAll()
     }
 
+    override suspend fun requestVerification(
+        category: String,
+        documentUrl: String,
+        notes: String?,
+    ): Outcome<Unit> {
+        return try {
+            val response = api.requestVerification(
+                VerificationRequestDto(
+                    category = category,
+                    documentUrl = documentUrl,
+                    notes = notes,
+                ),
+            )
+            if (response.isSuccessful && response.body()?.success != false) {
+                Outcome.Success(Unit)
+            } else {
+                Outcome.Failure(ErrorClassifier.classify(response.toRemoteFailure(), "درخواست تایید هویت"))
+            }
+        } catch (e: Exception) {
+            Outcome.Failure(ErrorClassifier.classify(e, "درخواست تایید هویت"))
+        }
+    }
+
     private fun Response<*>.toRemoteFailure(): RemoteFailure {
         val error = BackendErrorParser.parse(
             rawBody = errorBody()?.string().orEmpty(),

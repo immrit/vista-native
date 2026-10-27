@@ -25,6 +25,8 @@ interface UserProfileRepository {
     ): FollowMutationResult
 
     suspend fun clearAccount(viewerAccountId: String)
+
+    suspend fun getUserHighlights(profileUserId: String): List<ProfileHighlightDto> = emptyList()
 }
 
 sealed interface ProfileRefreshResult {

@@ -44,8 +44,10 @@ data class NewMessageUiState(
 @HiltViewModel
 class NewMessageViewModel @Inject constructor(
     private val repository: ChatRepository,
+    savedStateHandle: androidx.lifecycle.SavedStateHandle? = null,
 ) : ViewModel() {
-    private val mutableState = MutableStateFlow(NewMessageUiState())
+    private val initialSecretMode = savedStateHandle?.get<Boolean>("secret") ?: false
+    private val mutableState = MutableStateFlow(NewMessageUiState(isSecretMode = initialSecretMode))
     val state: StateFlow<NewMessageUiState> = mutableState.asStateFlow()
     private var searchJob: Job? = null
     private var cachedSuggestedUsers: List<ChatUser> = emptyList()

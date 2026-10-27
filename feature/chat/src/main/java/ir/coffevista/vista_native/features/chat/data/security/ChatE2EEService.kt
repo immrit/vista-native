@@ -157,6 +157,148 @@ class ChatE2EEService(
     }
 
     /**
+     * Generates a random 32-byte AES Sender Key for group end-to-end encryption.
+     */
+    fun generateSenderKey(): String {
+        val bytes = ByteArray(32).also { secureRandom.nextBytes(it) }
+        return Base64.encodeToString(bytes, Base64.NO_WRAP)
+    }
+
+    fun getGroupSenderKey(groupId: String, senderId: String): String? {
+        return prefs.getString("group_sender_key_${groupId}_$senderId", null)
+    }
+
+    fun saveGroupSenderKey(groupId: String, senderId: String, senderKeyB64: String) {
+        val trimmed = senderKeyB64.trim()
+        if (trimmed.isNotBlank()) {
+            prefs.edit().putString("group_sender_key_${groupId}_$senderId", trimmed).apply()
+        }
+    }
+
+    fun getOrGenerateMySenderKey(groupId: String, myUserId: String): String {
+        val existing = getGroupSenderKey(groupId, myUserId)
+        if (!existing.isNullOrBlank()) return existing
+        val generated = generateSenderKey()
+        saveGroupSenderKey(groupId, myUserId, generated)
+        return generated
+    }
+
+    /**
+     * Encrypts a Sender Key for distribution to a specific group participant using X25519 channel.
+     */
+    fun encryptSenderKeyForParticipant(
+        senderKeyB64: String,
+        myPrivateKey: ByteArray,
+        peerPublicKey: ByteArray,
+    ): String {
+        val sharedSecret = computeSharedSecret(myPrivateKey, peerPublicKey)
+        return encryptMessage(senderKeyB64, sharedSecret)
+    }
+
+    /**
+     * Decrypts a received Sender Key from a specific group participant using X25519 channel.
+     */
+    fun decryptSenderKeyFromParticipant(
+        encryptedSenderKey: String,
+        myPrivateKey: ByteArray,
+        peerPublicKey: ByteArray,
+    ): String {
+        val sharedSecret = computeSharedSecret(myPrivateKey, peerPublicKey)
+        return decryptMessage(encryptedSenderKey, sharedSecret)
+    }
+
+    /**
+     * Encrypts a group message using Sender Key matching Flutter VE2E_GROUP_V1 envelope format:
+     * "VE2E_GROUP_V1:" + base64( salt(16) | nonceLen(1) | nonce | macLen(1) | mac | cipherText )
+     */
+    fun encryptGroupMessage(plainText: String, senderKeyB64: String): String {
+        val senderKeyBytes = Base64.decode(senderKeyB64, Base64.DEFAULT)
+        val salt = ByteArray(SALT_LENGTH).also { secureRandom.nextBytes(it) }
+        val messageKey = deriveGroupMessageKey(senderKeyBytes, salt)
+
+        val nonce = ByteArray(12).also { secureRandom.nextBytes(it) }
+        val plainBytes = plainText.toByteArray(Charsets.UTF_8)
+
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        val spec = GCMParameterSpec(128, nonce)
+        cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(messageKey, "AES"), spec)
+
+        val encryptedWithTag = cipher.doFinal(plainBytes)
+        val tagLength = 16
+        val cipherTextLength = encryptedWithTag.size - tagLength
+        val cipherText = ByteArray(cipherTextLength)
+        val mac = ByteArray(tagLength)
+        System.arraycopy(encryptedWithTag, 0, cipherText, 0, cipherTextLength)
+        System.arraycopy(encryptedWithTag, cipherTextLength, mac, 0, tagLength)
+
+        val totalSize = salt.size + 1 + nonce.size + 1 + mac.size + cipherText.size
+        val buffer = ByteBuffer.allocate(totalSize)
+        buffer.put(salt)
+        buffer.put(nonce.size.toByte())
+        buffer.put(nonce)
+        buffer.put(mac.size.toByte())
+        buffer.put(mac)
+        buffer.put(cipherText)
+
+        return PREFIX_GROUP_V1 + Base64.encodeToString(buffer.array(), Base64.NO_WRAP)
+    }
+
+    /**
+     * Decrypts a group message using Sender Key matching Flutter VE2E_GROUP_V1 envelope format.
+     */
+    @Throws(GroupE2ETamperException::class)
+    fun decryptGroupMessage(cipherText: String, senderKeyB64: String): String {
+        if (!cipherText.startsWith(PREFIX_GROUP_V1)) {
+            return cipherText
+        }
+        return try {
+            val b64 = cipherText.removePrefix(PREFIX_GROUP_V1)
+            val raw = Base64.decode(b64, Base64.DEFAULT)
+            require(raw.size > SALT_LENGTH + 2 + 12 + 16) { "Group payload too short" }
+
+            var offset = 0
+            val salt = ByteArray(SALT_LENGTH)
+            System.arraycopy(raw, offset, salt, 0, SALT_LENGTH)
+            offset += SALT_LENGTH
+
+            val nonceLength = raw[offset++].toInt() and 0xFF
+            val nonce = ByteArray(nonceLength)
+            System.arraycopy(raw, offset, nonce, 0, nonceLength)
+            offset += nonceLength
+
+            val macLength = raw[offset++].toInt() and 0xFF
+            val mac = ByteArray(macLength)
+            System.arraycopy(raw, offset, mac, 0, macLength)
+            offset += macLength
+
+            val cipherTextLength = raw.size - offset
+            val cipherTextBytes = ByteArray(cipherTextLength)
+            System.arraycopy(raw, offset, cipherTextBytes, 0, cipherTextLength)
+
+            val cipherInput = ByteArray(cipherTextBytes.size + mac.size)
+            System.arraycopy(cipherTextBytes, 0, cipherInput, 0, cipherTextBytes.size)
+            System.arraycopy(mac, 0, cipherInput, cipherTextBytes.size, mac.size)
+
+            val senderKeyBytes = Base64.decode(senderKeyB64, Base64.DEFAULT)
+            val messageKey = deriveGroupMessageKey(senderKeyBytes, salt)
+
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            val spec = GCMParameterSpec(mac.size * 8, nonce)
+            cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(messageKey, "AES"), spec)
+            val decrypted = cipher.doFinal(cipherInput)
+            String(decrypted, Charsets.UTF_8)
+        } catch (tamper: GroupE2ETamperException) {
+            throw tamper
+        } catch (e: Exception) {
+            throw GroupE2ETamperException("Group payload decryption failed: ${e.message}")
+        }
+    }
+
+    private fun deriveGroupMessageKey(senderKey: ByteArray, salt: ByteArray): ByteArray {
+        return hkdf(senderKey, salt, GROUP_HKDF_INFO.toByteArray(Charsets.UTF_8), 32)
+    }
+
+    /**
      * Private X25519 material must never be persisted as a plain SharedPreferences value.
      * Public keys remain readable by design. Existing plaintext installs are migrated only
      * after their encrypted replacement has been durably written.
@@ -447,7 +589,8 @@ class ChatE2EEService(
         val trimmed = content.trim()
         return trimmed.startsWith(PREFIX_V1) ||
             trimmed.startsWith(PREFIX_V2) ||
-            trimmed.startsWith(PREFIX_LEGACY_V1)
+            trimmed.startsWith(PREFIX_LEGACY_V1) ||
+            trimmed.startsWith(PREFIX_GROUP_V1)
     }
 
     /**
@@ -512,7 +655,9 @@ class ChatE2EEService(
         const val PREFIX_V1 = "VE2E1:"
         const val PREFIX_V2 = "VE2E2:"
         const val PREFIX_LEGACY_V1 = "e2ee:v1:"
+        const val PREFIX_GROUP_V1 = "VE2E_GROUP_V1:"
         const val HKDF_INFO = "vista-e2e-msg-v1"
+        const val GROUP_HKDF_INFO = "vista-e2e-group-v1"
         const val SALT_LENGTH = 16
         private const val X25519_KEY_LENGTH = 32
         private const val KEYSTORE_PROVIDER = "AndroidKeyStore"
@@ -654,3 +799,9 @@ object X25519 {
         return result
     }
 }
+
+/**
+ * Thrown when a v1 group envelope fails authentication (tamper/wrong key).
+ */
+class GroupE2ETamperException(message: String = "Group E2EE verification failed") : Exception(message)
+

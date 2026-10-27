@@ -1,13 +1,17 @@
 package ir.coffevista.vista_native.features.stories.ui.editor
 
 import android.net.Uri
+import android.view.ViewGroup
+import android.widget.FrameLayout
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import kotlin.OptIn
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,6 +21,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -29,6 +34,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddLocation
 import androidx.compose.material.icons.filled.AlternateEmail
 import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Link
@@ -59,6 +65,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -69,21 +76,32 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.AspectRatioFrameLayout
+import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaBrandColors
 import ir.coffevista.vista_native.features.stories.domain.StoryDurationType
 import ir.coffevista.vista_native.features.stories.domain.StoryPrivacyType
 import ir.coffevista.vista_native.features.stories.ui.player.StoryElementsOverlay
+import kotlin.math.roundToInt
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(UnstableApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun StoryEditorScreen(
     onClose: () -> Unit,
@@ -126,6 +144,8 @@ fun StoryEditorScreen(
 
     var showLocationDialog by remember { mutableStateOf(false) }
     var locationName by remember { mutableStateOf("") }
+    var showQuestionDialog by remember { mutableStateOf(false) }
+    var questionText by remember { mutableStateOf("") }
     var showMusicPickerSheet by remember { mutableStateOf(false) }
     var showCloseFriendsDialog by remember { mutableStateOf(false) }
     var showDiscardDialog by remember { mutableStateOf(false) }
@@ -140,6 +160,24 @@ fun StoryEditorScreen(
     }
 
     val context = androidx.compose.ui.platform.LocalContext.current
+
+    val exoPlayer = remember(uiState.mediaUri, uiState.isVideo) {
+        val uri = uiState.mediaUri
+        if (uiState.isVideo && uri != null) {
+            ExoPlayer.Builder(context).build().apply {
+                setMediaItem(MediaItem.fromUri(uri))
+                repeatMode = Player.REPEAT_MODE_ONE
+                prepare()
+                playWhenReady = true
+            }
+        } else null
+    }
+
+    DisposableEffect(exoPlayer) {
+        onDispose {
+            exoPlayer?.release()
+        }
+    }
     var tempCameraStoryUri by remember { mutableStateOf<Uri?>(null) }
     val cameraLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicture(),
@@ -314,21 +352,74 @@ fun StoryEditorScreen(
                         .fillMaxSize()
                         .padding(padding),
                 ) {
-                    // Media background
-                    AsyncImage(
-                        model = uiState.mediaUri,
-                        contentDescription = "پیش‌نمایش استوری",
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop,
-                    )
+                    // Media background: Video Player or Image
+                    if (uiState.isVideo && exoPlayer != null) {
+                        AndroidView(
+                            factory = { ctx ->
+                                PlayerView(ctx).apply {
+                                    player = exoPlayer
+                                    useController = false
+                                    resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                                    layoutParams = FrameLayout.LayoutParams(
+                                        ViewGroup.LayoutParams.MATCH_PARENT,
+                                        ViewGroup.LayoutParams.MATCH_PARENT,
+                                    )
+                                }
+                            },
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    } else {
+                        AsyncImage(
+                            model = uiState.mediaUri,
+                            contentDescription = "پیش‌نمایش استوری",
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop,
+                        )
+                    }
 
                     // Interactive Elements
                     StoryElementsOverlay(
                         elements = uiState.elements,
                         onPollVote = { _, _ -> },
+                        onQuestionAnswer = { _, _ -> },
                         onLinkClick = {},
                         onMentionClick = {},
                     )
+
+                    // Draggable & Deletable Handles for Elements in Editor mode
+                    uiState.elements.forEach { element ->
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.Center)
+                                .offset { IntOffset((element.x * 200).roundToInt(), (element.y * 300).roundToInt()) }
+                                .pointerInput(element.id) {
+                                    detectDragGestures { change, dragAmount ->
+                                        change.consume()
+                                        viewModel.updateElementPosition(
+                                            element.id,
+                                            dragAmount.x / 200f,
+                                            dragAmount.y / 300f,
+                                        )
+                                    }
+                                },
+                        ) {
+                            IconButton(
+                                onClick = { viewModel.removeElement(element.id) },
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .size(24.dp)
+                                    .clip(CircleShape)
+                                    .background(Color.Red.copy(alpha = 0.85f)),
+                            ) {
+                                Icon(
+                                    Icons.Default.Close,
+                                    contentDescription = "حذف استیکر",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(14.dp),
+                                )
+                            }
+                        }
+                    }
 
                     // Top Toolbar
                     Row(
@@ -527,6 +618,10 @@ fun StoryEditorScreen(
                                 showStickerSheet = false
                                 showPollDialog = true
                             }
+                            StickerOption(icon = Icons.Default.ChatBubbleOutline, label = "سوال") {
+                                showStickerSheet = false
+                                showQuestionDialog = true
+                            }
                             StickerOption(icon = Icons.Default.Link, label = "لینک") {
                                 showStickerSheet = false
                                 showLinkDialog = true
@@ -543,6 +638,36 @@ fun StoryEditorScreen(
                         Spacer(modifier = Modifier.height(24.dp))
                     }
                 }
+            }
+
+            // Question Sticker Dialog
+            if (showQuestionDialog) {
+                AlertDialog(
+                    onDismissRequest = { showQuestionDialog = false },
+                    title = { Text("افزودن جعبه سوال") },
+                    text = {
+                        OutlinedTextField(
+                            value = questionText,
+                            onValueChange = { questionText = it },
+                            placeholder = { Text("متن سوال (مثلاً: از من بپرسید…)") },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                viewModel.addQuestionElement(questionText.ifBlank { "از من بپرسید" })
+                                questionText = ""
+                                showQuestionDialog = false
+                            },
+                        ) {
+                            Text("تایید")
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showQuestionDialog = false }) { Text("انصراف") }
+                    },
+                )
             }
 
             // Music Picker Bottom Sheet

@@ -20,9 +20,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.VolumeMute
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.VolumeMute
-import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -45,11 +45,13 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
@@ -74,15 +76,28 @@ fun VistaFeedVideoPlayer(
     var isBuffering by remember { mutableStateOf(true) }
     var hasRenderedFirstFrame by remember { mutableStateOf(false) }
 
+    val activePlayingUrl by FeedVideoPlaybackCoordinator.activePlayingVideoUrl.collectAsStateWithLifecycle()
+
     val exoPlayer = remember(videoUrl) {
-        ExoPlayer.Builder(context).build().apply {
-            val mediaItem = MediaItem.fromUri(Uri.parse(videoUrl))
-            setMediaItem(mediaItem)
-            repeatMode = Player.REPEAT_MODE_ALL
-            videoScalingMode = C.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING
-            volume = if (initiallyMuted) 0f else 1f
-            prepare()
-            playWhenReady = autoPlay
+        val mediaSourceFactory = DefaultMediaSourceFactory(
+            FeedVideoPlaybackCoordinator.buildCacheDataSourceFactory(context)
+        )
+        ExoPlayer.Builder(context)
+            .setMediaSourceFactory(mediaSourceFactory)
+            .build().apply {
+                val mediaItem = MediaItem.fromUri(Uri.parse(videoUrl))
+                setMediaItem(mediaItem)
+                repeatMode = Player.REPEAT_MODE_ALL
+                videoScalingMode = C.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING
+                volume = if (initiallyMuted) 0f else 1f
+                prepare()
+                playWhenReady = autoPlay
+            }
+    }
+
+    LaunchedEffect(activePlayingUrl) {
+        if (activePlayingUrl != null && activePlayingUrl != videoUrl) {
+            exoPlayer.pause()
         }
     }
 
@@ -98,6 +113,9 @@ fun VistaFeedVideoPlayer(
 
             override fun onIsPlayingChanged(playing: Boolean) {
                 isPlaying = playing
+                if (playing) {
+                    FeedVideoPlaybackCoordinator.requestPlay(videoUrl)
+                }
             }
 
             override fun onRenderedFirstFrame() {
@@ -121,6 +139,7 @@ fun VistaFeedVideoPlayer(
             lifecycleOwner.lifecycle.removeObserver(lifecycleObserver)
             exoPlayer.removeListener(listener)
             exoPlayer.release()
+            FeedVideoPlaybackCoordinator.release(videoUrl)
         }
     }
 
@@ -159,20 +178,22 @@ fun VistaFeedVideoPlayer(
             },
             modifier = Modifier
                 .fillMaxSize()
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                ) {
-                    if (onVideoClick != null) {
-                        onVideoClick()
-                    } else {
-                        if (exoPlayer.isPlaying) {
-                            exoPlayer.pause()
-                        } else {
-                            exoPlayer.play()
+                .then(
+                    if (onVideoClick == null) {
+                        Modifier.clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                        ) {
+                            if (exoPlayer.isPlaying) {
+                                exoPlayer.pause()
+                            } else {
+                                exoPlayer.play()
+                            }
                         }
+                    } else {
+                        Modifier
                     }
-                },
+                ),
         )
 
         // Static Thumbnail until the first frame is rendered
@@ -228,7 +249,7 @@ fun VistaFeedVideoPlayer(
                     .background(Color.Black.copy(alpha = 0.55f)),
             ) {
                 Icon(
-                    imageVector = if (isMuted) Icons.Default.VolumeMute else Icons.Default.VolumeUp,
+                    imageVector = if (isMuted) Icons.AutoMirrored.Filled.VolumeMute else Icons.AutoMirrored.Filled.VolumeUp,
                     contentDescription = if (isMuted) "صدای غیرفعال" else "صدا فعال",
                     tint = Color.White,
                     modifier = Modifier.size(20.dp),

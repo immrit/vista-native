@@ -180,6 +180,8 @@ fun canonicalNotificationType(rawType: String?): String {
         "message_reaction" -> "reaction"
         "suggested_follow" -> "suggest_follow"
         "suggested_post" -> "suggest_post"
+        "post_admin_removed" -> "post_removed"
+        "post_admin_edit" -> "post_edited"
         else -> rawType?.trim()?.lowercase().orEmpty()
     }
 }
@@ -216,7 +218,15 @@ internal fun normalizeNotificationContent(raw: String, type: String, username: S
         val stripped = if (cleanName.isNotBlank() && trimmed.startsWith(cleanName)) {
             trimmed.removePrefix(cleanName).trimStart()
         } else trimmed
-        if (stripped.isNotEmpty()) return stripped
+        if (stripped.isNotEmpty()) {
+            if (stripped.contains("mentioned you in a comment", ignoreCase = true)) return "شما را در یک نظر تگ کرد"
+            if (stripped.contains("mentioned you in a post", ignoreCase = true)) return "شما را در یک پست تگ کرد"
+            if (stripped.contains("liked your post", ignoreCase = true)) return "پست شما را لایک کرد"
+            if (stripped.contains("commented on your post", ignoreCase = true)) return "روی پست شما نظر داد"
+            if (stripped.contains("replied to your comment", ignoreCase = true)) return "به نظر شما پاسخ داد"
+            if (stripped.contains("started following you", ignoreCase = true)) return "شما را دنبال کرد"
+            return stripped
+        }
     }
     return when (canonicalNotificationType(type)) {
         "message" -> "پیام جدید"
@@ -231,6 +241,9 @@ internal fun normalizeNotificationContent(raw: String, type: String, username: S
         "suggest_follow" -> "پیشنهاد دنبال کردن"
         "suggest_post" -> "پیشنهاد پست جدید"
         "daily_suggestion_digest" -> "خلاصه پیشنهادهای امروز"
+        "post_admin_removed", "post_removed" -> "پست شما به دلیل نقض قوانین حذف شد"
+        "post_admin_edit", "post_edited" -> "پست شما توسط مدیر ویرایش شد"
+        "moderation" -> "پیام نظارت و بررسی محتوا"
         else -> "اعلان جدید"
     }
 }

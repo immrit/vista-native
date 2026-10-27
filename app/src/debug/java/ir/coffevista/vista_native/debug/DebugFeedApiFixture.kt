@@ -40,15 +40,9 @@ class DebugFeedApiFixture @Inject constructor() : FeedApiFixture {
 
     override suspend fun followingResponseOrNull(
         limit: Int,
-        cursor: String?,
+        offset: Int,
     ): FeedResponseDto? = when (scenario) {
-        "valid-session" -> {
-            val offset = cursor
-                ?.removePrefix(CURSOR_PREFIX)
-                ?.toIntOrNull()
-                ?: 0
-            page(limit = limit, offset = offset)
-        }
+        "valid-session" -> page(limit = limit, offset = offset)
         "offline-valid-session", "feed-error" -> throw IOException("debug feed offline")
         else -> null
     }

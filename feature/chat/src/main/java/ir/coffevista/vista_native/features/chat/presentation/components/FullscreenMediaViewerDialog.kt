@@ -4,6 +4,8 @@ import android.content.Intent
 import android.net.Uri
 import androidx.annotation.OptIn
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,6 +17,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
@@ -42,7 +46,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -61,16 +68,26 @@ import coil.compose.AsyncImage
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 
+data class MediaViewerItem(
+    val url: String,
+    val isVideo: Boolean,
+    val title: String? = null,
+    val caption: String? = null,
+)
+
 @OptIn(UnstableApi::class)
 @Composable
 fun FullscreenMediaViewerDialog(
-    mediaUrl: String,
-    isVideo: Boolean,
-    title: String? = null,
+    mediaItems: List<MediaViewerItem>,
+    initialIndex: Int = 0,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    if (mediaItems.isEmpty()) return
     val context = LocalContext.current
+    val safeInitialPage = initialIndex.coerceIn(0, mediaItems.lastIndex)
+    val pagerState = rememberPagerState(initialPage = safeInitialPage) { mediaItems.size }
+    var currentItemScale by remember { mutableFloatStateOf(1f) }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -81,132 +98,32 @@ fun FullscreenMediaViewerDialog(
                 .fillMaxSize()
                 .background(Color.Black),
         ) {
-            if (isVideo) {
-                var isPlaying by remember { mutableStateOf(true) }
-                var isMuted by remember { mutableStateOf(false) }
-                var currentPositionMs by remember { mutableLongStateOf(0L) }
-                var totalDurationMs by remember { mutableLongStateOf(0L) }
-                var isBuffering by remember { mutableStateOf(true) }
-
-                val exoPlayer = remember(mediaUrl) {
-                    ExoPlayer.Builder(context).build().apply {
-                        setMediaItem(MediaItem.fromUri(mediaUrl))
-                        repeatMode = Player.REPEAT_MODE_ONE
-                        playWhenReady = true
-                        prepare()
-                        addListener(object : Player.Listener {
-                            override fun onPlaybackStateChanged(playbackState: Int) {
-                                isBuffering = playbackState == Player.STATE_BUFFERING
-                                if (playbackState == Player.STATE_READY) {
-                                    totalDurationMs = duration.coerceAtLeast(0L)
-                                }
-                            }
-
-                            override fun onIsPlayingChanged(playing: Boolean) {
-                                isPlaying = playing
-                            }
-                        })
-                    }
-                }
-
-                DisposableEffect(exoPlayer) {
-                    onDispose { exoPlayer.release() }
-                }
-
-                LaunchedEffect(exoPlayer) {
-                    while (isActive) {
-                        currentPositionMs = exoPlayer.currentPosition.coerceAtLeast(0L)
-                        delay(250)
-                    }
-                }
-
-                // Video Surface
-                AndroidView(
-                    factory = { ctx ->
-                        PlayerView(ctx).apply {
-                            player = exoPlayer
-                            useController = false
-                            resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                        }
-                    },
-                    modifier = Modifier.fillMaxSize(),
-                )
-
-                if (isBuffering) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.align(Alignment.Center),
-                        color = Color.White,
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxSize(),
+                userScrollEnabled = currentItemScale <= 1.05f,
+            ) { page ->
+                val item = mediaItems[page]
+                if (item.isVideo) {
+                    FullscreenVideoPlayer(
+                        videoUrl = item.url,
+                        isCurrentPage = pagerState.currentPage == page,
                     )
-                }
-
-                // Video Controls Bottom Bar
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .align(Alignment.BottomCenter)
-                        .background(Color.Black.copy(alpha = 0.6f))
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                ) {
-                    Slider(
-                        value = if (totalDurationMs > 0) currentPositionMs.toFloat() / totalDurationMs.toFloat() else 0f,
-                        onValueChange = { fraction ->
-                            val seekTo = (fraction * totalDurationMs).toLong()
-                            exoPlayer.seekTo(seekTo)
-                            currentPositionMs = seekTo
+                } else {
+                    ZoomablePhotoView(
+                        imageUrl = item.url,
+                        contentDescription = item.title,
+                        onScaleChanged = { scale ->
+                            if (pagerState.currentPage == page) {
+                                currentItemScale = scale
+                            }
                         },
-                        colors = SliderDefaults.colors(
-                            thumbColor = Color.White,
-                            activeTrackColor = Color.White,
-                            inactiveTrackColor = Color.White.copy(alpha = 0.3f),
-                        ),
                     )
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            IconButton(onClick = {
-                                if (isPlaying) exoPlayer.pause() else exoPlayer.play()
-                            }) {
-                                Icon(
-                                    imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                                    contentDescription = if (isPlaying) "مکث" else "پخش",
-                                    tint = Color.White,
-                                )
-                            }
-                            Spacer(Modifier.width(8.dp))
-                            IconButton(onClick = {
-                                isMuted = !isMuted
-                                exoPlayer.volume = if (isMuted) 0f else 1f
-                            }) {
-                                Icon(
-                                    imageVector = if (isMuted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
-                                    contentDescription = if (isMuted) "وصل صدا" else "قطع صدا",
-                                    tint = Color.White,
-                                )
-                            }
-                        }
-
-                        Text(
-                            text = "${formatDuration(currentPositionMs)} / ${formatDuration(totalDurationMs)}",
-                            color = Color.White,
-                            fontSize = 12.sp,
-                        )
-                    }
                 }
-            } else {
-                // Photo Viewer
-                AsyncImage(
-                    model = mediaUrl,
-                    contentDescription = title,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Fit,
-                )
             }
 
             // Top Bar Overlay
+            val currentItem = mediaItems.getOrNull(pagerState.currentPage)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -224,19 +141,30 @@ fun FullscreenMediaViewerDialog(
                     )
                 }
 
-                if (!title.isNullOrBlank()) {
-                    Text(
-                        text = title,
-                        color = Color.White,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold,
-                    )
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    if (mediaItems.size > 1) {
+                        Text(
+                            text = "${pagerState.currentPage + 1} / ${mediaItems.size}",
+                            color = Color.White.copy(alpha = 0.85f),
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                        )
+                    }
+                    if (!currentItem?.title.isNullOrBlank()) {
+                        Text(
+                            text = currentItem?.title.orEmpty(),
+                            color = Color.White,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
                 }
 
                 IconButton(onClick = {
+                    val urlToShare = currentItem?.url ?: return@IconButton
                     val sendIntent = Intent().apply {
                         action = Intent.ACTION_SEND
-                        putExtra(Intent.EXTRA_TEXT, mediaUrl)
+                        putExtra(Intent.EXTRA_TEXT, urlToShare)
                         type = "text/plain"
                     }
                     context.startActivity(Intent.createChooser(sendIntent, "اشتراک‌گذاری"))
@@ -247,6 +175,212 @@ fun FullscreenMediaViewerDialog(
                         tint = Color.White,
                     )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+fun FullscreenMediaViewerDialog(
+    mediaUrl: String,
+    isVideo: Boolean,
+    title: String? = null,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+) = FullscreenMediaViewerDialog(
+    mediaItems = listOf(MediaViewerItem(url = mediaUrl, isVideo = isVideo, title = title)),
+    initialIndex = 0,
+    onDismiss = onDismiss,
+    modifier = modifier,
+)
+
+@Composable
+private fun ZoomablePhotoView(
+    imageUrl: String,
+    contentDescription: String?,
+    onScaleChanged: (Float) -> Unit = {},
+) {
+    var scale by remember { mutableFloatStateOf(1f) }
+    var offset by remember { mutableStateOf(Offset.Zero) }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onDoubleTap = {
+                        if (scale > 1.2f) {
+                            scale = 1f
+                            offset = Offset.Zero
+                        } else {
+                            scale = 2.5f
+                        }
+                        onScaleChanged(scale)
+                    },
+                )
+            }
+            .pointerInput(Unit) {
+                detectTransformGestures { _, pan, zoom, _ ->
+                    val newScale = (scale * zoom).coerceIn(1f, 5f)
+                    scale = newScale
+                    onScaleChanged(newScale)
+                    if (newScale > 1f) {
+                        val maxOffsetX = (size.width * (newScale - 1f)) / 2f
+                        val maxOffsetY = (size.height * (newScale - 1f)) / 2f
+                        offset = Offset(
+                            x = (offset.x + pan.x * newScale).coerceIn(-maxOffsetX, maxOffsetX),
+                            y = (offset.y + pan.y * newScale).coerceIn(-maxOffsetY, maxOffsetY),
+                        )
+                    } else {
+                        offset = Offset.Zero
+                    }
+                }
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        AsyncImage(
+            model = imageUrl,
+            contentDescription = contentDescription,
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer(
+                    scaleX = scale,
+                    scaleY = scale,
+                    translationX = offset.x,
+                    translationY = offset.y,
+                ),
+            contentScale = ContentScale.Fit,
+        )
+    }
+}
+
+@OptIn(UnstableApi::class)
+@Composable
+private fun FullscreenVideoPlayer(
+    videoUrl: String,
+    isCurrentPage: Boolean,
+) {
+    val context = LocalContext.current
+    var isPlaying by remember { mutableStateOf(true) }
+    var isMuted by remember { mutableStateOf(false) }
+    var currentPositionMs by remember { mutableLongStateOf(0L) }
+    var totalDurationMs by remember { mutableLongStateOf(0L) }
+    var isBuffering by remember { mutableStateOf(true) }
+
+    val exoPlayer = remember(videoUrl) {
+        ExoPlayer.Builder(context).build().apply {
+            setMediaItem(MediaItem.fromUri(videoUrl))
+            repeatMode = Player.REPEAT_MODE_ONE
+            playWhenReady = true
+            prepare()
+            addListener(object : Player.Listener {
+                override fun onPlaybackStateChanged(playbackState: Int) {
+                    isBuffering = playbackState == Player.STATE_BUFFERING
+                    if (playbackState == Player.STATE_READY) {
+                        totalDurationMs = duration.coerceAtLeast(0L)
+                    }
+                }
+
+                override fun onIsPlayingChanged(playing: Boolean) {
+                    isPlaying = playing
+                }
+            })
+        }
+    }
+
+    LaunchedEffect(isCurrentPage) {
+        if (!isCurrentPage) {
+            exoPlayer.pause()
+        } else {
+            exoPlayer.play()
+        }
+    }
+
+    DisposableEffect(exoPlayer) {
+        onDispose { exoPlayer.release() }
+    }
+
+    LaunchedEffect(exoPlayer) {
+        while (isActive) {
+            currentPositionMs = exoPlayer.currentPosition.coerceAtLeast(0L)
+            delay(250)
+        }
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        AndroidView(
+            factory = { ctx ->
+                PlayerView(ctx).apply {
+                    player = exoPlayer
+                    useController = false
+                    resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                }
+            },
+            modifier = Modifier.fillMaxSize(),
+        )
+
+        if (isBuffering) {
+            CircularProgressIndicator(
+                modifier = Modifier.align(Alignment.Center),
+                color = Color.White,
+            )
+        }
+
+        // Video Controls Bottom Bar
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .align(Alignment.BottomCenter)
+                .background(Color.Black.copy(alpha = 0.6f))
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+        ) {
+            Slider(
+                value = if (totalDurationMs > 0) currentPositionMs.toFloat() / totalDurationMs.toFloat() else 0f,
+                onValueChange = { fraction ->
+                    val seekTo = (fraction * totalDurationMs).toLong()
+                    exoPlayer.seekTo(seekTo)
+                    currentPositionMs = seekTo
+                },
+                colors = SliderDefaults.colors(
+                    thumbColor = Color.White,
+                    activeTrackColor = Color.White,
+                    inactiveTrackColor = Color.White.copy(alpha = 0.3f),
+                ),
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = {
+                        if (isPlaying) exoPlayer.pause() else exoPlayer.play()
+                    }) {
+                        Icon(
+                            imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                            contentDescription = if (isPlaying) "مکث" else "پخش",
+                            tint = Color.White,
+                        )
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    IconButton(onClick = {
+                        isMuted = !isMuted
+                        exoPlayer.volume = if (isMuted) 0f else 1f
+                    }) {
+                        Icon(
+                            imageVector = if (isMuted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
+                            contentDescription = if (isMuted) "وصل صدا" else "قطع صدا",
+                            tint = Color.White,
+                        )
+                    }
+                }
+
+                Text(
+                    text = "${formatDuration(currentPositionMs)} / ${formatDuration(totalDurationMs)}",
+                    color = Color.White,
+                    fontSize = 12.sp,
+                )
             }
         }
     }

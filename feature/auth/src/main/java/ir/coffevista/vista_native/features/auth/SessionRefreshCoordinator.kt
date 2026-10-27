@@ -11,6 +11,8 @@ import ir.coffevista.vista_native.features.auth.domain.AuthRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -43,11 +45,45 @@ class SingleFlightSessionRefreshCoordinator @Inject constructor(
     @ApplicationScope private val applicationScope: CoroutineScope,
 ) : SessionRefreshCoordinator {
     private val inFlight = ConcurrentHashMap<String, Deferred<RefreshResolution>>()
+    private val refreshMutex = Mutex()
+    private val rotatedFrom = ConcurrentHashMap<String, AuthPayload>()
+
+    @Volatile
+    private var latestPayload: AuthPayload? = null
 
     override suspend fun refresh(refreshToken: String): RefreshResolution {
+        rotatedFrom[refreshToken]?.let { return RefreshResolution.Refreshed(it) }
         val deferred = inFlight.computeIfAbsent(refreshToken) {
             applicationScope.async {
-                performRefresh(repository, sessionStore, accountWorkController, refreshToken)
+                refreshMutex.withLock {
+                    rotatedFrom[refreshToken]?.let { return@withLock RefreshResolution.Refreshed(it) }
+                    val storedToken = runCatching { sessionStore.read()?.refreshToken }.getOrNull()
+                    val latest = latestPayload
+                    if (
+                        !storedToken.isNullOrBlank() &&
+                        storedToken != refreshToken &&
+                        latest != null &&
+                        latest.session.refreshToken == storedToken
+                    ) {
+                        return@withLock RefreshResolution.Refreshed(latest)
+                    }
+
+                    val resolution = performRefresh(
+                        repository = repository,
+                        sessionStore = sessionStore,
+                        accountWorkController = accountWorkController,
+                        refreshToken = refreshToken,
+                    )
+                    if (resolution is RefreshResolution.Refreshed) {
+                        rotatedFrom[refreshToken] = resolution.payload
+                        latestPayload = resolution.payload
+                        if (rotatedFrom.size > 32) {
+                            val oldestKey = rotatedFrom.keys().nextElement()
+                            if (oldestKey != refreshToken) rotatedFrom.remove(oldestKey)
+                        }
+                    }
+                    resolution
+                }
             }
         }
         return try {
@@ -63,28 +99,40 @@ private suspend fun performRefresh(
     sessionStore: SessionStore,
     accountWorkController: AccountWorkController,
     refreshToken: String,
-): RefreshResolution = when (val result = repository.refresh(refreshToken)) {
-    is Outcome.Success -> {
-        runCatching { sessionStore.save(result.value) }
-            .fold(
-                onSuccess = { RefreshResolution.Refreshed(result.value) },
-                onFailure = { RefreshResolution.PersistenceFailure },
-            )
-    }
-    is Outcome.Failure -> {
-        if (
-            result.error.kind == ErrorKind.UNAUTHORIZED ||
-            result.error.kind == ErrorKind.FORBIDDEN ||
-            result.error.kind == ErrorKind.ACCOUNT_DISABLED
-        ) {
-            val accountId = runCatching { sessionStore.read()?.userId }.getOrNull()
-            runCatching(sessionStore::clear)
-            accountId?.let { id ->
-                runCatching { accountWorkController.cancelAccountWork(id) }
+): RefreshResolution {
+    val tokenBeforeRefresh = runCatching { sessionStore.read()?.refreshToken }.getOrNull()
+    return when (val result = repository.refresh(refreshToken)) {
+        is Outcome.Success -> {
+            runCatching { sessionStore.save(result.value) }
+                .fold(
+                    onSuccess = { RefreshResolution.Refreshed(result.value) },
+                    onFailure = { RefreshResolution.PersistenceFailure },
+                )
+        }
+        is Outcome.Failure -> {
+            if (
+                result.error.kind == ErrorKind.UNAUTHORIZED ||
+                result.error.kind == ErrorKind.FORBIDDEN ||
+                result.error.kind == ErrorKind.ACCOUNT_DISABLED
+            ) {
+                val currentStored = runCatching { sessionStore.read() }.getOrNull()
+                val currentToken = currentStored?.refreshToken
+                val rotatedDuringCall = !currentToken.isNullOrBlank() &&
+                    currentToken != refreshToken &&
+                    currentToken != tokenBeforeRefresh
+                if (rotatedDuringCall) {
+                    RefreshResolution.TransientFailure
+                } else {
+                    val accountId = currentStored?.userId
+                    runCatching(sessionStore::clear)
+                    accountId?.let { id ->
+                        runCatching { accountWorkController.cancelAccountWork(id) }
+                    }
+                    RefreshResolution.TerminalSession
+                }
+            } else {
+                RefreshResolution.TransientFailure
             }
-            RefreshResolution.TerminalSession
-        } else {
-            RefreshResolution.TransientFailure
         }
     }
 }

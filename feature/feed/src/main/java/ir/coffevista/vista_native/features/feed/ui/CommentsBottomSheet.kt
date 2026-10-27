@@ -68,6 +68,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import ir.coffevista.vista_native.core.designsystem.R as DesignSystemR
 import ir.coffevista.vista_native.features.feed.data.Comment
+import ir.coffevista.vista_native.features.feed.data.CommentMention
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import java.time.Duration
@@ -222,10 +223,16 @@ fun CommentsBottomSheet(
                 }
             }
             
+            val allMentionCandidates = remember(uiState.comments, uiState.searchedMentions) {
+                val fromComments = commentMentionCandidates(uiState.comments)
+                (fromComments + uiState.searchedMentions).distinctBy { it.userId }
+            }
+
             CommentComposer(
                 replyingTo = uiState.replyingTo,
                 editingComment = uiState.editingComment,
-                mentionCandidates = commentMentionCandidates(uiState.comments),
+                mentionCandidates = allMentionCandidates,
+                onSearchMentions = viewModel::searchMentions,
                 onSubmit = { draft ->
                     viewModel.submitComment(
                         content = draft.content,
@@ -352,7 +359,7 @@ internal fun CommentThread(
     onHashtagClick: (String) -> Unit = {},
     depth: Int = 0,
 ) {
-    val flattenedReplies = remember(comment.replies) { flattenReplies(comment.replies) }
+    val flattenedReplies = remember(comment) { flattenRepliesWithMeta(comment) }
     var visibleReplyCount by remember(comment.id) { mutableIntStateOf(1) }
     val shownReplies = flattenedReplies.take(visibleReplyCount)
     val hasReplies = flattenedReplies.isNotEmpty()
@@ -372,42 +379,30 @@ internal fun CommentThread(
         isReply = depth > 0,
         hasLineAbove = depth > 0,
         hasLineBelow = (depth == 0 && hasReplies && visibleReplyCount > 0) || depth > 0,
+        depth = depth,
     )
 
     if (depth > 0) return
 
-    // Flutter renders this explicit empty-reply state under each root comment.
-    // It is intentionally not shown for reply rows: those are leaves in the flattened thread.
-    if (!hasReplies) {
-        Text(
-            text = "هنوز پاسخی وجود ندارد",
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-            fontSize = 14.sp,
-            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
-            textAlign = TextAlign.Center,
-        )
-    }
-
-    shownReplies.forEachIndexed { index, reply ->
+    shownReplies.forEachIndexed { index, replyItem ->
         val isLastReply = index == shownReplies.lastIndex
         CommentItem(
-            comment = reply,
-            onReply = { onReply(reply) },
-            onEdit = { newContent -> onEdit(reply, newContent) },
-            onDelete = { onDelete(reply.id) },
-            onReport = { onReport(reply.id) },
-            canEdit = canEdit(reply),
-            canDelete = canDelete(reply),
-            canReport = canReport(reply),
-            isCommentAuthor = isCommentAuthor(reply),
+            comment = replyItem.comment,
+            onReply = { onReply(replyItem.comment) },
+            onEdit = { newContent -> onEdit(replyItem.comment, newContent) },
+            onDelete = { onDelete(replyItem.comment.id) },
+            onReport = { onReport(replyItem.comment.id) },
+            canEdit = canEdit(replyItem.comment),
+            canDelete = canDelete(replyItem.comment),
+            canReport = canReport(replyItem.comment),
+            isCommentAuthor = isCommentAuthor(replyItem.comment),
             onAuthorClick = onAuthorClick,
             onHashtagClick = onHashtagClick,
             isReply = true,
             hasLineAbove = true,
             hasLineBelow = !isLastReply && !isLoadingReplies,
+            depth = replyItem.depth,
+            replyingToUsername = replyItem.replyingToUsername,
         )
     }
 
@@ -450,6 +445,29 @@ internal fun CommentThread(
     }
 }
 
+internal data class FlattenedReply(
+    val comment: Comment,
+    val depth: Int,
+    val replyingToUsername: String?,
+)
+
+private fun flattenRepliesWithMeta(root: Comment): List<FlattenedReply> = buildList {
+    val authorMap = mutableMapOf<String, String>()
+    root.authorUsername?.takeIf(String::isNotBlank)?.let { authorMap[root.id] = it }
+        ?: run { authorMap[root.id] = root.authorFullName }
+
+    fun append(items: List<Comment>, currentDepth: Int) {
+        items.forEach { reply ->
+            reply.authorUsername?.takeIf(String::isNotBlank)?.let { authorMap[reply.id] = it }
+                ?: run { authorMap[reply.id] = reply.authorFullName }
+            val parentName = reply.parentCommentId?.let { authorMap[it] }
+            add(FlattenedReply(comment = reply, depth = currentDepth, replyingToUsername = parentName))
+            append(reply.replies, currentDepth + 1)
+        }
+    }
+    append(root.replies, 1)
+}
+
 private fun flattenReplies(replies: List<Comment>): List<Comment> = buildList {
     fun append(items: List<Comment>) {
         items.forEach { reply ->
@@ -459,12 +477,6 @@ private fun flattenReplies(replies: List<Comment>): List<Comment> = buildList {
     }
     append(replies)
 }
-
-/** A mention is stored by stable user ID; the username is presentation-only. */
-internal data class CommentMention(
-    val userId: String,
-    val username: String,
-)
 
 internal data class CommentDraft(
     val content: String,
@@ -511,6 +523,8 @@ private fun CommentItem(
     isReply: Boolean = false,
     hasLineAbove: Boolean = false,
     hasLineBelow: Boolean = false,
+    depth: Int = 0,
+    replyingToUsername: String? = null,
 ) {
     // Flutter creates every CommentItem at 0.8 scale with a 300ms fade/elastic entrance.
     // Scope it to the stable item ID so normal scrolling/recomposition does not replay it.
@@ -705,10 +719,24 @@ private fun CommentItem(
                     }
                 }
             } else {
+                if (!replyingToUsername.isNullOrBlank() && depth >= 2) {
+                    Text(
+                        text = "در پاسخ به @$replyingToUsername",
+                        style = TextStyle(
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.SemiBold,
+                        ),
+                        modifier = Modifier
+                            .padding(bottom = 4.dp)
+                            .clickable { onAuthorClick(replyingToUsername) },
+                    )
+                }
                 // Normal comment text
                 ClickableCommentText(
                     text = comment.content,
                     onHashtagClick = onHashtagClick,
+                    onAuthorClick = onAuthorClick,
                 )
                 
                 Spacer(Modifier.height(8.dp))
@@ -836,17 +864,35 @@ private fun CommentItem(
 }
 
 @Composable
-private fun ClickableCommentText(text: String, onHashtagClick: (String) -> Unit) {
+private fun ClickableCommentText(
+    text: String,
+    onHashtagClick: (String) -> Unit,
+    onAuthorClick: (String) -> Unit = {},
+) {
     val textColor = MaterialTheme.colorScheme.onSurface
     val tagColor = MaterialTheme.colorScheme.primary
     val annotated = remember(text, textColor, tagColor) {
         buildAnnotatedString {
+            val tokenRegex = Regex("(#[\\p{L}\\p{N}_]+|@[a-zA-Z0-9_.]+)")
             var cursor = 0
-            HASHTAG.findAll(text).forEach { match ->
+            tokenRegex.findAll(text).forEach { match ->
                 append(text.substring(cursor, match.range.first))
-                pushStringAnnotation(HASHTAG_ANNOTATION, match.value.removePrefix("#"))
-                withStyle(SpanStyle(color = tagColor, fontWeight = FontWeight.SemiBold)) { append(match.value) }
-                pop()
+                val value = match.value
+                if (value.startsWith("#")) {
+                    val tag = value.removePrefix("#")
+                    pushStringAnnotation(HASHTAG_ANNOTATION, tag)
+                    withStyle(SpanStyle(color = tagColor, fontWeight = FontWeight.SemiBold)) {
+                        append(value)
+                    }
+                    pop()
+                } else if (value.startsWith("@")) {
+                    val username = value.removePrefix("@")
+                    pushStringAnnotation(MENTION_ANNOTATION, username)
+                    withStyle(SpanStyle(color = tagColor, fontWeight = FontWeight.Bold)) {
+                        append(value)
+                    }
+                    pop()
+                }
                 cursor = match.range.last + 1
             }
             if (cursor < text.length) append(text.substring(cursor))
@@ -863,11 +909,14 @@ private fun ClickableCommentText(text: String, onHashtagClick: (String) -> Unit)
         onClick = { offset ->
             annotated.getStringAnnotations(HASHTAG_ANNOTATION, offset, offset)
                 .firstOrNull()?.item?.takeIf(String::isNotBlank)?.let(onHashtagClick)
+            annotated.getStringAnnotations(MENTION_ANNOTATION, offset, offset)
+                .firstOrNull()?.item?.takeIf(String::isNotBlank)?.let(onAuthorClick)
         },
     )
 }
 
 private const val HASHTAG_ANNOTATION = "comment_hashtag"
+private const val MENTION_ANNOTATION = "comment_mention"
 private val HASHTAG = Regex("#[\\p{L}\\p{N}_]+")
 
 @Composable
@@ -877,28 +926,12 @@ internal fun CommentVerificationBadge(
     role: String? = null,
     size: Dp = 14.dp,
 ) {
-    if (!isVerified) return
-    val isDark = isSystemInDarkTheme()
-    val normType = verificationType?.lowercase()?.replace("[^a-z]".toRegex(), "") ?: ""
-    val badgeColor = when {
-        normType.contains("gold") -> Color(0xFFFFA000)
-        normType.contains("black") -> if (isDark) Color.White else Color.Black
-        else -> Color(0xFF2196F3)
-    }
-    Box(
-        modifier = Modifier
-            .size(size)
-            .clip(CircleShape)
-            .background(badgeColor),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = "✓",
-            color = if (badgeColor == Color.White) Color.Black else Color.White,
-            fontSize = (size.value * 0.55f).sp,
-            fontWeight = FontWeight.Bold,
-        )
-    }
+    ir.coffevista.vista_native.core.designsystem.component.VistaVerificationBadge(
+        isVerified = isVerified,
+        verificationType = verificationType,
+        role = role,
+        size = size,
+    )
 }
 
 @Composable
@@ -949,21 +982,14 @@ private fun isRtlText(text: String): Boolean {
     return rtlRegex.containsMatchIn(text)
 }
 
-private fun commentRelativeTime(raw: String): String = runCatching {
-    val duration = Duration.between(Instant.parse(raw), Instant.now())
-    when {
-        duration.toMinutes() < 1 -> "همین الان"
-        duration.toHours() < 1 -> "${duration.toMinutes()} دقیقه پیش"
-        duration.toDays() < 1 -> "${duration.toHours()} ساعت پیش"
-        else -> "${duration.toDays()} روز پیش"
-    }
-}.getOrDefault(raw.take(10))
+private fun commentRelativeTime(raw: String): String = ir.coffevista.vista_native.core.common.persianRelativeTime(raw).ifEmpty { "همین الان" }
 
 @Composable
 internal fun CommentComposer(
     replyingTo: Comment?,
     editingComment: Comment?,
     mentionCandidates: List<CommentMention> = emptyList(),
+    onSearchMentions: (String) -> Unit = {},
     onSubmit: (CommentDraft) -> Unit,
     onCancelReplyOrEdit: () -> Unit,
     isSubmitting: Boolean = false,
@@ -981,6 +1007,12 @@ internal fun CommentComposer(
         if (lastWord.startsWith("@") && lastWord.length > 1) {
             lastWord.removePrefix("@").lowercase()
         } else null
+    }
+
+    LaunchedEffect(mentionMatch) {
+        if (!mentionMatch.isNullOrBlank()) {
+            onSearchMentions(mentionMatch)
+        }
     }
 
     var selectedMentions by rememberSaveable(replyingTo?.id, editingComment?.id) {

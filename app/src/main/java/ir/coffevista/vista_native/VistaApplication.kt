@@ -26,6 +26,20 @@ class VistaApplication : Application(), Configuration.Provider, ImageLoaderFacto
 
     override fun onCreate() {
         super.onCreate()
+        val prefs = getSharedPreferences(
+            ir.coffevista.vista_native.core.common.DeviceIdProvider.PREFERENCES_NAME,
+            MODE_PRIVATE,
+        )
+        val deviceId = prefs.getString(
+            ir.coffevista.vista_native.core.common.DeviceIdProvider.KEY_DEVICE_ID,
+            null,
+        )?.takeIf(String::isNotBlank) ?: java.util.UUID.randomUUID().toString().also { generated ->
+            prefs.edit()
+                .putString(ir.coffevista.vista_native.core.common.DeviceIdProvider.KEY_DEVICE_ID, generated)
+                .apply()
+        }
+        ir.coffevista.vista_native.core.common.DeviceIdProvider.current =
+            ir.coffevista.vista_native.core.common.DeviceIdProvider { deviceId }
         ir.coffevista.vista_native.crash.VistaCrashReporter.install(this)
     }
 

@@ -20,9 +20,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -32,6 +34,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.testTag
@@ -42,6 +45,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import ir.coffevista.vista_native.features.feed.ui.components.EditPostDialog
 import ir.coffevista.vista_native.features.feed.ui.components.ReportReasonDialog
+import ir.coffevista.vista_native.features.feed.ui.components.VistaFullscreenImageViewer
 import ir.coffevista.vista_native.features.feed.data.FeedPost
 import ir.coffevista.vista_native.core.designsystem.R as DesignSystemR
 
@@ -72,6 +76,10 @@ fun PostDetailScreen(
     PostDetailContent(
         uiState = uiState,
         commentsState = commentsState,
+        onRefresh = {
+            viewModel.refresh()
+            postId?.let(commentsViewModel::loadComments)
+        },
         onBack = onBack,
         onAuthorClick = onAuthorClick,
         onLikeClick = { _, isLiked, count -> viewModel.toggleLike(isLiked, count) },
@@ -149,6 +157,7 @@ fun PostDetailScreen(
 internal fun PostDetailContent(
     uiState: PostDetailUiState,
     commentsState: CommentsUiState = CommentsUiState(),
+    onRefresh: () -> Unit = {},
     onBack: () -> Unit,
     onAuthorClick: (String) -> Unit = {},
     onLikeClick: (String, Boolean, Long) -> Unit = { _, _, _ -> },
@@ -176,6 +185,7 @@ internal fun PostDetailContent(
     onSubmitComment: (CommentDraft) -> Unit = {},
     onCancelReplyOrEdit: () -> Unit = {},
 ) {
+    var fullscreenMedia by remember { mutableStateOf<Pair<List<String>, Int>?>(null) }
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -199,6 +209,8 @@ internal fun PostDetailContent(
                 is PostDetailUiState.Content -> {
                     ReadOnlyPostDetail(
                         state = state,
+                        onRefresh = onRefresh,
+                        onMediaClick = { imgs, idx -> fullscreenMedia = imgs to idx },
                         onAuthorClick = { onAuthorClick(state.post.userId) },
                         onCommentAuthorClick = onAuthorClick,
                         onLikeClick = onLikeClick,
@@ -228,6 +240,13 @@ internal fun PostDetailContent(
                         onCancelReplyOrEdit = onCancelReplyOrEdit,
                     )
                 }
+            }
+            fullscreenMedia?.let { (images, initialIndex) ->
+                VistaFullscreenImageViewer(
+                    images = images,
+                    initialIndex = initialIndex,
+                    onDismiss = { fullscreenMedia = null },
+                )
             }
         }
     }
@@ -263,9 +282,12 @@ private fun PostDetailAppBar(onBack: () -> Unit) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ReadOnlyPostDetail(
     state: PostDetailUiState.Content,
+    onRefresh: () -> Unit = {},
+    onMediaClick: ((List<String>, Int) -> Unit)? = null,
     onAuthorClick: () -> Unit,
     onCommentAuthorClick: (String) -> Unit,
     onLikeClick: (String, Boolean, Long) -> Unit,
@@ -306,29 +328,35 @@ private fun ReadOnlyPostDetail(
                 color = androidx.compose.ui.graphics.Color.White, fontSize = 13.sp, fontWeight = FontWeight.Medium,
             )
         }
-        LazyColumn(modifier = Modifier.weight(1f)) {
-          item {
-            VistaFeedPostCard(
-                post = state.post,
-                isOwnPost = state.post.userId == state.viewerUserId,
-                onPostClick = {},
-                onAuthorClick = onAuthorClick,
-                onLikeClick = onLikeClick,
-                onSaveClick = onSaveClick,
-                onCommentClick = {},
-                onShareClick = { onShareClick(state.post) },
-                onEditPost = onEditPost,
-                onDeletePost = onDeletePost,
-                onReportPost = onReportPost,
-                onNotInterested = onNotInterested,
-                onVisibilityChange = onVisibilityChange,
-                onHashtagClick = onHashtagClick,
-                onMentionClick = onMentionClick,
-                onAppealClick = onAppealClick,
-                verticalMenu = true,
-                modifier = Modifier.testTag(PostDetailTestTags.Author),
-            )
-          }
+        PullToRefreshBox(
+            isRefreshing = state.isRefreshing,
+            onRefresh = onRefresh,
+            modifier = Modifier.weight(1f),
+        ) {
+            LazyColumn(modifier = Modifier.fillMaxSize()) {
+              item {
+                VistaFeedPostCard(
+                    post = state.post,
+                    isOwnPost = state.post.userId == state.viewerUserId,
+                    onPostClick = {},
+                    onMediaClick = onMediaClick,
+                    onAuthorClick = onAuthorClick,
+                    onLikeClick = onLikeClick,
+                    onSaveClick = onSaveClick,
+                    onCommentClick = {},
+                    onShareClick = { onShareClick(state.post) },
+                    onEditPost = onEditPost,
+                    onDeletePost = onDeletePost,
+                    onReportPost = onReportPost,
+                    onNotInterested = onNotInterested,
+                    onVisibilityChange = onVisibilityChange,
+                    onHashtagClick = onHashtagClick,
+                    onMentionClick = onMentionClick,
+                    onAppealClick = onAppealClick,
+                    verticalMenu = true,
+                    modifier = Modifier.testTag(PostDetailTestTags.Author),
+                )
+              }
           item {
             HorizontalDivider(
                 thickness = 0.5.dp,
@@ -342,6 +370,7 @@ private fun ReadOnlyPostDetail(
                     painter = painterResource(DesignSystemR.drawable.vista_post_comment),
                     contentDescription = null,
                     modifier = Modifier.size(20.dp),
+                    colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.onBackground),
                 )
                 Spacer(Modifier.width(8.dp))
                 Text("نظرات", fontSize = 16.sp, fontWeight = FontWeight.Bold)
@@ -388,6 +417,7 @@ private fun ReadOnlyPostDetail(
                 }
           }
         }
+        }
         CommentComposer(
             replyingTo = commentsState.replyingTo,
             editingComment = commentsState.editingComment,
@@ -412,6 +442,7 @@ private fun ReadOnlyCommentsSummary(post: FeedPost) {
             painter = painterResource(DesignSystemR.drawable.vista_post_comment),
             contentDescription = null,
             modifier = Modifier.align(Alignment.CenterHorizontally).size(48.dp),
+            colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.onSurfaceVariant),
         )
         Text(
             text = if (post.hideCommentCount) "تعداد نظرات نمایش داده نمی‌شود."

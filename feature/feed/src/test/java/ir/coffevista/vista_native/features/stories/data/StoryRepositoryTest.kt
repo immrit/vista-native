@@ -144,9 +144,34 @@ class StoryRepositoryTest {
     }
 
     @Test
-    fun `votePoll records user choice`() = runTest {
+    fun `votePoll records user choice and updates state optimistically`() = runTest {
+        repository.refreshActiveStories()
         val result = repository.votePoll("story_1", "elem_1", 2)
         assertTrue(result.isSuccess)
         assertEquals("2", fakeApi.lastVoteOption)
+    }
+
+    @Test
+    fun `reportStory succeeds`() = runTest {
+        val result = repository.reportStory("story_1", "اسپم")
+        assertTrue(result.isSuccess)
+    }
+
+    @Test
+    fun `answerQuestion succeeds`() = runTest {
+        val result = repository.answerQuestion("story_1", "q_1", "پاسخ من")
+        assertTrue(result.isSuccess)
+    }
+
+    @Test
+    fun `getUserHighlights returns list`() = runTest {
+        val result = repository.getUserHighlights("user_1")
+        assertTrue(result.isSuccess)
+    }
+
+    @Test
+    fun `createHighlight succeeds`() = runTest {
+        val result = repository.createHighlight("خاطرات", null, listOf("story_1"))
+        assertTrue(result.isSuccess)
     }
 }

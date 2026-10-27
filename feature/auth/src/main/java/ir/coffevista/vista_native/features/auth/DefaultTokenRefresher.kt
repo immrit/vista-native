@@ -10,13 +10,26 @@ import javax.inject.Singleton
 class DefaultTokenRefresher @Inject constructor(
     private val sessionStore: SessionStore,
     private val refreshCoordinator: SessionRefreshCoordinator,
+    private val authenticationStateOwner: AuthenticationStateOwner,
 ) : TokenRefresher {
+    constructor(
+        sessionStore: SessionStore,
+        refreshCoordinator: SessionRefreshCoordinator,
+    ) : this(sessionStore, refreshCoordinator, AuthenticationStateOwner())
+
     override fun refreshToken(): String? {
         val current = sessionStore.read() ?: return null
         val token = current.refreshToken
         if (token.isBlank()) return null
         return when (val res = runBlocking { refreshCoordinator.refresh(token) }) {
-            is RefreshResolution.Refreshed -> res.payload.session.accessToken
+            is RefreshResolution.Refreshed -> {
+                authenticationStateOwner?.refreshSession(res.payload)
+                res.payload.session.accessToken
+            }
+            RefreshResolution.TerminalSession -> {
+                authenticationStateOwner?.signOut()
+                null
+            }
             else -> null
         }
     }

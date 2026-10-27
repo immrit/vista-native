@@ -32,8 +32,7 @@ fun Conversation.peerIdentityKey(): String {
         return "GROUP:$id"
     }
     val cleanPeer = peerId?.trim()?.lowercase()?.takeIf(String::isNotEmpty)
-    val cleanTitle = title.trim().lowercase().takeIf { it.isNotEmpty() && it != "کاربر" && it != "user" }
-    val identity = cleanPeer ?: cleanTitle ?: id
+    val identity = cleanPeer ?: id
     return "${type.name}:$identity"
 }
 
@@ -90,6 +89,8 @@ data class SharedPostDraft(
     val verificationType: String = "none",
     val role: String? = null,
     val hashtags: List<String> = emptyList(),
+    val authorId: String? = null,
+    val hasStory: Boolean = false,
 )
 
 /** Ephemeral peer metadata for the in-chat detail screen. Never persisted with messages. */
@@ -233,7 +234,13 @@ data class Attachment(
     val mediaGroupId: String? = null,
     val progress: Float = 1f,
     val transferState: TransferState = TransferState.COMPLETE,
-)
+) {
+    val parsedWaveform: List<Float>
+        get() = if (audioAlbum?.startsWith("wf:") == true) {
+            audioAlbum.removePrefix("wf:").split(",")
+                .mapNotNull { it.trim().toFloatOrNull() }
+        } else emptyList()
+}
 
 enum class AttachmentKind { IMAGE, VIDEO, GIF, VOICE, AUDIO, DOCUMENT, UNKNOWN }
 
@@ -264,8 +271,16 @@ fun chatMessageTypePreview(type: String?, secret: Boolean = false): String? {
 fun Message.inboxPreviewText(): String = attachment?.let { value ->
     chatMessageTypePreview(value.kind.name, secret = false)
 } ?: when (val value = content) {
-    is MessageContent.Text -> value.value
-    is MessageContent.Structured -> value.payload
+    is MessageContent.Text -> {
+        SharedPostParser.tryParse(value.value)?.let { post ->
+            "پست اشتراک‌گذاری‌شده: ${post.authorName}"
+        } ?: value.value
+    }
+    is MessageContent.Structured -> {
+        SharedPostParser.tryParse(value.payload)?.let { post ->
+            "پست اشتراک‌گذاری‌شده: ${post.authorName}"
+        } ?: value.payload
+    }
     MessageContent.Deleted -> "این پیام حذف شده است"
     MessageContent.EncryptedUnavailable -> "🔒 پیام رمزگذاری‌شده"
 }
@@ -278,7 +293,9 @@ fun Conversation.inboxPreviewText(): String? = lastMessage
     ?.trim()
     ?.takeIf(String::isNotEmpty)
     ?.let { preview ->
-        if (preview.looksLikeOpaqueConversationPreview()) "پیام جدید" else preview
+        SharedPostParser.tryParse(preview)?.let { post ->
+            "پست اشتراک‌گذاری‌شده: ${post.authorName}"
+        } ?: if (preview.looksLikeOpaqueConversationPreview()) "پیام جدید" else preview
     }
 
 private fun String.looksLikeOpaqueConversationPreview(): Boolean {

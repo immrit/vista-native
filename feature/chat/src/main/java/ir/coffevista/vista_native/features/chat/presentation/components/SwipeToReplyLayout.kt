@@ -37,10 +37,8 @@ fun SwipeToReplyLayout(
     val haptic = LocalHapticFeedback.current
     val density = LocalDensity.current
     val threshold = with(density) { 72.dp.toPx() }
-    // Reply bubbles follow the app's chat gesture convention: peer bubbles
-    // respond to a right swipe and our bubbles respond to a left swipe toward screen center.
-    val replyDirection = if (bubbleOnRight) -1f else 1f
-    val swipePolicy = remember(threshold, bubbleOnRight) {
+    // In Telegram, swiping to the left replies to any message (peer or mine)
+    val swipePolicy = remember(threshold) {
         ReplySwipePolicy(
             thresholdPx = threshold,
             touchSlopPx = with(density) { 8.dp.toPx() },
@@ -114,19 +112,19 @@ fun SwipeToReplyLayout(
             ),
         contentAlignment = Alignment.Center
     ) {
-        // Reply Icon Indicator Behind Bubble
+        // Reply Icon Indicator Behind Bubble (Telegram style: always right edge)
         val progress = (offsetX / threshold).coerceIn(0f, 1f)
         if (progress > 0.05f) {
             Box(
                 modifier = Modifier
-                    .align(if (bubbleOnRight) Alignment.CenterEnd else Alignment.CenterStart)
+                    .align(androidx.compose.ui.AbsoluteAlignment.CenterRight)
                     .padding(horizontal = 16.dp)
                     .size(36.dp)
                     .scale(progress)
                     .clip(CircleShape)
                     .background(VistaBrandColors.VioletDeep)
                     .graphicsLayer {
-                        rotationZ = (1f - progress) * 90f * replyDirection
+                        rotationZ = (1f - progress) * -90f
                     },
                 contentAlignment = Alignment.Center
             ) {
@@ -142,7 +140,7 @@ fun SwipeToReplyLayout(
         // Swipable Message Bubble Container
         Box(
             modifier = Modifier
-                .offset { IntOffset((offsetX * replyDirection).roundToInt(), 0) }
+                .offset { IntOffset(-offsetX.roundToInt(), 0) }
                 .fillMaxWidth()
         ) {
             content()
