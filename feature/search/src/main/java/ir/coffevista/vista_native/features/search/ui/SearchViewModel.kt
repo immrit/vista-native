@@ -81,6 +81,7 @@ class SearchViewModel @Inject constructor(
                         }
                     }
                     launch { loadTrending() }
+                    launch { loadExploreGrid() }
                     if (restoredQueryPending) {
                         restoredQueryPending = false
                         launch { executeSearch(force = true) }
@@ -310,7 +311,44 @@ class SearchViewModel @Inject constructor(
     }
 
     fun refreshTrending() {
-        viewModelScope.launch { loadTrending() }
+        viewModelScope.launch {
+            loadTrending()
+            loadExploreGrid(force = true)
+        }
+    }
+
+    fun loadExploreGrid(force: Boolean = false) {
+        if (!force && mutableState.value.explorePosts.isNotEmpty()) return
+        if (mutableState.value.isLoadingExplore) return
+        viewModelScope.launch {
+            mutableState.update { it.copy(isLoadingExplore = true) }
+            val posts = runCatching { repository.getExploreGrid(limit = 30, offset = 0) }.getOrDefault(emptyList())
+            mutableState.update {
+                it.copy(
+                    explorePosts = posts,
+                    isLoadingExplore = false,
+                    hasMoreExplore = posts.size >= 30,
+                )
+            }
+        }
+    }
+
+    fun loadMoreExplore() {
+        val current = mutableState.value
+        if (current.isLoadingExplore || !current.hasMoreExplore) return
+        viewModelScope.launch {
+            mutableState.update { it.copy(isLoadingExplore = true) }
+            val next = runCatching {
+                repository.getExploreGrid(limit = 30, offset = current.explorePosts.size)
+            }.getOrDefault(emptyList())
+            mutableState.update {
+                it.copy(
+                    explorePosts = (it.explorePosts + next).distinctBy { p -> p.id },
+                    isLoadingExplore = false,
+                    hasMoreExplore = next.size >= 30,
+                )
+            }
+        }
     }
 
     private suspend fun executeSearch(force: Boolean) {

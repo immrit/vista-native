@@ -88,6 +88,7 @@ data class ShellFeatureContent(
     ) -> Unit),
     val editProfile: (@Composable (onBack: () -> Unit) -> Unit),
     val pricingPage: (@Composable (onBack: () -> Unit) -> Unit),
+    val badgeStore: (@Composable (onBack: () -> Unit) -> Unit)? = null,
     val privacySecurity: (@Composable (onBack: () -> Unit, onBlockedUsers: () -> Unit, onActiveSessions: () -> Unit) -> Unit),
     val activeSessions: (@Composable (onBack: () -> Unit) -> Unit),
     val blockedUsers: (@Composable (onBack: () -> Unit) -> Unit),

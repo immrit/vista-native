@@ -1,5 +1,6 @@
 package ir.coffevista.vista_native.features.chat.data.repository
 
+import android.content.Context
 import android.net.Uri
 import android.util.Base64
 import android.util.Log
@@ -103,6 +104,7 @@ import kotlinx.serialization.json.Json
 import retrofit2.HttpException
 
 class OfflineFirstChatRepository(
+    private val context: Context,
     private val api: ChatApi,
     private val dao: ChatDao,
     private val cipher: ChatContentCipher,
@@ -1469,21 +1471,55 @@ class OfflineFirstChatRepository(
         sessionProvider.synchronize()
         val account = sessionProvider.account.value ?: return loggedOut()
         val conversation = dao.conversation(account.accountId, conversationId)
-        if (conversation?.type?.equals(ConversationType.SECRET.name, ignoreCase = true) == true) {
-            return ChatResult.Failure(
-                "ارسال رسانه در گفتگوی محرمانه تا آماده‌شدن رمزنگاری فایل در دسترس نیست",
-                retryable = false,
-            )
-        }
+        val isSecret = conversation?.type?.equals(ConversationType.SECRET.name, ignoreCase = true) == true
         if (draft.uri.isBlank() || draft.fileName.isBlank() || draft.mimeType.isBlank() || draft.sizeBytes <= 0L) {
             return ChatResult.Failure("فایل انتخاب‌شده معتبر نیست", retryable = false)
         }
         val caption = draft.caption.trim().take(MAX_TEXT_LENGTH)
+
+        val uploadDraft = if (isSecret) {
+            val peerPub = resolvePeerPublicKey(account.accountId, conversationId)
+                ?: run {
+                    ensureSecretChatHandshake(conversationId)
+                    resolvePeerPublicKey(account.accountId, conversationId)
+                }
+                ?: return ChatResult.Failure("کلید عمومی مخاطب برای ارسال رسانه محرمانه آماده نیست", retryable = false)
+            val myKeyPair = e2eeService.getOrGenerateKeyPair(account.accountId)
+            val sharedSecret = runCatching { e2eeService.computeSharedSecret(myKeyPair.privateKey, peerPub) }.getOrNull()
+                ?: return ChatResult.Failure("خطا در ایجاد کلید مشترک رسانه", retryable = false)
+
+            val encFile = java.io.File.createTempFile("enc_chat_", ".bin", context.cacheDir)
+            val parsedUri = Uri.parse(draft.uri)
+            val inputStream = if (parsedUri.scheme == "file" || parsedUri.scheme.isNullOrEmpty()) {
+                val f = java.io.File(parsedUri.path ?: draft.uri)
+                if (f.exists() && f.canRead()) f.inputStream() else context.contentResolver.openInputStream(parsedUri)
+            } else {
+                context.contentResolver.openInputStream(parsedUri)
+            } ?: return ChatResult.Failure("فایل انتخاب‌شده قابل خواندن نیست", retryable = false)
+
+            val tempPlain = java.io.File.createTempFile("raw_chat_", ".tmp", context.cacheDir)
+            try {
+                inputStream.use { input ->
+                    tempPlain.outputStream().use { output -> input.copyTo(output) }
+                }
+                e2eeService.encryptFile(tempPlain, encFile, sharedSecret)
+            } finally {
+                tempPlain.delete()
+            }
+            draft.copy(
+                uri = Uri.fromFile(encFile).toString(),
+                sizeBytes = encFile.length(),
+                caption = caption,
+            )
+        } else {
+            draft.copy(caption = caption)
+        }
+
         val prepared = try {
             mediaUploader.prepare(
                 accountId = account.accountId,
                 conversationId = conversationId,
-                draft = draft.copy(caption = caption),
+                draft = uploadDraft,
             )
         } catch (error: Throwable) {
             return ChatResult.Failure(
@@ -2608,22 +2644,41 @@ class OfflineFirstChatRepository(
         fallbackName: String? = null,
     ): DownloadTask {
         val cachedFile = localPath?.let(::File)?.takeIf(File::isFile)
+        val resolvedFile = if (cachedFile != null && e2eeService.isEncryptedFile(cachedFile)) {
+            val decFile = File(cachedFile.parentFile, "dec_" + cachedFile.name)
+            if (decFile.exists() && decFile.length() > 0) {
+                decFile
+            } else {
+                val peerPub = resolvePeerPublicKey(accountId, conversationId)
+                if (peerPub != null) {
+                    val myKeyPair = e2eeService.getOrGenerateKeyPair(accountId)
+                    val sharedSecret = runCatching { e2eeService.computeSharedSecret(myKeyPair.privateKey, peerPub) }.getOrNull()
+                    if (sharedSecret != null) {
+                        val tempDec = File(cachedFile.parentFile, "temp_dec_" + cachedFile.name)
+                        val ok = runCatching { e2eeService.decryptFile(cachedFile, tempDec, sharedSecret) }.getOrDefault(false)
+                        if (ok && tempDec.renameTo(decFile)) decFile else cachedFile
+                    } else cachedFile
+                } else cachedFile
+            }
+        } else {
+            cachedFile
+        }
         val effectiveState = runCatching { DownloadState.valueOf(state) }.getOrDefault(DownloadState.FAILED)
-            .let { parsed -> if (parsed == DownloadState.COMPLETE && cachedFile == null) DownloadState.FAILED else parsed }
+            .let { parsed -> if (parsed == DownloadState.COMPLETE && resolvedFile == null) DownloadState.FAILED else parsed }
         return DownloadTask(
-        accountId = accountId,
-        conversationId = conversationId,
-        messageId = messageId,
-        localUri = cachedFile?.let { Uri.fromFile(it).toString() },
-        mimeType = mimeType,
-        fileName = fallbackName ?: runCatching {
-            cipher.decrypt(accountId, conversationId, "$messageId:download-name", fileNameCiphertext)
-        }.getOrDefault("فایل"),
-        receivedBytes = receivedBytes,
-        totalBytes = totalBytes,
-        state = effectiveState,
-        attempts = attempts,
-    )
+            accountId = accountId,
+            conversationId = conversationId,
+            messageId = messageId,
+            localUri = resolvedFile?.let { Uri.fromFile(it).toString() },
+            mimeType = mimeType,
+            fileName = fallbackName ?: runCatching {
+                cipher.decrypt(accountId, conversationId, "$messageId:download-name", fileNameCiphertext)
+            }.getOrDefault("فایل"),
+            receivedBytes = receivedBytes,
+            totalBytes = totalBytes,
+            state = effectiveState,
+            attempts = attempts,
+        )
     }
 
     private suspend fun downloadMutation(block: suspend (String) -> Unit): ChatResult<Unit> {

@@ -658,6 +658,9 @@ fun VistaShell(
                 composable(ShellRoutes.PricingPage) {
                     content.pricingPage { navController.popBackStack() }
                 }
+                composable(ShellRoutes.BadgeStore) {
+                    (content.badgeStore ?: content.pricingPage) { navController.popBackStack() }
+                }
                 composable(ShellRoutes.PrivacySecurity) {
                     content.privacySecurity(
                         { navController.popBackStack() },

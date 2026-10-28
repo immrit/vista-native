@@ -7,6 +7,7 @@ import android.security.keystore.KeyProperties
 import android.util.Base64
 import ir.coffevista.vista_native.core.security.FlutterSecureStorageReader
 import ir.coffevista.vista_native.core.security.FlutterSecureValue
+import java.io.File
 import java.math.BigInteger
 import java.nio.ByteBuffer
 import java.security.MessageDigest
@@ -643,6 +644,110 @@ class ChatE2EEService(
         return chunks.chunked(3).joinToString("\n") { it.joinToString(" ") }
     }
 
+    /**
+     * Encrypts a file using AES-256-GCM authenticated encryption.
+     * Output format: 4-byte magic "VE2F" + salt (16 bytes) + nonce (12 bytes) + ciphertext + GCM tag (16 bytes).
+     */
+    fun encryptFile(
+        inputFile: File,
+        outputFile: File,
+        sharedSecret: ByteArray,
+        binding: String? = null,
+    ) {
+        val salt = ByteArray(SALT_LENGTH).also { secureRandom.nextBytes(it) }
+        val fileKey = deriveMessageKey(sharedSecret, salt)
+        val nonce = ByteArray(12).also { secureRandom.nextBytes(it) }
+
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        val spec = GCMParameterSpec(128, nonce)
+        cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(fileKey, "AES"), spec)
+        if (!binding.isNullOrBlank()) {
+            cipher.updateAAD(binding.toByteArray(Charsets.UTF_8))
+        }
+
+        outputFile.outputStream().buffered().use { output ->
+            output.write(FILE_ENVELOPE_MAGIC)
+            output.write(salt)
+            output.write(nonce)
+            val buffer = ByteArray(64 * 1024)
+            inputFile.inputStream().buffered().use { input ->
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read <= 0) break
+                    val chunk = cipher.update(buffer, 0, read)
+                    if (chunk != null && chunk.isNotEmpty()) {
+                        output.write(chunk)
+                    }
+                }
+            }
+            val finalChunk = cipher.doFinal()
+            if (finalChunk != null && finalChunk.isNotEmpty()) {
+                output.write(finalChunk)
+            }
+            output.flush()
+        }
+    }
+
+    /**
+     * Decrypts an encrypted file using AES-256-GCM.
+     * Returns true if file was encrypted with VE2F magic and decrypted successfully,
+     * or false if file was not encrypted.
+     */
+    fun decryptFile(
+        inputFile: File,
+        outputFile: File,
+        sharedSecret: ByteArray,
+        binding: String? = null,
+    ): Boolean {
+        if (!isEncryptedFile(inputFile)) return false
+        inputFile.inputStream().buffered().use { input ->
+            val magic = ByteArray(FILE_ENVELOPE_MAGIC.size)
+            if (input.read(magic) != FILE_ENVELOPE_MAGIC.size || !magic.contentEquals(FILE_ENVELOPE_MAGIC)) {
+                return false
+            }
+            val salt = ByteArray(SALT_LENGTH)
+            if (input.read(salt) != SALT_LENGTH) return false
+            val nonce = ByteArray(12)
+            if (input.read(nonce) != 12) return false
+
+            val fileKey = deriveMessageKey(sharedSecret, salt)
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            val spec = GCMParameterSpec(128, nonce)
+            cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(fileKey, "AES"), spec)
+            if (!binding.isNullOrBlank()) {
+                cipher.updateAAD(binding.toByteArray(Charsets.UTF_8))
+            }
+
+            outputFile.outputStream().buffered().use { output ->
+                val buffer = ByteArray(64 * 1024)
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read <= 0) break
+                    val chunk = cipher.update(buffer, 0, read)
+                    if (chunk != null && chunk.isNotEmpty()) {
+                        output.write(chunk)
+                    }
+                }
+                val finalChunk = cipher.doFinal()
+                if (finalChunk != null && finalChunk.isNotEmpty()) {
+                    output.write(finalChunk)
+                }
+                output.flush()
+            }
+            return true
+        }
+    }
+
+    fun isEncryptedFile(file: File): Boolean {
+        if (!file.exists() || file.length() < FILE_ENVELOPE_MAGIC.size + SALT_LENGTH + 12 + 16) return false
+        return runCatching {
+            file.inputStream().use { input ->
+                val header = ByteArray(FILE_ENVELOPE_MAGIC.size)
+                input.read(header) == FILE_ENVELOPE_MAGIC.size && header.contentEquals(FILE_ENVELOPE_MAGIC)
+            }
+        }.getOrDefault(false)
+    }
+
     data class KeyPair(
         val privateKey: ByteArray,
         val publicKey: ByteArray,
@@ -652,6 +757,7 @@ class ChatE2EEService(
     }
 
     companion object {
+        val FILE_ENVELOPE_MAGIC = byteArrayOf(0x56, 0x45, 0x32, 0x46) // "VE2F"
         const val PREFIX_V1 = "VE2E1:"
         const val PREFIX_V2 = "VE2E2:"
         const val PREFIX_LEGACY_V1 = "e2ee:v1:"

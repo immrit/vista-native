@@ -4,6 +4,7 @@ import ir.coffevista.vista_native.features.profile.data.FollowActionRequestDto
 import ir.coffevista.vista_native.features.profile.data.FollowActionResponseDto
 import ir.coffevista.vista_native.features.profile.data.FollowListResponseDto
 import ir.coffevista.vista_native.features.profile.data.FollowUserDto
+import ir.coffevista.vista_native.features.profile.data.ProfileHighlightsResponseDto
 import ir.coffevista.vista_native.features.profile.data.PublicProfileApi
 import ir.coffevista.vista_native.features.profile.data.PublicProfileDto
 import ir.coffevista.vista_native.features.profile.data.UnfollowResponseDto
@@ -70,6 +71,10 @@ class FollowersFollowingViewModelTest {
 
         override suspend fun getFollowing(userId: String, limit: Int, offset: Int): Response<FollowListResponseDto> {
             return Response.success(FollowListResponseDto(profiles = listOf(sampleFollowing), total = 1))
+        }
+
+        override suspend fun getUserHighlights(userId: String): Response<ProfileHighlightsResponseDto> {
+            return Response.success(ProfileHighlightsResponseDto())
         }
     }
 

@@ -44,5 +44,5 @@ interface PublicProfileApi {
     @GET("v1/highlights/users/{userId}")
     suspend fun getUserHighlights(
         @Path("userId") userId: String,
-    ): Response<ProfileHighlightsResponseDto> = Response.success(ProfileHighlightsResponseDto())
+    ): Response<ProfileHighlightsResponseDto>
 }

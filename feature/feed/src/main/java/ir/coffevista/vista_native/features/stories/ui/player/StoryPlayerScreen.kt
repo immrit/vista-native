@@ -29,6 +29,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.border
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
@@ -42,6 +44,8 @@ import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -97,6 +101,7 @@ import androidx.compose.material.icons.filled.Add
 import ir.coffevista.vista_native.features.stories.domain.HighlightDto
 import ir.coffevista.vista_native.features.stories.domain.StoryMediaType
 import ir.coffevista.vista_native.features.stories.domain.StoryPrivacyType
+import ir.coffevista.vista_native.features.stories.domain.StoryQuestionAnswerDto
 import ir.coffevista.vista_native.features.stories.domain.StoryUser
 import ir.coffevista.vista_native.features.stories.domain.StoryVerificationType
 import kotlinx.coroutines.delay
@@ -155,11 +160,14 @@ fun StoryPlayerScreen(
     var userHighlights by remember { mutableStateOf<List<HighlightDto>>(emptyList()) }
     var currentProgress by remember { mutableFloatStateOf(0f) }
     var showViewersSheet by remember { mutableStateOf(false) }
+    var showQuestionAnswersSheet by remember { mutableStateOf(false) }
+    var questionAnswers by remember { mutableStateOf<List<StoryQuestionAnswerDto>>(emptyList()) }
+    var isLoadingQuestionAnswers by remember { mutableStateOf(false) }
     var replyText by remember { mutableStateOf("") }
     var isLiked by remember(activeStory.id) { mutableStateOf(false) }
     var floatingReaction by remember(activeStory.id) { mutableStateOf<String?>(null) }
 
-    val isPlaybackPaused = isPaused || showOptionsSheet || showDeleteDialog || showReportDialog || showViewersSheet || showAddToHighlightDialog || showNewHighlightDialog
+    val isPlaybackPaused = isPaused || showOptionsSheet || showDeleteDialog || showReportDialog || showViewersSheet || showAddToHighlightDialog || showNewHighlightDialog || showQuestionAnswersSheet
 
     LaunchedEffect(floatingReaction) {
         if (floatingReaction != null) {
@@ -334,6 +342,7 @@ fun StoryPlayerScreen(
                 if (activeStory.interactiveElements.isNotEmpty()) {
                     StoryElementsOverlay(
                         elements = activeStory.interactiveElements,
+                        isAuthor = (activeStory.userId == currentUserId || activeUser.id == currentUserId || isOwnStory),
                         onPollVote = { elementId, optionIndex ->
                             coroutineScope.launch {
                                 repository.votePoll(activeStory.id, elementId, optionIndex)
@@ -349,8 +358,22 @@ fun StoryPlayerScreen(
                                 }
                             }
                         },
+                        onViewQuestionAnswers = { _ ->
+                            isPaused = true
+                            isLoadingQuestionAnswers = true
+                            showQuestionAnswersSheet = true
+                            viewModel.loadQuestionAnswers(activeStory.id) { answers ->
+                                questionAnswers = answers
+                                isLoadingQuestionAnswers = false
+                            }
+                        },
                         onLinkClick = onOpenLink,
                         onMentionClick = onOpenProfile,
+                        onHashtagClick = { tag ->
+                            coroutineScope.launch {
+                                snackbarHostState.showSnackbar("#$tag")
+                            }
+                        },
                     )
                 }
 
@@ -719,6 +742,105 @@ fun StoryPlayerScreen(
                         onOpenProfile(userId)
                     },
                 )
+            }
+
+            // Question Answers Bottom Sheet for Author
+            if (showQuestionAnswersSheet) {
+                ModalBottomSheet(
+                    onDismissRequest = {
+                        showQuestionAnswersSheet = false
+                        isPaused = false
+                    },
+                    containerColor = Color(0xFF1E1E1E),
+                    shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .navigationBarsPadding()
+                            .padding(20.dp),
+                    ) {
+                        Text(
+                            text = "پاسخ‌های دریافتی به سوال",
+                            color = Color.White,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Spacer(modifier = Modifier.height(14.dp))
+                        if (isLoadingQuestionAnswers) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(120.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                CircularProgressIndicator(color = VistaBrandColors.Indigo)
+                            }
+                        } else if (questionAnswers.isEmpty()) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(120.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    text = "هنوز پاسخی برای این سوال ثبت نشده است",
+                                    color = Color.Gray,
+                                    fontSize = 14.sp,
+                                )
+                            }
+                        } else {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(300.dp)
+                                    .verticalScroll(rememberScrollState()),
+                                verticalArrangement = Arrangement.spacedBy(10.dp),
+                            ) {
+                                questionAnswers.forEach { item ->
+                                    Card(
+                                        colors = CardDefaults.cardColors(
+                                            containerColor = Color(0xFF2A2A2A),
+                                        ),
+                                        shape = RoundedCornerShape(12.dp),
+                                        modifier = Modifier.fillMaxWidth(),
+                                    ) {
+                                        Column(modifier = Modifier.padding(12.dp)) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                modifier = Modifier.fillMaxWidth(),
+                                            ) {
+                                                if (!item.profile?.avatarUrl.isNullOrBlank()) {
+                                                    AsyncImage(
+                                                        model = item.profile?.avatarUrl,
+                                                        contentDescription = null,
+                                                        modifier = Modifier
+                                                            .size(28.dp)
+                                                            .clip(CircleShape),
+                                                        contentScale = ContentScale.Crop,
+                                                    )
+                                                    Spacer(modifier = Modifier.width(8.dp))
+                                                }
+                                                Text(
+                                                    text = item.profile?.username?.let { "@$it" } ?: "کاربر ناشناس",
+                                                    color = Color.White,
+                                                    fontSize = 13.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                )
+                                            }
+                                            Spacer(modifier = Modifier.height(6.dp))
+                                            Text(
+                                                text = item.answer,
+                                                color = Color(0xFFE0E0E0),
+                                                fontSize = 14.sp,
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
             // Options Bottom Sheet

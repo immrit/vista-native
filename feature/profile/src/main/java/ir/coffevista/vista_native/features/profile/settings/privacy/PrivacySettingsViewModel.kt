@@ -28,6 +28,11 @@ data class PrivacySettingsUiState(
     val biometricAvailable: Boolean = false,
     val biometricLoading: Boolean = true,
     val errorMessage: String? = null,
+    val emailVerificationSessionId: String? = null,
+    val isSendingEmailVerification: Boolean = false,
+    val isVerifyingEmail: Boolean = false,
+    val emailVerificationSuccessMessage: String? = null,
+    val emailVerificationErrorMessage: String? = null,
 )
 
 @HiltViewModel
@@ -232,6 +237,79 @@ class PrivacySettingsViewModel @Inject constructor(
                         } else {
                             "ذخیرهٔ تنظیمات حریم خصوصی ناموفق بود"
                         },
+                    )
+                }
+            }
+        }
+    }
+
+    fun sendEmailVerification(email: String) {
+        if (email.isBlank()) {
+            mutableUiState.update { it.copy(emailVerificationErrorMessage = "لطفاً ایمیل معتبر وارد کنید") }
+            return
+        }
+        mutableUiState.update {
+            it.copy(
+                isSendingEmailVerification = true,
+                emailVerificationErrorMessage = null,
+                emailVerificationSuccessMessage = null,
+            )
+        }
+        viewModelScope.launch {
+            val res = runCatching { api.sendEmailVerification(SendEmailVerificationDto(email = email.trim())) }.getOrNull()
+            val body = res?.body()
+            if (res?.isSuccessful == true && body?.success == true) {
+                mutableUiState.update {
+                    it.copy(
+                        isSendingEmailVerification = false,
+                        emailVerificationSessionId = body.sessionId,
+                        emailVerificationSuccessMessage = body.message ?: "کد تأیید به ایمیل شما ارسال شد",
+                    )
+                }
+            } else {
+                mutableUiState.update {
+                    it.copy(
+                        isSendingEmailVerification = false,
+                        emailVerificationErrorMessage = body?.message ?: "ارسال کد تأیید ناموفق بود. لطفاً ایمیل را بررسی کنید",
+                    )
+                }
+            }
+        }
+    }
+
+    fun verifyEmail(code: String) {
+        val sessionId = mutableUiState.value.emailVerificationSessionId
+        if (sessionId.isNullOrBlank()) {
+            mutableUiState.update { it.copy(emailVerificationErrorMessage = "ابتدا درخواست کد تأیید دهید") }
+            return
+        }
+        if (code.isBlank()) {
+            mutableUiState.update { it.copy(emailVerificationErrorMessage = "لطفاً کد ۶ رقمی را وارد کنید") }
+            return
+        }
+        mutableUiState.update {
+            it.copy(
+                isVerifyingEmail = true,
+                emailVerificationErrorMessage = null,
+                emailVerificationSuccessMessage = null,
+            )
+        }
+        viewModelScope.launch {
+            val res = runCatching { api.verifyEmail(VerifyEmailDto(sessionId = sessionId, code = code.trim())) }.getOrNull()
+            val body = res?.body()
+            if (res?.isSuccessful == true && body?.success == true) {
+                mutableUiState.update {
+                    it.copy(
+                        isVerifyingEmail = false,
+                        emailVerificationSuccessMessage = "ایمیل شما با موفقیت تأیید شد! ✓",
+                        emailVerificationSessionId = null,
+                    )
+                }
+            } else {
+                mutableUiState.update {
+                    it.copy(
+                        isVerifyingEmail = false,
+                        emailVerificationErrorMessage = body?.message ?: "کد تأیید اشتباه یا منقضی شده است",
                     )
                 }
             }

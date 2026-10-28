@@ -47,6 +47,9 @@ data class SearchUiState(
     val appendErrorMessage: String? = null,
     val postHasMore: Boolean = false,
     val postNextCursor: String? = null,
+    val explorePosts: List<SearchPost> = emptyList(),
+    val isLoadingExplore: Boolean = false,
+    val hasMoreExplore: Boolean = true,
 ) {
     val hasQuery: Boolean
         get() = query.trim().isNotEmpty()

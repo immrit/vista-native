@@ -313,6 +313,9 @@ private class FakePublicProfileApi : PublicProfileApi {
 
     override suspend fun getFollowing(userId: String, limit: Int, offset: Int): Response<FollowListResponseDto> =
         Response.success(FollowListResponseDto())
+
+    override suspend fun getUserHighlights(userId: String): Response<ProfileHighlightsResponseDto> =
+        Response.success(ProfileHighlightsResponseDto())
 }
 
 private class FakePublicProfileDao : PublicProfileDao {

@@ -64,6 +64,7 @@ object ShellRoutes {
     const val SettingsRoot = "settings_root"
     const val EditProfile = "edit_profile"
     const val PricingPage = "pricing_page"
+    const val BadgeStore = "badge_store"
     const val PrivacySecurity = "privacy_security"
     const val ActiveSessions = "active_sessions"
     const val BlockedUsers = "blocked_users"

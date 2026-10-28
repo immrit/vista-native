@@ -129,4 +129,7 @@ private class FakePricingPlansApi(
         lastBazaarRequest = request
         return Response.success(bazaarResponse)
     }
+
+    override suspend fun getCoinPackages(): Response<CoinPackagesResponseDto> =
+        Response.success(CoinPackagesResponseDto())
 }

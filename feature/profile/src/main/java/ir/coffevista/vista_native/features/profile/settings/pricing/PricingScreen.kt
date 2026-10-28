@@ -122,6 +122,7 @@ data class PremiumFeatureUiModel(
 fun PricingScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    initialTab: Int = 0,
     viewModel: PricingViewModel = hiltViewModel(),
 ) {
     val goldGradient = Brush.linearGradient(
@@ -191,7 +192,7 @@ fun PricingScreen(
     )
 
     var selectedPlanIndex by remember { mutableIntStateOf(0) }
-    var selectedTab by remember { mutableIntStateOf(0) }
+    var selectedTab by remember { mutableIntStateOf(initialTab) }
     var showPaymentConfirmation by remember { mutableStateOf(false) }
     val selectedPlan = plans.getOrNull(selectedPlanIndex.coerceAtLeast(0)) ?: plans.firstOrNull()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -220,39 +221,60 @@ fun PricingScreen(
         }
     }
 
-    fun launchBazaarSubscription(planId: String) {
+    fun launchBazaarProduct(productId: String, isSubscription: Boolean = false) {
         val activity = context.findComponentActivity()
         if (activity == null) {
             viewModel.onBazaarPurchaseFailed("امکان باز کردن درگاه پرداخت کافه‌بازار وجود ندارد.")
             return
         }
         viewModel.onBazaarPurchaseStarted()
-        val executeSubscribe = {
+        val executePurchase = {
             runCatching {
-                payment.subscribeProduct(
-                    registry = activity.activityResultRegistry,
-                    request = PurchaseRequest(
-                        productId = planId,
-                        payload = viewModel.resolveBazaarPayload(),
-                    ),
-                ) {
-                    purchaseSucceed { info ->
-                        viewModel.verifyBazaarPurchase(
-                            productId = planId,
-                            purchaseToken = info.purchaseToken,
-                            packageName = info.packageName.ifBlank { context.packageName },
-                        )
+                if (isSubscription) {
+                    payment.subscribeProduct(
+                        registry = activity.activityResultRegistry,
+                        request = PurchaseRequest(
+                            productId = productId,
+                            payload = viewModel.resolveBazaarPayload(),
+                        ),
+                    ) {
+                        purchaseSucceed { info ->
+                            viewModel.verifyBazaarPurchase(
+                                productId = productId,
+                                purchaseToken = info.purchaseToken,
+                                packageName = info.packageName.ifBlank { context.packageName },
+                            )
+                        }
+                        purchaseCanceled { viewModel.onBazaarPurchaseCanceled() }
+                        purchaseFailed { throwable -> viewModel.onBazaarPurchaseFailed(throwable.message) }
+                        failedToBeginFlow { throwable ->
+                            viewModel.onBazaarPurchaseFailed(
+                                throwable.message ?: "برنامه کافه‌بازار روی دستگاه یافت نشد یا به‌روز نیست. لطفاً برنامه بازار را نصب یا به‌روزرسانی کنید.",
+                            )
+                        }
                     }
-                    purchaseCanceled {
-                        viewModel.onBazaarPurchaseCanceled()
-                    }
-                    purchaseFailed { throwable ->
-                        viewModel.onBazaarPurchaseFailed(throwable.message)
-                    }
-                    failedToBeginFlow { throwable ->
-                        viewModel.onBazaarPurchaseFailed(
-                            throwable.message ?: "برنامه کافه‌بازار روی دستگاه یافت نشد یا به‌روز نیست.",
-                        )
+                } else {
+                    payment.purchaseProduct(
+                        registry = activity.activityResultRegistry,
+                        request = PurchaseRequest(
+                            productId = productId,
+                            payload = viewModel.resolveBazaarPayload(),
+                        ),
+                    ) {
+                        purchaseSucceed { info ->
+                            viewModel.verifyBazaarPurchase(
+                                productId = productId,
+                                purchaseToken = info.purchaseToken,
+                                packageName = info.packageName.ifBlank { context.packageName },
+                            )
+                        }
+                        purchaseCanceled { viewModel.onBazaarPurchaseCanceled() }
+                        purchaseFailed { throwable -> viewModel.onBazaarPurchaseFailed(throwable.message) }
+                        failedToBeginFlow { throwable ->
+                            viewModel.onBazaarPurchaseFailed(
+                                throwable.message ?: "برنامه کافه‌بازار روی دستگاه یافت نشد یا به‌روز نیست. لطفاً برنامه بازار را نصب یا به‌روزرسانی کنید.",
+                            )
+                        }
                     }
                 }
             }.onFailure { throwable ->
@@ -260,11 +282,11 @@ fun PricingScreen(
             }
         }
         if (bazaarConnection?.getState() == ConnectionState.Connected) {
-            executeSubscribe()
+            executePurchase()
         } else {
             runCatching {
                 bazaarConnection = payment.connect {
-                    connectionSucceed { executeSubscribe() }
+                    connectionSucceed { executePurchase() }
                     connectionFailed { throwable ->
                         viewModel.onBazaarPurchaseFailed(
                             throwable.message ?: "اتصال به درگاه کافه‌بازار برقرار نشد. از نصب و ورود به برنامه بازار اطمینان حاصل کنید.",
@@ -277,6 +299,8 @@ fun PricingScreen(
             }
         }
     }
+
+    fun launchBazaarSubscription(planId: String) = launchBazaarProduct(planId, isSubscription = true)
 
     uiState.errorMessage?.let { message ->
         LaunchedEffect(message) { snackbarHostState.showSnackbar(message) }
@@ -745,7 +769,7 @@ fun PricingScreen(
                                             )
                                         }
                                         Button(
-                                            onClick = { viewModel.requestPayment(pkg.id) },
+                                            onClick = { launchBazaarProduct(pkg.id, isSubscription = false) },
                                             shape = RoundedCornerShape(10.dp),
                                             colors = ButtonDefaults.buttonColors(
                                                 containerColor = Color(0xFF7E57C2),

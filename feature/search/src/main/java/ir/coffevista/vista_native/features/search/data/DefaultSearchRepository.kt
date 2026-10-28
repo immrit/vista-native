@@ -91,6 +91,13 @@ class DefaultSearchRepository(
             .mapNotNull(HashtagSuggestionDto::toDomainOrNull)
             .distinctBy { it.tag.lowercase() }
 
+    override suspend fun getExploreGrid(limit: Int, offset: Int): List<SearchPost> {
+        val response = runCatching {
+            api.getExploreGrid(limit, offset.coerceAtLeast(0))
+        }.getOrNull()?.bodyOrThrow("explore_grid_empty") ?: return emptyList()
+        return response.posts.mapNotNull { it.toDomainOrNull() }
+    }
+
     override fun observeHistory(accountId: String): Flow<List<SearchHistoryItem>> =
         historyDao.observeRecent(accountId).map { entities ->
             entities.map { entity ->

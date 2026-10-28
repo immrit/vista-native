@@ -33,6 +33,8 @@ object DatabaseModule {
             VistaFoundationDatabase.MIGRATION_9_10,
             VistaFoundationDatabase.MIGRATION_10_11,
         )
+        .fallbackToDestructiveMigration()
+        .fallbackToDestructiveMigrationOnDowngrade()
         .build()
 
     @Provides

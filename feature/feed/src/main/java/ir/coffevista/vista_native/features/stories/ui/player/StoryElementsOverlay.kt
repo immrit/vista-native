@@ -1,5 +1,15 @@
 package ir.coffevista.vista_native.features.stories.ui.player
 
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.material.icons.filled.AccessTime
+import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.QuestionAnswer
+import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -52,10 +62,13 @@ import kotlin.math.roundToInt
 @Composable
 fun StoryElementsOverlay(
     elements: List<StoryElement>,
+    isAuthor: Boolean = false,
     onPollVote: (elementId: String, optionIndex: Int) -> Unit = { _, _ -> },
     onQuestionAnswer: (elementId: String, answer: String) -> Unit = { _, _ -> },
+    onViewQuestionAnswers: (elementId: String) -> Unit = {},
     onLinkClick: (url: String) -> Unit = {},
     onMentionClick: (userId: String) -> Unit = {},
+    onHashtagClick: (tag: String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Box(modifier = modifier.fillMaxSize()) {
@@ -87,20 +100,48 @@ fun StoryElementsOverlay(
                                 textAlign = TextAlign.Center,
                             )
                             Spacer(modifier = Modifier.height(10.dp))
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(Color(0xFFF3F4F6))
-                                    .clickable { showAnswerDialog = true }
-                                    .padding(vertical = 10.dp, horizontal = 12.dp),
-                                contentAlignment = Alignment.CenterStart,
-                            ) {
-                                Text(
-                                    text = "پاسخ خود را بنویسید…",
-                                    color = Color.Gray,
-                                    fontSize = 13.sp,
-                                )
+                            if (isAuthor) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(VistaBrandColors.Indigo)
+                                        .clickable { onViewQuestionAnswers(element.id) }
+                                        .padding(vertical = 10.dp, horizontal = 12.dp),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = Icons.Default.QuestionAnswer,
+                                            contentDescription = null,
+                                            tint = Color.White,
+                                            modifier = Modifier.size(16.dp),
+                                        )
+                                        Spacer(Modifier.width(6.dp))
+                                        Text(
+                                            text = "مشاهده پاسخ‌های دریافتی",
+                                            color = Color.White,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 13.sp,
+                                        )
+                                    }
+                                }
+                            } else {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(Color(0xFFF3F4F6))
+                                        .clickable { showAnswerDialog = true }
+                                        .padding(vertical = 10.dp, horizontal = 12.dp),
+                                    contentAlignment = Alignment.CenterStart,
+                                ) {
+                                    Text(
+                                        text = "پاسخ خود را بنویسید…",
+                                        color = Color.Gray,
+                                        fontSize = 13.sp,
+                                    )
+                                }
                             }
                         }
                     }
@@ -276,6 +317,119 @@ fun StoryElementsOverlay(
                         }
                     }
                 }
+
+                "countdown" -> {
+                    val parts = element.content?.split("|").orEmpty()
+                    val title = parts.getOrNull(0) ?: "شمارش معکوس"
+                    val targetMs = parts.getOrNull(1)?.toLongOrNull() ?: (System.currentTimeMillis() + 86400000L)
+                    val remainingMs = (targetMs - System.currentTimeMillis()).coerceAtLeast(0L)
+                    val hours = (remainingMs / (1000 * 60 * 60))
+                    val minutes = (remainingMs / (1000 * 60)) % 60
+                    val seconds = (remainingMs / 1000) % 60
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .offset { IntOffset((element.x * 200).roundToInt(), (element.y * 300).roundToInt()) }
+                            .clip(RoundedCornerShape(18.dp))
+                            .background(Color.Black.copy(alpha = 0.78f))
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.AccessTime, contentDescription = null, tint = Color(0xFFFFD54F), modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text(title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            }
+                            Spacer(Modifier.height(8.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                CountdownDigitBox("%02d".format(hours), "ساعت")
+                                Text(":", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                                CountdownDigitBox("%02d".format(minutes), "دقیقه")
+                                Text(":", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                                CountdownDigitBox("%02d".format(seconds), "ثانیه")
+                            }
+                        }
+                    }
+                }
+
+                "weather" -> {
+                    val parts = element.content?.split("|").orEmpty()
+                    val city = parts.getOrNull(0) ?: "تهران"
+                    val temp = parts.getOrNull(1) ?: "۲۴°C"
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .offset { IntOffset((element.x * 200).roundToInt(), (element.y * 300).roundToInt()) }
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(Color.White.copy(alpha = 0.92f))
+                            .padding(horizontal = 14.dp, vertical = 8.dp),
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.WbSunny, contentDescription = null, tint = Color(0xFFFFA000), modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text(temp, color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            Spacer(Modifier.width(6.dp))
+                            Text(city, color = Color.DarkGray, fontSize = 12.sp)
+                        }
+                    }
+                }
+
+                "date" -> {
+                    val dateText = element.content?.ifBlank { null } ?: "امروز"
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .offset { IntOffset((element.x * 200).roundToInt(), (element.y * 300).roundToInt()) }
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(Color.Black.copy(alpha = 0.72f))
+                            .padding(horizontal = 14.dp, vertical = 8.dp),
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.CalendarMonth, contentDescription = null, tint = VistaBrandColors.Pink, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text(dateText, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        }
+                    }
+                }
+
+                "hashtag" -> {
+                    val tag = element.content.orEmpty()
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .offset { IntOffset((element.x * 200).roundToInt(), (element.y * 300).roundToInt()) }
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(
+                                androidx.compose.ui.graphics.Brush.horizontalGradient(
+                                    listOf(VistaBrandColors.Indigo, VistaBrandColors.Pink),
+                                ),
+                            )
+                            .clickable { onHashtagClick(tag) }
+                            .padding(horizontal = 14.dp, vertical = 7.dp),
+                    ) {
+                        Text("#$tag", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    }
+                }
+
+                "gif" -> {
+                    val gifUrl = element.content.orEmpty()
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .offset { IntOffset((element.x * 200).roundToInt(), (element.y * 300).roundToInt()) },
+                    ) {
+                        AsyncImage(
+                            model = gifUrl,
+                            contentDescription = "استیکر گیف",
+                            modifier = Modifier.size(120.dp),
+                            contentScale = ContentScale.Fit,
+                        )
+                    }
+                }
+
+                "drawing" -> {
+                    DrawingLayer(drawingData = element.content.orEmpty(), modifier = Modifier.fillMaxSize())
+                }
             }
         }
     }
@@ -435,6 +589,69 @@ fun StoryMusicStickerWidget(
             tint = VistaBrandColors.Pink,
             modifier = Modifier.size(20.dp),
         )
+    }
+}
+
+@Composable
+private fun CountdownDigitBox(value: String, label: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(8.dp))
+                .background(Color(0xFF212121))
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(value, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+        }
+        Spacer(Modifier.height(2.dp))
+        Text(label, color = Color(0xFFBDBDBD), fontSize = 10.sp)
+    }
+}
+
+@Composable
+fun DrawingLayer(
+    drawingData: String,
+    modifier: Modifier = Modifier,
+) {
+    if (drawingData.isBlank()) return
+    Canvas(modifier = modifier) {
+        val width = size.width
+        val height = size.height
+        drawingData.split("|").forEach { strokePart ->
+            val strokeTokens = strokePart.split(":")
+            if (strokeTokens.size >= 3) {
+                val color = runCatching { Color(android.graphics.Color.parseColor(strokeTokens[0])) }.getOrDefault(Color.White)
+                val strokeWidth = strokeTokens[1].toFloatOrNull() ?: 8f
+                val pointsRaw = strokeTokens[2].split(";")
+                if (pointsRaw.size > 1) {
+                    val path = Path()
+                    var isFirst = true
+                    pointsRaw.forEach { pointStr ->
+                        val coords = pointStr.split(",")
+                        if (coords.size == 2) {
+                            val x = (coords[0].toFloatOrNull() ?: 0f) * width
+                            val y = (coords[1].toFloatOrNull() ?: 0f) * height
+                            if (isFirst) {
+                                path.moveTo(x, y)
+                                isFirst = false
+                            } else {
+                                path.lineTo(x, y)
+                            }
+                        }
+                    }
+                    drawPath(
+                        path = path,
+                        color = color,
+                        style = Stroke(
+                            width = strokeWidth,
+                            cap = StrokeCap.Round,
+                            join = StrokeJoin.Round,
+                        ),
+                    )
+                }
+            }
+        }
     }
 }
 

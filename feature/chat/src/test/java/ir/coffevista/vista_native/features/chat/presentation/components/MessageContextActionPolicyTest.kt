@@ -137,10 +137,25 @@ class MessageContextActionPolicyTest {
         assertTrue(policy.canReply)
         assertTrue(policy.canForward)
         assertTrue(policy.canTogglePinned)
-        assertFalse(policy.canEdit)
+        assertTrue(policy.canEdit)
         assertTrue(policy.canSelect)
         assertTrue(policy.canViewInfo)
         assertTrue(policy.canDelete)
+
+        val policyWithoutCaption = message(
+            content = MessageContent.Text(""),
+            attachment = Attachment(
+                kind = AttachmentKind.IMAGE,
+                remoteUrl = "https://media.example.test/image.jpg",
+                localUri = "content://local/image",
+                fileName = "image.jpg",
+                mimeType = "image/jpeg",
+                sizeBytes = 42L,
+                progress = 1f,
+                transferState = TransferState.COMPLETE,
+            ),
+        ).contextActionPolicy()
+        assertFalse(policyWithoutCaption.canEdit)
     }
 
     private fun message(

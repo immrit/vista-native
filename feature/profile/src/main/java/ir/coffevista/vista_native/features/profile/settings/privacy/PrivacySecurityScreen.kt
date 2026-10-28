@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -26,6 +27,7 @@ import androidx.compose.material.icons.outlined.DeleteForever
 import androidx.compose.material.icons.outlined.GroupAdd
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.LockReset
+import androidx.compose.material.icons.outlined.MarkEmailRead
 import androidx.compose.material.icons.outlined.PhotoSizeSelectLarge
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -91,6 +93,10 @@ fun PrivacySecurityScreen(
     var activeSheet by remember { mutableStateOf<String?>(null) }
     var showRemove2FADialog by remember { mutableStateOf(false) }
     var remove2FAPassword by remember { mutableStateOf("") }
+
+    var showEmailVerificationDialog by remember { mutableStateOf(false) }
+    var emailInput by remember { mutableStateOf(profile?.email.orEmpty()) }
+    var emailCodeInput by remember { mutableStateOf("") }
 
     var showAccountDeletionDialog by remember { mutableStateOf(false) }
     var deletionStep by remember { mutableStateOf(1) }
@@ -285,6 +291,13 @@ fun PrivacySecurityScreen(
                         title = "غیرفعال‌سازی تایید دو مرحله‌ای (2FA)",
                         onClick = { showRemove2FADialog = true },
                     )
+                    VistaSettingsDivider()
+                    VistaSettingsTile(
+                        icon = Icons.Outlined.MarkEmailRead,
+                        title = "تأیید ایمیل حساب کاربری",
+                        subtitle = "ارسال کد تأیید برای ایمن‌سازی حساب",
+                        onClick = { showEmailVerificationDialog = true },
+                    )
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -375,6 +388,84 @@ fun PrivacySecurityScreen(
                     onDismissRequest = { activeSheet = null },
                 )
             }
+        }
+
+        if (showEmailVerificationDialog) {
+            AlertDialog(
+                onDismissRequest = { showEmailVerificationDialog = false },
+                title = { Text("تأیید ایمیل حساب کاربری") },
+                text = {
+                    Column {
+                        if (uiState.emailVerificationSuccessMessage != null) {
+                            Text(
+                                text = uiState.emailVerificationSuccessMessage.orEmpty(),
+                                color = MaterialTheme.colorScheme.primary,
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                            Spacer(Modifier.height(8.dp))
+                        }
+                        if (uiState.emailVerificationErrorMessage != null) {
+                            Text(
+                                text = uiState.emailVerificationErrorMessage.orEmpty(),
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                            Spacer(Modifier.height(8.dp))
+                        }
+                        if (uiState.emailVerificationSessionId == null) {
+                            Text("برای دریافت کد تأیید، لطفاً ایمیل حساب خود را وارد کنید:")
+                            Spacer(Modifier.height(8.dp))
+                            OutlinedTextField(
+                                value = emailInput,
+                                onValueChange = { emailInput = it },
+                                placeholder = { Text("example@domain.com") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        } else {
+                            Text("کد ۶ رقمی ارسال‌شده به ایمیل را وارد کنید:")
+                            Spacer(Modifier.height(8.dp))
+                            OutlinedTextField(
+                                value = emailCodeInput,
+                                onValueChange = { emailCodeInput = it },
+                                placeholder = { Text("۱۲۳۴۵۶") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                    }
+                },
+                confirmButton = {
+                    if (uiState.emailVerificationSessionId == null) {
+                        Button(
+                            onClick = { viewModel.sendEmailVerification(emailInput) },
+                            enabled = !uiState.isSendingEmailVerification && emailInput.isNotBlank(),
+                        ) {
+                            if (uiState.isSendingEmailVerification) {
+                                CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                            } else {
+                                Text("ارسال کد")
+                            }
+                        }
+                    } else {
+                        Button(
+                            onClick = { viewModel.verifyEmail(emailCodeInput) },
+                            enabled = !uiState.isVerifyingEmail && emailCodeInput.isNotBlank(),
+                        ) {
+                            if (uiState.isVerifyingEmail) {
+                                CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                            } else {
+                                Text("تأیید نهایی")
+                            }
+                        }
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showEmailVerificationDialog = false }) {
+                        Text("بستن")
+                    }
+                },
+            )
         }
 
         if (showRemove2FADialog) {

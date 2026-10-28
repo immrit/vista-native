@@ -2,9 +2,14 @@ package ir.coffevista.vista_native.features.feed.data
 
 import android.content.Context
 import android.net.Uri
+import androidx.work.ExistingWorkPolicy
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.OutOfQuotaPolicy
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
+import androidx.work.workDataOf
 import dagger.hilt.android.qualifiers.ApplicationContext
 import ir.coffevista.vista_native.core.database.feed.FeedDao
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -59,13 +64,74 @@ class PostUploadManager @Inject constructor(
     private val postMentions: PostMentions,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private var uploadJob: Job? = null
+    private val workManager by lazy { WorkManager.getInstance(context) }
+    private var observerJob: Job? = null
 
     private val _uploadState = MutableStateFlow(PostUploadState())
     val uploadState: StateFlow<PostUploadState> = _uploadState.asStateFlow()
 
+    init {
+        observeCurrentWork()
+    }
+
+    private fun observeCurrentWork() {
+        observerJob?.cancel()
+        observerJob = scope.launch {
+            workManager.getWorkInfosForUniqueWorkFlow(PostUploadWorker.WORK_NAME).collect { workInfos ->
+                val info = workInfos.firstOrNull() ?: return@collect
+                when (info.state) {
+                    WorkInfo.State.RUNNING -> {
+                        val progress = info.progress.getFloat(PostUploadWorker.KEY_PROGRESS, 0.1f)
+                        val status = info.progress.getString(PostUploadWorker.KEY_STATUS) ?: "در حال ارسال پست…"
+                        _uploadState.update { current ->
+                            current.copy(
+                                isUploading = true,
+                                progress = progress,
+                                statusMessage = status,
+                                errorMessage = null,
+                            )
+                        }
+                    }
+                    WorkInfo.State.SUCCEEDED -> {
+                        _uploadState.update { current ->
+                            current.copy(
+                                isUploading = false,
+                                progress = 1f,
+                                statusMessage = "پست با موفقیت منتشر شد",
+                                isSuccess = true,
+                                errorMessage = null,
+                            )
+                        }
+                        delay(3000L)
+                        _uploadState.update { current ->
+                            if (current.isSuccess) current.copy(isSuccess = false, pendingUpload = null)
+                            else current
+                        }
+                    }
+                    WorkInfo.State.FAILED -> {
+                        val error = info.outputData.getString(PostUploadWorker.KEY_ERROR) ?: "خطا در ارسال پست"
+                        _uploadState.update { current ->
+                            current.copy(
+                                isUploading = false,
+                                errorMessage = error,
+                            )
+                        }
+                    }
+                    WorkInfo.State.CANCELLED -> {
+                        _uploadState.update { current ->
+                            current.copy(
+                                isUploading = false,
+                                errorMessage = "ارسال پست لغو شد",
+                            )
+                        }
+                    }
+                    else -> Unit
+                }
+            }
+        }
+    }
+
     fun startUpload(upload: PendingPostUpload) {
-        uploadJob?.cancel()
         _uploadState.update {
             PostUploadState(
                 isUploading = true,
@@ -75,158 +141,37 @@ class PostUploadManager @Inject constructor(
             )
         }
 
-        uploadJob = scope.launch {
-            val uploadedObjectKeys = mutableListOf<String>()
-            try {
-                var finalVideoUrl: String? = null
-                var finalThumbUrl: String? = null
-                val finalImageUrls = mutableListOf<String>()
+        val inputData = workDataOf(
+            PostUploadWorker.KEY_USER_ID to upload.userId,
+            PostUploadWorker.KEY_CONTENT to upload.content,
+            PostUploadWorker.KEY_IMAGE_URIS to upload.images.map { it.toString() }.toTypedArray(),
+            PostUploadWorker.KEY_VIDEO_PATH to upload.videoFile?.absolutePath,
+            PostUploadWorker.KEY_VIDEO_URI to upload.videoUri?.toString(),
+            PostUploadWorker.KEY_IS_VIDEO to upload.isVideo,
+            PostUploadWorker.KEY_ASPECT_RATIO to upload.aspectRatio,
+            PostUploadWorker.KEY_LOCATION to upload.location,
+            PostUploadWorker.KEY_MUSIC_URI to upload.musicUri?.toString(),
+            PostUploadWorker.KEY_MUSIC_URL to upload.musicUrl,
+            PostUploadWorker.KEY_MUSIC_TITLE to upload.musicTitle,
+            PostUploadWorker.KEY_MUSIC_START_MS to upload.musicStartMs,
+            PostUploadWorker.KEY_MUSIC_END_MS to upload.musicEndMs,
+            PostUploadWorker.KEY_HIDE_LIKE_COUNT to upload.hideLikeCount,
+            PostUploadWorker.KEY_HIDE_COMMENT_COUNT to upload.hideCommentCount,
+            PostUploadWorker.KEY_COMMENTS_DISABLED to upload.commentsDisabled,
+            PostUploadWorker.KEY_MAX_BYTES to upload.maxUploadBytes,
+        )
 
-                // 1. Music upload if selected
-                val finalMusicUrl = upload.musicUri?.let { audioUri ->
-                    _uploadState.update { it.copy(statusMessage = "در حال آپلود موسیقی…") }
-                    val result = uploader.uploadAudio(
-                        userId = upload.userId,
-                        uri = audioUri,
-                        maxBytes = upload.maxUploadBytes,
-                        startMs = upload.musicStartMs,
-                        endMs = upload.musicEndMs,
-                        onProgress = { p ->
-                            _uploadState.update { it.copy(progress = 0.05f + p * 0.2f) }
-                        },
-                    )
-                    uploadedObjectKeys.add(result.objectKey)
-                    result.url
-                } ?: upload.musicUrl
+        val request = OneTimeWorkRequestBuilder<PostUploadWorker>()
+            .setInputData(inputData)
+            .addTag(PostUploadWorker.WORK_TAG)
+            .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
+            .build()
 
-                // 2. Video upload if present
-                if (upload.isVideo && (upload.videoFile != null || upload.videoUri != null)) {
-                    _uploadState.update { it.copy(statusMessage = "در حال آپلود ویدیو…") }
-                    val videoFile = upload.videoFile ?: run {
-                        val uri = upload.videoUri ?: throw java.io.IOException("فایل ویدیو یافت نشد")
-                        val temp = File(context.cacheDir, "bg_upload_video_${System.currentTimeMillis()}.mp4")
-                        context.contentResolver.openInputStream(uri)?.use { input ->
-                            temp.outputStream().use { output -> input.copyTo(output) }
-                        } ?: throw java.io.IOException("امکان خواندن فایل ویدیو وجود ندارد")
-                        temp
-                    }
-                    val result = uploader.uploadVideo(
-                        userId = upload.userId,
-                        videoFile = videoFile,
-                        maxBytes = upload.maxUploadBytes,
-                        onProgress = { p ->
-                            _uploadState.update { it.copy(progress = 0.1f + p * 0.7f) }
-                        },
-                    )
-                    uploadedObjectKeys.add(result.objectKey)
-                    finalVideoUrl = result.url
-                    finalThumbUrl = result.thumbnailUrl
-                }
-                // 3. Images upload if present
-                else if (upload.images.isNotEmpty()) {
-                    val total = upload.images.size
-                    upload.images.forEachIndexed { index, uri ->
-                        _uploadState.update {
-                            it.copy(statusMessage = "در حال آپلود تصویر (${index + 1} از $total)…")
-                        }
-                        val result = uploader.uploadImage(
-                            userId = upload.userId,
-                            uri = uri,
-                            maxBytes = upload.maxUploadBytes,
-                            onProgress = { p ->
-                                val baseProgress = 0.1f + (index.toFloat() / total) * 0.7f
-                                val currentItemProgress = (p / total) * 0.7f
-                                _uploadState.update { it.copy(progress = baseProgress + currentItemProgress) }
-                            },
-                        )
-                        uploadedObjectKeys.add(result.objectKey)
-                        finalImageUrls.add(result.url)
-                    }
-                }
-
-                // 4. Extract mentions & hashtags
-                val hashtags = extractHashtags(upload.content)
-                val mentionUsernames = extractMentions(upload.content)
-                val mentionIds = postMentions.resolve(mentionUsernames)
-
-                _uploadState.update {
-                    it.copy(
-                        progress = 0.9f,
-                        statusMessage = "در حال انتشار پست…",
-                    )
-                }
-
-                val createReq = CreatePostRequestDto(
-                    content = upload.content.trim().ifBlank { null },
-                    imageUrl = finalImageUrls.firstOrNull() ?: finalThumbUrl,
-                    imageUrls = finalImageUrls,
-                    videoUrl = finalVideoUrl,
-                    musicUrl = finalMusicUrl,
-                    musicTitle = upload.musicTitle,
-                    musicStartMs = upload.musicStartMs.takeIf { finalMusicUrl != null },
-                    musicEndMs = upload.musicEndMs.takeIf { finalMusicUrl != null },
-                    aspectRatio = upload.aspectRatio,
-                    tags = hashtags,
-                    location = upload.location,
-                    hideLikeCount = upload.hideLikeCount,
-                    hideCommentCount = upload.hideCommentCount,
-                    commentsDisabled = upload.commentsDisabled,
-                )
-
-                val postDto = api.createPost(createReq)
-                postMentions.attach(postDto.id, mentionIds)
-
-                // Insert into local cache for immediate visibility
-                val userId = upload.userId
-                if (userId.isNotBlank()) {
-                    runCatching {
-                        val exploreEntity = postDto.asEntity(accountId = userId, sortOrder = -1L)
-                        val followingEntity = postDto.asEntity(accountId = "$userId\u001Ffollowing", sortOrder = -1L)
-                        feedDao.insertPosts(listOf(exploreEntity, followingEntity))
-                    }
-                }
-
-                _uploadState.update {
-                    it.copy(
-                        isUploading = false,
-                        progress = 1f,
-                        statusMessage = "پست با موفقیت منتشر شد",
-                        isSuccess = true,
-                        errorMessage = null,
-                    )
-                }
-
-                // Dismiss success banner after 3 seconds
-                delay(3000L)
-                _uploadState.update { current ->
-                    if (current.isSuccess) current.copy(isSuccess = false, pendingUpload = null)
-                    else current
-                }
-            } catch (cancelled: CancellationException) {
-                cleanupOrphanFiles(uploadedObjectKeys)
-                _uploadState.update {
-                    it.copy(
-                        isUploading = false,
-                        errorMessage = "ارسال پست لغو شد",
-                    )
-                }
-                throw cancelled
-            } catch (e: Throwable) {
-                cleanupOrphanFiles(uploadedObjectKeys)
-                _uploadState.update {
-                    it.copy(
-                        isUploading = false,
-                        errorMessage = e.message ?: "خطا در ارسال پست",
-                    )
-                }
-            }
-        }
-    }
-
-    private suspend fun cleanupOrphanFiles(keys: List<String>) {
-        keys.forEach { key ->
-            runCatching { uploader.deleteUpload(key) }
-        }
+        workManager.enqueueUniqueWork(
+            PostUploadWorker.WORK_NAME,
+            ExistingWorkPolicy.REPLACE,
+            request,
+        )
     }
 
     fun retry() {
@@ -235,21 +180,11 @@ class PostUploadManager @Inject constructor(
     }
 
     fun cancel() {
-        uploadJob?.cancel()
+        workManager.cancelUniqueWork(PostUploadWorker.WORK_NAME)
         _uploadState.update { PostUploadState() }
     }
 
     fun dismiss() {
         _uploadState.update { it.copy(errorMessage = null, isSuccess = false) }
-    }
-
-    private fun extractHashtags(text: String): List<String> {
-        val regex = Regex("(?<![^\\s\\n])#([\\p{L}\\p{N}_]+)")
-        return regex.findAll(text).map { it.groupValues[1] }.distinct().toList()
-    }
-
-    private fun extractMentions(text: String): List<String> {
-        val regex = Regex("(?<![^\\s\\n])@([\\p{L}\\p{N}_]+)")
-        return regex.findAll(text).map { it.groupValues[1] }.distinct().toList()
     }
 }

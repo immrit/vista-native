@@ -22,7 +22,7 @@ interface PricingPlansApi {
     suspend fun verifyBazaar(@Body request: BazaarVerifyRequestDto): Response<BazaarVerifyResponseDto>
 
     @GET("v1/payment/packages")
-    suspend fun getCoinPackages(): Response<CoinPackagesResponseDto> = Response.success(CoinPackagesResponseDto())
+    suspend fun getCoinPackages(): Response<CoinPackagesResponseDto>
 }
 
 @Serializable

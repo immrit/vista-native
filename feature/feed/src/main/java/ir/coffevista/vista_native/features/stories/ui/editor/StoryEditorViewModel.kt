@@ -194,6 +194,69 @@ class StoryEditorViewModel @Inject constructor(
         _uiState.update { it.copy(elements = it.elements + element) }
     }
 
+    fun addCountdownElement(title: String, targetTimestampMs: Long) {
+        val element = StoryElement(
+            id = UUID.randomUUID().toString(),
+            type = "countdown",
+            content = "$title|$targetTimestampMs",
+            y = -0.1f,
+        )
+        _uiState.update { it.copy(elements = it.elements + element) }
+    }
+
+    fun addWeatherElement(city: String, temperature: String) {
+        val element = StoryElement(
+            id = UUID.randomUUID().toString(),
+            type = "weather",
+            content = "$city|$temperature",
+            y = -0.25f,
+        )
+        _uiState.update { it.copy(elements = it.elements + element) }
+    }
+
+    fun addDateElement(dateText: String) {
+        val element = StoryElement(
+            id = UUID.randomUUID().toString(),
+            type = "date",
+            content = dateText,
+            y = -0.3f,
+        )
+        _uiState.update { it.copy(elements = it.elements + element) }
+    }
+
+    fun addHashtagElement(tag: String) {
+        val clean = tag.trim().removePrefix("#")
+        if (clean.isBlank()) return
+        val element = StoryElement(
+            id = UUID.randomUUID().toString(),
+            type = "hashtag",
+            content = clean,
+            y = 0.1f,
+        )
+        _uiState.update { it.copy(elements = it.elements + element) }
+    }
+
+    fun addGifElement(gifUrl: String) {
+        if (gifUrl.isBlank()) return
+        val element = StoryElement(
+            id = UUID.randomUUID().toString(),
+            type = "gif",
+            content = gifUrl.trim(),
+            y = 0f,
+        )
+        _uiState.update { it.copy(elements = it.elements + element) }
+    }
+
+    fun addDrawingElement(drawingJson: String) {
+        if (drawingJson.isBlank()) return
+        val element = StoryElement(
+            id = UUID.randomUUID().toString(),
+            type = "drawing",
+            content = drawingJson,
+        )
+        _uiState.update { it.copy(elements = it.elements + element) }
+    }
+
     fun updateElementPosition(id: String, deltaX: Float, deltaY: Float) {
         _uiState.update { state ->
             state.copy(

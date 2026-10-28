@@ -36,4 +36,10 @@ interface SearchApi {
         @Query("limit") limit: Int,
         @Query("days") days: Int,
     ): Response<HashtagResponseDto>
+
+    @GET("v1/explore")
+    suspend fun getExploreGrid(
+        @Query("limit") limit: Int = 30,
+        @Query("offset") offset: Int = 0,
+    ): Response<SearchPostsResponseDto>
 }

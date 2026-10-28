@@ -62,6 +62,8 @@ object ChatDataModule {
                 ChatDatabase.MIGRATION_4_5,
                 ChatDatabase.MIGRATION_5_6,
             )
+            .fallbackToDestructiveMigration()
+            .fallbackToDestructiveMigrationOnDowngrade()
             .build()
 
     @Provides
@@ -137,6 +139,7 @@ object ChatDataModule {
     @Provides
     @Singleton
     fun provideChatRepository(
+        @dagger.hilt.android.qualifiers.ApplicationContext context: Context,
         api: ChatApi,
         dao: ChatDao,
         cipher: ChatContentCipher,
@@ -147,6 +150,7 @@ object ChatDataModule {
         e2eeService: ir.coffevista.vista_native.features.chat.data.security.ChatE2EEService,
         @ApplicationScope scope: CoroutineScope,
     ): ChatRepository = OfflineFirstChatRepository(
+        context = context,
         api = api,
         dao = dao,
         cipher = cipher,

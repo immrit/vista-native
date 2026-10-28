@@ -99,4 +99,11 @@ class StoryPlayerViewModel @Inject constructor(
             ).onSuccess { onResult(true) }.onFailure { onResult(false) }
         }
     }
+
+    fun loadQuestionAnswers(storyId: String, onResult: (List<ir.coffevista.vista_native.features.stories.domain.StoryQuestionAnswerDto>) -> Unit) {
+        viewModelScope.launch {
+            val answers = repository.getQuestionAnswers(storyId)
+            onResult(answers.getOrDefault(emptyList()))
+        }
+    }
 }

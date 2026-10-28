@@ -203,4 +203,8 @@ class FakeProfileApi : ProfileApi {
     override suspend fun deleteUpload(
         request: ProfileMediaDeleteRequestDto,
     ): ProfileMediaDeleteResponseDto = error("Not used by repository tests")
+
+    override suspend fun requestVerification(
+        request: VerificationRequestDto,
+    ): Response<VerificationResponseDto> = Response.success(VerificationResponseDto())
 }

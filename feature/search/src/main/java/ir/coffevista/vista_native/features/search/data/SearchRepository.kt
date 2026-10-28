@@ -8,6 +8,7 @@ interface SearchRepository {
     suspend fun searchPostsByHashtag(query: String, offset: Int): PostSearchPage = PostSearchPage(emptyList(), false, null)
     suspend fun searchHashtags(query: String): List<HashtagSuggestion>
     suspend fun trendingHashtags(): List<HashtagSuggestion>
+    suspend fun getExploreGrid(limit: Int = 30, offset: Int = 0): List<SearchPost> = emptyList()
 
     fun observeHistory(accountId: String): Flow<List<SearchHistoryItem>>
     suspend fun addHistory(

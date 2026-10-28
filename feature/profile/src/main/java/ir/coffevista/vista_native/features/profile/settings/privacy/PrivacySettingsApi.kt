@@ -24,14 +24,45 @@ interface PrivacySettingsApi {
     suspend fun updateStorySettings(@Body settings: StorySettingsDto): Response<Unit>
 
     @POST("v1/auth/account-deletion/request-otp")
-    suspend fun requestAccountDeletionOtp(@Body request: RequestAccountDeletionOtpDto): Response<AccountDeletionOtpResponseDto> = Response.success(AccountDeletionOtpResponseDto())
+    suspend fun requestAccountDeletionOtp(@Body request: RequestAccountDeletionOtpDto): Response<AccountDeletionOtpResponseDto>
 
     @POST("v1/auth/account-deletion/confirm")
-    suspend fun confirmAccountDeletion(@Body request: ConfirmAccountDeletionDto): Response<ConfirmAccountDeletionResponseDto> = Response.success(ConfirmAccountDeletionResponseDto())
+    suspend fun confirmAccountDeletion(@Body request: ConfirmAccountDeletionDto): Response<ConfirmAccountDeletionResponseDto>
 
     @POST("v1/auth/2fa/remove")
-    suspend fun remove2FA(@Body request: Remove2FADto): Response<Map<String, Boolean>> = Response.success(mapOf("success" to true))
+    suspend fun remove2FA(@Body request: Remove2FADto): Response<Map<String, Boolean>>
+
+    @POST("v1/auth/send-email-verification")
+    suspend fun sendEmailVerification(@Body request: SendEmailVerificationDto): Response<SendEmailVerificationResponseDto>
+
+    @POST("v1/auth/verify-email")
+    suspend fun verifyEmail(@Body request: VerifyEmailDto): Response<VerifyEmailResponseDto>
 }
+
+@Serializable
+data class SendEmailVerificationDto(
+    val email: String,
+)
+
+@Serializable
+data class SendEmailVerificationResponseDto(
+    val success: Boolean = true,
+    val message: String? = null,
+    @kotlinx.serialization.SerialName("session_id") val sessionId: String? = null,
+    @kotlinx.serialization.SerialName("expires_in_seconds") val expiresInSeconds: Long = 120,
+)
+
+@Serializable
+data class VerifyEmailDto(
+    @kotlinx.serialization.SerialName("session_id") val sessionId: String,
+    val code: String,
+)
+
+@Serializable
+data class VerifyEmailResponseDto(
+    val success: Boolean = true,
+    val message: String? = null,
+)
 
 @Serializable
 data class RequestAccountDeletionOtpDto(

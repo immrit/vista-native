@@ -99,6 +99,7 @@ fun SearchLauncherScreen(
     viewModel: SearchViewModel,
     onOpenWorkspace: () -> Unit,
     onOpenQrScanner: () -> Unit,
+    onPostClick: (SearchPost) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -157,6 +158,8 @@ fun SearchLauncherScreen(
                 viewModel.selectHashtag(it)
                 onOpenWorkspace()
             },
+            onPost = onPostClick,
+            onLoadMoreExplore = viewModel::loadMoreExplore,
             onRefresh = viewModel::refreshTrending,
         )
     }
@@ -198,6 +201,7 @@ fun SearchWorkspaceScreen(
         },
         onRetry = viewModel::retry,
         onLoadMoreUsers = viewModel::loadMoreUsers,
+        onLoadMoreExplore = viewModel::loadMoreExplore,
         onBack = onBack,
         onOpenQrScanner = onOpenQrScanner,
         autoFocus = autoFocus,
@@ -221,6 +225,7 @@ internal fun SearchWorkspaceContent(
     onPost: (SearchPost) -> Unit,
     onRetry: () -> Unit,
     onLoadMoreUsers: () -> Unit,
+    onLoadMoreExplore: () -> Unit = {},
     onBack: (() -> Unit)? = null,
     onOpenQrScanner: (() -> Unit)? = null,
     autoFocus: Boolean,
@@ -288,6 +293,7 @@ internal fun SearchWorkspaceContent(
                 onPost = onPost,
                 onRetry = onRetry,
                 onLoadMoreUsers = onLoadMoreUsers,
+                onLoadMoreExplore = onLoadMoreExplore,
             )
         }
     }
@@ -430,66 +436,116 @@ private fun SearchField(
 private fun LauncherContent(
     state: SearchUiState,
     onHashtag: (String) -> Unit,
+    onPost: (SearchPost) -> Unit,
+    onLoadMoreExplore: () -> Unit,
     onRefresh: () -> Unit,
 ) {
     PullToRefreshBox(
-        isRefreshing = state.isLoadingTrending,
+        isRefreshing = state.isLoadingTrending || state.isLoadingExplore,
         onRefresh = onRefresh,
         modifier = Modifier.fillMaxSize(),
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(start = 16.dp, top = 12.dp, end = 16.dp, bottom = 24.dp),
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 96.dp),
         ) {
-            Text(
-                text = "ترندهای امروز",
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(bottom = 16.dp),
-            )
-            when {
-                state.isLoadingTrending && state.trending.isEmpty() -> {
+            item {
+                SectionHeader(title = "ترندهای امروز")
+            }
+            if (state.isLoadingTrending && state.trending.isEmpty()) {
+                item {
                     Box(
-                        Modifier.fillMaxWidth().height(120.dp),
+                        Modifier.fillMaxWidth().height(80.dp),
                         contentAlignment = Alignment.Center,
                     ) {
                         CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
                     }
                 }
-                state.trending.isEmpty() -> {
+            } else if (state.trending.isNotEmpty()) {
+                item {
+                    TrendingChips(state.trending, onHashtag)
+                    Spacer(Modifier.height(12.dp))
+                }
+            } else {
+                item {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 40.dp),
+                            .padding(vertical = 24.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
                         Icon(
                             imageVector = Icons.Outlined.Tag,
                             contentDescription = null,
-                            modifier = Modifier.size(48.dp),
+                            modifier = Modifier.size(44.dp),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                         )
-                        Spacer(Modifier.height(12.dp))
+                        Spacer(Modifier.height(8.dp))
                         Text(
                             text = "هنوز ترندی برای نمایش وجود ندارد",
                             style = MaterialTheme.typography.titleSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                        Spacer(Modifier.height(6.dp))
-                        Text(
-                            text = "با آغاز فعالیت کاربران، هشتگ‌های پرطرفدار در اینجا نمایش داده می‌شوند.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                            textAlign = TextAlign.Center,
-                        )
-                        Spacer(Modifier.height(12.dp))
-                        TextButton(onClick = onRefresh) {
-                            Text("تلاش مجدد")
+                    }
+                }
+            }
+
+            // Visual Explore Grid (Instagram 3-column layout)
+            item {
+                SectionHeader(title = "کاوش در ویستا")
+            }
+            if (state.explorePosts.isNotEmpty()) {
+                val rows = state.explorePosts.chunked(3)
+                items(rows.size) { rowIndex ->
+                    val rowPosts = rows[rowIndex]
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 1.dp),
+                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        for (i in 0 until 3) {
+                            val post = rowPosts.getOrNull(i)
+                            if (post != null) {
+                                Box(modifier = Modifier.weight(1f)) {
+                                    PostTile(post = post, onClick = onPost)
+                                }
+                            } else {
+                                Spacer(modifier = Modifier.weight(1f))
+                            }
+                        }
+                    }
+                    if (rowIndex >= rows.size - 2 && state.hasMoreExplore && !state.isLoadingExplore) {
+                        LaunchedEffect(rowIndex) { onLoadMoreExplore() }
+                    }
+                }
+                if (state.isLoadingExplore) {
+                    item {
+                        Box(
+                            Modifier.fillMaxWidth().height(60.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
                         }
                     }
                 }
-                else -> {
-                    TrendingChips(state.trending, onHashtag)
+            } else if (state.isLoadingExplore) {
+                item {
+                    Box(
+                        Modifier.fillMaxWidth().height(140.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        CircularProgressIndicator(Modifier.size(28.dp), strokeWidth = 2.dp)
+                    }
+                }
+            } else {
+                item {
+                    Text(
+                        text = "پستی برای کاوش یافت نشد",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = 16.dp),
+                    )
                 }
             }
         }
@@ -596,14 +652,17 @@ private fun SearchBody(
     onPost: (SearchPost) -> Unit,
     onRetry: () -> Unit,
     onLoadMoreUsers: () -> Unit,
+    onLoadMoreExplore: () -> Unit = {},
 ) {
     when {
         !state.hasQuery -> InitialContent(
-            state,
-            onHistory,
-            onDeleteHistory,
-            onClearHistory,
-            onHashtag,
+            state = state,
+            onHistory = onHistory,
+            onDeleteHistory = onDeleteHistory,
+            onClearHistory = onClearHistory,
+            onHashtag = onHashtag,
+            onPost = onPost,
+            onLoadMoreExplore = onLoadMoreExplore,
         )
         state.phase == SearchPhase.Loading -> LoadingContent()
         state.phase == SearchPhase.Error -> ErrorContent(state.errorMessage, onRetry)
@@ -627,6 +686,8 @@ private fun InitialContent(
     onDeleteHistory: (String) -> Unit,
     onClearHistory: () -> Unit,
     onHashtag: (String) -> Unit,
+    onPost: (SearchPost) -> Unit,
+    onLoadMoreExplore: () -> Unit,
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -660,26 +721,58 @@ private fun InitialContent(
                     )
                 }
             }
-        } else {
+        } else if (state.trending.isNotEmpty()) {
             item {
-                if (state.trending.isEmpty()) {
-                    Column(
-                        modifier = Modifier.fillMaxWidth().padding(top = 32.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
-                        SearchOffGlyph(
-                            modifier = Modifier.size(52.dp),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Spacer(Modifier.height(14.dp))
-                        Text(
-                            "هنوز ترندی برای نمایش نداریم",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                TrendingChips(state.trending, onHashtag)
+            }
+        }
+
+        // Instagram-style Visual Explore Grid
+        item {
+            SectionHeader(title = "کاوش در ویستا")
+        }
+        if (state.explorePosts.isNotEmpty()) {
+            val rows = state.explorePosts.chunked(3)
+            items(rows.size) { rowIndex ->
+                val rowPosts = rows[rowIndex]
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 1.dp),
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    for (i in 0 until 3) {
+                        val post = rowPosts.getOrNull(i)
+                        if (post != null) {
+                            Box(modifier = Modifier.weight(1f)) {
+                                PostTile(post = post, onClick = onPost)
+                            }
+                        } else {
+                            Spacer(modifier = Modifier.weight(1f))
+                        }
                     }
-                } else {
-                    TrendingChips(state.trending, onHashtag)
+                }
+                if (rowIndex >= rows.size - 2 && state.hasMoreExplore && !state.isLoadingExplore) {
+                    LaunchedEffect(rowIndex) { onLoadMoreExplore() }
+                }
+            }
+            if (state.isLoadingExplore) {
+                item {
+                    Box(
+                        Modifier.fillMaxWidth().height(60.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+                    }
+                }
+            }
+        } else if (state.isLoadingExplore) {
+            item {
+                Box(
+                    Modifier.fillMaxWidth().height(120.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CircularProgressIndicator(Modifier.size(28.dp), strokeWidth = 2.dp)
                 }
             }
         }

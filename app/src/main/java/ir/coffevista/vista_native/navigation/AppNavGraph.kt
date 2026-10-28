@@ -672,7 +672,10 @@ fun VistaApp(
                             )
                         },
                         pricingPage = { onBack ->
-                            PricingScreen(onBack = onBack)
+                            PricingScreen(onBack = onBack, initialTab = 0)
+                        },
+                        badgeStore = { onBack ->
+                            PricingScreen(onBack = onBack, initialTab = 2)
                         },
                         privacySecurity = { onBack, onBlockedUsers, onActiveSessions ->
                             val profileViewModel = hiltViewModel<OwnProfileViewModel>()
