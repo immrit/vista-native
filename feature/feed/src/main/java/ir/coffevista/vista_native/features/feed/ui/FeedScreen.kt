@@ -72,6 +72,19 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.AdminPanelSettings
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Flag
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.WorkspacePremium
+import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.RemoveCircleOutline
+import ir.coffevista.vista_native.core.database.profile.hasBlueBadge
+import ir.coffevista.vista_native.core.database.profile.hasPremiumPrivileges
+import ir.coffevista.vista_native.core.designsystem.component.VistaPremiumPromptDialog
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -81,8 +94,12 @@ import androidx.compose.foundation.text.ClickableText
 import ir.coffevista.vista_native.features.feed.ui.components.EditPostDialog
 import ir.coffevista.vista_native.features.feed.ui.components.PostModerationBanner
 import ir.coffevista.vista_native.features.feed.ui.components.ReportReasonDialog
+import ir.coffevista.vista_native.core.designsystem.component.VistaBadgedBox
 import ir.coffevista.vista_native.core.designsystem.component.VistaEmojiText
 import ir.coffevista.vista_native.core.designsystem.component.VistaFloatingActionButton
+import ir.coffevista.vista_native.core.designsystem.component.VistaNotificationBadge
+import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material3.ripple
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
@@ -193,10 +210,16 @@ fun FeedScreen(
     val storyUsers by viewModel.activeStoryUsers.collectAsStateWithLifecycle()
     val ownProfile by viewModel.ownProfile.collectAsStateWithLifecycle()
     val postUploadState by viewModel.postUploadState.collectAsStateWithLifecycle()
+    val isViewerBlueTick = ownProfile?.hasBlueBadge == true
+    val viewerHasPremiumEdit = ownProfile?.hasPremiumPrivileges == true
+    var premiumPromptFeature by remember { mutableStateOf<String?>(null) }
 
     FeedScreenContent(
         uiState = uiState,
         viewerUserId = viewerUserId,
+        isViewerBlueTick = isViewerBlueTick,
+        viewerHasPremiumEdit = viewerHasPremiumEdit,
+        onPremiumPrompt = { feature -> premiumPromptFeature = feature },
         currentUserAvatar = ownProfile?.avatarUrl,
         unreadNotificationCount = unreadNotificationCount,
         selectedKind = selectedKind,
@@ -243,10 +266,12 @@ fun FeedScreen(
     )
 
     showCommentsForPostId?.let { postId ->
+        val postOwnerId = (uiState as? FeedUiState.Content)?.posts?.firstOrNull { it.id == postId }?.userId
         CommentsBottomSheet(
             postId = postId,
             onDismissRequest = { showCommentsForPostId = null },
             viewModel = commentsViewModel,
+            postOwnerId = postOwnerId,
             onAuthorClick = onAuthorClick,
             onHashtagClick = onHashtagClick,
         )
@@ -274,8 +299,12 @@ fun FeedScreen(
         )
     }
     editPostTarget?.let { target ->
+        val maxLen = if (isViewerBlueTick) 10000 else if (viewerHasPremiumEdit) 1000 else 500
+        val title = if (isViewerBlueTick && target.userId != viewerUserId) "ویرایش ناظر" else "ویرایش پست"
         EditPostDialog(
             initialContent = target.content.orEmpty(),
+            maxCharLength = maxLen,
+            title = title,
             isSubmitting = isEditing,
             onDismiss = { if (!isEditing) editPostTarget = null },
             onConfirm = { newContent ->
@@ -287,6 +316,13 @@ fun FeedScreen(
             },
         )
     }
+    premiumPromptFeature?.let { feature ->
+        VistaPremiumPromptDialog(
+            feature = feature,
+            onDismiss = { premiumPromptFeature = null },
+            onUpgradeClick = { premiumPromptFeature = null },
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -294,6 +330,9 @@ fun FeedScreen(
 internal fun FeedScreenContent(
     uiState: FeedUiState,
     viewerUserId: String? = null,
+    isViewerBlueTick: Boolean = false,
+    viewerHasPremiumEdit: Boolean = false,
+    onPremiumPrompt: (String) -> Unit = {},
     currentUserAvatar: String? = null,
     storyUsers: List<ir.coffevista.vista_native.features.stories.domain.StoryUser> = emptyList(),
     unreadNotificationCount: Int = 0,
@@ -452,6 +491,9 @@ internal fun FeedScreenContent(
                         state = state,
                         listState = listState,
                         viewerUserId = viewerUserId,
+                        isViewerBlueTick = isViewerBlueTick,
+                        viewerHasPremiumEdit = viewerHasPremiumEdit,
+                        onPremiumPrompt = onPremiumPrompt,
                         selectedKind = selectedKind,
                         onLoadMore = onLoadMore,
                         onPostClick = onPostClick,
@@ -595,10 +637,10 @@ private fun FeedAppBar(
         )
         NotificationBell(
             unreadCount = unreadNotificationCount,
+            onClick = onNotificationClick,
             modifier = Modifier
                 .align(Alignment.CenterEnd)
-                .padding(horizontal = 16.dp)
-                .size(40.dp).clickable(onClick = onNotificationClick).padding(8.dp),
+                .padding(end = 12.dp),
         )
     }
 }
@@ -707,6 +749,9 @@ private fun FeedTabs(
 internal fun FeedContent(
     state: FeedUiState.Content,
     viewerUserId: String? = null,
+    isViewerBlueTick: Boolean = false,
+    viewerHasPremiumEdit: Boolean = false,
+    onPremiumPrompt: (String) -> Unit = {},
     onLoadMore: () -> Unit,
     onPostClick: (String) -> Unit,
     onVideoClick: (String) -> Unit = onPostClick,
@@ -812,6 +857,8 @@ internal fun FeedContent(
             VistaFeedPostCard(
                 post = post,
                 isOwnPost = post.userId == viewerUserId,
+                isBlueTick = isViewerBlueTick,
+                hasPremiumEdit = viewerHasPremiumEdit,
                 showFollowState = selectedKind == FeedKind.Explore,
                 onPostClick = { onPostClick(post.id) },
                 onVideoClick = { onVideoClick(post.id) },
@@ -826,6 +873,7 @@ internal fun FeedContent(
                 onReportPost = { onReportPost(post) },
                 onNotInterested = { onNotInterested(post.id) },
                 onVisibilityChange = { hideLike, hideComment -> onVisibilityChange(post, hideLike, hideComment) },
+                onPremiumPrompt = onPremiumPrompt,
                 onHashtagClick = onHashtagClick,
                 onMentionClick = onMentionClick,
                 onAppealClick = onAppealClick,
@@ -901,6 +949,8 @@ internal fun FeedContent(
 fun VistaFeedPostCard(
     post: FeedPost,
     isOwnPost: Boolean = false,
+    isBlueTick: Boolean = false,
+    hasPremiumEdit: Boolean = false,
     verticalMenu: Boolean = false,
     onPostClick: () -> Unit,
     onVideoClick: (() -> Unit)? = null,
@@ -915,6 +965,7 @@ fun VistaFeedPostCard(
     onReportPost: () -> Unit = {},
     onNotInterested: () -> Unit = {},
     onVisibilityChange: (Boolean?, Boolean?) -> Unit = { _, _ -> },
+    onPremiumPrompt: (String) -> Unit = {},
     onHashtagClick: (String) -> Unit = {},
     onMentionClick: (String) -> Unit = {},
     onAppealClick: (String) -> Unit = {},
@@ -1078,7 +1129,10 @@ fun VistaFeedPostCard(
             onReportPost = onReportPost,
             onNotInterested = onNotInterested,
             onVisibilityChange = onVisibilityChange,
+            onPremiumPrompt = onPremiumPrompt,
             isOwnPost = isOwnPost,
+            isBlueTick = isBlueTick,
+            hasPremiumEdit = hasPremiumEdit,
             verticalMenu = verticalMenu,
         )
     }
@@ -1431,6 +1485,8 @@ private fun PostMusicBubble(post: FeedPost) {
 private fun PostActionRow(
     post: FeedPost,
     isOwnPost: Boolean,
+    isBlueTick: Boolean = false,
+    hasPremiumEdit: Boolean = false,
     verticalMenu: Boolean,
     onPostClick: () -> Unit,
     onLikeClick: () -> Unit,
@@ -1442,6 +1498,7 @@ private fun PostActionRow(
     onReportPost: () -> Unit,
     onNotInterested: () -> Unit,
     onVisibilityChange: (Boolean?, Boolean?) -> Unit,
+    onPremiumPrompt: (String) -> Unit = {},
 ) {
     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val actionTint = if (isDark) {
@@ -1562,7 +1619,18 @@ private fun PostActionRow(
             DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
                 if (!isOwnPost) {
                     DropdownMenuItem(
-                        text = { Text("گزارش پست") },
+                        text = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.Flag,
+                                    contentDescription = null,
+                                    tint = Color(0xFFFF9800),
+                                    modifier = Modifier.size(20.dp),
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text("گزارش پست")
+                            }
+                        },
                         onClick = {
                             menuExpanded = false
                             onReportPost()
@@ -1570,7 +1638,18 @@ private fun PostActionRow(
                     )
                 }
                 DropdownMenuItem(
-                    text = { Text("کپی متن") },
+                    text = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.ContentCopy,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp),
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text("کپی متن")
+                        }
+                    },
                     onClick = {
                         menuExpanded = false
                         clipboard.setText(AnnotatedString(post.content.orEmpty()))
@@ -1578,42 +1657,155 @@ private fun PostActionRow(
                 )
                 if (!isOwnPost) {
                     DropdownMenuItem(
-                        text = { Text("کمتر نشان بده") },
+                        text = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Outlined.RemoveCircleOutline,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text("کمتر نشان بده")
+                            }
+                        },
                         onClick = {
                             menuExpanded = false
                             onNotInterested()
                         }
                     )
                 }
-                if (isOwnPost) {
+                if (isOwnPost || isBlueTick) {
                     DropdownMenuItem(
-                        text = { Text("ویرایش پست") },
-                        onClick = {
-                            menuExpanded = false
-                            onEditPost()
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text(if (post.hideLikeCount) "نمایش تعداد لایک" else "مخفی کردن تعداد لایک") },
-                        onClick = {
-                            menuExpanded = false
-                            onVisibilityChange(!post.hideLikeCount, null)
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text(if (post.hideCommentCount) "نمایش تعداد دیدگاه" else "مخفی کردن تعداد دیدگاه") },
-                        onClick = {
-                            menuExpanded = false
-                            onVisibilityChange(null, !post.hideCommentCount)
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("حذف پست", color = MaterialTheme.colorScheme.error) },
+                        text = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.Delete,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text("حذف پست", color = MaterialTheme.colorScheme.error)
+                            }
+                        },
                         onClick = {
                             menuExpanded = false
                             confirmDelete = true
                         }
                     )
+                }
+                if (isBlueTick || hasPremiumEdit) {
+                    DropdownMenuItem(
+                        text = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = if (isBlueTick) Icons.Default.AdminPanelSettings else Icons.Default.Edit,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text(if (isBlueTick) "ویرایش ناظر" else "ویرایش پست")
+                            }
+                        },
+                        onClick = {
+                            menuExpanded = false
+                            onEditPost()
+                        }
+                    )
+                } else if (isOwnPost) {
+                    DropdownMenuItem(
+                        text = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Lock,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text("ویرایش پست", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Spacer(Modifier.weight(1f))
+                                Icon(
+                                    imageVector = Icons.Default.WorkspacePremium,
+                                    contentDescription = null,
+                                    tint = Color(0xFFFFB800),
+                                    modifier = Modifier.size(18.dp),
+                                )
+                            }
+                        },
+                        onClick = {
+                            menuExpanded = false
+                            onPremiumPrompt("ویرایش پست")
+                        }
+                    )
+                }
+                if (isOwnPost) {
+                    if (hasPremiumEdit) {
+                        DropdownMenuItem(
+                            text = {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = if (post.hideLikeCount) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(20.dp),
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(if (post.hideLikeCount) "نمایش تعداد لایک" else "مخفی کردن تعداد لایک")
+                                }
+                            },
+                            onClick = {
+                                menuExpanded = false
+                                onVisibilityChange(!post.hideLikeCount, null)
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = if (post.hideCommentCount) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(20.dp),
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(if (post.hideCommentCount) "نمایش تعداد دیدگاه" else "مخفی کردن تعداد دیدگاه")
+                                }
+                            },
+                            onClick = {
+                                menuExpanded = false
+                                onVisibilityChange(null, !post.hideCommentCount)
+                            }
+                        )
+                    } else {
+                        DropdownMenuItem(
+                            text = {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.Lock,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(20.dp),
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("کنترل آمار لایک/کامنت", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Spacer(Modifier.weight(1f))
+                                    Icon(
+                                        imageVector = Icons.Default.WorkspacePremium,
+                                        contentDescription = null,
+                                        tint = Color(0xFFFFB800),
+                                        modifier = Modifier.size(18.dp),
+                                    )
+                                }
+                            },
+                            onClick = {
+                                menuExpanded = false
+                                onPremiumPrompt("مخفی‌سازی آمار لایک و کامنت")
+                            }
+                        )
+                    }
                 }
             }
         }
@@ -1898,61 +2090,45 @@ private fun MoreDots(color: Color, vertical: Boolean = false, modifier: Modifier
 @Composable
 private fun NotificationBell(
     unreadCount: Int = 0,
+    onClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
-    val color = MaterialTheme.colorScheme.onBackground
-    Box(modifier = modifier.semantics { contentDescription = "اعلان‌ها" }) {
-        Canvas(Modifier.fillMaxSize()) {
-            drawArc(
-                color = color,
-                startAngle = 180f,
-                sweepAngle = 180f,
-                useCenter = false,
-                topLeft = Offset(size.width * .23f, size.height * .18f),
-                size = Size(size.width * .54f, size.height * .62f),
-                style = Stroke(width = size.minDimension * .085f, cap = StrokeCap.Round),
+    val iconColor = MaterialTheme.colorScheme.onBackground
+    val surfaceColor = MaterialTheme.colorScheme.background
+
+    Box(
+        modifier = modifier
+            .size(44.dp)
+            .clip(CircleShape)
+            .then(
+                if (onClick != null) {
+                    Modifier.clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = ripple(bounded = true, radius = 22.dp),
+                        onClick = onClick,
+                    )
+                } else Modifier
             )
-            drawLine(
-                color,
-                Offset(size.width * .23f, size.height * .5f),
-                Offset(size.width * .18f, size.height * .78f),
-                strokeWidth = size.minDimension * .085f,
-                cap = StrokeCap.Round,
-            )
-            drawLine(
-                color,
-                Offset(size.width * .77f, size.height * .5f),
-                Offset(size.width * .82f, size.height * .78f),
-                strokeWidth = size.minDimension * .085f,
-                cap = StrokeCap.Round,
-            )
-            drawLine(
-                color,
-                Offset(size.width * .18f, size.height * .78f),
-                Offset(size.width * .82f, size.height * .78f),
-                strokeWidth = size.minDimension * .085f,
-                cap = StrokeCap.Round,
-            )
-            drawCircle(color, size.minDimension * .07f, Offset(size.width * .5f, size.height * .91f))
-        }
-        if (unreadCount > 0) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .offset(x = (-6).dp, y = (-6).dp)
-                    .background(Color(0xFFF44336), CircleShape)
-                    .padding(horizontal = 5.dp, vertical = 3.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = if (unreadCount > 99) "99+" else unreadCount.toString(),
-                    color = Color.White,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold,
-                    textAlign = TextAlign.Center,
-                    maxLines = 1,
-                )
+            .semantics { contentDescription = "اعلان‌ها" },
+        contentAlignment = Alignment.Center,
+    ) {
+        VistaBadgedBox(
+            badge = {
+                if (unreadCount > 0) {
+                    VistaNotificationBadge(
+                        count = unreadCount,
+                        borderColor = surfaceColor,
+                        modifier = Modifier.testTag("feed-notification-badge"),
+                    )
+                }
             }
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.Notifications,
+                contentDescription = null,
+                tint = iconColor,
+                modifier = Modifier.size(26.dp),
+            )
         }
     }
 }

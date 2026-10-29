@@ -7,6 +7,7 @@ import ir.coffevista.vista_native.features.profile.data.FollowUserDto
 import ir.coffevista.vista_native.features.profile.data.ProfileHighlightsResponseDto
 import ir.coffevista.vista_native.features.profile.data.PublicProfileApi
 import ir.coffevista.vista_native.features.profile.data.PublicProfileDto
+import ir.coffevista.vista_native.features.profile.data.ReportProfileRequestDto
 import ir.coffevista.vista_native.features.profile.data.UnfollowResponseDto
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -75,6 +76,10 @@ class FollowersFollowingViewModelTest {
 
         override suspend fun getUserHighlights(userId: String): Response<ProfileHighlightsResponseDto> {
             return Response.success(ProfileHighlightsResponseDto())
+        }
+
+        override suspend fun reportProfile(request: ReportProfileRequestDto): Response<Unit> {
+            return Response.success(Unit)
         }
     }
 

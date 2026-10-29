@@ -95,6 +95,7 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaBrandColors
+import ir.coffevista.vista_native.core.designsystem.component.VistaReportReasonDialog
 import ir.coffevista.vista_native.features.stories.data.StoryRepository
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Add
@@ -1111,53 +1112,18 @@ fun StoryPlayerScreen(
 
             // Report Dialog
             if (showReportDialog) {
-                val reportReasons = listOf(
-                    "محتوای نامناسب",
-                    "محتوای خشونت‌آمیز",
-                    "اسپم",
-                    "نقض حق نشر",
-                    "سایر موارد",
-                )
-                AlertDialog(
-                    onDismissRequest = { showReportDialog = false },
-                    containerColor = Color(0xFF212121),
-                    shape = RoundedCornerShape(16.dp),
-                    title = {
-                        Text(
-                            text = "گزارش استوری",
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold,
-                        )
-                    },
-                    text = {
-                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            reportReasons.forEach { reason ->
-                                Text(
-                                    text = reason,
-                                    color = Color.White,
-                                    fontSize = 14.sp,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable {
-                                            showReportDialog = false
-                                            viewModel.reportStory(activeStory.id, reason) { success, err ->
-                                                coroutineScope.launch {
-                                                    snackbarHostState.showSnackbar(
-                                                        if (success) "گزارش شما با موفقیت ثبت شد"
-                                                        else (err ?: "خطا در ثبت گزارش"),
-                                                    )
-                                                }
-                                            }
-                                        }
-                                        .padding(vertical = 10.dp, horizontal = 4.dp),
+                VistaReportReasonDialog(
+                    title = "گزارش استوری",
+                    onDismiss = { showReportDialog = false },
+                    onSubmit = { reason, details ->
+                        showReportDialog = false
+                        viewModel.reportStory(activeStory.id, reason, details ?: "") { success, err ->
+                            coroutineScope.launch {
+                                snackbarHostState.showSnackbar(
+                                    if (success) "گزارش شما با موفقیت ثبت شد"
+                                    else (err ?: "خطا در ثبت گزارش"),
                                 )
                             }
-                        }
-                    },
-                    confirmButton = {},
-                    dismissButton = {
-                        TextButton(onClick = { showReportDialog = false }) {
-                            Text("انصراف", color = Color.White)
                         }
                     },
                 )
@@ -1177,7 +1143,7 @@ private fun StoryVerificationBadge(
     val badgeColor = when (verificationType) {
         StoryVerificationType.Gold -> Color(0xFFFFA000)
         StoryVerificationType.Black -> Color.White
-        else -> Color(0xFF2196F3)
+        else -> MaterialTheme.colorScheme.primary
     }
     Box(
         modifier = Modifier

@@ -151,6 +151,10 @@ fun InAppWebScreen(
                             settings.domStorageEnabled = true
                             settings.loadWithOverviewMode = true
                             settings.useWideViewPort = true
+                            settings.javaScriptCanOpenWindowsAutomatically = true
+
+                            CookieManager.getInstance().setAcceptCookie(true)
+                            CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
 
                             webChromeClient = object : WebChromeClient() {
                                 override fun onProgressChanged(view: WebView?, newProgress: Int) {
@@ -264,7 +268,15 @@ internal fun isNavigationAllowed(
     if (scheme != "http" && scheme != "https") {
         return scheme == "about" || scheme == "data"
     }
-    if (!uri.host.orEmpty().equals(restrictHost, ignoreCase = true)) return false
+
+    val host = uri.host.orEmpty().lowercase()
+    val target = restrictHost.lowercase()
+    val isAllowedHost = host == target ||
+        host.endsWith(".$target") ||
+        (target.contains("cafevista.ir") && (host == "coffevista.ir" || host.endsWith(".coffevista.ir"))) ||
+        (target.contains("coffevista.ir") && (host == "cafevista.ir" || host.endsWith(".cafevista.ir")))
+
+    if (!isAllowedHost) return false
 
     val prefix = allowedPathPrefix?.takeIf { it.isNotBlank() } ?: return true
     val path = uri.path.orEmpty().ifBlank { "/" }

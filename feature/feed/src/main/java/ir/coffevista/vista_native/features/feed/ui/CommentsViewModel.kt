@@ -11,6 +11,8 @@ import ir.coffevista.vista_native.core.model.session.AuthenticationState
 import ir.coffevista.vista_native.core.model.session.AuthenticationStateProvider
 import ir.coffevista.vista_native.core.database.profile.OwnProfileDao
 import ir.coffevista.vista_native.core.database.profile.OwnProfileEntity
+import ir.coffevista.vista_native.core.database.profile.hasBlueBadge
+import ir.coffevista.vista_native.core.database.profile.hasPremiumPrivileges
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -40,6 +42,7 @@ data class CommentsUiState(
     val currentUserFullName: String? = null,
     val currentUserRole: String? = null,
     val currentUserHasBlueBadge: Boolean = false,
+    val currentUserHasPremium: Boolean = false,
     val searchedMentions: List<CommentMention> = emptyList(),
 )
 
@@ -88,15 +91,15 @@ class CommentsViewModel @Inject constructor(
                             currentUserFullName = null,
                             currentUserRole = null,
                             currentUserHasBlueBadge = false,
+                            currentUserHasPremium = false,
                         )
                     }
                 } else {
                     profileObservation = viewModelScope.launch {
                         ownProfileDao.getOwnProfile(userId).collectLatest { profile ->
                             currentProfile = profile
-                            val isVerified = profile?.isVerified == true
-                            val isBlue = profile?.verificationType?.equals("blueTick", ignoreCase = true) == true ||
-                                profile?.verificationType?.equals("blue", ignoreCase = true) == true
+                            val hasBlue = profile?.hasBlueBadge == true
+                            val hasPrem = profile?.hasPremiumPrivileges == true
                             _uiState.update {
                                 it.copy(
                                     currentUserAvatarUrl = profile?.avatarUrl,
@@ -104,7 +107,8 @@ class CommentsViewModel @Inject constructor(
                                     currentUserUsername = profile?.username,
                                     currentUserFullName = profile?.fullName,
                                     currentUserRole = profile?.accountType,
-                                    currentUserHasBlueBadge = isVerified && isBlue,
+                                    currentUserHasBlueBadge = hasBlue,
+                                    currentUserHasPremium = hasPrem,
                                 )
                             }
                         }
@@ -116,23 +120,34 @@ class CommentsViewModel @Inject constructor(
 
     fun isCurrentUser(userId: String): Boolean = userId == currentUserId
 
-    /** Mirrors Flutter: a user can edit only their own verified/badged comment. */
+    fun isModerator(): Boolean =
+        _uiState.value.currentUserHasBlueBadge ||
+        _uiState.value.currentUserRole?.lowercase() in listOf("admin", "moderator")
+
+    /**
+     * Blue Tick supervisors / moderators can edit ANY comment ("ویرایش ناظر").
+     * Comment authors can edit their comment.
+     */
     fun canEdit(comment: Comment): Boolean {
+        if (isModerator()) return true
         if (!isCurrentUser(comment.authorUserId)) return false
         val verification = comment.authorVerificationType.orEmpty().lowercase()
         val hasSpecialBadge = verification.contains("black") ||
             verification.contains("gold") ||
             verification.contains("blue")
-        return comment.authorIsVerified || hasSpecialBadge
+        return comment.authorIsVerified || hasSpecialBadge || _uiState.value.currentUserHasPremium
     }
 
+    /**
+     * Comment author, post owner, or Blue Tick supervisor / moderator can delete.
+     */
     fun canDelete(comment: Comment, postOwnerId: String? = null): Boolean {
         val userId = currentUserId ?: return false
         val isOwner = comment.authorUserId == userId
         val isPostOwner = (comment.postOwnerId.isNotBlank() && comment.postOwnerId == userId) ||
             (!postOwnerId.isNullOrBlank() && postOwnerId == userId)
-        val hasAdminBlueTick = _uiState.value.currentUserRole == "admin" && _uiState.value.currentUserHasBlueBadge
-        return isOwner || isPostOwner || hasAdminBlueTick
+        val isMod = isModerator()
+        return isOwner || isPostOwner || isMod
     }
 
     fun canReport(comment: Comment): Boolean = !isCurrentUser(comment.authorUserId)

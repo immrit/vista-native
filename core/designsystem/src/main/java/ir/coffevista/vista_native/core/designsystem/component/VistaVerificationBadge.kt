@@ -24,7 +24,8 @@ enum class ResolvedVerificationBadgeType {
 }
 
 object VerificationBadgeDefaults {
-    val Blue = Color(0xFF2196F3)
+    // The standard (blue-tick) badge has no fixed color of its own: it follows the
+    // theme's primary brand color so it always matches the rest of the UI.
     val Gold = Color(0xFFFFB300)
     val BlackLight = Color(0xFF1A1A1A)
     val BlackDark = Color(0xFFFFFFFF)
@@ -74,7 +75,7 @@ fun verificationBadgeColor(
     isDarkSurface: Boolean = isSystemInDarkTheme() || MaterialTheme.colorScheme.surface.luminance() < 0.5f,
 ): Color {
     return when (type) {
-        ResolvedVerificationBadgeType.BLUE_TICK -> VerificationBadgeDefaults.Blue
+        ResolvedVerificationBadgeType.BLUE_TICK -> MaterialTheme.colorScheme.primary
         ResolvedVerificationBadgeType.GOLD_TICK -> VerificationBadgeDefaults.Gold
         ResolvedVerificationBadgeType.BLACK_TICK -> if (isDarkSurface) {
             VerificationBadgeDefaults.BlackDark

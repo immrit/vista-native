@@ -31,6 +31,14 @@ data class PublicProfileDto(
 
 @Keep
 @Serializable
+data class ReportProfileRequestDto(
+    @SerialName("profile_id") val profileId: String,
+    @SerialName("reason") val reason: String,
+    @SerialName("additional_details") val additionalDetails: String? = null,
+)
+
+@Keep
+@Serializable
 data class FollowActionRequestDto(
     @SerialName("target_user_id") val targetUserId: String,
 )

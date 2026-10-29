@@ -94,3 +94,20 @@ data class OwnProfileEntity(
     @ColumnInfo(name = "show_marital_status")
     val showMaritalStatus: Boolean = false,
 )
+
+val OwnProfileEntity.hasBlueBadge: Boolean
+    get() = (isVerified && (verificationType?.contains("blue", ignoreCase = true) == true)) ||
+            accountType.equals("admin", ignoreCase = true) || accountType.equals("moderator", ignoreCase = true)
+
+val OwnProfileEntity.hasGoldBadge: Boolean
+    get() = isVerified && (verificationType?.contains("gold", ignoreCase = true) == true)
+
+val OwnProfileEntity.hasBlackBadge: Boolean
+    get() = isVerified && (verificationType?.contains("black", ignoreCase = true) == true)
+
+val OwnProfileEntity.isPremiumUser: Boolean
+    get() = accountType.equals("premium", ignoreCase = true) || (premiumDaysRemaining != null && premiumDaysRemaining > 0) || !subscriptionPlan.isNullOrBlank()
+
+val OwnProfileEntity.hasPremiumPrivileges: Boolean
+    get() = hasBlueBadge || hasGoldBadge || hasBlackBadge || isPremiumUser
+

@@ -3,6 +3,9 @@ package ir.coffevista.vista_native.features.feed.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import ir.coffevista.vista_native.core.database.profile.OwnProfileDao
+import ir.coffevista.vista_native.core.database.profile.hasBlueBadge
+import ir.coffevista.vista_native.core.database.profile.hasPremiumPrivileges
 import ir.coffevista.vista_native.core.model.session.AuthenticationState
 import ir.coffevista.vista_native.core.model.session.AuthenticationStateProvider
 import ir.coffevista.vista_native.features.feed.data.FeedAppendResult
@@ -28,13 +31,28 @@ data class ProfilePostsUiState(
     val hasMore: Boolean = true,
     val error: String? = null,
     val appendError: String? = null,
+    val viewerUserId: String? = null,
+    val viewerIsBlueTick: Boolean = false,
+    val viewerHasPremiumEdit: Boolean = false,
 )
 
 @HiltViewModel
 class ProfilePostsViewModel @Inject constructor(
     private val repository: FeedRepository,
     private val authStateProvider: AuthenticationStateProvider,
+    private val ownProfileDao: OwnProfileDao? = null,
 ) : ViewModel() {
+
+    // Test constructor
+    constructor(
+        repository: FeedRepository,
+        authStateProvider: AuthenticationStateProvider,
+    ) : this(
+        repository = repository,
+        authStateProvider = authStateProvider,
+        ownProfileDao = null,
+    )
+
     private val _uiState = MutableStateFlow(ProfilePostsUiState())
     val uiState: StateFlow<ProfilePostsUiState> = _uiState.asStateFlow()
 
@@ -58,6 +76,23 @@ class ProfilePostsViewModel @Inject constructor(
     }
 
     private suspend fun load(accountId: String, userId: String) = coroutineScope {
+        if (ownProfileDao != null) {
+            launch {
+                ownProfileDao.getOwnProfile(accountId).collectLatest { profile ->
+                    val isBlue = profile?.hasBlueBadge == true
+                    val hasPremium = profile?.hasPremiumPrivileges == true
+                    _uiState.update {
+                        it.copy(
+                            viewerUserId = accountId,
+                            viewerIsBlueTick = isBlue,
+                            viewerHasPremiumEdit = hasPremium,
+                        )
+                    }
+                }
+            }
+        } else {
+            _uiState.update { it.copy(viewerUserId = accountId) }
+        }
         launch {
             repository.observeUserPosts(accountId, userId).collectLatest { snapshot ->
                 _uiState.update {
@@ -175,6 +210,99 @@ class ProfilePostsViewModel @Inject constructor(
                 repository.toggleSave(accountId, postId, !isSaved)
             } catch (e: Exception) {
                 // Ignored, repository handles rollback
+            }
+        }
+    }
+
+    fun deletePost(postId: String) {
+        val account = accountId ?: return
+        viewModelScope.launch {
+            try {
+                repository.deletePost(account, postId)
+                _uiState.update { current ->
+                    current.copy(posts = current.posts.filterNot { it.id == postId })
+                }
+            } catch (_: Exception) {
+                // Ignore or handle
+            }
+        }
+    }
+
+    fun updatePostContent(
+        postId: String,
+        newContent: String,
+        onResult: (Boolean) -> Unit,
+    ) {
+        val account = accountId ?: return
+        viewModelScope.launch {
+            try {
+                repository.updatePost(
+                    accountId = account,
+                    postId = postId,
+                    content = newContent,
+                )
+                _uiState.update { current ->
+                    current.copy(
+                        posts = current.posts.map { post ->
+                            if (post.id == postId) post.copy(content = newContent) else post
+                        }
+                    )
+                }
+                onResult(true)
+            } catch (e: Exception) {
+                onResult(false)
+            }
+        }
+    }
+
+    fun updateEngagementVisibility(
+        postId: String,
+        hideLikeCount: Boolean?,
+        hideCommentCount: Boolean?,
+    ) {
+        val account = accountId ?: return
+        viewModelScope.launch {
+            try {
+                repository.updatePost(
+                    accountId = account,
+                    postId = postId,
+                    hideLikeCount = hideLikeCount,
+                    hideCommentCount = hideCommentCount,
+                )
+                _uiState.update { current ->
+                    current.copy(
+                        posts = current.posts.map { post ->
+                            if (post.id == postId) {
+                                post.copy(
+                                    hideLikeCount = hideLikeCount ?: post.hideLikeCount,
+                                    hideCommentCount = hideCommentCount ?: post.hideCommentCount,
+                                )
+                            } else post
+                        }
+                    )
+                }
+            } catch (_: Exception) {}
+        }
+    }
+
+    fun reportPost(
+        postId: String,
+        reportedUserId: String,
+        reason: String,
+        additionalDetails: String? = null,
+        onResult: ((Boolean) -> Unit)? = null,
+    ) {
+        viewModelScope.launch {
+            try {
+                repository.reportPost(
+                    postId = postId,
+                    reportedUserId = reportedUserId,
+                    reason = reason,
+                    additionalDetails = additionalDetails,
+                )
+                onResult?.invoke(true)
+            } catch (e: Exception) {
+                onResult?.invoke(false)
             }
         }
     }

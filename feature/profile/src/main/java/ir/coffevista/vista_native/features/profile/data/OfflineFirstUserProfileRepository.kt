@@ -230,6 +230,26 @@ class OfflineFirstUserProfileRepository @Inject constructor(
         )
     }
 
+    override suspend fun reportProfile(
+        profileId: String,
+        reason: String,
+        additionalDetails: String?,
+    ): Result<Unit> = runCatching {
+        require(reason.isNotBlank()) { "دلیل گزارش را انتخاب کنید" }
+        val response = api.reportProfile(
+            ReportProfileRequestDto(
+                profileId = profileId,
+                reason = reason.trim(),
+                additionalDetails = additionalDetails?.trim()?.takeIf(String::isNotEmpty),
+            )
+        )
+        if (!response.isSuccessful) {
+            val errorBody = response.errorBody()?.string()
+            val parsedMessage = errorBody?.let { BackendErrorParser.parse(it).message }
+            throw Exception(parsedMessage ?: "خطا در ثبت گزارش کاربر")
+        }
+    }
+
     private fun malformed(detail: String): AppError = AppError(
         kind = ErrorKind.MALFORMED_RESPONSE,
         messageFa = "پاسخ سرور قابل پردازش نبود. لطفاً دوباره تلاش کنید",

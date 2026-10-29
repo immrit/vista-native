@@ -191,6 +191,18 @@ class OtherUserProfileViewModel @Inject constructor(
         }
     }
 
+    fun reportProfile(
+        reason: String,
+        additionalDetails: String? = null,
+        onResult: (Boolean, String?) -> Unit,
+    ) {
+        viewModelScope.launch {
+            repository.reportProfile(profileUserId, reason, additionalDetails)
+                .onSuccess { onResult(true, null) }
+                .onFailure { error -> onResult(false, error.message) }
+        }
+    }
+
     companion object {
         const val PROFILE_USER_ID_KEY = "userId"
         private const val PROFILE_NOT_FOUND_CODE = "PROFILE_NOT_FOUND"

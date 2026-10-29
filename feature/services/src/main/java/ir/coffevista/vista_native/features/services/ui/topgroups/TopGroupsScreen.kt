@@ -1,6 +1,8 @@
 package ir.coffevista.vista_native.features.services.ui.topgroups
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -15,11 +17,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -32,6 +38,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -41,6 +48,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -51,12 +59,16 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
+import androidx.compose.material.icons.rounded.Clear
 import androidx.compose.material.icons.rounded.EmojiEvents
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.People
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SearchOff
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.Verified
+import androidx.compose.material.icons.rounded.Whatshot
 import androidx.compose.material.icons.rounded.WorkspacePremium
 import androidx.compose.material3.Icon
 import ir.coffevista.vista_native.core.designsystem.theme.VistaFontFamily
@@ -82,6 +94,8 @@ fun TopGroupsScreen(
 ) {
     var state by remember { mutableStateOf<TopGroupsUiState>(TopGroupsUiState.Loading) }
     var loadAttempt by remember { mutableStateOf(0) }
+    var searchQuery by remember { mutableStateOf("") }
+    var selectedTab by remember { mutableIntStateOf(0) } // 0: All, 1: Trending, 2: Premium
 
     LaunchedEffect(loadAttempt) {
         state = TopGroupsUiState.Loading
@@ -157,23 +171,175 @@ fun TopGroupsScreen(
                         )
                     }
                     is TopGroupsUiState.Success -> {
+                        val filteredGroups = remember(uiState.groups, searchQuery, selectedTab) {
+                            uiState.groups
+                                .filter { group ->
+                                    searchQuery.isBlank() || group.name.contains(searchQuery, ignoreCase = true)
+                                }
+                                .let { list ->
+                                    when (selectedTab) {
+                                        1 -> list.sortedByDescending { it.score }
+                                        2 -> list.filter { it.premiumCount > 0 || it.verifiedCount > 0 }
+                                            .sortedByDescending { it.premiumCount + it.verifiedCount }
+                                        else -> list
+                                    }
+                                }
+                        }
+
                         LazyColumn(
                             modifier = Modifier.fillMaxSize(),
                             contentPadding = PaddingValues(bottom = 32.dp),
                         ) {
                             item {
                                 HeroCompetitionBanner(
-                                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 18.dp),
+                                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 12.dp),
                                 )
                             }
 
-                            itemsIndexed(uiState.groups, key = { _, group -> group.id }) { index, group ->
-                                TopGroupItemRow(
-                                    group = group,
-                                    rankIndex = index,
-                                    onClick = { onGroupClick(group.id) },
-                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
-                                )
+                            // Search bar
+                            item {
+                                Surface(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 6.dp),
+                                    shape = RoundedCornerShape(16.dp),
+                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Search,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.vistaColors.contentSecondary,
+                                            modifier = Modifier.size(20.dp),
+                                        )
+                                        Spacer(modifier = Modifier.width(10.dp))
+                                        BasicTextField(
+                                            value = searchQuery,
+                                            onValueChange = { searchQuery = it },
+                                            modifier = Modifier.weight(1f),
+                                            textStyle = MaterialTheme.typography.bodyMedium.copy(
+                                                fontFamily = VistaFontFamily,
+                                                color = MaterialTheme.colorScheme.onSurface,
+                                                fontSize = 13.5.sp,
+                                            ),
+                                            singleLine = true,
+                                            cursorBrush = SolidColor(VistaBrandColors.Indigo),
+                                            decorationBox = { innerTextField ->
+                                                if (searchQuery.isEmpty()) {
+                                                    Text(
+                                                        text = "جستجوی گروه...",
+                                                        style = MaterialTheme.typography.bodyMedium.copy(
+                                                            fontFamily = VistaFontFamily,
+                                                            color = MaterialTheme.vistaColors.contentSecondary.copy(alpha = 0.7f),
+                                                            fontSize = 13.5.sp,
+                                                        ),
+                                                    )
+                                                }
+                                                innerTextField()
+                                            },
+                                        )
+                                        if (searchQuery.isNotEmpty()) {
+                                            IconButton(
+                                                onClick = { searchQuery = "" },
+                                                modifier = Modifier.size(24.dp),
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Rounded.Clear,
+                                                    contentDescription = "پاک کردن",
+                                                    tint = MaterialTheme.vistaColors.contentSecondary,
+                                                    modifier = Modifier.size(16.dp),
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Category filter chips
+                            item {
+                                LazyRow(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    item {
+                                        FilterChip(
+                                            selected = selectedTab == 0,
+                                            onClick = { selectedTab = 0 },
+                                            label = {
+                                                Text(
+                                                    text = "همه گروه‌ها",
+                                                    style = MaterialTheme.typography.labelMedium.copy(fontFamily = VistaFontFamily),
+                                                )
+                                            },
+                                            shape = RoundedCornerShape(12.dp),
+                                        )
+                                    }
+                                    item {
+                                        FilterChip(
+                                            selected = selectedTab == 1,
+                                            onClick = { selectedTab = 1 },
+                                            label = {
+                                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                    Icon(imageVector = Icons.Rounded.Whatshot, contentDescription = null, modifier = Modifier.size(14.dp))
+                                                    Text(
+                                                        text = "پرامتیازترین‌ها",
+                                                        style = MaterialTheme.typography.labelMedium.copy(fontFamily = VistaFontFamily),
+                                                    )
+                                                }
+                                            },
+                                            shape = RoundedCornerShape(12.dp),
+                                        )
+                                    }
+                                    item {
+                                        FilterChip(
+                                            selected = selectedTab == 2,
+                                            onClick = { selectedTab = 2 },
+                                            label = {
+                                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                    Icon(imageVector = Icons.Rounded.WorkspacePremium, contentDescription = null, modifier = Modifier.size(14.dp))
+                                                    Text(
+                                                        text = "دارای کاربر ویژه",
+                                                        style = MaterialTheme.typography.labelMedium.copy(fontFamily = VistaFontFamily),
+                                                    )
+                                                }
+                                            },
+                                            shape = RoundedCornerShape(12.dp),
+                                        )
+                                    }
+                                }
+                            }
+
+                            if (filteredGroups.isEmpty()) {
+                                item {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(32.dp),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Text(
+                                            text = "گروهی با این مشخصات یافت نشد",
+                                            style = MaterialTheme.typography.bodyMedium.copy(
+                                                fontFamily = VistaFontFamily,
+                                                color = MaterialTheme.vistaColors.contentSecondary,
+                                                fontSize = 13.5.sp,
+                                            ),
+                                        )
+                                    }
+                                }
+                            } else {
+                                itemsIndexed(filteredGroups, key = { _, group -> group.id }) { index, group ->
+                                    TopGroupItemRow(
+                                        group = group,
+                                        rankIndex = index,
+                                        onClick = { onGroupClick(group.id) },
+                                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                                    )
+                                }
                             }
                         }
                     }

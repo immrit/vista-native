@@ -1,42 +1,38 @@
 package ir.coffevista.vista_native.features.feed.ui.create
 
-import android.content.Context
-import android.media.MediaCodec
-import android.media.MediaExtractor
-import android.media.MediaFormat
-import android.media.MediaMetadataRetriever
-import android.media.MediaMuxer
 import android.net.Uri
 import android.view.ViewGroup
 import android.widget.FrameLayout
-import kotlin.OptIn
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.RangeSlider
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -46,8 +42,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -56,8 +52,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -67,11 +68,11 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.io.File
-import java.nio.ByteBuffer
+import kotlin.OptIn
 
 @OptIn(UnstableApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -86,11 +87,13 @@ fun VideoTrimmerScreen(
     val coroutineScope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
-    var totalDurationMs by remember { mutableLongStateOf(0L) }
-    var startValueMs by remember { mutableFloatStateOf(0f) }
-    var endValueMs by remember { mutableFloatStateOf(0f) }
+    var probe by remember(videoUri) { mutableStateOf<VideoProbe?>(null) }
+    var loadFailed by remember(videoUri) { mutableStateOf(false) }
+    var clipMs by remember(videoUri) { mutableLongStateOf(0L) }
+    var startMs by remember(videoUri) { mutableLongStateOf(0L) }
     var isTrimming by remember { mutableStateOf(false) }
     var isPlaying by remember { mutableStateOf(false) }
+    var isPlayerReleased by remember(videoUri) { mutableStateOf(false) }
 
     val exoPlayer = remember(videoUri) {
         ExoPlayer.Builder(context).build().apply {
@@ -101,22 +104,13 @@ fun VideoTrimmerScreen(
     }
 
     LaunchedEffect(videoUri) {
-        withContext(Dispatchers.IO) {
-            val retriever = MediaMetadataRetriever()
-            try {
-                retriever.setDataSource(context, videoUri)
-                val durationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
-                val duration = durationStr?.toLongOrNull() ?: 0L
-                withContext(Dispatchers.Main) {
-                    totalDurationMs = duration
-                    val initialEnd = duration.coerceAtMost(maxDurationMs).toFloat()
-                    startValueMs = 0f
-                    endValueMs = initialEnd
-                }
-            } catch (_: Exception) {
-            } finally {
-                runCatching { retriever.release() }
-            }
+        val result = probeVideo(context, videoUri)
+        if (result == null) {
+            loadFailed = true
+        } else {
+            clipMs = TrimMath.clampClipMs(result.durationMs, maxDurationMs, maxDurationMs)
+            startMs = 0L
+            probe = result
         }
     }
 
@@ -125,41 +119,61 @@ fun VideoTrimmerScreen(
             override fun onIsPlayingChanged(playing: Boolean) {
                 isPlaying = playing
             }
+            override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                isPlaying = false
+            }
         }
         exoPlayer.addListener(listener)
         onDispose {
+            isPlayerReleased = true
             exoPlayer.removeListener(listener)
-            exoPlayer.release()
+            runCatching {
+                exoPlayer.stop()
+                exoPlayer.release()
+            }
         }
     }
 
-    fun handleSave() {
-        val startMs = startValueMs.toLong()
-        val endMs = endValueMs.toLong()
-        val durationMs = endMs - startMs
-        if (durationMs <= 0) {
-            coroutineScope.launch {
-                snackbarHostState.showSnackbar("لطفاً بازه زمانی معتبری انتخاب کنید")
+    // Loop only the selected window while previewing; follow it live while it is dragged.
+    LaunchedEffect(isPlaying, probe) {
+        while (isPlaying && probe != null && !isPlayerReleased) {
+            delay(80L)
+            if (isPlayerReleased) break
+            runCatching {
+                val position = exoPlayer.currentPosition
+                if (position >= startMs + clipMs || position < startMs - 400L) {
+                    exoPlayer.seekTo(startMs)
+                }
             }
-            return
         }
-        if (durationMs > maxDurationMs) {
-            val maxSec = maxDurationMs / 1000
-            coroutineScope.launch {
-                snackbarHostState.showSnackbar("طول ویدیو نمی‌تواند بیش از $maxSec ثانیه باشد")
-            }
-            return
+    }
+    LaunchedEffect(startMs, clipMs) {
+        if (probe == null || isPlayerReleased) return@LaunchedEffect
+        delay(60L)
+        if (!isPlayerReleased) {
+            runCatching { exoPlayer.seekTo(startMs) }
         }
+    }
 
+    BackHandler(enabled = isTrimming) { /* ignore back while the file is being written */ }
+
+    fun handleSave() {
+        if (isTrimming || isPlayerReleased) return
+        val loaded = probe ?: return
+        if (clipMs <= 0L) {
+            coroutineScope.launch { snackbarHostState.showSnackbar("لطفاً بازه زمانی معتبری انتخاب کنید") }
+            return
+        }
         isTrimming = true
-        exoPlayer.pause()
+        runCatching { exoPlayer.pause() }
+        val start = TrimMath.clampStartMs(startMs, loaded.durationMs, clipMs)
         coroutineScope.launch {
             try {
-                val trimmedFile = withContext(Dispatchers.IO) {
-                    trimVideoFast(context, videoUri, startMs, endMs)
-                }
+                val trimmedFile = trimVideo(context, videoUri, start, start + clipMs, maxDurationMs)
                 isTrimming = false
                 onTrimComplete(trimmedFile)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 isTrimming = false
                 snackbarHostState.showSnackbar(e.message ?: "خطا در برش ویدیو")
@@ -182,7 +196,7 @@ fun VideoTrimmerScreen(
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = onBack, enabled = !isTrimming) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "بازگشت",
@@ -191,270 +205,256 @@ fun VideoTrimmerScreen(
                     }
                 },
                 actions = {
-                    if (isTrimming) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(24.dp).padding(end = 12.dp),
-                            color = Color.White,
-                            strokeWidth = 2.dp,
-                        )
-                    } else {
-                        IconButton(onClick = ::handleSave) {
-                            Icon(
-                                imageVector = Icons.Default.Check,
-                                contentDescription = "تایید و برش",
-                                tint = Color(0xFF4CAF50),
-                            )
-                        }
-                    }
+                    Button(
+                        onClick = ::handleSave,
+                        enabled = probe != null && !isTrimming,
+                        shape = CircleShape,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary,
+                        ),
+                        modifier = Modifier.padding(horizontal = 12.dp),
+                    ) { Text("تایید", fontWeight = FontWeight.Bold) }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Black),
             )
         },
     ) { padding ->
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding),
-            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            // Video Preview
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .background(Color.Black),
-                contentAlignment = Alignment.Center,
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                AndroidView(
-                    factory = { ctx ->
-                        PlayerView(ctx).apply {
-                            player = exoPlayer
-                            useController = false
-                            resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                            layoutParams = FrameLayout.LayoutParams(
-                                ViewGroup.LayoutParams.MATCH_PARENT,
-                                ViewGroup.LayoutParams.MATCH_PARENT,
+                // Video Preview
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .background(Color.Black),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    AndroidView(
+                        factory = { ctx ->
+                            PlayerView(ctx).apply {
+                                player = exoPlayer
+                                useController = false
+                                resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                                layoutParams = FrameLayout.LayoutParams(
+                                    ViewGroup.LayoutParams.MATCH_PARENT,
+                                    ViewGroup.LayoutParams.MATCH_PARENT,
+                                )
+                            }
+                        },
+                        update = { playerView ->
+                            if (playerView.player != exoPlayer && !isPlayerReleased) {
+                                playerView.player = exoPlayer
+                            }
+                        },
+                        onRelease = { playerView ->
+                            playerView.player = null
+                        },
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clickable {
+                                if (!isPlayerReleased) {
+                                    runCatching {
+                                        if (exoPlayer.isPlaying) exoPlayer.pause() else exoPlayer.play()
+                                    }
+                                }
+                            },
+                    )
+
+                    if (!isPlaying && probe != null) {
+                        Box(
+                            modifier = Modifier
+                                .size(56.dp)
+                                .clip(CircleShape)
+                                .background(Color.Black.copy(alpha = 0.6f)),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.PlayArrow,
+                                contentDescription = "پخش",
+                                tint = Color.White,
+                                modifier = Modifier.size(36.dp),
                             )
                         }
-                    },
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .clickable {
-                            if (exoPlayer.isPlaying) exoPlayer.pause() else exoPlayer.play()
-                        },
-                )
+                    }
+                }
 
-                if (!isPlaying) {
-                    Box(
-                        modifier = Modifier
-                            .size(56.dp)
-                            .clip(CircleShape)
-                            .background(Color.Black.copy(alpha = 0.6f)),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.PlayArrow,
-                            contentDescription = "پخش",
-                            tint = Color.White,
-                            modifier = Modifier.size(36.dp),
+                // Timeline + controls
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFF1E1E1E))
+                        .navigationBarsPadding()
+                        .padding(vertical = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    val loaded = probe
+                    when {
+                        loadFailed -> Text(
+                            text = "این ویدیو قابل خواندن نیست. لطفاً ویدیوی دیگری انتخاب کنید.",
+                            color = Color(0xFFFF8A80),
+                            fontSize = 14.sp,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
+                        )
+
+                        loaded == null -> Box(
+                            modifier = Modifier.fillMaxWidth().height(96.dp),
+                            contentAlignment = Alignment.Center,
+                        ) { CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp) }
+
+                        else -> TrimControls(
+                            videoUri = videoUri,
+                            probe = loaded,
+                            maxDurationMs = maxDurationMs,
+                            clipMs = clipMs,
+                            startMs = startMs,
+                            onClipChange = { newClip ->
+                                clipMs = newClip
+                                startMs = TrimMath.clampStartMs(startMs, loaded.durationMs, newClip)
+                            },
+                            onStartChange = { startMs = it },
                         )
                     }
                 }
             }
 
-            // Controls & Range Slider
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Color(0xFF1E1E1E))
-                    .padding(20.dp),
-            ) {
-                val selectedSec = ((endValueMs - startValueMs) / 1000f)
-                val maxSec = (maxDurationMs / 1000f)
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+            if (isTrimming) {
+                // Blocks every touch while the file is being written (no double submit).
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.6f))
+                        .pointerInput(Unit) {},
+                    contentAlignment = Alignment.Center,
                 ) {
-                    Text(
-                        text = "مدت زمان انتخابی: ${String.format("%.1f", selectedSec)} ثانیه",
-                        color = if (selectedSec > maxSec) Color(0xFFFF5252) else Color.White,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Medium,
-                    )
-                    Text(
-                        text = "حداکثر: ${maxSec.toInt()} ثانیه",
-                        color = Color.Gray,
-                        fontSize = 13.sp,
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                if (totalDurationMs > 0) {
-                    RangeSlider(
-                        value = startValueMs..endValueMs,
-                        onValueChange = { range ->
-                            val newStart = range.start
-                            val newEnd = range.endInclusive
-                            if (newEnd - newStart <= maxDurationMs) {
-                                startValueMs = newStart
-                                endValueMs = newEnd
-                                exoPlayer.seekTo(newStart.toLong())
-                            }
-                        },
-                        valueRange = 0f..totalDurationMs.toFloat(),
-                        colors = SliderDefaults.colors(
-                            thumbColor = MaterialTheme.colorScheme.primary,
-                            activeTrackColor = MaterialTheme.colorScheme.primary,
-                            inactiveTrackColor = Color.DarkGray,
-                        ),
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Text(
-                        text = formatTime(startValueMs.toLong()),
-                        color = Color.LightGray,
-                        fontSize = 12.sp,
-                    )
-                    Text(
-                        text = formatTime(endValueMs.toLong()),
-                        color = Color.LightGray,
-                        fontSize = 12.sp,
-                    )
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        CircularProgressIndicator(color = Color.White)
+                        Text("در حال برش ویدیو…", color = Color.White, fontSize = 14.sp)
+                    }
                 }
             }
         }
     }
 }
 
-private fun formatTime(ms: Long): String {
-    val totalSec = ms / 1000
-    val min = totalSec / 60
-    val sec = totalSec % 60
-    return String.format("%02d:%02d", min, sec)
-}
-
-/**
- * Super fast MP4 trimmer using native Android MediaExtractor + MediaMuxer.
- * Clips tracks at keyframe boundaries without slow re-encoding.
- */
-private fun trimVideoFast(
-    context: Context,
+@Composable
+private fun TrimControls(
     videoUri: Uri,
+    probe: VideoProbe,
+    maxDurationMs: Long,
+    clipMs: Long,
     startMs: Long,
-    endMs: Long,
-): File {
-    val extractor = MediaExtractor()
-    val fd = context.contentResolver.openFileDescriptor(videoUri, "r")
-        ?: throw IllegalStateException("امکان باز کردن فایل ویدیو وجود ندارد")
+    onClipChange: (Long) -> Unit,
+    onStartChange: (Long) -> Unit,
+) {
+    val context = LocalContext.current
+    val density = LocalDensity.current
+    val total = probe.durationMs
+    val lengthOptions = remember(total, maxDurationMs) { TrimMath.clipLengthOptions(total, maxDurationMs) }
 
-    extractor.setDataSource(fd.fileDescriptor)
-    val trackCount = extractor.trackCount
-
-    val outputFile = File.createTempFile("trimmed-", ".mp4", context.cacheDir)
-    val muxer = MediaMuxer(outputFile.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
-
-    val indexMap = HashMap<Int, Int>(trackCount)
-    var bufferSize = 1024 * 1024
-    var videoTrackIndex = -1
-
-    for (i in 0 until trackCount) {
-        val format = extractor.getTrackFormat(i)
-        val mime = format.getString(MediaFormat.KEY_MIME) ?: continue
-        if (mime.startsWith("video/")) {
-            extractor.selectTrack(i)
-            val muxerTrackIndex = muxer.addTrack(format)
-            indexMap[i] = muxerTrackIndex
-            videoTrackIndex = i
-            if (format.containsKey(MediaFormat.KEY_MAX_INPUT_SIZE)) {
-                val size = format.getInteger(MediaFormat.KEY_MAX_INPUT_SIZE)
-                if (size > bufferSize) bufferSize = size
-            }
-        } else if (mime.startsWith("audio/")) {
-            extractor.selectTrack(i)
-            val muxerTrackIndex = muxer.addTrack(format)
-            indexMap[i] = muxerTrackIndex
-            if (format.containsKey(MediaFormat.KEY_MAX_INPUT_SIZE)) {
-                val size = format.getInteger(MediaFormat.KEY_MAX_INPUT_SIZE)
-                if (size > bufferSize) bufferSize = size
-            }
-        }
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            text = "${TrimMath.formatTime(startMs)} – ${TrimMath.formatTime(startMs + clipMs)}",
+            color = MaterialTheme.colorScheme.primary,
+            fontWeight = FontWeight.Bold,
+            fontSize = 22.sp,
+        )
+        Text(
+            text = "${clipMs / 1000} ثانیه از ${TrimMath.formatTime(total)} (حداکثر ${maxDurationMs / 1000} ثانیه)",
+            color = Color.LightGray,
+            fontSize = 12.sp,
+        )
     }
 
-    muxer.start()
+    // Thumbnails fill in as they are decoded; the count is capped so long videos stay cheap.
+    val frames = remember(videoUri) { mutableStateMapOf<Int, androidx.compose.ui.graphics.ImageBitmap>() }
+    val tileCount = remember(total) { (total / 2_000L).toInt().coerceIn(8, 40) }
+    LaunchedEffect(videoUri, tileCount) {
+        loadVideoThumbnails(
+            context = context,
+            uri = videoUri,
+            durationMs = total,
+            count = tileCount,
+            targetHeightPx = with(density) { 76.dp.roundToPx() },
+        ) { index, bitmap -> frames[index] = bitmap.asImageBitmap() }
+    }
 
-    val startUs = startMs * 1000
-    val endUs = endMs * 1000
-    val buffer = ByteBuffer.allocate(bufferSize)
-    val bufferInfo = MediaCodec.BufferInfo()
-
-    try {
-        var basePtsUs = startUs
-        if (videoTrackIndex >= 0) {
-            extractor.seekTo(startUs, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
-            val actualKeyTime = extractor.sampleTime
-            if (actualKeyTime in 0..startUs) {
-                basePtsUs = actualKeyTime
+    TrimScrubber(
+        durationMs = total,
+        clipMs = clipMs,
+        initialStartMs = startMs,
+        scaleReferenceMs = maxDurationMs,
+        onStartChanged = onStartChange,
+        snapStart = { candidate ->
+            if (probe.keyframesMs.isEmpty()) {
+                candidate
+            } else {
+                TrimMath.snapToKeyframe(probe.keyframesMs, candidate, TrimMath.maxStartMs(total, clipMs))
             }
-        }
-
-        for (i in 0 until trackCount) {
-            val muxerTrack = indexMap[i] ?: continue
-            extractor.seekTo(basePtsUs, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
-            var firstKeyframeWritten = false
-
-            while (true) {
-                bufferInfo.offset = 0
-                bufferInfo.size = extractor.readSampleData(buffer, 0)
-                if (bufferInfo.size < 0) break
-
-                val sampleTrack = extractor.sampleTrackIndex
-                val sampleTime = extractor.sampleTime
-                val flags = extractor.sampleFlags
-
-                if (sampleTrack == i) {
-                    if (sampleTime > endUs) break
-
-                    if (i == videoTrackIndex) {
-                        val isKeyframe = (flags and MediaCodec.BUFFER_FLAG_KEY_FRAME) != 0
-                        if (!firstKeyframeWritten) {
-                            if (isKeyframe) {
-                                firstKeyframeWritten = true
-                                basePtsUs = sampleTime
-                            } else {
-                                extractor.advance()
-                                continue
-                            }
-                        }
-                    }
-
-                    if (sampleTime >= basePtsUs) {
-                        bufferInfo.presentationTimeUs = (sampleTime - basePtsUs).coerceAtLeast(0L)
-                        bufferInfo.flags = flags
-                        muxer.writeSampleData(muxerTrack, buffer, bufferInfo)
+        },
+    ) { contentWidth, contentHeight ->
+        Row(
+            modifier = Modifier
+                .width(contentWidth)
+                .height(contentHeight)
+                .background(Color(0xFF2A2A2A)),
+        ) {
+            val tileWidth = contentWidth / tileCount
+            repeat(tileCount) { index ->
+                val frame = frames[index]
+                Box(modifier = Modifier.width(tileWidth).fillMaxHeight()) {
+                    if (frame != null) {
+                        Image(
+                            bitmap = frame,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize(),
+                        )
                     }
                 }
-                extractor.advance()
             }
         }
-    } finally {
-        runCatching { muxer.stop() }
-        runCatching { muxer.release() }
-        extractor.release()
-        fd.close()
     }
 
-    if (!outputFile.exists() || outputFile.length() == 0L) {
-        outputFile.delete()
-        throw IllegalStateException("خطا در ایجاد فایل ویدیو برش‌خورده")
-    }
+    Text(
+        text = "نوار را بکشید تا بخش دلخواه زیر کادر قرار بگیرد",
+        color = Color.Gray,
+        fontSize = 12.sp,
+        textAlign = TextAlign.Center,
+        modifier = Modifier.fillMaxWidth(),
+    )
 
-    return outputFile
+    if (lengthOptions.size > 1) {
+        Row(
+            modifier = Modifier.padding(horizontal = 20.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            lengthOptions.forEach { option ->
+                FilterChip(
+                    selected = clipMs == option,
+                    onClick = { onClipChange(option) },
+                    label = { Text("${option / 1000} ثانیه", fontSize = 12.sp) },
+                    colors = FilterChipDefaults.filterChipColors(
+                        labelColor = Color.White,
+                        selectedContainerColor = MaterialTheme.colorScheme.primary,
+                        selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
+                    ),
+                )
+            }
+        }
+    }
 }

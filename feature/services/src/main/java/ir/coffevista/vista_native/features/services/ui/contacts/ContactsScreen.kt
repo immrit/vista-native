@@ -18,7 +18,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.IconButton
@@ -42,6 +44,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -51,6 +56,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -60,10 +66,15 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
+import androidx.compose.material.icons.rounded.Clear
 import androidx.compose.material.icons.rounded.ContactPage
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.LockOpen
 import androidx.compose.material.icons.rounded.People
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material.icons.rounded.Verified
 import androidx.compose.material3.Icon
 import ir.coffevista.vista_native.core.designsystem.theme.VistaFontFamily
 import ir.coffevista.vista_native.core.designsystem.theme.vistaColors
@@ -82,6 +93,7 @@ fun ContactsScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    var searchQuery by remember { mutableStateOf("") }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
@@ -173,18 +185,156 @@ fun ContactsScreen(
                         )
                     }
                     is ContactsRailUiState.Empty -> {
-                        EmptyContactsCard()
+                        EmptyContactsCard(
+                            onInvite = {
+                                val intent = Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(
+                                        Intent.EXTRA_TEXT,
+                                        "سلام! من در برنامه ویستا عضوم. بیا اینجا با هم در ارتباط باشیم:\nhttps://cafevista.ir"
+                                    )
+                                }
+                                context.startActivity(Intent.createChooser(intent, "دعوت دوستان به ویستا"))
+                            }
+                        )
                     }
                     is ContactsRailUiState.Success -> {
+                        val filteredUsers = remember(contactsState.users, searchQuery) {
+                            if (searchQuery.isBlank()) {
+                                contactsState.users
+                            } else {
+                                contactsState.users.filter {
+                                    it.fullName.contains(searchQuery, ignoreCase = true) ||
+                                        it.username.contains(searchQuery, ignoreCase = true) ||
+                                        it.phoneNumber.contains(searchQuery)
+                                }
+                            }
+                        }
+
                         LazyColumn(
                             modifier = Modifier.fillMaxSize(),
                             contentPadding = PaddingValues(vertical = 8.dp),
                         ) {
-                            items(contactsState.users, key = { it.id }) { user ->
-                                ContactItemRow(
-                                    user = user,
-                                    onClick = { onContactClick(user.id) },
-                                )
+                            // Search bar
+                            item {
+                                Surface(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 6.dp),
+                                    shape = RoundedCornerShape(16.dp),
+                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Search,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.vistaColors.contentSecondary,
+                                            modifier = Modifier.size(20.dp),
+                                        )
+                                        Spacer(modifier = Modifier.width(10.dp))
+                                        BasicTextField(
+                                            value = searchQuery,
+                                            onValueChange = { searchQuery = it },
+                                            modifier = Modifier.weight(1f),
+                                            textStyle = MaterialTheme.typography.bodyMedium.copy(
+                                                fontFamily = VistaFontFamily,
+                                                color = MaterialTheme.colorScheme.onSurface,
+                                                fontSize = 13.5.sp,
+                                            ),
+                                            singleLine = true,
+                                            cursorBrush = SolidColor(VistaBrandColors.Indigo),
+                                            decorationBox = { innerTextField ->
+                                                if (searchQuery.isEmpty()) {
+                                                    Text(
+                                                        text = "جستجوی مخاطب در ویستا...",
+                                                        style = MaterialTheme.typography.bodyMedium.copy(
+                                                            fontFamily = VistaFontFamily,
+                                                            color = MaterialTheme.vistaColors.contentSecondary.copy(alpha = 0.7f),
+                                                            fontSize = 13.5.sp,
+                                                        ),
+                                                    )
+                                                }
+                                                innerTextField()
+                                            },
+                                        )
+                                        if (searchQuery.isNotEmpty()) {
+                                            IconButton(
+                                                onClick = { searchQuery = "" },
+                                                modifier = Modifier.size(24.dp),
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Rounded.Clear,
+                                                    contentDescription = "پاک کردن",
+                                                    tint = MaterialTheme.vistaColors.contentSecondary,
+                                                    modifier = Modifier.size(16.dp),
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Header count pill
+                            item {
+                                Surface(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 6.dp),
+                                    shape = RoundedCornerShape(14.dp),
+                                    color = VistaBrandColors.Indigo.copy(alpha = 0.08f),
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.People,
+                                            contentDescription = null,
+                                            tint = VistaBrandColors.Indigo,
+                                            modifier = Modifier.size(20.dp),
+                                        )
+                                        Spacer(modifier = Modifier.width(10.dp))
+                                        Text(
+                                            text = "${contactsState.users.size} نفر از مخاطبین شما در ویستا حضور دارند",
+                                            style = MaterialTheme.typography.bodySmall.copy(
+                                                fontFamily = VistaFontFamily,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = VistaBrandColors.Indigo,
+                                                fontSize = 12.5.sp,
+                                            ),
+                                        )
+                                    }
+                                }
+                            }
+
+                            if (filteredUsers.isEmpty()) {
+                                item {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(32.dp),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Text(
+                                            text = "مخاطبی با این نام یا شماره پیدا نشد",
+                                            style = MaterialTheme.typography.bodyMedium.copy(
+                                                fontFamily = VistaFontFamily,
+                                                color = MaterialTheme.vistaColors.contentSecondary,
+                                                fontSize = 13.sp,
+                                            ),
+                                        )
+                                    }
+                                }
+                            } else {
+                                items(filteredUsers, key = { it.id }) { user ->
+                                    ContactItemRow(
+                                        user = user,
+                                        onClick = { onContactClick(user.id) },
+                                    )
+                                }
                             }
                         }
                     }
@@ -243,17 +393,28 @@ private fun ContactItemRow(
         Spacer(modifier = Modifier.width(14.dp))
 
         Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = user.fullName,
-                style = MaterialTheme.typography.titleSmall.copy(
-                    fontFamily = VistaFontFamily,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 15.sp,
-                    color = MaterialTheme.colorScheme.onBackground,
-                ),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = user.fullName,
+                    style = MaterialTheme.typography.titleSmall.copy(
+                        fontFamily = VistaFontFamily,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 15.sp,
+                        color = MaterialTheme.colorScheme.onBackground,
+                    ),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (user.isVerified) {
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Icon(
+                        imageVector = Icons.Rounded.Verified,
+                        contentDescription = "کاربر تایید شده",
+                        tint = Color(0xFF3B82F6),
+                        modifier = Modifier.size(14.dp),
+                    )
+                }
+            }
             if (user.username.isNotBlank()) {
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
@@ -265,6 +426,33 @@ private fun ContactItemRow(
                     ),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+
+        Surface(
+            shape = RoundedCornerShape(12.dp),
+            color = VistaBrandColors.Indigo.copy(alpha = 0.08f),
+            modifier = Modifier.padding(start = 8.dp),
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "پیام",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontFamily = VistaFontFamily,
+                        fontWeight = FontWeight.Bold,
+                        color = VistaBrandColors.Indigo,
+                        fontSize = 11.5.sp,
+                    ),
+                )
+                Icon(
+                    imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowLeft,
+                    contentDescription = null,
+                    tint = VistaBrandColors.Indigo,
+                    modifier = Modifier.size(14.dp),
                 )
             }
         }
@@ -347,7 +535,10 @@ private fun PermissionRequiredCard(
 }
 
 @Composable
-private fun EmptyContactsCard(modifier: Modifier = Modifier) {
+private fun EmptyContactsCard(
+    onInvite: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -367,22 +558,60 @@ private fun EmptyContactsCard(modifier: Modifier = Modifier) {
                 modifier = Modifier.padding(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Icon(
-                    imageVector = Icons.Rounded.People,
-                    contentDescription = null,
-                    tint = MaterialTheme.vistaColors.contentSecondary,
-                    modifier = Modifier.size(44.dp),
-                )
-                Spacer(modifier = Modifier.height(12.dp))
+                Box(
+                    modifier = Modifier
+                        .size(64.dp)
+                        .background(VistaBrandColors.Indigo.copy(alpha = 0.1f), CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.People,
+                        contentDescription = null,
+                        tint = VistaBrandColors.Indigo,
+                        modifier = Modifier.size(32.dp),
+                    )
+                }
+                Spacer(modifier = Modifier.height(16.dp))
                 Text(
-                    text = "هنوز کسی از مخاطبینت ویستا نصب نکرده",
+                    text = "هنوز از مخاطبینت کسی عضو ویستا نشده",
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontFamily = VistaFontFamily,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp,
+                        color = MaterialTheme.colorScheme.onBackground,
+                    ),
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = "دوستانت را با ارسال لینک اختصاصی به ویستا دعوت کن تا با هم گپ بزنید.",
                     style = MaterialTheme.typography.bodyMedium.copy(
                         fontFamily = VistaFontFamily,
                         color = MaterialTheme.vistaColors.contentSecondary,
                         fontSize = 13.sp,
                         textAlign = TextAlign.Center,
+                        lineHeight = 20.sp,
                     ),
                 )
+                Spacer(modifier = Modifier.height(20.dp))
+                Button(
+                    onClick = onInvite,
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = VistaBrandColors.Indigo),
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Share,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "دعوت دوستان به ویستا",
+                        style = MaterialTheme.typography.labelLarge.copy(
+                            fontFamily = VistaFontFamily,
+                            fontWeight = FontWeight.Bold,
+                        ),
+                    )
+                }
             }
         }
     }

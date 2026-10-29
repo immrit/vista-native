@@ -28,6 +28,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.style.TextAlign
 import ir.coffevista.vista_native.core.designsystem.theme.vistaMotion
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaComponentSize
@@ -59,20 +60,28 @@ fun VistaAvatar(
 }
 
 @Composable
-fun VistaBadge(label: String, modifier: Modifier = Modifier) {
+fun VistaBadge(
+    label: String,
+    modifier: Modifier = Modifier,
+    containerColor: Color = MaterialTheme.colorScheme.secondaryContainer,
+    contentColor: Color = MaterialTheme.colorScheme.onSecondaryContainer,
+) {
     VistaSurface(
         modifier = modifier,
         shape = CircleShape,
-        color = MaterialTheme.colorScheme.secondaryContainer,
+        color = containerColor,
     ) {
         Text(
             text = label,
             modifier = Modifier.padding(
-                horizontal = VistaSpacing.Medium,
-                vertical = VistaSpacing.XSmall,
+                horizontal = 8.dp,
+                vertical = 2.dp,
             ),
-            color = MaterialTheme.colorScheme.onSecondaryContainer,
-            style = MaterialTheme.typography.labelMedium,
+            color = contentColor,
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontWeight = FontWeight.SemiBold,
+                platformStyle = androidx.compose.ui.text.PlatformTextStyle(includeFontPadding = false),
+            ),
         )
     }
 }

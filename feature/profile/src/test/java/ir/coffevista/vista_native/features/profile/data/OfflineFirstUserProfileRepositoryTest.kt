@@ -316,6 +316,9 @@ private class FakePublicProfileApi : PublicProfileApi {
 
     override suspend fun getUserHighlights(userId: String): Response<ProfileHighlightsResponseDto> =
         Response.success(ProfileHighlightsResponseDto())
+
+    override suspend fun reportProfile(request: ReportProfileRequestDto): Response<Unit> =
+        Response.success(Unit)
 }
 
 private class FakePublicProfileDao : PublicProfileDao {

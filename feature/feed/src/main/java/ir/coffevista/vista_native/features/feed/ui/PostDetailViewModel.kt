@@ -18,11 +18,17 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.yield
 import javax.inject.Inject
 
+import ir.coffevista.vista_native.core.database.profile.OwnProfileDao
+import ir.coffevista.vista_native.core.database.profile.hasBlueBadge
+import ir.coffevista.vista_native.core.database.profile.hasPremiumPrivileges
+
 sealed interface PostDetailUiState {
     data object Loading : PostDetailUiState
     data class Content(
         val post: FeedPost,
         val viewerUserId: String? = null,
+        val viewerIsBlueTick: Boolean = false,
+        val viewerHasPremiumEdit: Boolean = false,
         val isRefreshing: Boolean = false,
         val isStale: Boolean = false,
         val refreshError: String? = null,
@@ -35,7 +41,23 @@ class PostDetailViewModel @Inject constructor(
     private val repository: FeedRepository,
     private val authStateProvider: AuthenticationStateProvider,
     savedStateHandle: SavedStateHandle,
+    private val ownProfileDao: OwnProfileDao? = null,
 ) : ViewModel() {
+
+    // Test constructor
+    constructor(
+        repository: FeedRepository,
+        authStateProvider: AuthenticationStateProvider,
+        savedStateHandle: SavedStateHandle,
+    ) : this(
+        repository = repository,
+        authStateProvider = authStateProvider,
+        savedStateHandle = savedStateHandle,
+        ownProfileDao = null,
+    )
+
+    private var isBlueTick: Boolean = false
+    private var hasPremium: Boolean = false
 
     private val postId: String = savedStateHandle.get<String>("reference") ?: ""
     private val _uiState = MutableStateFlow<PostDetailUiState>(PostDetailUiState.Loading)
@@ -60,6 +82,21 @@ class PostDetailViewModel @Inject constructor(
     }
 
     private suspend fun load(accountId: String) = coroutineScope {
+        if (ownProfileDao != null) {
+            launch {
+                ownProfileDao.getOwnProfile(accountId).collectLatest { profile ->
+                    isBlueTick = profile?.hasBlueBadge == true
+                    hasPremium = profile?.hasPremiumPrivileges == true
+                    val current = _uiState.value as? PostDetailUiState.Content
+                    if (current != null) {
+                        _uiState.value = current.copy(
+                            viewerIsBlueTick = isBlueTick,
+                            viewerHasPremiumEdit = hasPremium,
+                        )
+                    }
+                }
+            }
+        }
         launch {
             repository.getPostById(accountId, postId)
                 .catch { error ->
@@ -75,6 +112,8 @@ class PostDetailViewModel @Inject constructor(
                         _uiState.value = PostDetailUiState.Content(
                             post = post,
                             viewerUserId = accountId,
+                            viewerIsBlueTick = isBlueTick,
+                            viewerHasPremiumEdit = hasPremium,
                             isRefreshing = current?.isRefreshing ?: true,
                             isStale = current?.isStale ?: false,
                             refreshError = current?.refreshError,
@@ -99,17 +138,30 @@ class PostDetailViewModel @Inject constructor(
     private suspend fun refresh(accountId: String) {
         val cached = (_uiState.value as? PostDetailUiState.Content)?.post
         if (cached != null) {
-            _uiState.value = PostDetailUiState.Content(cached, viewerUserId = accountId, isRefreshing = true)
+            _uiState.value = PostDetailUiState.Content(
+                post = cached,
+                viewerUserId = accountId,
+                viewerIsBlueTick = isBlueTick,
+                viewerHasPremiumEdit = hasPremium,
+                isRefreshing = true,
+            )
         }
         try {
             val refreshed = repository.refreshPost(accountId, postId)
-            _uiState.value = PostDetailUiState.Content(refreshed, viewerUserId = accountId)
+            _uiState.value = PostDetailUiState.Content(
+                post = refreshed,
+                viewerUserId = accountId,
+                viewerIsBlueTick = isBlueTick,
+                viewerHasPremiumEdit = hasPremium,
+            )
         } catch (error: Exception) {
             val current = (_uiState.value as? PostDetailUiState.Content)?.post ?: cached
             if (current != null) {
                 _uiState.value = PostDetailUiState.Content(
                     post = current,
                     viewerUserId = accountId,
+                    viewerIsBlueTick = isBlueTick,
+                    viewerHasPremiumEdit = hasPremium,
                     isStale = true,
                     refreshError = error.message ?: "به‌روزرسانی پست ناموفق بود",
                 )

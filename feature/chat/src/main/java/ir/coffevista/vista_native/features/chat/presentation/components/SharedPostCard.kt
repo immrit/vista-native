@@ -176,7 +176,7 @@ fun SharedPostCard(
                             isDarkSurface = isMine || isDarkTheme,
                             overrideColor = if (isMine) {
                                 when (resolveVerificationBadgeType(post.isVerified, post.verificationType, post.role)) {
-                                    ResolvedVerificationBadgeType.BLUE_TICK -> Color(0xFF90CAF9)
+                                    ResolvedVerificationBadgeType.BLUE_TICK -> Color(0xFFC7D2FE)
                                     ResolvedVerificationBadgeType.GOLD_TICK -> Color(0xFFFFD54F)
                                     ResolvedVerificationBadgeType.BLACK_TICK -> Color.White
                                     ResolvedVerificationBadgeType.NONE -> Color.Transparent

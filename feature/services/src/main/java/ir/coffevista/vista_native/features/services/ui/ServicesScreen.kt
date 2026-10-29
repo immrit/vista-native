@@ -57,6 +57,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
+import androidx.compose.material.icons.rounded.Build
 import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.ContactPage
 import androidx.compose.material.icons.rounded.GridView
@@ -64,6 +65,16 @@ import androidx.compose.material.icons.rounded.LockOpen
 import androidx.compose.material.icons.rounded.People
 import androidx.compose.material.icons.rounded.PersonAdd
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Schedule
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -73,6 +84,7 @@ import ir.coffevista.vista_native.core.designsystem.theme.vistaColors
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaBrandColors
 import ir.coffevista.vista_native.features.services.data.ContactVistaUser
 import ir.coffevista.vista_native.features.services.data.ServiceBanner
+import ir.coffevista.vista_native.features.services.data.ServiceMaintenance
 import ir.coffevista.vista_native.features.services.data.ServiceSection
 import ir.coffevista.vista_native.features.services.data.normalizedActiveSections
 
@@ -188,10 +200,17 @@ fun ServicesScreen(
                     .fillMaxSize()
                     .padding(innerPadding),
             ) {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(bottom = 120.dp),
-                ) {
+                val maintenance = (state.hubState as? ServicesHubUiState.Success)?.data?.maintenance
+                if (maintenance != null && maintenance.isEnabled) {
+                    ServicesMaintenanceView(
+                        maintenance = maintenance,
+                        onRetry = viewModel::refresh,
+                    )
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(bottom = 120.dp),
+                    ) {
                     // 1. Dynamic Banners ("برای شما")
                     when (val hub = state.hubState) {
                         is ServicesHubUiState.Success -> {
@@ -295,6 +314,7 @@ fun ServicesScreen(
                         }
                         is ServicesHubUiState.Loading -> Unit
                     }
+                }
                 }
             }
         }
@@ -988,4 +1008,163 @@ private fun parseHexColor(hex: String, fallback: Color): Color = try {
     }
 } catch (_: Exception) {
     fallback
+}
+
+@Composable
+private fun ServicesMaintenanceView(
+    maintenance: ServiceMaintenance,
+    onRetry: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val infiniteTransition = rememberInfiniteTransition(label = "maintenance_glow")
+    val pulseAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.4f,
+        targetValue = 0.9f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1600, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "pulse_alpha",
+    )
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(horizontal = 24.dp, vertical = 48.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(112.dp)
+                .background(
+                    brush = Brush.radialGradient(
+                        listOf(
+                            Color(0xFFF59E0B).copy(alpha = pulseAlpha * 0.45f),
+                            Color.Transparent,
+                        ),
+                    ),
+                    shape = CircleShape,
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(76.dp)
+                    .clip(RoundedCornerShape(26.dp))
+                    .background(
+                        brush = Brush.linearGradient(
+                            listOf(Color(0xFFF59E0B), Color(0xFFD97706)),
+                        ),
+                    )
+                    .border(
+                        width = 1.5.dp,
+                        color = Color.White.copy(alpha = 0.35f),
+                        shape = RoundedCornerShape(26.dp),
+                    )
+                    .shadow(12.dp, RoundedCornerShape(26.dp)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Build,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(36.dp),
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(28.dp))
+
+        Text(
+            text = maintenance.title.ifBlank { "در حال تعمیر و بروزرسانی سرویس‌ها" },
+            style = MaterialTheme.typography.headlineSmall.copy(
+                fontFamily = VistaFontFamily,
+                fontWeight = FontWeight.ExtraBold,
+                fontSize = 20.sp,
+                color = MaterialTheme.colorScheme.onBackground,
+                textAlign = TextAlign.Center,
+            ),
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Text(
+            text = maintenance.message.ifBlank {
+                "سرویس‌های ویستا موقتاً جهت ارتقای زیرساخت و ارائه امکانات جدید در دست تعمیر و نگهداری هستند. لطفاً دقایقی دیگر مجدداً تلاش نمایید."
+            },
+            style = MaterialTheme.typography.bodyMedium.copy(
+                fontFamily = VistaFontFamily,
+                fontWeight = FontWeight.Normal,
+                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                lineHeight = 22.sp,
+            ),
+            modifier = Modifier.padding(horizontal = 12.dp),
+        )
+
+        if (maintenance.retryAfterSeconds > 0) {
+            Spacer(modifier = Modifier.height(18.dp))
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = Color(0xFFF59E0B).copy(alpha = 0.12f),
+                border = BorderStroke(1.dp, Color(0xFFF59E0B).copy(alpha = 0.3f)),
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Schedule,
+                        contentDescription = null,
+                        tint = Color(0xFFD97706),
+                        modifier = Modifier.size(16.dp),
+                    )
+                    Text(
+                        text = "مدت زمان تقریبی: ${maintenance.retryAfterSeconds / 60} دقیقه",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontFamily = VistaFontFamily,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFFD97706),
+                            fontSize = 12.sp,
+                        ),
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(32.dp))
+
+        Button(
+            onClick = onRetry,
+            shape = RoundedCornerShape(16.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = VistaBrandColors.Indigo,
+            ),
+            modifier = Modifier
+                .fillMaxWidth(0.75f)
+                .height(48.dp),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Refresh,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
+                Text(
+                    text = "بررسی مجدد وضعیت",
+                    style = MaterialTheme.typography.labelLarge.copy(
+                        fontFamily = VistaFontFamily,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                    ),
+                )
+            }
+        }
+    }
 }

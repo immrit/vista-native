@@ -43,6 +43,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import ir.coffevista.vista_native.core.designsystem.component.VistaPremiumPromptDialog
 import ir.coffevista.vista_native.features.feed.ui.components.EditPostDialog
 import ir.coffevista.vista_native.features.feed.ui.components.ReportReasonDialog
 import ir.coffevista.vista_native.features.feed.ui.components.VistaFullscreenImageViewer
@@ -68,9 +69,11 @@ fun PostDetailScreen(
     val postId = currentPost?.id
     var showShareSheet by remember { mutableStateOf(false) }
     var showReportDialog by remember { mutableStateOf(false) }
+    var reportCommentTargetId by remember { mutableStateOf<String?>(null) }
     var isReporting by remember { mutableStateOf(false) }
     var showEditDialog by remember { mutableStateOf(false) }
     var isEditing by remember { mutableStateOf(false) }
+    var premiumPromptFeature by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(postId) { postId?.let(commentsViewModel::loadComments) }
     PostDetailContent(
@@ -90,6 +93,7 @@ fun PostDetailScreen(
         onReportPost = { showReportDialog = true },
         onNotInterested = viewModel::markNotInterested,
         onVisibilityChange = viewModel::updateEngagementVisibility,
+        onPremiumPrompt = { feature -> premiumPromptFeature = feature },
         onHashtagClick = onHashtagClick,
         onMentionClick = onMentionClick,
         onAppealClick = onAppealClick,
@@ -99,7 +103,7 @@ fun PostDetailScreen(
         onReplyComment = commentsViewModel::setReplyingTo,
         onEditComment = { comment, newContent -> commentsViewModel.updateComment(comment.id, newContent) },
         onDeleteComment = commentsViewModel::deleteComment,
-        onReportComment = { commentsViewModel.reportComment(it, "گزارش تخلف") },
+        onReportComment = { commentId -> reportCommentTargetId = commentId },
         canEdit = commentsViewModel::canEdit,
         canDelete = { commentsViewModel.canDelete(it, (uiState as? PostDetailUiState.Content)?.post?.userId) },
         canReport = commentsViewModel::canReport,
@@ -137,9 +141,26 @@ fun PostDetailScreen(
             },
         )
     }
+    reportCommentTargetId?.let { commentId ->
+        ReportReasonDialog(
+            title = "گزارش نظر",
+            onDismiss = { reportCommentTargetId = null },
+            onSubmit = { reason, details ->
+                commentsViewModel.reportComment(commentId, reason, details)
+                reportCommentTargetId = null
+            },
+        )
+    }
     if (showEditDialog) {
+        val content = uiState as? PostDetailUiState.Content
+        val isBlue = content?.viewerIsBlueTick == true
+        val hasPrem = content?.viewerHasPremiumEdit == true
+        val maxLen = if (isBlue) 10000 else if (hasPrem) 1000 else 500
+        val title = if (isBlue && currentPost?.userId != content?.viewerUserId) "ویرایش ناظر" else "ویرایش پست"
         EditPostDialog(
             initialContent = currentPost?.content.orEmpty(),
+            maxCharLength = maxLen,
+            title = title,
             isSubmitting = isEditing,
             onDismiss = { if (!isEditing) showEditDialog = false },
             onConfirm = { newContent ->
@@ -149,6 +170,13 @@ fun PostDetailScreen(
                     showEditDialog = false
                 }
             },
+        )
+    }
+    premiumPromptFeature?.let { feature ->
+        VistaPremiumPromptDialog(
+            feature = feature,
+            onDismiss = { premiumPromptFeature = null },
+            onUpgradeClick = { premiumPromptFeature = null },
         )
     }
 }
@@ -168,6 +196,7 @@ internal fun PostDetailContent(
     onReportPost: () -> Unit = {},
     onNotInterested: () -> Unit = {},
     onVisibilityChange: (Boolean?, Boolean?) -> Unit = { _, _ -> },
+    onPremiumPrompt: (String) -> Unit = {},
     onHashtagClick: (String) -> Unit = {},
     onMentionClick: (String) -> Unit = {},
     onAppealClick: (String) -> Unit = {},
@@ -298,6 +327,7 @@ private fun ReadOnlyPostDetail(
     onReportPost: () -> Unit = {},
     onNotInterested: () -> Unit,
     onVisibilityChange: (Boolean?, Boolean?) -> Unit,
+    onPremiumPrompt: (String) -> Unit = {},
     onHashtagClick: (String) -> Unit = {},
     onMentionClick: (String) -> Unit = {},
     onAppealClick: (String) -> Unit = {},
@@ -338,6 +368,9 @@ private fun ReadOnlyPostDetail(
                 VistaFeedPostCard(
                     post = state.post,
                     isOwnPost = state.post.userId == state.viewerUserId,
+                    isBlueTick = state.viewerIsBlueTick,
+                    hasPremiumEdit = state.viewerHasPremiumEdit,
+                    onPremiumPrompt = onPremiumPrompt,
                     onPostClick = {},
                     onMediaClick = onMediaClick,
                     onAuthorClick = onAuthorClick,

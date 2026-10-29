@@ -89,7 +89,7 @@ fun GameLaunchScreen(
             runCatching {
                 val ticket = repository.createGameSsoTicket()
                 val encodedTicket = URLEncoder.encode(ticket, "UTF-8")
-                val targetUrl = "https://coffevista.ir/game/sso?ticket=$encodedTicket"
+                val targetUrl = "https://cafevista.ir/game/sso?ticket=$encodedTicket"
                 onLaunchSuccess(targetUrl, "ویستا کوییز")
             }.onFailure { error ->
                 errorMessage = mapGameError(error)

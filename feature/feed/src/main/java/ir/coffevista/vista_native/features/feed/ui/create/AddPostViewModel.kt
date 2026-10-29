@@ -45,6 +45,9 @@ data class AddPostUiState(
     val selectedImages: List<Uri> = emptyList(),
     val selectedVideo: File? = null,
     val selectedVideoUri: Uri? = null,
+    /** Original (untrimmed) video picked by the user; lets "edit again" re-trim from the source. */
+    val videoSourceUri: Uri? = null,
+    val videoDurationMs: Long = 0L,
     val isVideo: Boolean = false,
     val aspectRatio: PostAspectRatio = PostAspectRatio.Square,
     val hideLikeCount: Boolean = false,
@@ -86,7 +89,6 @@ class AddPostViewModel @Inject constructor(
     private val postMentions: PostMentions,
     private val feedDao: FeedDao? = null,
     @ApplicationContext private val appContext: Context? = null,
-    private val savedStateHandle: androidx.lifecycle.SavedStateHandle? = null,
     private val postUploadManager: ir.coffevista.vista_native.features.feed.data.PostUploadManager? = null,
     private val draftStore: ir.coffevista.vista_native.features.feed.data.AddPostDraftStore? = null,
 ) : ViewModel() {
@@ -97,9 +99,12 @@ class AddPostViewModel @Inject constructor(
         authStateProvider: AuthenticationStateProvider,
         ownProfileDao: OwnProfileDao,
         postMentions: PostMentions,
-    ) : this(api, uploader, authStateProvider, ownProfileDao, postMentions, null, null, null, null, null)
+    ) : this(api, uploader, authStateProvider, ownProfileDao, postMentions, null, null, null, null)
 
     private var hashtagSearchJob: Job? = null
+
+    /** Video picked in the gallery but not trimmed yet; becomes [AddPostUiState.videoSourceUri] on success. */
+    private var pendingVideoSource: Uri? = null
 
     private val _uiState = MutableStateFlow(AddPostUiState())
     val uiState: StateFlow<AddPostUiState> = _uiState.asStateFlow()
@@ -119,19 +124,6 @@ class AddPostViewModel @Inject constructor(
                         commentsDisabled = draft.commentsDisabled,
                     )
                 } else current
-            }
-        }
-        savedStateHandle?.getStateFlow<String?>("trimmed_video_path", null)?.let { flow ->
-            viewModelScope.launch {
-                flow.collect { path ->
-                    if (!path.isNullOrBlank()) {
-                        val file = File(path)
-                        if (file.exists()) {
-                            onVideoTrimmed(file)
-                            savedStateHandle["trimmed_video_path"] = null
-                        }
-                    }
-                }
             }
         }
         viewModelScope.launch {
@@ -216,12 +208,15 @@ class AddPostViewModel @Inject constructor(
     fun onImagesSelected(uris: List<Uri>) {
         if (uris.isEmpty()) return
         val currentMax = _uiState.value.maxGalleryImages
+        discardVideoFile()
         _uiState.update { current ->
             val combined = (current.selectedImages + uris).distinct().take(currentMax)
             current.copy(
                 selectedImages = combined,
                 selectedVideo = null,
                 selectedVideoUri = null,
+                videoSourceUri = null,
+                videoDurationMs = 0L,
                 isVideo = false,
                 errorMessage = null,
             )
@@ -231,11 +226,14 @@ class AddPostViewModel @Inject constructor(
     fun onImageCaptured(uri: Uri) {
         val current = _uiState.value.selectedImages
         if (current.size < _uiState.value.maxGalleryImages) {
+            discardVideoFile()
             _uiState.update {
                 it.copy(
                     selectedImages = current + uri,
                     selectedVideo = null,
                     selectedVideoUri = null,
+                    videoSourceUri = null,
+                    videoDurationMs = 0L,
                     isVideo = false,
                     errorMessage = null,
                 )
@@ -280,30 +278,82 @@ class AddPostViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Remembers the video the user just picked, before the trimmer opens. The post itself only
+     * gets a video once trimming succeeds ([onVideoTrimmed]), so cancelling the trimmer leaves
+     * the composer untouched.
+     */
+    fun onVideoPicked(uri: Uri) {
+        pendingVideoSource = uri
+        _uiState.update { it.copy(errorMessage = null) }
+    }
+
+    /** Applies the file produced by the trimmer screen (handed over by the navigation layer). */
+    fun onVideoTrimmedFromPath(path: String) {
+        val file = File(path)
+        if (file.exists()) {
+            onVideoTrimmed(file)
+        } else {
+            _uiState.update { it.copy(errorMessage = "فایل ویدیوی برش‌خورده یافت نشد") }
+        }
+    }
+
     fun onVideoTrimmed(trimmedFile: File) {
         val oldFile = _uiState.value.selectedVideo
         if (oldFile != null && oldFile.absolutePath != trimmedFile.absolutePath) {
             runCatching { oldFile.delete() }
         }
+        val source = pendingVideoSource
+        pendingVideoSource = null
         _uiState.update {
             it.copy(
                 selectedVideo = trimmedFile,
                 selectedImages = emptyList(),
+                videoSourceUri = source ?: it.videoSourceUri,
                 isVideo = true,
+                videoDurationMs = 0L,
                 errorMessage = null,
             )
         }
+        loadVideoDuration(trimmedFile)
     }
 
     fun removeVideo() {
-        val oldFile = _uiState.value.selectedVideo
-        runCatching { oldFile?.delete() }
+        discardVideoFile()
         _uiState.update {
             it.copy(
                 selectedVideo = null,
                 selectedVideoUri = null,
+                videoSourceUri = null,
+                videoDurationMs = 0L,
                 isVideo = false,
             )
+        }
+    }
+
+    private fun discardVideoFile() {
+        runCatching { _uiState.value.selectedVideo?.delete() }
+    }
+
+    private fun loadVideoDuration(file: File) {
+        if (appContext == null) return
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val retriever = MediaMetadataRetriever()
+            val duration = try {
+                retriever.setDataSource(file.absolutePath)
+                retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+            } catch (_: Exception) {
+                0L
+            } finally {
+                runCatching { retriever.release() }
+            }
+            _uiState.update { current ->
+                if (current.selectedVideo?.absolutePath == file.absolutePath) {
+                    current.copy(videoDurationMs = duration)
+                } else {
+                    current
+                }
+            }
         }
     }
 
@@ -427,10 +477,12 @@ class AddPostViewModel @Inject constructor(
     }
 
     fun onMusicTrimChanged(startMs: Int, endMs: Int) {
-        val duration = _uiState.value.musicDurationMs
+        val duration = _uiState.value.musicDurationMs.takeIf { it > 0 } ?: 30_000
         val maxClipMs = if (_uiState.value.isPremium) 60_000 else 15_000
-        if (duration <= 0 || startMs !in 0 until duration || endMs !in 1..duration || endMs <= startMs || endMs - startMs > maxClipMs) return
-        _uiState.update { it.copy(musicStartMs = startMs, musicEndMs = endMs) }
+        val safeStart = startMs.coerceIn(0, (duration - 1000).coerceAtLeast(0))
+        val maxPossibleEnd = minOf(duration, safeStart + maxClipMs)
+        val safeEnd = endMs.coerceIn(safeStart + 1000, maxPossibleEnd)
+        _uiState.update { it.copy(musicStartMs = safeStart, musicEndMs = safeEnd) }
     }
 
     fun clearError() {

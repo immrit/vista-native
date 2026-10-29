@@ -27,6 +27,12 @@ interface UserProfileRepository {
     suspend fun clearAccount(viewerAccountId: String)
 
     suspend fun getUserHighlights(profileUserId: String): List<ProfileHighlightDto> = emptyList()
+
+    suspend fun reportProfile(
+        profileId: String,
+        reason: String,
+        additionalDetails: String? = null,
+    ): Result<Unit>
 }
 
 sealed interface ProfileRefreshResult {

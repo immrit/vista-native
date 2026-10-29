@@ -199,6 +199,70 @@ class CommentsViewModelTest {
         assertFalse(viewModel.canReport(ownComment))
     }
 
+    @Test fun blueTickSupervisorCanEditAndDeleteAnyComment() = runTest(dispatcher) {
+        val blueTickProfile = profileEntity(
+            userId = "supervisor-1",
+            isVerified = true,
+            verificationType = "blueTick",
+        )
+        val blueTickAuth = SignedInAuth("supervisor-1")
+        val supervisorVm = CommentsViewModel(repository, blueTickAuth, FakeOwnProfileDao(blueTickProfile))
+        advanceUntilIdle()
+
+        val otherComment = comment("c-foreign", "نظر کاربر دیگر", authorUserId = "user-other", postOwnerId = "post-owner-1")
+
+        assertTrue(supervisorVm.isModerator())
+        assertTrue("Supervisor with Blue Tick must be able to edit any comment", supervisorVm.canEdit(otherComment))
+        assertTrue("Supervisor with Blue Tick must be able to delete any comment", supervisorVm.canDelete(otherComment, postOwnerId = "post-owner-1"))
+    }
+
+    @Test fun moderatorRoleCanEditAndDeleteAnyComment() = runTest(dispatcher) {
+        val modProfile = profileEntity(
+            userId = "mod-1",
+            accountType = "moderator",
+        )
+        val modAuth = SignedInAuth("mod-1")
+        val modVm = CommentsViewModel(repository, modAuth, FakeOwnProfileDao(modProfile))
+        advanceUntilIdle()
+
+        val otherComment = comment("c-foreign", "نظر کاربر دیگر", authorUserId = "user-other", postOwnerId = "post-owner-1")
+
+        assertTrue(modVm.isModerator())
+        assertTrue(modVm.canEdit(otherComment))
+        assertTrue(modVm.canDelete(otherComment, postOwnerId = "post-owner-1"))
+    }
+
+    @Test fun regularUserCannotEditOrDeleteOthersComment() = runTest(dispatcher) {
+        val userProfile = profileEntity(
+            userId = "regular-user",
+            isVerified = false,
+            verificationType = null,
+            accountType = "user",
+        )
+        val userAuth = SignedInAuth("regular-user")
+        val userVm = CommentsViewModel(repository, userAuth, FakeOwnProfileDao(userProfile))
+        advanceUntilIdle()
+
+        val otherComment = comment("c-foreign", "نظر کاربر دیگر", authorUserId = "user-other", postOwnerId = "post-owner-1")
+
+        assertFalse(userVm.isModerator())
+        assertFalse(userVm.canEdit(otherComment))
+        assertFalse(userVm.canDelete(otherComment, postOwnerId = "post-owner-1"))
+    }
+
+    @Test fun reportCommentDelegatesToRepository() = runTest(dispatcher) {
+        viewModel.loadComments("post-1")
+        advanceUntilIdle()
+
+        viewModel.reportComment("c-99", "spam", "تبلیغات غیرمجاز")
+        advanceUntilIdle()
+
+        assertEquals("c-99", repository.lastReportedCommentId)
+        assertEquals("spam", repository.lastReportReason)
+        assertEquals("تبلیغات غیرمجاز", repository.lastReportDetails)
+        assertEquals("گزارش دیدگاه ثبت شد", viewModel.uiState.value.notice)
+    }
+
     @Test fun paginationAccumulatesAndMergesFlatComments() = runTest(dispatcher) {
         val page1 = listOf(
             comment("c1", "کامنت ۱", createdAt = "2026-08-13T10:00:00Z"),
@@ -292,6 +356,29 @@ class CommentsViewModelTest {
         parentCommentId = parentCommentId,
     )
 
+    private fun profileEntity(
+        userId: String = "account-a",
+        username: String = "vista",
+        fullName: String = "Vista User",
+        isVerified: Boolean = false,
+        verificationType: String? = null,
+        accountType: String? = "user",
+    ) = OwnProfileEntity(
+        userId = userId,
+        username = username,
+        fullName = fullName,
+        bio = null,
+        avatarUrl = null,
+        isVerified = isVerified,
+        verificationType = verificationType,
+        accountType = accountType,
+        isPrivate = false,
+        postCount = 0L,
+        followerCount = 0L,
+        followingCount = 0L,
+        updatedAt = null,
+    )
+
     private inner class FakeCommentRepository : CommentRepository {
         var comments = emptyList<Comment>()
         var hasMore = false
@@ -299,6 +386,9 @@ class CommentsViewModelTest {
         var deleteFailure: Exception? = null
         var repliesFailure: Exception? = null
         var createCalls = 0
+        var lastReportedCommentId: String? = null
+        var lastReportReason: String? = null
+        var lastReportDetails: String? = null
         val repliesByParent = mutableMapOf<String, List<Comment>>()
         override suspend fun getComments(postId: String, offset: Int, limit: Int) = CommentSnapshot(comments, hasMore)
         override suspend fun getReplies(postId: String, parentCommentId: String): List<Comment> {
@@ -312,7 +402,11 @@ class CommentsViewModelTest {
         }
         override suspend fun deleteComment(postId: String, commentId: String) { deleteFailure?.let { throw it } }
         override suspend fun updateComment(commentId: String, content: String) = comment(commentId, content)
-        override suspend fun reportComment(commentId: String, reason: String, additionalDetails: String?) = Unit
+        override suspend fun reportComment(commentId: String, reason: String, additionalDetails: String?) {
+            lastReportedCommentId = commentId
+            lastReportReason = reason
+            lastReportDetails = additionalDetails
+        }
         override suspend fun addMentions(commentId: String, userIds: List<String>) = Unit
     }
 
@@ -324,10 +418,11 @@ class CommentsViewModelTest {
         )
     }
 
-    private class FakeOwnProfileDao : OwnProfileDao {
-        override fun getOwnProfile(userId: String) = MutableStateFlow<OwnProfileEntity?>(null)
-        override suspend fun insertOrUpdate(profile: OwnProfileEntity) = Unit
-        override suspend fun deleteProfile(userId: String) = Unit
-        override suspend fun deleteAll() = Unit
+    private class FakeOwnProfileDao(profile: OwnProfileEntity? = null) : OwnProfileDao {
+        val flow = MutableStateFlow<OwnProfileEntity?>(profile)
+        override fun getOwnProfile(userId: String): StateFlow<OwnProfileEntity?> = flow
+        override suspend fun insertOrUpdate(profile: OwnProfileEntity) { flow.value = profile }
+        override suspend fun deleteProfile(userId: String) { flow.value = null }
+        override suspend fun deleteAll() { flow.value = null }
     }
 }

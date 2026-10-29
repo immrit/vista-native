@@ -18,10 +18,17 @@ import androidx.compose.ui.platform.LocalContext
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.VectorConverter
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -38,6 +45,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.rounded.MyLocation
+import androidx.compose.material.icons.rounded.Radar
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -92,6 +104,8 @@ import androidx.compose.material.icons.rounded.Replay
 import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.Icon
+import ir.coffevista.vista_native.core.designsystem.component.VistaBadgedBox
+import ir.coffevista.vista_native.core.designsystem.component.VistaNotificationBadge
 import ir.coffevista.vista_native.core.designsystem.theme.VistaFontFamily
 import ir.coffevista.vista_native.core.designsystem.theme.vistaColors
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaBrandColors
@@ -214,33 +228,23 @@ fun NearbyScreen(
                         }
 
                         // Likes & Matches Badge Button
-                        Box(contentAlignment = Alignment.Center) {
-                            IconButton(onClick = onOpenLikes) {
+                        IconButton(onClick = onOpenLikes) {
+                            VistaBadgedBox(
+                                badge = {
+                                    if (state.receivedLikesCount > 0) {
+                                        VistaNotificationBadge(
+                                            count = state.receivedLikesCount,
+                                            borderColor = MaterialTheme.colorScheme.surface,
+                                        )
+                                    }
+                                }
+                            ) {
                                 Icon(
                                     imageVector = Icons.Rounded.Favorite,
                                     contentDescription = "لایک‌ها و مچ‌ها",
                                     tint = VistaBrandColors.Indigo,
                                     modifier = Modifier.size(22.dp),
                                 )
-                            }
-                            if (state.receivedLikesCount > 0) {
-                                Box(
-                                    modifier = Modifier
-                                        .align(Alignment.TopEnd)
-                                        .padding(top = 4.dp, end = 4.dp)
-                                        .background(Color(0xFFEF4444), CircleShape)
-                                        .padding(horizontal = 4.dp, vertical = 1.dp)
-                                ) {
-                                    Text(
-                                        text = if (state.receivedLikesCount > 99) "۹۹+" else state.receivedLikesCount.toString(),
-                                        style = MaterialTheme.typography.labelSmall.copy(
-                                            fontFamily = VistaFontFamily,
-                                            fontWeight = FontWeight.Bold,
-                                            color = Color.White,
-                                            fontSize = 9.sp,
-                                        ),
-                                    )
-                                }
                             }
                         }
 
@@ -297,13 +301,12 @@ fun NearbyScreen(
                         )
                     }
                     state.isLocating || (state.isLoading && state.cards.isEmpty()) -> {
-                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            CircularProgressIndicator(strokeWidth = 2.5.dp, color = VistaBrandColors.Indigo)
-                        }
+                        NearbyRadarScanningView()
                     }
                     state.cards.isEmpty() -> {
-                        EmptyDeckView(
-                            onRefresh = { checkAndAcquireLocation(context, viewModel) }
+                        NearbyEmptyRadarView(
+                            onRefresh = { checkAndAcquireLocation(context, viewModel) },
+                            onOpenPreferences = { viewModel.setPreferencesSheetVisible(true) },
                         )
                     }
                     else -> {
@@ -769,48 +772,232 @@ private fun checkAndAcquireLocation(context: Context, viewModel: NearbyViewModel
 }
 
 @Composable
-private fun EmptyDeckView(onRefresh: () -> Unit) {
+private fun NearbyRadarScanningView(modifier: Modifier = Modifier) {
+    val infiniteTransition = rememberInfiniteTransition(label = "radar")
+    val sweepAngle by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2800, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "radar_sweep",
+    )
+    val waveScale by infiniteTransition.animateFloat(
+        initialValue = 0.2f,
+        targetValue = 1.0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2400, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "wave_scale",
+    )
+    val waveAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.8f,
+        targetValue = 0.0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2400, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "wave_alpha",
+    )
+
     Box(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxSize()
-            .padding(32.dp),
+            .padding(24.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(
-                imageVector = Icons.Rounded.People,
-                contentDescription = null,
-                tint = VistaBrandColors.Indigo.copy(alpha = 0.5f),
-                modifier = Modifier.size(56.dp),
+        Canvas(modifier = Modifier.size(280.dp)) {
+            val centerOffset = Offset(size.width / 2f, size.height / 2f)
+            val maxRadius = size.width / 2f
+
+            drawCircle(
+                color = VistaBrandColors.Indigo.copy(alpha = 0.12f),
+                radius = maxRadius,
+                style = Stroke(width = 1.5.dp.toPx()),
             )
-            Spacer(modifier = Modifier.height(16.dp))
+            drawCircle(
+                color = VistaBrandColors.Indigo.copy(alpha = 0.18f),
+                radius = maxRadius * 0.68f,
+                style = Stroke(width = 1.5.dp.toPx()),
+            )
+            drawCircle(
+                color = VistaBrandColors.Indigo.copy(alpha = 0.25f),
+                radius = maxRadius * 0.38f,
+                style = Stroke(width = 1.5.dp.toPx()),
+            )
+
+            drawCircle(
+                color = VistaBrandColors.Indigo.copy(alpha = waveAlpha * 0.45f),
+                radius = maxRadius * waveScale,
+                style = Stroke(width = 2.dp.toPx()),
+            )
+
+            drawLine(
+                color = VistaBrandColors.Indigo.copy(alpha = 0.15f),
+                start = Offset(centerOffset.x, 0f),
+                end = Offset(centerOffset.x, size.height),
+                strokeWidth = 1.dp.toPx(),
+            )
+            drawLine(
+                color = VistaBrandColors.Indigo.copy(alpha = 0.15f),
+                start = Offset(0f, centerOffset.y),
+                end = Offset(size.width, centerOffset.y),
+                strokeWidth = 1.dp.toPx(),
+            )
+
+            rotate(sweepAngle, pivot = centerOffset) {
+                drawArc(
+                    brush = Brush.sweepGradient(
+                        colors = listOf(
+                            Color.Transparent,
+                            VistaBrandColors.Indigo.copy(alpha = 0.35f),
+                        ),
+                        center = centerOffset,
+                    ),
+                    startAngle = 0f,
+                    sweepAngle = 60f,
+                    useCenter = true,
+                )
+            }
+        }
+
+        Box(
+            modifier = Modifier
+                .shadow(12.dp, CircleShape)
+                .size(64.dp)
+                .background(
+                    brush = Brush.linearGradient(
+                        listOf(VistaBrandColors.Indigo, VistaBrandColors.Violet),
+                    ),
+                    shape = CircleShape,
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.MyLocation,
+                contentDescription = null,
+                tint = Color.White,
+                modifier = Modifier.size(28.dp),
+            )
+        }
+
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 60.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
             Text(
-                text = "فعلاً کاربری در این بازه پیدا نشد",
+                text = "در حال جستجوی کاربران نزدیک...",
                 style = MaterialTheme.typography.titleMedium.copy(
                     fontFamily = VistaFontFamily,
                     fontWeight = FontWeight.Bold,
                     fontSize = 16.sp,
+                    color = MaterialTheme.colorScheme.onBackground,
                 ),
             )
             Spacer(modifier = Modifier.height(6.dp))
             Text(
-                text = "می‌تونی محدوده فیلترها را از تنظیمات افزایش بدی.",
-                style = MaterialTheme.typography.bodyMedium.copy(
+                text = "رادار ویستا فعال است و موقعیت شما در حال اسکن محدوده می‌باشد.",
+                style = MaterialTheme.typography.bodySmall.copy(
                     fontFamily = VistaFontFamily,
                     color = MaterialTheme.vistaColors.contentSecondary,
-                    fontSize = 13.sp,
+                    fontSize = 12.5.sp,
                     textAlign = TextAlign.Center,
                 ),
             )
-            Spacer(modifier = Modifier.height(18.dp))
+        }
+    }
+}
+
+@Composable
+private fun NearbyEmptyRadarView(
+    onRefresh: () -> Unit,
+    onOpenPreferences: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(28.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(100.dp)
+                .background(VistaBrandColors.Indigo.copy(alpha = 0.1f), CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Radar,
+                contentDescription = null,
+                tint = VistaBrandColors.Indigo,
+                modifier = Modifier.size(48.dp),
+            )
+        }
+
+        Spacer(modifier = Modifier.height(20.dp))
+
+        Text(
+            text = "کاربری در این محدوده پیدا نشد",
+            style = MaterialTheme.typography.titleLarge.copy(
+                fontFamily = VistaFontFamily,
+                fontWeight = FontWeight.ExtraBold,
+                fontSize = 18.sp,
+                color = MaterialTheme.colorScheme.onBackground,
+            ),
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Text(
+            text = "افراد جدیدی به زودی به اطراف شما اضافه می‌شوند.\nمی‌توانید شعاع کاوش یا فیلترهای سن را افزایش دهید.",
+            style = MaterialTheme.typography.bodyMedium.copy(
+                fontFamily = VistaFontFamily,
+                color = MaterialTheme.vistaColors.contentSecondary,
+                fontSize = 13.5.sp,
+                textAlign = TextAlign.Center,
+                lineHeight = 22.sp,
+            ),
+        )
+
+        Spacer(modifier = Modifier.height(28.dp))
+
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Button(
+                onClick = onOpenPreferences,
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                ),
+            ) {
+                Icon(imageVector = Icons.Rounded.Tune, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "تنظیمات شعاع",
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        fontFamily = VistaFontFamily,
+                        fontWeight = FontWeight.Bold,
+                    ),
+                )
+            }
+
             Button(
                 onClick = onRefresh,
                 shape = RoundedCornerShape(14.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = VistaBrandColors.Indigo),
             ) {
+                Icon(imageVector = Icons.Rounded.Replay, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                    text = "جستجوی دوباره",
-                    style = MaterialTheme.typography.labelLarge.copy(
+                    text = "اسکن مجدد",
+                    style = MaterialTheme.typography.labelMedium.copy(
                         fontFamily = VistaFontFamily,
                         fontWeight = FontWeight.Bold,
                     ),

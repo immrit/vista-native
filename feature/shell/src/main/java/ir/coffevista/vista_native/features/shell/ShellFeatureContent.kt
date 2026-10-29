@@ -27,7 +27,13 @@ data class ShellFeatureContent(
     ) -> Unit,
     val storyPlayer: (@Composable (initialUserIndex: Int, onClose: () -> Unit, onOpenProfile: (String) -> Unit, onOpenLink: (String) -> Unit) -> Unit),
     val storyCreate: (@Composable (initialUri: android.net.Uri?, onClose: () -> Unit, onStoryPublished: () -> Unit) -> Unit),
-    val addPost: (@Composable (onBack: () -> Unit, onNavigateToTrimmer: (android.net.Uri) -> Unit, onPostCreated: () -> Unit) -> Unit),
+    val addPost: (@Composable (
+        onBack: () -> Unit,
+        onNavigateToTrimmer: (android.net.Uri) -> Unit,
+        onPostCreated: () -> Unit,
+        trimmedVideoPath: String?,
+        onTrimmedVideoConsumed: () -> Unit,
+    ) -> Unit),
     val videoTrimmer: (@Composable (videoUri: android.net.Uri, onBack: () -> Unit, onTrimComplete: (java.io.File) -> Unit) -> Unit),
     val reels: (@Composable (postId: String?, onBack: () -> Unit, onAuthorClick: (String) -> Unit, onCommentsClick: (String) -> Unit, onShareClick: (String) -> Unit) -> Unit)? = null,
     val searchRoot: @Composable (

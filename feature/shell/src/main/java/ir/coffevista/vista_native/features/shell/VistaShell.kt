@@ -57,6 +57,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -99,6 +100,7 @@ import androidx.navigation.navArgument
 import androidx.navigation.NavType
 import ir.coffevista.vista_native.core.designsystem.component.VistaAvatar
 import ir.coffevista.vista_native.core.designsystem.component.VistaBadge
+import ir.coffevista.vista_native.core.designsystem.component.VistaBadgedBox
 import ir.coffevista.vista_native.core.designsystem.component.VistaBottomSheet
 import ir.coffevista.vista_native.core.designsystem.component.VistaButton
 import ir.coffevista.vista_native.core.designsystem.component.VistaButtonVariant
@@ -106,12 +108,16 @@ import ir.coffevista.vista_native.core.designsystem.component.VistaDialog
 import ir.coffevista.vista_native.core.designsystem.component.VistaDivider
 import ir.coffevista.vista_native.core.designsystem.component.VistaEmptyState
 import ir.coffevista.vista_native.core.designsystem.component.VistaMediaCard
+import ir.coffevista.vista_native.core.designsystem.component.VistaNotificationBadge
 import ir.coffevista.vista_native.core.designsystem.component.VistaSurface
 import ir.coffevista.vista_native.core.designsystem.component.VistaTextField
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaLayout
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaSpacing
 import ir.coffevista.vista_native.core.model.session.AuthenticatedContext
 import kotlinx.coroutines.launch
+
+/** Saved-state key under which the video trimmer returns its output file to the Add Post entry. */
+private const val TRIMMED_VIDEO_PATH_KEY = "trimmed_video_path"
 
 @Composable
 fun VistaShell(
@@ -406,13 +412,21 @@ fun VistaShell(
                         )
                     }
                 }
-                composable(ShellRoutes.AddPost) {
+                composable(ShellRoutes.AddPost) { addPostEntry ->
                     val addPost = content.addPost
                     if (addPost != null) {
+                        // The trimmer hands its result back through this entry's saved state;
+                        // it is forwarded to the screen explicitly because a Hilt ViewModel's
+                        // SavedStateHandle is not the same object as the entry's.
+                        val trimmedVideoPath by addPostEntry.savedStateHandle
+                            .getStateFlow<String?>(TRIMMED_VIDEO_PATH_KEY, null)
+                            .collectAsState()
                         addPost(
                             { navController.popBackStack() },
                             { uri -> navController.navigate(ShellRoutes.videoTrimmer(uri.toString())) },
                             { navController.popBackStack() },
+                            trimmedVideoPath,
+                            { addPostEntry.savedStateHandle[TRIMMED_VIDEO_PATH_KEY] = null },
                         )
                     }
                 }
@@ -423,19 +437,22 @@ fun VistaShell(
                     ),
                 ) { backStackEntry ->
                     val rawUri = backStackEntry.arguments?.getString("uri").orEmpty()
-                    val decodedUri = java.net.URLDecoder.decode(rawUri, "UTF-8")
+                    val decodedUri = runCatching { java.net.URLDecoder.decode(rawUri, "UTF-8") }.getOrDefault(rawUri)
                     val videoTrimmer = content.videoTrimmer
-                    if (videoTrimmer != null && decodedUri.isNotBlank()) {
+                    val parsedUri = runCatching { android.net.Uri.parse(decodedUri) }.getOrNull()
+                    if (videoTrimmer != null && parsedUri != null && decodedUri.isNotBlank()) {
                         videoTrimmer(
-                            android.net.Uri.parse(decodedUri),
+                            parsedUri,
                             { navController.popBackStack() },
                             { trimmedFile ->
                                 navController.previousBackStackEntry
                                     ?.savedStateHandle
-                                    ?.set("trimmed_video_path", trimmedFile.absolutePath)
+                                    ?.set(TRIMMED_VIDEO_PATH_KEY, trimmedFile.absolutePath)
                                 navController.popBackStack()
                             },
                         )
+                    } else if (decodedUri.isBlank() || parsedUri == null) {
+                        navController.popBackStack()
                     }
                 }
             }
@@ -1076,21 +1093,23 @@ private fun VistaBottomIsland(
                                 },
                             contentAlignment = Alignment.Center,
                         ) {
-                            Box {
+                            VistaBadgedBox(
+                                badge = {
+                                    if (tab == ShellTab.Chat && chatBadgeCount > 0) {
+                                        VistaNotificationBadge(
+                                            count = chatBadgeCount,
+                                            borderColor = MaterialTheme.colorScheme.surface,
+                                            modifier = Modifier.testTag("shell-chat-badge"),
+                                        )
+                                    }
+                                }
+                            ) {
                                 VistaNavigationIcon(
                                     tab = tab,
                                     selected = selected,
                                     color = tabIconColor,
-                                    modifier = Modifier.size(30.dp),
+                                    modifier = Modifier.size(28.dp),
                                 )
-                                if (tab == ShellTab.Chat && chatBadgeCount > 0) {
-                                    VistaBadge(
-                                        label = if (chatBadgeCount > 99) "۹۹+" else chatBadgeCount.toString(),
-                                        modifier = Modifier
-                                            .align(Alignment.TopEnd)
-                                            .testTag("shell-chat-badge"),
-                                    )
-                                }
                             }
                         }
                     }

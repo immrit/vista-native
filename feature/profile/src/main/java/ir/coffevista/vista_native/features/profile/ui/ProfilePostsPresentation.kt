@@ -35,4 +35,7 @@ data class ProfilePostsPresentationState(
     val hasMore: Boolean = true,
     val error: String? = null,
     val appendError: String? = null,
+    val viewerUserId: String? = null,
+    val viewerIsBlueTick: Boolean = false,
+    val viewerHasPremiumEdit: Boolean = false,
 )

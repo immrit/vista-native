@@ -24,10 +24,16 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
+import ir.coffevista.vista_native.core.designsystem.component.VistaReportReasonDialog
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -84,6 +90,7 @@ fun CommentsBottomSheet(
     postId: String,
     onDismissRequest: () -> Unit,
     viewModel: CommentsViewModel,
+    postOwnerId: String? = null,
     onAuthorClick: (String) -> Unit = {},
     onHashtagClick: (String) -> Unit = {},
 ) {
@@ -214,7 +221,7 @@ fun CommentsBottomSheet(
                         onDelete = viewModel::deleteComment,
                         onReport = { commentId -> reportCommentTargetId = commentId },
                         canEdit = viewModel::canEdit,
-                        canDelete = { viewModel.canDelete(it) },
+                        canDelete = { viewModel.canDelete(it, postOwnerId = postOwnerId) },
                         canReport = viewModel::canReport,
                         isCommentAuthor = { viewModel.isCurrentUser(it.authorUserId) },
                         onAuthorClick = onAuthorClick,
@@ -251,11 +258,11 @@ fun CommentsBottomSheet(
     }
 
     reportCommentTargetId?.let { commentId ->
-        ReportReasonDialog(
+        VistaReportReasonDialog(
             title = "گزارش نظر",
             onDismiss = { reportCommentTargetId = null },
-            onSubmit = { reason, _ ->
-                viewModel.reportComment(commentId, reason)
+            onSubmit = { reason, details ->
+                viewModel.reportComment(commentId, reason, details)
                 reportCommentTargetId = null
             },
         )
@@ -541,6 +548,8 @@ private fun CommentItem(
     var showMenu by remember { mutableStateOf(false) }
     var isEditingInline by remember { mutableStateOf(false) }
     var editContent by remember(comment.content) { mutableStateOf(comment.content) }
+    val clipboardManager = LocalClipboardManager.current
+    val context = LocalContext.current
 
     val isDark = isSystemInDarkTheme()
     val dividerColor = if (isDark) Color(0xFF424242) else Color(0xFFE0E0E0)
@@ -765,10 +774,10 @@ private fun CommentItem(
                     if (canEdit) {
                         Spacer(Modifier.width(16.dp))
                         Text(
-                            text = "ویرایش",
+                            text = if (!isCommentAuthor) "ویرایش ناظر" else "ویرایش",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                            color = if (!isCommentAuthor) Color(0xFF2196F3) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                             modifier = Modifier
                                 .clip(RoundedCornerShape(16.dp))
                                 .clickable {
@@ -796,10 +805,16 @@ private fun CommentItem(
                             onDismissRequest = { showMenu = false },
                         ) {
                             if (canEdit) {
+                                val isModEdit = !isCommentAuthor
                                 DropdownMenuItem(
-                                    text = { Text("ویرایش") },
+                                    text = { Text(if (isModEdit) "ویرایش ناظر" else "ویرایش") },
                                     leadingIcon = {
-                                        Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        Icon(
+                                            imageVector = if (isModEdit) Icons.Default.CheckCircle else Icons.Default.Edit,
+                                            contentDescription = null,
+                                            tint = if (isModEdit) Color(0xFF2196F3) else MaterialTheme.colorScheme.onSurface,
+                                            modifier = Modifier.size(18.dp),
+                                        )
                                     },
                                     onClick = {
                                         showMenu = false
@@ -808,6 +823,21 @@ private fun CommentItem(
                                     },
                                 )
                             }
+                            DropdownMenuItem(
+                                text = { Text("کپی متن") },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Default.ContentCopy,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp),
+                                    )
+                                },
+                                onClick = {
+                                    showMenu = false
+                                    clipboardManager.setText(AnnotatedString(comment.content))
+                                    android.widget.Toast.makeText(context, "متن نظر کپی شد", android.widget.Toast.LENGTH_SHORT).show()
+                                },
+                            )
                             if (canDelete) {
                                 DropdownMenuItem(
                                     text = { Text("حذف", color = Color.Red) },

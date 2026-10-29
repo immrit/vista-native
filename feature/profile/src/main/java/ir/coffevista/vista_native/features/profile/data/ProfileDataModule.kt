@@ -177,6 +177,10 @@ object ProfileDataModule {
             override suspend fun getUserHighlights(
                 userId: String,
             ): retrofit2.Response<ProfileHighlightsResponseDto> = remote.getUserHighlights(userId)
+
+            override suspend fun reportProfile(
+                request: ReportProfileRequestDto,
+            ): retrofit2.Response<Unit> = remote.reportProfile(request)
         }
     }
 

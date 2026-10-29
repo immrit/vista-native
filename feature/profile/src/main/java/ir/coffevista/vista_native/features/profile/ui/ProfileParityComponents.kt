@@ -47,9 +47,21 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AdminPanelSettings
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Flag
+import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.WorkspacePremium
+import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import ir.coffevista.vista_native.features.profile.data.ProfileHighlightDto
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -134,6 +146,13 @@ internal fun ProfileParityList(
     onReelClick: (String) -> Unit = onPostClick,
     onLikeClick: (String, Boolean, Long) -> Unit,
     onSaveClick: (String, Boolean) -> Unit,
+    onCommentClick: (String) -> Unit = onPostClick,
+    onShareClick: (ProfilePostUiModel) -> Unit = {},
+    onEditPost: (ProfilePostUiModel) -> Unit = {},
+    onDeletePost: (String) -> Unit = {},
+    onReportPost: (ProfilePostUiModel) -> Unit = {},
+    onVisibilityChange: (ProfilePostUiModel, Boolean?, Boolean?) -> Unit = { _, _, _ -> },
+    onPremiumPrompt: (String) -> Unit = {},
     onLoadMore: () -> Unit,
     onRefresh: () -> Unit = {},
     onAvatarAddClick: (() -> Unit)? = null,
@@ -226,11 +245,24 @@ internal fun ProfileParityList(
                             key = { postsState.posts[it].id },
                         ) { index ->
                             val post = postsState.posts[index]
+                            val isOwn = post.userId == postsState.viewerUserId || header.isOwnProfile
+                            val isBlue = postsState.viewerIsBlueTick
+                            val hasPrem = postsState.viewerHasPremiumEdit
                             ProfilePostCard(
                                 post = post,
+                                isOwnPost = isOwn,
+                                isBlueTick = isBlue,
+                                hasPremiumEdit = hasPrem,
                                 onClick = { onPostClick(post.id) },
                                 onLikeClick = { onLikeClick(post.id, post.isLiked, post.likeCount) },
                                 onSaveClick = { onSaveClick(post.id, post.isSaved) },
+                                onCommentClick = { onCommentClick(post.id) },
+                                onShareClick = { onShareClick(post) },
+                                onEditPost = { onEditPost(post) },
+                                onDeletePost = { onDeletePost(post.id) },
+                                onReportPost = { onReportPost(post) },
+                                onVisibilityChange = { hideLike, hideComment -> onVisibilityChange(post, hideLike, hideComment) },
+                                onPremiumPrompt = onPremiumPrompt,
                             )
                             HorizontalDivider(
                                 thickness = .5.dp,
@@ -695,14 +727,31 @@ private fun ProfileTabItem(
 @Composable
 internal fun ProfilePostCard(
     post: ProfilePostUiModel,
+    isOwnPost: Boolean = false,
+    isBlueTick: Boolean = false,
+    hasPremiumEdit: Boolean = false,
     onClick: () -> Unit,
     onLikeClick: () -> Unit,
     onSaveClick: () -> Unit,
-    onDeletePost: (() -> Unit)? = null,
+    onCommentClick: () -> Unit = onClick,
+    onShareClick: () -> Unit = {},
+    onEditPost: () -> Unit = {},
+    onDeletePost: () -> Unit = {},
+    onReportPost: () -> Unit = {},
+    onVisibilityChange: (Boolean?, Boolean?) -> Unit = { _, _ -> },
+    onPremiumPrompt: (String) -> Unit = {},
 ) {
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
     var showMenu by remember { mutableStateOf(false) }
+    var confirmDelete by remember { mutableStateOf(false) }
+
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val actionTint = if (isDark) {
+        Color.White.copy(alpha = 0.70f)
+    } else {
+        Color.Black.copy(alpha = 0.54f)
+    }
 
     Column(
         modifier = Modifier
@@ -760,53 +809,6 @@ internal fun ProfilePostCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 13.sp,
                     )
-                }
-            }
-            Box {
-                IconButton(
-                    onClick = { showMenu = true },
-                    modifier = Modifier.size(32.dp),
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.MoreVert,
-                        contentDescription = "گزینه‌های بیشتر",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(18.dp),
-                    )
-                }
-                DropdownMenu(
-                    expanded = showMenu,
-                    onDismissRequest = { showMenu = false },
-                ) {
-                    DropdownMenuItem(
-                        text = { Text("اشتراک‌گذاری") },
-                        onClick = {
-                            showMenu = false
-                            val shareIntent = Intent().apply {
-                                action = Intent.ACTION_SEND
-                                putExtra(Intent.EXTRA_TEXT, "https://coffevista.ir/p/${post.id}")
-                                type = "text/plain"
-                            }
-                            context.startActivity(Intent.createChooser(shareIntent, "اشتراک‌گذاری پست"))
-                        },
-                    )
-                    DropdownMenuItem(
-                        text = { Text("کپی لینک پست") },
-                        onClick = {
-                            showMenu = false
-                            clipboardManager.setText(AnnotatedString("https://coffevista.ir/p/${post.id}"))
-                            Toast.makeText(context, "لینک پست کپی شد", Toast.LENGTH_SHORT).show()
-                        },
-                    )
-                    if (onDeletePost != null) {
-                        DropdownMenuItem(
-                            text = { Text("حذف پست", color = Color(0xFFE53935)) },
-                            onClick = {
-                                showMenu = false
-                                onDeletePost()
-                            },
-                        )
-                    }
                 }
             }
         }
@@ -895,11 +897,11 @@ internal fun ProfilePostCard(
             }
         }
 
-        // Action Buttons Row
+        // Action Buttons Row (Placed exactly like Feed: Like, Comment, Bookmark, Share, Spacer, 3-dots)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 10.dp),
+                .padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             ProfileHeart(
@@ -911,52 +913,269 @@ internal fun ProfilePostCard(
             if (!post.hideLikeCount) {
                 Text(
                     text = post.likeCount.toString().toPersianDigits(),
-                    modifier = Modifier.padding(start = 5.dp),
+                    modifier = Modifier.padding(start = 4.dp),
                     fontSize = 13.sp,
-                    color = MaterialTheme.colorScheme.onBackground,
+                    color = actionTint,
                 )
             }
-            Spacer(Modifier.width(16.dp))
+            Spacer(Modifier.width(14.dp))
             Image(
                 painter = painterResource(DesignSystemR.drawable.vista_post_comment),
                 contentDescription = "دیدگاه",
                 modifier = Modifier
                     .size(19.dp)
-                    .clickable { onClick() },
-                colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.onBackground),
+                    .clickable { onCommentClick() },
+                colorFilter = ColorFilter.tint(actionTint),
             )
             if (!post.hideCommentCount) {
                 Text(
                     text = post.commentCount.toString().toPersianDigits(),
-                    modifier = Modifier.padding(start = 5.dp),
+                    modifier = Modifier.padding(start = 4.dp),
                     fontSize = 13.sp,
-                    color = MaterialTheme.colorScheme.onBackground,
+                    color = actionTint,
                 )
             }
-            Spacer(Modifier.width(16.dp))
+            Spacer(Modifier.width(14.dp))
+            BookmarkIcon(
+                filled = post.isSaved,
+                inactiveColor = actionTint,
+                modifier = Modifier
+                    .size(19.dp)
+                    .clickable { onSaveClick() },
+            )
+            Spacer(Modifier.width(14.dp))
             Image(
                 painter = painterResource(DesignSystemR.drawable.vista_post_send),
                 contentDescription = "ارسال",
                 modifier = Modifier
                     .size(19.dp)
                     .clickable {
-                        val shareIntent = Intent().apply {
-                            action = Intent.ACTION_SEND
-                            putExtra(Intent.EXTRA_TEXT, "https://coffevista.ir/p/${post.id}")
-                            type = "text/plain"
+                        if (onShareClick != {}) {
+                            onShareClick()
+                        } else {
+                            val shareIntent = Intent().apply {
+                                action = Intent.ACTION_SEND
+                                putExtra(Intent.EXTRA_TEXT, "https://coffevista.ir/p/${post.id}")
+                                type = "text/plain"
+                            }
+                            context.startActivity(Intent.createChooser(shareIntent, "اشتراک‌گذاری پست"))
                         }
-                        context.startActivity(Intent.createChooser(shareIntent, "اشتراک‌گذاری پست"))
                     },
-                colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.onBackground),
+                colorFilter = ColorFilter.tint(actionTint),
             )
             Spacer(Modifier.weight(1f))
-            BookmarkIcon(
-                filled = post.isSaved,
-                modifier = Modifier
-                    .size(19.dp)
-                    .clickable { onSaveClick() },
-            )
+            Box {
+                IconButton(
+                    onClick = { showMenu = true },
+                    modifier = Modifier.size(32.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.MoreHoriz,
+                        contentDescription = "گزینه‌های بیشتر",
+                        tint = actionTint,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+                DropdownMenu(
+                    expanded = showMenu,
+                    onDismissRequest = { showMenu = false },
+                ) {
+                    if (!isOwnPost) {
+                        DropdownMenuItem(
+                            text = {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Default.Flag,
+                                        contentDescription = null,
+                                        tint = Color(0xFFFF9800),
+                                        modifier = Modifier.size(20.dp),
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("گزارش پست")
+                                }
+                            },
+                            onClick = {
+                                showMenu = false
+                                onReportPost()
+                            },
+                        )
+                    }
+                    DropdownMenuItem(
+                        text = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.ContentCopy,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text("کپی متن")
+                            }
+                        },
+                        onClick = {
+                            showMenu = false
+                            clipboardManager.setText(AnnotatedString(post.content.orEmpty()))
+                            Toast.makeText(context, "متن پست کپی شد", Toast.LENGTH_SHORT).show()
+                        },
+                    )
+                    if (isOwnPost || isBlueTick) {
+                        DropdownMenuItem(
+                            text = {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Default.Delete,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.size(20.dp),
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("حذف پست", color = MaterialTheme.colorScheme.error)
+                                }
+                            },
+                            onClick = {
+                                showMenu = false
+                                confirmDelete = true
+                            },
+                        )
+                    }
+                    if (isBlueTick || hasPremiumEdit) {
+                        DropdownMenuItem(
+                            text = {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = if (isBlueTick) Icons.Default.AdminPanelSettings else Icons.Default.Edit,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(20.dp),
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(if (isBlueTick) "ویرایش ناظر" else "ویرایش پست")
+                                }
+                            },
+                            onClick = {
+                                showMenu = false
+                                onEditPost()
+                            },
+                        )
+                    } else if (isOwnPost) {
+                        DropdownMenuItem(
+                            text = {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.Lock,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(20.dp),
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("ویرایش پست", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Spacer(Modifier.weight(1f))
+                                    Icon(
+                                        imageVector = Icons.Default.WorkspacePremium,
+                                        contentDescription = null,
+                                        tint = Color(0xFFFFB800),
+                                        modifier = Modifier.size(18.dp),
+                                    )
+                                }
+                            },
+                            onClick = {
+                                showMenu = false
+                                onPremiumPrompt("ویرایش پست")
+                            },
+                        )
+                    }
+                    if (isOwnPost) {
+                        if (hasPremiumEdit) {
+                            DropdownMenuItem(
+                                text = {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = if (post.hideLikeCount) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(20.dp),
+                                        )
+                                        Spacer(Modifier.width(8.dp))
+                                        Text(if (post.hideLikeCount) "نمایش تعداد لایک" else "مخفی کردن تعداد لایک")
+                                    }
+                                },
+                                onClick = {
+                                    showMenu = false
+                                    onVisibilityChange(!post.hideLikeCount, null)
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = if (post.hideCommentCount) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(20.dp),
+                                        )
+                                        Spacer(Modifier.width(8.dp))
+                                        Text(if (post.hideCommentCount) "نمایش تعداد دیدگاه" else "مخفی کردن تعداد دیدگاه")
+                                    }
+                                },
+                                onClick = {
+                                    showMenu = false
+                                    onVisibilityChange(null, !post.hideCommentCount)
+                                },
+                            )
+                        } else {
+                            DropdownMenuItem(
+                                text = {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.Lock,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(20.dp),
+                                        )
+                                        Spacer(Modifier.width(8.dp))
+                                        Text("کنترل آمار لایک/کامنت", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Spacer(Modifier.weight(1f))
+                                        Icon(
+                                            imageVector = Icons.Default.WorkspacePremium,
+                                            contentDescription = null,
+                                            tint = Color(0xFFFFB800),
+                                            modifier = Modifier.size(18.dp),
+                                        )
+                                    }
+                                },
+                                onClick = {
+                                    showMenu = false
+                                    onPremiumPrompt("مخفی‌سازی آمار لایک و کامنت")
+                                },
+                            )
+                        }
+                    }
+                }
+            }
         }
+    }
+    if (confirmDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text("حذف پست") },
+            text = { Text("آیا مطمئن هستید که می‌خواهید این پست را حذف کنید؟") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmDelete = false
+                        onDeletePost()
+                    },
+                ) {
+                    Text("حذف", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDelete = false }) {
+                    Text("انصراف")
+                }
+            },
+        )
     }
 }
 
@@ -1294,8 +1513,12 @@ internal object ProfileParityTestTags {
 }
 
 @Composable
-private fun BookmarkIcon(filled: Boolean, modifier: Modifier = Modifier) {
-    val color = MaterialTheme.colorScheme.onBackground
+private fun BookmarkIcon(
+    filled: Boolean,
+    modifier: Modifier = Modifier,
+    inactiveColor: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.onBackground,
+) {
+    val color = if (filled) MaterialTheme.colorScheme.onBackground else inactiveColor
     Canvas(
         modifier.semantics {
             this.contentDescription = if (filled) "ذخیره شده" else "ذخیره نشده"

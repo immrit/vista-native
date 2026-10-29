@@ -557,7 +557,7 @@ fun VistaApp(
                                 onStoryPublished = onStoryPublished,
                             )
                         },
-                        addPost = { onBack, onNavigateToTrimmer, onPostCreated ->
+                        addPost = { onBack, onNavigateToTrimmer, onPostCreated, trimmedVideoPath, onTrimmedVideoConsumed ->
                             val shared = routedSharedContent?.takeIf {
                                 it.destination == ir.coffevista.vista_native.share.SharedContentDestination.POST
                             }
@@ -565,6 +565,8 @@ fun VistaApp(
                                 onBack = onBack,
                                 onNavigateToTrimmer = onNavigateToTrimmer,
                                 onPostCreated = onPostCreated,
+                                trimmedVideoPath = trimmedVideoPath,
+                                onTrimmedVideoConsumed = onTrimmedVideoConsumed,
                                 preloadedText = shared?.content?.text,
                                 preloadedMediaUris = shared?.content?.uris.orEmpty(),
                                 preloadedRequestId = shared?.content?.requestId,
@@ -635,6 +637,17 @@ fun VistaApp(
                                 onReelClick = onReelClick,
                                 onLikeClick = postsViewModel::toggleLike,
                                 onSaveClick = postsViewModel::toggleSave,
+                                onDeletePost = postsViewModel::deletePost,
+                                onEditPost = { post, newContent, onResult ->
+                                    postsViewModel.updatePostContent(post.id, newContent, onResult)
+                                },
+                                onReportPost = { post, reason, details, onResult ->
+                                    postsViewModel.reportPost(post.id, post.userId, reason, details, onResult)
+                                },
+                                onVisibilityChange = { post, hideLike, hideComment ->
+                                    postsViewModel.updateEngagementVisibility(post.id, hideLike, hideComment)
+                                },
+                                onNavigateToPricing = { navController.navigate(ShellRoutes.PricingPage) },
                             )
                         },
                         settingsRoot = { onBack, onEditProfile, onPremium, onAccountDetails, onPrivacySecurity, onNotifications, onAppearance, onDataStorage, onSavedPosts, onChangePassword, onVerificationRequest, onTerms, onAbout, onLogout ->
@@ -785,6 +798,17 @@ fun VistaApp(
                                 onReelClick = onReelClick,
                                 onLikeClick = postsViewModel::toggleLike,
                                 onSaveClick = postsViewModel::toggleSave,
+                                onDeletePost = postsViewModel::deletePost,
+                                onEditPost = { post, newContent, onResult ->
+                                    postsViewModel.updatePostContent(post.id, newContent, onResult)
+                                },
+                                onReportPost = { post, reason, details, onResult ->
+                                    postsViewModel.reportPost(post.id, post.userId, reason, details, onResult)
+                                },
+                                onVisibilityChange = { post, hideLike, hideComment ->
+                                    postsViewModel.updateEngagementVisibility(post.id, hideLike, hideComment)
+                                },
+                                onNavigateToPricing = { navController.navigate(ShellRoutes.PricingPage) },
                                 onMessage = onOpenChat?.let { openChat ->
                                     {
                                         coroutineScope.launch {
@@ -867,7 +891,7 @@ fun VistaApp(
                                 url = url,
                                 title = title,
                                 onBack = onBack,
-                                restrictHost = "coffevista.ir",
+                                restrictHost = "cafevista.ir",
                                 allowedPathPrefix = runCatching {
                                     android.net.Uri.parse(url).path
                                 }.getOrNull().takeIf { path ->
@@ -945,6 +969,9 @@ private fun ir.coffevista.vista_native.features.feed.ui.ProfilePostsUiState
     hasMore = hasMore,
     error = error,
     appendError = appendError,
+    viewerUserId = viewerUserId,
+    viewerIsBlueTick = viewerIsBlueTick,
+    viewerHasPremiumEdit = viewerHasPremiumEdit,
 )
 
 private fun FeedPost.toProfilePostUiModel() = ProfilePostUiModel(

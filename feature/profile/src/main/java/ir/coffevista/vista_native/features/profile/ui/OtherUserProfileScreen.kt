@@ -24,6 +24,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -35,7 +36,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import ir.coffevista.vista_native.core.designsystem.component.VistaEmptyState
+import ir.coffevista.vista_native.core.designsystem.component.VistaEditPostDialog
 import ir.coffevista.vista_native.core.designsystem.component.VistaErrorState
+import ir.coffevista.vista_native.core.designsystem.component.VistaPremiumPromptDialog
+import ir.coffevista.vista_native.core.designsystem.component.VistaReportReasonDialog
 import ir.coffevista.vista_native.features.profile.R
 import ir.coffevista.vista_native.features.profile.data.FollowState
 import ir.coffevista.vista_native.features.profile.data.PublicProfile
@@ -53,8 +57,14 @@ fun OtherUserProfileScreen(
     onReelClick: (String) -> Unit = onPostClick,
     onLikeClick: (String, Boolean, Long) -> Unit = { _, _, _ -> },
     onSaveClick: (String, Boolean) -> Unit = { _, _ -> },
+    onEditPost: (ProfilePostUiModel, String, (Boolean) -> Unit) -> Unit = { _, _, _ -> },
+    onDeletePost: (String) -> Unit = {},
+    onReportPost: (ProfilePostUiModel, String, String?, (Boolean) -> Unit) -> Unit = { _, _, _, _ -> },
+    onReportUser: (String, String?, (Boolean, String?) -> Unit) -> Unit = { _, _, _ -> },
+    onVisibilityChange: (ProfilePostUiModel, Boolean?, Boolean?) -> Unit = { _, _, _ -> },
     onMessage: (() -> Unit)? = null,
     onOpenFollowers: ((userId: String, initialTab: Int) -> Unit)? = null,
+    onNavigateToPricing: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -83,8 +93,14 @@ fun OtherUserProfileScreen(
         onReelClick = onReelClick,
         onLikeClick = onLikeClick,
         onSaveClick = onSaveClick,
+        onEditPost = onEditPost,
+        onDeletePost = onDeletePost,
+        onReportPost = onReportPost,
+        onReportUser = viewModel::reportProfile,
+        onVisibilityChange = onVisibilityChange,
         onMessage = onMessage,
         onOpenFollowers = onOpenFollowers,
+        onNavigateToPricing = onNavigateToPricing,
         onAction = viewModel::onAction,
         modifier = modifier,
     )
@@ -97,7 +113,6 @@ internal fun OtherUserProfileContent(
     highlights: List<ir.coffevista.vista_native.features.profile.data.ProfileHighlightDto> = emptyList(),
     snackbarHostState: SnackbarHostState,
     onAction: (OtherUserProfileAction) -> Unit,
-    modifier: Modifier = Modifier,
     postsState: ProfilePostsPresentationState = ProfilePostsPresentationState(),
     onPostsRefresh: () -> Unit = {},
     onPostsLoadMore: () -> Unit = {},
@@ -105,12 +120,26 @@ internal fun OtherUserProfileContent(
     onReelClick: (String) -> Unit = onPostClick,
     onLikeClick: (String, Boolean, Long) -> Unit = { _, _, _ -> },
     onSaveClick: (String, Boolean) -> Unit = { _, _ -> },
+    onEditPost: (ProfilePostUiModel, String, (Boolean) -> Unit) -> Unit = { _, _, _ -> },
+    onDeletePost: (String) -> Unit = {},
+    onReportPost: (ProfilePostUiModel, String, String?, (Boolean) -> Unit) -> Unit = { _, _, _, _ -> },
+    onReportUser: (String, String?, (Boolean, String?) -> Unit) -> Unit = { _, _, _ -> },
+    onVisibilityChange: (ProfilePostUiModel, Boolean?, Boolean?) -> Unit = { _, _, _ -> },
     onMessage: (() -> Unit)? = null,
     onOpenFollowers: ((userId: String, initialTab: Int) -> Unit)? = null,
+    onNavigateToPricing: (() -> Unit)? = null,
+    modifier: Modifier = Modifier,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
     var showOptionsSheet by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
+    var editPostTarget by remember { mutableStateOf<ProfilePostUiModel?>(null) }
+    var isEditingPost by remember { mutableStateOf(false) }
+    var reportPostTarget by remember { mutableStateOf<ProfilePostUiModel?>(null) }
+    var isReportingPost by remember { mutableStateOf(false) }
+    var showReportUserDialog by remember { mutableStateOf(false) }
+    var isReportingUser by remember { mutableStateOf(false) }
+    var premiumPromptFeature by remember { mutableStateOf<String?>(null) }
 
     Column(
         modifier = modifier
@@ -180,6 +209,11 @@ internal fun OtherUserProfileContent(
                                 onReelClick = onReelClick,
                                 onLikeClick = onLikeClick,
                                 onSaveClick = onSaveClick,
+                                onEditPost = { post -> editPostTarget = post },
+                                onDeletePost = onDeletePost,
+                                onReportPost = { post -> reportPostTarget = post },
+                                onVisibilityChange = onVisibilityChange,
+                                onPremiumPrompt = { feature -> premiumPromptFeature = feature },
                                 onLoadMore = onPostsLoadMore,
                                 onRefresh = onPostsRefresh,
                                 onMemberBadgeClick = {
@@ -243,7 +277,7 @@ internal fun OtherUserProfileContent(
                         android.widget.Toast.makeText(context, "لینک پروفایل کپی شد", android.widget.Toast.LENGTH_SHORT).show()
                     },
                     onReport = {
-                        android.widget.Toast.makeText(context, "گزارش تخلف ثبت شد", android.widget.Toast.LENGTH_SHORT).show()
+                        showReportUserDialog = true
                     },
                     onBlock = {
                         android.widget.Toast.makeText(context, "کاربر مسدود شد", android.widget.Toast.LENGTH_SHORT).show()
@@ -257,6 +291,68 @@ internal fun OtherUserProfileContent(
                     .align(Alignment.BottomCenter)
                     .padding(16.dp),
             )
+
+            editPostTarget?.let { target ->
+                val maxLen = if (postsState.viewerIsBlueTick) 10000 else if (postsState.viewerHasPremiumEdit) 1000 else 500
+                val title = if (postsState.viewerIsBlueTick && target.userId != postsState.viewerUserId) "ویرایش ناظر" else "ویرایش پست"
+                VistaEditPostDialog(
+                    initialContent = target.content.orEmpty(),
+                    maxCharLength = maxLen,
+                    title = title,
+                    isSubmitting = isEditingPost,
+                    onDismiss = { if (!isEditingPost) editPostTarget = null },
+                    onConfirm = { newContent ->
+                        isEditingPost = true
+                        onEditPost(target, newContent) {
+                            isEditingPost = false
+                            editPostTarget = null
+                        }
+                    },
+                )
+            }
+
+            reportPostTarget?.let { target ->
+                VistaReportReasonDialog(
+                    isSubmitting = isReportingPost,
+                    onDismiss = { if (!isReportingPost) reportPostTarget = null },
+                    onSubmit = { reason, details ->
+                        isReportingPost = true
+                        onReportPost(target, reason, details) {
+                            isReportingPost = false
+                            reportPostTarget = null
+                        }
+                    },
+                )
+            }
+
+            if (showReportUserDialog) {
+                val usernameText = state.profile?.username?.let { "@$it" } ?: (state.profile?.fullName ?: "کاربر")
+                VistaReportReasonDialog(
+                    title = "گزارش کاربر $usernameText",
+                    isSubmitting = isReportingUser,
+                    onDismiss = { if (!isReportingUser) showReportUserDialog = false },
+                    onSubmit = { reason, details ->
+                        isReportingUser = true
+                        onReportUser(reason, details) { success, errorMsg ->
+                            isReportingUser = false
+                            showReportUserDialog = false
+                            val msg = if (success) "گزارش تخلف کاربر با موفقیت ثبت شد" else (errorMsg ?: "خطا در ثبت گزارش")
+                            android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                )
+            }
+
+            premiumPromptFeature?.let { feature ->
+                VistaPremiumPromptDialog(
+                    feature = feature,
+                    onDismiss = { premiumPromptFeature = null },
+                    onUpgradeClick = {
+                        premiumPromptFeature = null
+                        onNavigateToPricing?.invoke()
+                    },
+                )
+            }
         }
     }
 }

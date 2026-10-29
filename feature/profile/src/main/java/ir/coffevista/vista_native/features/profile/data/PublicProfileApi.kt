@@ -45,4 +45,9 @@ interface PublicProfileApi {
     suspend fun getUserHighlights(
         @Path("userId") userId: String,
     ): Response<ProfileHighlightsResponseDto>
+
+    @POST("v1/profiles/report")
+    suspend fun reportProfile(
+        @Body request: ReportProfileRequestDto,
+    ): Response<Unit>
 }

@@ -245,6 +245,22 @@ class OtherUserProfileViewModelTest {
         assertNull(viewModel.uiState.value.initialError)
     }
 
+    @Test
+    fun reportProfileDelegatesToRepository() = runTest {
+        val viewModel = viewModel()
+        var reportedSuccess = false
+
+        viewModel.reportProfile("اسپم", "ارسال پیام‌های مکرر") { success, _ ->
+            reportedSuccess = success
+        }
+        advanceUntilIdle()
+
+        assertTrue(reportedSuccess)
+        assertEquals(1, repository.reportCalls)
+        assertEquals("اسپم", repository.lastReportReason)
+        assertEquals("ارسال پیام‌های مکرر", repository.lastReportDetails)
+    }
+
     private fun viewModel() = OtherUserProfileViewModel(
         savedStateHandle = SavedStateHandle(
             mapOf(OtherUserProfileViewModel.PROFILE_USER_ID_KEY to "user-b"),
@@ -343,6 +359,20 @@ private class FakeUserProfileRepository : UserProfileRepository {
         profiles.keys.filter { it.first == viewerAccountId }.forEach {
             profiles[it]?.value = null
         }
+    }
+
+    var reportCalls = 0
+    var lastReportReason: String? = null
+    var lastReportDetails: String? = null
+    override suspend fun reportProfile(
+        profileId: String,
+        reason: String,
+        additionalDetails: String?,
+    ): Result<Unit> {
+        reportCalls += 1
+        lastReportReason = reason
+        lastReportDetails = additionalDetails
+        return Result.success(Unit)
     }
 
     fun emit(viewer: String, profileId: String, profile: PublicProfile) {

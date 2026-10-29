@@ -18,6 +18,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import ir.coffevista.vista_native.features.chat.presentation.components.VoiceRecorderDock
 import ir.coffevista.vista_native.features.chat.presentation.components.SwipeToReplyLayout
 import ir.coffevista.vista_native.features.chat.presentation.components.VoicePlayerBubble
+import ir.coffevista.vista_native.core.designsystem.component.VistaBadgeDefaults
+import ir.coffevista.vista_native.core.designsystem.component.VistaNotificationBadge
 import ir.coffevista.vista_native.features.chat.presentation.components.FullscreenMediaViewerDialog
 import ir.coffevista.vista_native.features.chat.presentation.components.MediaViewerItem
 import ir.coffevista.vista_native.features.chat.presentation.components.ChatAttachmentBottomSheet
@@ -1312,25 +1314,14 @@ private fun ConversationRow(
                         )
                         if (conversation.unreadCount > 0) {
                             Spacer(Modifier.width(8.dp))
-                            Box(
-                                Modifier
-                                    .heightIn(min = 22.dp)
-                                    .widthIn(min = 22.dp)
-                                    .clip(RoundedCornerShape(11.dp))
-                                    .background(
-                                        if (conversation.isMuted) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                                        else Color(0xFF1E88E5)
-                                    )
-                                    .padding(horizontal = 6.dp, vertical = 3.dp),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Text(
-                                    if (conversation.unreadCount > 99) "99+" else conversation.unreadCount.toString(),
-                                    color = Color.White,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                )
-                            }
+                            VistaNotificationBadge(
+                                count = conversation.unreadCount,
+                                containerColor = if (conversation.isMuted) {
+                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                                } else {
+                                    VistaBadgeDefaults.ChatBadgeColor
+                                },
+                            )
                         }
                     }
                 }

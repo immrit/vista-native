@@ -50,7 +50,23 @@ data class ServiceBannerDto(
 )
 
 @Serializable
+data class ServiceMaintenanceDto(
+    @SerialName("is_enabled")
+    val isEnabled: Boolean = false,
+    @SerialName("title")
+    val title: String? = null,
+    @SerialName("message")
+    val message: String? = null,
+    @SerialName("retry_after_seconds")
+    val retryAfterSeconds: Int? = null,
+    @SerialName("ends_at")
+    val endsAt: String? = null,
+)
+
+@Serializable
 data class ServicesHubResponseDto(
+    @SerialName("maintenance")
+    val maintenance: ServiceMaintenanceDto? = null,
     @SerialName("sections")
     val sections: List<ServiceSectionDto> = emptyList(),
     @SerialName("banners")
@@ -142,7 +158,16 @@ internal fun ServiceBannerDto.toDomain(): ServiceBanner = ServiceBanner(
     sortOrder = sortOrder,
 )
 
+internal fun ServiceMaintenanceDto.toDomain(): ServiceMaintenance = ServiceMaintenance(
+    isEnabled = isEnabled,
+    title = title.orEmpty(),
+    message = message.orEmpty(),
+    retryAfterSeconds = retryAfterSeconds ?: 0,
+    endsAt = endsAt,
+)
+
 internal fun ServicesHubResponseDto.toDomain(): ServicesHubData = ServicesHubData(
+    maintenance = maintenance?.toDomain() ?: ServiceMaintenance(),
     sections = sections.map { it.toDomain() },
     banners = banners.map { it.toDomain() },
 )

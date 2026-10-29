@@ -49,7 +49,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import ir.coffevista.vista_native.core.designsystem.component.VistaEditPostDialog
 import ir.coffevista.vista_native.core.designsystem.component.VistaErrorState
+import ir.coffevista.vista_native.core.designsystem.component.VistaPremiumPromptDialog
+import ir.coffevista.vista_native.core.designsystem.component.VistaReportReasonDialog
 import ir.coffevista.vista_native.features.profile.R
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -64,6 +67,10 @@ fun OwnProfileScreen(
     onReelClick: (String) -> Unit = onPostClick,
     onLikeClick: (String, Boolean, Long) -> Unit = { _, _, _ -> },
     onSaveClick: (String, Boolean) -> Unit = { _, _ -> },
+    onEditPost: (ProfilePostUiModel, String, (Boolean) -> Unit) -> Unit = { _, _, _ -> },
+    onDeletePost: (String) -> Unit = {},
+    onReportPost: (ProfilePostUiModel, String, String?, (Boolean) -> Unit) -> Unit = { _, _, _, _ -> },
+    onVisibilityChange: (ProfilePostUiModel, Boolean?, Boolean?) -> Unit = { _, _, _ -> },
     onEditProfile: (() -> Unit)? = null,
     onShareProfile: (() -> Unit)? = null,
     onAddPost: (() -> Unit)? = null,
@@ -71,6 +78,7 @@ fun OwnProfileScreen(
     onSettingsClick: (() -> Unit)? = null,
     onOpenFollowers: ((userId: String, initialTab: Int) -> Unit)? = null,
     onOpenQrScanner: (() -> Unit)? = null,
+    onNavigateToPricing: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -80,6 +88,11 @@ fun OwnProfileScreen(
     var showVistaIdCard by rememberSaveable { mutableStateOf(false) }
     var showAccountDetails by rememberSaveable { mutableStateOf(false) }
     var showQrDialog by rememberSaveable { mutableStateOf(false) }
+    var editPostTarget by remember { mutableStateOf<ProfilePostUiModel?>(null) }
+    var isEditingPost by remember { mutableStateOf(false) }
+    var reportPostTarget by remember { mutableStateOf<ProfilePostUiModel?>(null) }
+    var isReportingPost by remember { mutableStateOf(false) }
+    var premiumPromptFeature by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
 
@@ -185,6 +198,11 @@ fun OwnProfileScreen(
                                 onReelClick = onReelClick,
                                 onLikeClick = onLikeClick,
                                 onSaveClick = onSaveClick,
+                                onEditPost = { post -> editPostTarget = post },
+                                onDeletePost = onDeletePost,
+                                onReportPost = { post -> reportPostTarget = post },
+                                onVisibilityChange = onVisibilityChange,
+                                onPremiumPrompt = { feature -> premiumPromptFeature = feature },
                                 onLoadMore = onPostsLoadMore,
                                 onRefresh = onPostsRefresh,
                                 onAvatarAddClick = onAddStory ?: {
@@ -296,6 +314,50 @@ fun OwnProfileScreen(
                         ),
                         userId = profile.userId,
                         onDismissRequest = { showVistaIdCard = false },
+                    )
+                }
+
+                editPostTarget?.let { target ->
+                    val maxLen = if (postsState.viewerIsBlueTick) 10000 else if (postsState.viewerHasPremiumEdit) 1000 else 500
+                    val title = if (postsState.viewerIsBlueTick && target.userId != postsState.viewerUserId) "ویرایش ناظر" else "ویرایش پست"
+                    VistaEditPostDialog(
+                        initialContent = target.content.orEmpty(),
+                        maxCharLength = maxLen,
+                        title = title,
+                        isSubmitting = isEditingPost,
+                        onDismiss = { if (!isEditingPost) editPostTarget = null },
+                        onConfirm = { newContent ->
+                            isEditingPost = true
+                            onEditPost(target, newContent) {
+                                isEditingPost = false
+                                editPostTarget = null
+                            }
+                        },
+                    )
+                }
+
+                reportPostTarget?.let { target ->
+                    VistaReportReasonDialog(
+                        isSubmitting = isReportingPost,
+                        onDismiss = { if (!isReportingPost) reportPostTarget = null },
+                        onSubmit = { reason, details ->
+                            isReportingPost = true
+                            onReportPost(target, reason, details) {
+                                isReportingPost = false
+                                reportPostTarget = null
+                            }
+                        },
+                    )
+                }
+
+                premiumPromptFeature?.let { feature ->
+                    VistaPremiumPromptDialog(
+                        feature = feature,
+                        onDismiss = { premiumPromptFeature = null },
+                        onUpgradeClick = {
+                            premiumPromptFeature = null
+                            onNavigateToPricing?.invoke()
+                        },
                     )
                 }
             }

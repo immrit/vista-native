@@ -92,6 +92,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import ir.coffevista.vista_native.core.designsystem.component.VistaNotificationBadge
 import ir.coffevista.vista_native.core.designsystem.R as DesignSystemR
 import ir.coffevista.vista_native.features.feed.data.FollowRequestActionResult
 import ir.coffevista.vista_native.features.feed.data.FollowRequestActionState
@@ -309,15 +310,7 @@ private fun NotificationFilterTabs(
                     Text(tab.title, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium)
                     val count = unreadCounts[tab.type] ?: 0
                     if (count > 0) {
-                        Text(
-                            text = count.toString(),
-                            color = Color.White,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier
-                                .background(Color(0xFFF44336), RoundedCornerShape(10.dp))
-                                .padding(horizontal = 6.dp, vertical = 2.dp),
-                        )
+                        VistaNotificationBadge(count = count)
                     }
                 }
             }

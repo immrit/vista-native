@@ -38,7 +38,17 @@ data class ServiceBanner(
 }
 
 @Immutable
+data class ServiceMaintenance(
+    val isEnabled: Boolean = false,
+    val title: String = "",
+    val message: String = "",
+    val retryAfterSeconds: Int = 0,
+    val endsAt: String? = null,
+)
+
+@Immutable
 data class ServicesHubData(
+    val maintenance: ServiceMaintenance = ServiceMaintenance(),
     val sections: List<ServiceSection> = emptyList(),
     val banners: List<ServiceBanner> = emptyList(),
 )
