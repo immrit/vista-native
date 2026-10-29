@@ -378,7 +378,13 @@ class FeedViewModel @Inject constructor(
 
     fun updatePostContent(
         postId: String,
-        newContent: String,
+        newContent: String?,
+        moderationReason: String? = null,
+        clearContent: Boolean? = null,
+        clearImage: Boolean? = null,
+        clearVideo: Boolean? = null,
+        clearMusic: Boolean? = null,
+        notifyUser: Boolean? = null,
         onResult: (Boolean) -> Unit,
     ) {
         val userId = currentUserId ?: return
@@ -388,6 +394,12 @@ class FeedViewModel @Inject constructor(
                     accountId = userId,
                     postId = postId,
                     content = newContent,
+                    moderationReason = moderationReason,
+                    clearContent = clearContent,
+                    clearImage = clearImage,
+                    clearVideo = clearVideo,
+                    clearMusic = clearMusic,
+                    notifyUser = notifyUser,
                 )
                 onResult(true)
             } catch (e: Exception) {

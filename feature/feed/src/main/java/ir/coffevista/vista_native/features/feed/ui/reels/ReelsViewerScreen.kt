@@ -299,10 +299,12 @@ fun ReelsViewerScreen(
             }
 
             if (showCommentsForPostId != null) {
+                val postOwnerId = uiState.reels.firstOrNull { it.id == showCommentsForPostId }?.userId
                 ir.coffevista.vista_native.features.feed.ui.CommentsBottomSheet(
                     postId = showCommentsForPostId!!,
                     onDismissRequest = { showCommentsForPostId = null },
                     viewModel = hiltViewModel(),
+                    postOwnerId = postOwnerId,
                     onAuthorClick = { username ->
                         showCommentsForPostId = null
                         onAuthorClick(username)

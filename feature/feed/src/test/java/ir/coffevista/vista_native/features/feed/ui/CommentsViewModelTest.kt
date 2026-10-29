@@ -177,8 +177,8 @@ class CommentsViewModelTest {
             "متن من",
             authorUserId = "account-a",
             postOwnerId = "post-owner-1",
-        ).copy(authorIsVerified = true)
-        val ownUnverifiedComment = ownComment.copy(id = "c1-unverified", authorIsVerified = false)
+        ).copy(authorVerificationType = "goldTick")
+        val ownUnverifiedComment = ownComment.copy(id = "c1-unverified", authorVerificationType = null)
         val otherComment = comment("c2", "متن دیگری", authorUserId = "account-b", postOwnerId = "post-owner-1")
 
         assertTrue(viewModel.canEdit(ownComment))

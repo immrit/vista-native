@@ -50,7 +50,19 @@ interface FeedRepository {
     suspend fun clearAccount(accountId: String)
     suspend fun toggleLike(accountId: String, postId: String, ownerId: String, isLiked: Boolean, newLikeCount: Long)
     suspend fun toggleSave(accountId: String, postId: String, isSaved: Boolean)
-    suspend fun updatePost(accountId: String, postId: String, content: String? = null, hideLikeCount: Boolean? = null, hideCommentCount: Boolean? = null): FeedPost
+    suspend fun updatePost(
+        accountId: String,
+        postId: String,
+        content: String? = null,
+        hideLikeCount: Boolean? = null,
+        hideCommentCount: Boolean? = null,
+        moderationReason: String? = null,
+        clearContent: Boolean? = null,
+        clearImage: Boolean? = null,
+        clearVideo: Boolean? = null,
+        clearMusic: Boolean? = null,
+        notifyUser: Boolean? = null,
+    ): FeedPost
     suspend fun deletePost(accountId: String, postId: String)
     suspend fun reportPost(postId: String, reportedUserId: String, reason: String, additionalDetails: String? = null)
     suspend fun submitAppeal(postId: String, reason: String)

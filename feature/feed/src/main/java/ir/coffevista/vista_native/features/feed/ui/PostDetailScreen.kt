@@ -154,23 +154,49 @@ fun PostDetailScreen(
     if (showEditDialog) {
         val content = uiState as? PostDetailUiState.Content
         val isBlue = content?.viewerIsBlueTick == true
-        val hasPrem = content?.viewerHasPremiumEdit == true
-        val maxLen = if (isBlue) 10000 else if (hasPrem) 1000 else 500
-        val title = if (isBlue && currentPost?.userId != content?.viewerUserId) "ویرایش ناظر" else "ویرایش پست"
-        EditPostDialog(
-            initialContent = currentPost?.content.orEmpty(),
-            maxCharLength = maxLen,
-            title = title,
-            isSubmitting = isEditing,
-            onDismiss = { if (!isEditing) showEditDialog = false },
-            onConfirm = { newContent ->
-                isEditing = true
-                viewModel.updatePostContent(newContent) {
-                    isEditing = false
-                    showEditDialog = false
-                }
-            },
-        )
+        val isModEdit = isBlue && currentPost?.userId != content?.viewerUserId
+        if (isModEdit) {
+            ir.coffevista.vista_native.core.designsystem.component.VistaAdminEditPostDialog(
+                initialContent = currentPost?.content.orEmpty(),
+                hasImage = !currentPost?.imageUrl.isNullOrBlank() || (currentPost?.imageUrls?.isNotEmpty() == true),
+                hasVideo = !currentPost?.videoUrl.isNullOrBlank(),
+                hasMusic = !currentPost?.musicUrl.isNullOrBlank(),
+                isSubmitting = isEditing,
+                onDismiss = { if (!isEditing) showEditDialog = false },
+                onConfirm = { result ->
+                    isEditing = true
+                    viewModel.updatePostContent(
+                        newContent = result.content,
+                        moderationReason = result.moderationReason,
+                        clearContent = result.clearContent,
+                        clearImage = result.clearImage,
+                        clearVideo = result.clearVideo,
+                        clearMusic = result.clearMusic,
+                        notifyUser = result.notifyUser,
+                    ) {
+                        isEditing = false
+                        showEditDialog = false
+                    }
+                },
+            )
+        } else {
+            val hasPrem = content?.viewerHasPremiumEdit == true
+            val maxLen = if (hasPrem) 1000 else 500
+            EditPostDialog(
+                initialContent = currentPost?.content.orEmpty(),
+                maxCharLength = maxLen,
+                title = "ویرایش پست",
+                isSubmitting = isEditing,
+                onDismiss = { if (!isEditing) showEditDialog = false },
+                onConfirm = { newContent ->
+                    isEditing = true
+                    viewModel.updatePostContent(newContent) {
+                        isEditing = false
+                        showEditDialog = false
+                    }
+                },
+            )
+        }
     }
     premiumPromptFeature?.let { feature ->
         VistaPremiumPromptDialog(

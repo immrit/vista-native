@@ -9,9 +9,10 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import kotlin.OptIn
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,15 +22,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -43,7 +40,6 @@ import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.MusicNote
@@ -51,7 +47,6 @@ import androidx.compose.material.icons.filled.Poll
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Tag
 import androidx.compose.material.icons.filled.TextFields
-import androidx.compose.material.icons.filled.Undo
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material3.AlertDialog
@@ -65,7 +60,6 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
@@ -79,27 +73,22 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.geometry.Offset
-import ir.coffevista.vista_native.core.common.toJalali
-import ir.coffevista.vista_native.core.common.toPersianDigits
-import java.time.ZoneId
-import java.time.ZonedDateTime
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -113,17 +102,33 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
+import ir.coffevista.vista_native.core.common.toJalali
+import ir.coffevista.vista_native.core.common.toPersianDigits
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaBrandColors
 import ir.coffevista.vista_native.features.stories.domain.StoryDurationType
+import ir.coffevista.vista_native.features.stories.domain.StoryElement
 import ir.coffevista.vista_native.features.stories.domain.StoryPrivacyType
-import ir.coffevista.vista_native.features.stories.ui.player.StoryElementsOverlay
-import kotlin.math.roundToInt
-
-private data class EditorDrawingStroke(
-    val points: List<Offset>,
-    val color: Color,
-    val strokeWidth: Float,
-)
+import ir.coffevista.vista_native.features.stories.ui.canvas.SnapGuides
+import ir.coffevista.vista_native.features.stories.ui.canvas.SnapState
+import ir.coffevista.vista_native.features.stories.ui.canvas.StageSize
+import ir.coffevista.vista_native.features.stories.ui.canvas.StoryGestureCallbacks
+import ir.coffevista.vista_native.features.stories.ui.canvas.StoryHaptics
+import ir.coffevista.vista_native.features.stories.ui.canvas.StoryHitTest
+import ir.coffevista.vista_native.features.stories.ui.canvas.StorySnapEngine
+import ir.coffevista.vista_native.features.stories.ui.canvas.StoryStage
+import ir.coffevista.vista_native.features.stories.ui.canvas.StoryTransform
+import ir.coffevista.vista_native.features.stories.ui.canvas.StoryTransformMath
+import ir.coffevista.vista_native.features.stories.ui.canvas.StoryTrashZone
+import ir.coffevista.vista_native.features.stories.ui.canvas.detectStoryGestures
+import ir.coffevista.vista_native.features.stories.ui.canvas.resolvedTransform
+import ir.coffevista.vista_native.features.stories.ui.render.ElementVisualState
+import ir.coffevista.vista_native.features.stories.ui.render.StoryDrawingCodec
+import ir.coffevista.vista_native.features.stories.ui.render.StoryElementLayers
+import ir.coffevista.vista_native.features.stories.ui.render.StoryStroke
+import ir.coffevista.vista_native.features.stories.ui.render.StoryTextSpec
+import ir.coffevista.vista_native.features.stories.ui.render.toTextSpec
+import java.time.ZoneId
+import java.time.ZonedDateTime
 
 @OptIn(UnstableApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -149,15 +154,14 @@ fun StoryEditorScreen(
 
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+    val view = LocalView.current
+    val haptics = remember(view) { StoryHaptics(view) }
 
-    var showTextDialog by remember { mutableStateOf(false) }
-    var textInput by remember { mutableStateOf("") }
+    var showTextEditor by remember { mutableStateOf(false) }
+    var editingTextElementId by remember { mutableStateOf<String?>(null) }
+    var textEditorInitialSpec by remember { mutableStateOf(StoryTextSpec("")) }
 
-    var isDrawingMode by remember { mutableStateOf(false) }
-    var currentStrokes by remember { mutableStateOf(listOf<EditorDrawingStroke>()) }
-    var activeStrokePoints by remember { mutableStateOf(listOf<Offset>()) }
-    var selectedBrushColor by remember { mutableStateOf(Color.White) }
-    var selectedBrushWidth by remember { mutableFloatStateOf(8f) }
+    var showDrawingEditor by remember { mutableStateOf(false) }
 
     var showStickerSheet by remember { mutableStateOf(false) }
     var showPollDialog by remember { mutableStateOf(false) }
@@ -190,7 +194,8 @@ fun StoryEditorScreen(
     var showMusicPickerSheet by remember { mutableStateOf(false) }
     var showCloseFriendsDialog by remember { mutableStateOf(false) }
     var showDiscardDialog by remember { mutableStateOf(false) }
-    val hasUnsavedChanges = uiState.mediaUri != null || uiState.elements.isNotEmpty() || currentStrokes.isNotEmpty()
+
+    val hasUnsavedChanges = uiState.mediaUri != null || uiState.elements.isNotEmpty()
 
     val requestClose: () -> Unit = {
         if (hasUnsavedChanges) showDiscardDialog = true else onClose()
@@ -200,7 +205,7 @@ fun StoryEditorScreen(
         requestClose()
     }
 
-    val context = androidx.compose.ui.platform.LocalContext.current
+    val context = LocalContext.current
 
     val exoPlayer = remember(uiState.mediaUri, uiState.isVideo) {
         val uri = uiState.mediaUri
@@ -219,6 +224,7 @@ fun StoryEditorScreen(
             exoPlayer?.release()
         }
     }
+
     var tempCameraStoryUri by remember { mutableStateOf<Uri?>(null) }
     val cameraLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicture(),
@@ -269,6 +275,15 @@ fun StoryEditorScreen(
         }
     }
 
+    var selectedElementId by remember { mutableStateOf<String?>(null) }
+    var activeDraggingId by remember { mutableStateOf<String?>(null) }
+    var isHoveredTrash by remember { mutableStateOf(false) }
+    var snapGuides by remember { mutableStateOf(SnapGuides.None) }
+    var snapState by remember { mutableStateOf(SnapState.None) }
+
+    val transientTransforms = remember { mutableStateMapOf<String, StoryTransform>() }
+    val elementSizes = remember { mutableStateMapOf<String, IntSize>() }
+
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
         Scaffold(
             snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -276,7 +291,6 @@ fun StoryEditorScreen(
             modifier = modifier.fillMaxSize(),
         ) { padding ->
             if (uiState.mediaUri == null) {
-                // Media Picker Selection View
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -309,7 +323,6 @@ fun StoryEditorScreen(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(18.dp),
                         ) {
-                            // In RTL this first card renders on the right, matching Flutter's image action.
                             Card(
                                 onClick = {
                                     photoPickerLauncher.launch(
@@ -336,7 +349,6 @@ fun StoryEditorScreen(
                                 }
                             }
 
-                            // In RTL this second card renders on the left, matching Flutter's video action.
                             Card(
                                 onClick = {
                                     videoPickerLauncher.launch(
@@ -366,8 +378,6 @@ fun StoryEditorScreen(
 
                         Spacer(modifier = Modifier.height(20.dp))
 
-                        // Native-only improvement: direct camera capture without changing
-                        // the two primary Flutter-equivalent gallery actions.
                         TextButton(onClick = ::launchCamera) {
                             Icon(
                                 imageVector = Icons.Default.CameraAlt,
@@ -387,391 +397,303 @@ fun StoryEditorScreen(
                     }
                 }
             } else {
-                // Active Story Editor View
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(padding),
                 ) {
-                    // Media background: Video Player or Image
-                    if (uiState.isVideo && exoPlayer != null) {
-                        AndroidView(
-                            factory = { ctx ->
-                                PlayerView(ctx).apply {
-                                    player = exoPlayer
-                                    useController = false
-                                    resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-                                    layoutParams = FrameLayout.LayoutParams(
-                                        ViewGroup.LayoutParams.MATCH_PARENT,
-                                        ViewGroup.LayoutParams.MATCH_PARENT,
-                                    )
-                                }
+                    StoryStage(modifier = Modifier.fillMaxSize()) { stage ->
+                        if (uiState.isVideo && exoPlayer != null) {
+                            AndroidView(
+                                factory = { ctx ->
+                                    PlayerView(ctx).apply {
+                                        player = exoPlayer
+                                        useController = false
+                                        resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                                        layoutParams = FrameLayout.LayoutParams(
+                                            ViewGroup.LayoutParams.MATCH_PARENT,
+                                            ViewGroup.LayoutParams.MATCH_PARENT,
+                                        )
+                                    }
+                                },
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        } else {
+                            AsyncImage(
+                                model = uiState.mediaUri,
+                                contentDescription = "پیش‌نمایش استوری",
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop,
+                            )
+                        }
+
+                        StoryElementLayers(
+                            elements = uiState.elements,
+                            stage = stage,
+                            visualFor = { el ->
+                                val active = transientTransforms[el.id]
+                                val transform = active ?: el.resolvedTransform()
+                                val isBeingDraggedToTrash = el.id == activeDraggingId && isHoveredTrash
+                                ElementVisualState(
+                                    transform = { transform },
+                                    extraScale = { if (isBeingDraggedToTrash) 0.65f else 1f },
+                                    alpha = { if (isBeingDraggedToTrash) 0.5f else 1f },
+                                )
                             },
-                            modifier = Modifier.fillMaxSize(),
+                            onSizeChanged = { id, size ->
+                                elementSizes[id] = size
+                            },
                         )
-                    } else {
-                        AsyncImage(
-                            model = uiState.mediaUri,
-                            contentDescription = "پیش‌نمایش استوری",
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop,
-                        )
-                    }
 
-                    // Interactive Elements
-                    StoryElementsOverlay(
-                        elements = uiState.elements,
-                        onPollVote = { _, _ -> },
-                        onQuestionAnswer = { _, _ -> },
-                        onLinkClick = {},
-                        onMentionClick = {},
-                    )
+                        StorySnapGuidesOverlay(guides = snapGuides)
 
-                    // Draggable & Deletable Handles for Elements in Editor mode
-                    uiState.elements.forEach { element ->
+                        val snapEngine = remember(stage) { StorySnapEngine(stage) }
+                        val trashZone = remember(stage) { StoryTrashZone(stage) }
+
+                        val gestureCallbacks = remember(uiState.elements, stage) {
+                            object : StoryGestureCallbacks {
+                                override val selectedId: String? get() = selectedElementId
+
+                                override fun hitTest(x: Float, y: Float): String? {
+                                    val nonDrawing = uiState.elements.filterNot { it.type == "drawing" }.reversed()
+                                    for (el in nonDrawing) {
+                                        val t = transientTransforms[el.id] ?: el.resolvedTransform()
+                                        val size = elementSizes[el.id]
+                                        val halfW = (size?.width?.toFloat() ?: 120f) / 2f
+                                        val halfH = (size?.height?.toFloat() ?: 60f) / 2f
+                                        if (StoryHitTest.contains(t, stage, halfW, halfH, x, y, minTouchHalfPx = 36f)) {
+                                            return el.id
+                                        }
+                                    }
+                                    return null
+                                }
+
+                                override fun onGestureStart(id: String) {
+                                    selectedElementId = id
+                                    activeDraggingId = id
+                                    viewModel.bringToFront(id)
+                                    val el = uiState.elements.firstOrNull { it.id == id }
+                                    if (el != null) {
+                                        transientTransforms[id] = el.resolvedTransform()
+                                    }
+                                    snapState = SnapState.None
+                                    snapGuides = SnapGuides.None
+                                }
+
+                                override fun onGestureUpdate(
+                                    prevCx: Float,
+                                    prevCy: Float,
+                                    cx: Float,
+                                    cy: Float,
+                                    zoom: Float,
+                                    rotationDeg: Float,
+                                    pointerX: Float,
+                                    pointerY: Float,
+                                ) {
+                                    val id = activeDraggingId ?: return
+                                    val current = transientTransforms[id] ?: return
+
+                                    val updated = StoryTransformMath.applyGesture(
+                                        t = current,
+                                        stage = stage,
+                                        prevCentroidX = prevCx,
+                                        prevCentroidY = prevCy,
+                                        centroidX = cx,
+                                        centroidY = cy,
+                                        zoom = zoom,
+                                        rotationDeg = rotationDeg,
+                                    )
+
+                                    val size = elementSizes[id]
+                                    val halfW = (size?.width?.toFloat() ?: 120f) / 2f
+                                    val halfH = (size?.height?.toFloat() ?: 60f) / 2f
+                                    val snapRes = snapEngine.snap(
+                                        raw = updated,
+                                        halfW = halfW,
+                                        halfH = halfH,
+                                        previous = snapState,
+                                    )
+
+                                    if (snapRes.state.newlyEngagedComparedTo(snapState)) {
+                                        haptics.snap()
+                                    }
+                                    snapState = snapRes.state
+                                    snapGuides = snapRes.guides
+
+                                    transientTransforms[id] = snapRes.transform
+
+                                    val wasHovered = isHoveredTrash
+                                    val nowHovered = trashZone.isHovered(pointerX, pointerY)
+                                    if (nowHovered != wasHovered) {
+                                        haptics.trashHover()
+                                    }
+                                    isHoveredTrash = nowHovered
+                                }
+
+                                override fun onGestureEnd(id: String, cancelled: Boolean) {
+                                    val finalTransform = transientTransforms[id]
+                                    transientTransforms.remove(id)
+                                    snapGuides = SnapGuides.None
+                                    snapState = SnapState.None
+
+                                    if (isHoveredTrash && !cancelled) {
+                                        haptics.deleted()
+                                        viewModel.removeElement(id)
+                                        if (selectedElementId == id) selectedElementId = null
+                                    } else if (finalTransform != null && !cancelled) {
+                                        val size = elementSizes[id]
+                                        val halfW = (size?.width?.toFloat() ?: 120f) / 2f
+                                        val halfH = (size?.height?.toFloat() ?: 60f) / 2f
+                                        val resting = StoryTransformMath.restingTransform(
+                                            t = finalTransform,
+                                            halfExtentsUnrotatedPx = halfW to halfH,
+                                            stage = stage,
+                                        )
+                                        viewModel.updateElementTransform(id, resting)
+                                    }
+
+                                    activeDraggingId = null
+                                    isHoveredTrash = false
+                                }
+
+                                override fun onTap(x: Float, y: Float, hitId: String?) {
+                                    if (hitId != null) {
+                                        selectedElementId = hitId
+                                        val el = uiState.elements.firstOrNull { it.id == hitId }
+                                        if (el != null) {
+                                            if (el.type == "text") {
+                                                editingTextElementId = el.id
+                                                textEditorInitialSpec = el.toTextSpec()
+                                                showTextEditor = true
+                                            } else {
+                                                viewModel.cycleWidgetVariant(el.id)
+                                                haptics.boundary()
+                                            }
+                                        }
+                                    } else {
+                                        selectedElementId = null
+                                        editingTextElementId = null
+                                        textEditorInitialSpec = StoryTextSpec("")
+                                        showTextEditor = true
+                                    }
+                                }
+                            }
+                        }
+
                         Box(
                             modifier = Modifier
-                                .align(Alignment.Center)
-                                .offset { IntOffset((element.x * 200).roundToInt(), (element.y * 300).roundToInt()) }
-                                .pointerInput(element.id) {
-                                    detectDragGestures { change, dragAmount ->
-                                        change.consume()
-                                        viewModel.updateElementPosition(
-                                            element.id,
-                                            dragAmount.x / 200f,
-                                            dragAmount.y / 300f,
-                                        )
-                                    }
+                                .fillMaxSize()
+                                .pointerInput(stage, uiState.elements) {
+                                    detectStoryGestures { gestureCallbacks }
                                 },
-                        ) {
-                            IconButton(
-                                onClick = { viewModel.removeElement(element.id) },
-                                modifier = Modifier
-                                    .align(Alignment.TopEnd)
-                                    .size(24.dp)
-                                    .clip(CircleShape)
-                                    .background(Color.Red.copy(alpha = 0.85f)),
-                            ) {
-                                Icon(
-                                    Icons.Default.Close,
-                                    contentDescription = "حذف استیکر",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(14.dp),
-                                )
-                            }
-                        }
+                        )
                     }
 
-                    // Freehand Drawing Canvas & Floating Toolbar
-                    if (isDrawingMode) {
-                        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-                            val widthPx = constraints.maxWidth.toFloat().coerceAtLeast(1f)
-                            val heightPx = constraints.maxHeight.toFloat().coerceAtLeast(1f)
-                            Canvas(
+                    StoryTrashDropZone(
+                        isVisible = activeDraggingId != null,
+                        isHovered = isHoveredTrash,
+                    )
+
+                    AnimatedVisibility(
+                        visible = activeDraggingId == null,
+                        enter = fadeIn(),
+                        exit = fadeOut(),
+                        modifier = Modifier.align(Alignment.TopCenter),
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .statusBarsPadding()
+                                .padding(horizontal = 14.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            IconButton(
+                                onClick = requestClose,
                                 modifier = Modifier
-                                    .fillMaxSize()
-                                    .pointerInput(selectedBrushColor, selectedBrushWidth) {
-                                        detectDragGestures(
-                                            onDragStart = { offset ->
-                                                activeStrokePoints = listOf(offset)
-                                            },
-                                            onDrag = { change, _ ->
-                                                change.consume()
-                                                activeStrokePoints = activeStrokePoints + change.position
-                                            },
-                                            onDragEnd = {
-                                                if (activeStrokePoints.isNotEmpty()) {
-                                                    currentStrokes = currentStrokes + EditorDrawingStroke(
-                                                        points = activeStrokePoints,
-                                                        color = selectedBrushColor,
-                                                        strokeWidth = selectedBrushWidth,
-                                                    )
-                                                    activeStrokePoints = emptyList()
-                                                }
-                                            },
-                                            onDragCancel = {
-                                                activeStrokePoints = emptyList()
-                                            },
+                                    .size(40.dp)
+                                    .clip(CircleShape)
+                                    .background(Color.Black.copy(alpha = 0.55f)),
+                            ) {
+                                Icon(Icons.Default.Close, contentDescription = "بستن", tint = Color.White)
+                            }
+
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                IconButton(
+                                    onClick = {
+                                        editingTextElementId = null
+                                        textEditorInitialSpec = StoryTextSpec("")
+                                        showTextEditor = true
+                                    },
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                        .clip(CircleShape)
+                                        .background(Color.Black.copy(alpha = 0.55f)),
+                                ) {
+                                    Icon(Icons.Default.TextFields, contentDescription = "متن", tint = Color.White)
+                                }
+
+                                IconButton(
+                                    onClick = { showDrawingEditor = true },
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                        .clip(CircleShape)
+                                        .background(Color.Black.copy(alpha = 0.55f)),
+                                ) {
+                                    Icon(Icons.Default.Brush, contentDescription = "نقاشی", tint = Color.White)
+                                }
+
+                                IconButton(
+                                    onClick = { showStickerSheet = true },
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                        .clip(CircleShape)
+                                        .background(Color.Black.copy(alpha = 0.55f)),
+                                ) {
+                                    Icon(Icons.Default.Poll, contentDescription = "استیکرها", tint = Color.White)
+                                }
+
+                                FilterChip(
+                                    selected = uiState.durationType == StoryDurationType.Hours48,
+                                    onClick = {
+                                        viewModel.setDuration(
+                                            if (uiState.durationType == StoryDurationType.Hours24) StoryDurationType.Hours48
+                                            else StoryDurationType.Hours24,
                                         )
                                     },
-                            ) {
-                                currentStrokes.forEach { stroke ->
-                                    if (stroke.points.size > 1) {
-                                        for (i in 0 until stroke.points.size - 1) {
-                                            drawLine(
-                                                color = stroke.color,
-                                                start = stroke.points[i],
-                                                end = stroke.points[i + 1],
-                                                strokeWidth = stroke.strokeWidth,
-                                                cap = androidx.compose.ui.graphics.StrokeCap.Round,
-                                            )
-                                        }
-                                    } else if (stroke.points.size == 1) {
-                                        drawCircle(
-                                            color = stroke.color,
-                                            radius = stroke.strokeWidth / 2f,
-                                            center = stroke.points[0],
+                                    label = {
+                                        Text(
+                                            if (uiState.durationType == StoryDurationType.Hours48) "۴۸ ساعت (طلایی)" else "۲۴ ساعت",
+                                            color = Color.White,
+                                            fontSize = 11.sp,
                                         )
-                                    }
-                                }
-                                if (activeStrokePoints.size > 1) {
-                                    for (i in 0 until activeStrokePoints.size - 1) {
-                                        drawLine(
-                                            color = selectedBrushColor,
-                                            start = activeStrokePoints[i],
-                                            end = activeStrokePoints[i + 1],
-                                            strokeWidth = selectedBrushWidth,
-                                            cap = androidx.compose.ui.graphics.StrokeCap.Round,
-                                        )
-                                    }
-                                } else if (activeStrokePoints.size == 1) {
-                                    drawCircle(
-                                        color = selectedBrushColor,
-                                        radius = selectedBrushWidth / 2f,
-                                        center = activeStrokePoints[0],
-                                    )
-                                }
-                            }
-
-                            // Floating Drawing Control Bar at Bottom
-                            Column(
-                                modifier = Modifier
-                                    .align(Alignment.BottomCenter)
-                                    .fillMaxWidth()
-                                    .navigationBarsPadding()
-                                    .padding(horizontal = 16.dp, vertical = 12.dp)
-                                    .clip(RoundedCornerShape(20.dp))
-                                    .background(Color.Black.copy(alpha = 0.88f))
-                                    .padding(14.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                            ) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                        listOf(4f to "نازک", 10f to "متوسط", 22f to "ضخیم").forEach { (width, label) ->
-                                            FilterChip(
-                                                selected = selectedBrushWidth == width,
-                                                onClick = { selectedBrushWidth = width },
-                                                label = { Text(label, color = Color.White, fontSize = 11.sp) },
-                                                colors = FilterChipDefaults.filterChipColors(
-                                                    containerColor = Color.Transparent,
-                                                    selectedContainerColor = VistaBrandColors.Indigo,
-                                                ),
-                                            )
-                                        }
-                                    }
-                                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                        IconButton(
-                                            onClick = {
-                                                if (currentStrokes.isNotEmpty()) {
-                                                    currentStrokes = currentStrokes.dropLast(1)
-                                                }
-                                            },
-                                            enabled = currentStrokes.isNotEmpty(),
-                                        ) {
-                                            Icon(Icons.Default.Undo, contentDescription = "بازگشت", tint = Color.White)
-                                        }
-                                        IconButton(
-                                            onClick = { currentStrokes = emptyList() },
-                                            enabled = currentStrokes.isNotEmpty(),
-                                        ) {
-                                            Icon(Icons.Default.Delete, contentDescription = "پاک کردن", tint = Color.White)
-                                        }
-                                    }
-                                }
-
-                                Spacer(modifier = Modifier.height(10.dp))
-
-                                val paletteColors = listOf(
-                                    Color.White,
-                                    Color.Black,
-                                    Color.Red,
-                                    Color(0xFFFF9800),
-                                    Color.Yellow,
-                                    Color.Green,
-                                    Color.Cyan,
-                                    Color.Magenta,
+                                    },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        containerColor = Color.Black.copy(alpha = 0.55f),
+                                        selectedContainerColor = VistaBrandColors.Indigo,
+                                    ),
                                 )
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceEvenly,
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    paletteColors.forEach { c ->
-                                        Box(
-                                            modifier = Modifier
-                                                .size(28.dp)
-                                                .clip(CircleShape)
-                                                .background(c)
-                                                .clickable { selectedBrushColor = c }
-                                                .then(
-                                                    if (selectedBrushColor == c) {
-                                                        Modifier.border(2.dp, Color.White, CircleShape)
-                                                    } else Modifier,
-                                                ),
-                                        )
-                                    }
-                                }
-
-                                Spacer(modifier = Modifier.height(12.dp))
-
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                ) {
-                                    TextButton(onClick = {
-                                        currentStrokes = emptyList()
-                                        isDrawingMode = false
-                                    }) {
-                                        Text("انصراف", color = Color.LightGray)
-                                    }
-
-                                    Button(
-                                        onClick = {
-                                            if (currentStrokes.isNotEmpty()) {
-                                                val serialized = currentStrokes.joinToString("|") { stroke ->
-                                                    val hex = "#%08X".format(stroke.color.value.toLong())
-                                                    val pts = stroke.points.joinToString(";") { p ->
-                                                        "%.4f,%.4f".format(p.x / widthPx, p.y / heightPx)
-                                                    }
-                                                    "$hex:${stroke.strokeWidth}:$pts"
-                                                }
-                                                viewModel.addDrawingElement(serialized)
-                                                currentStrokes = emptyList()
-                                            }
-                                            isDrawingMode = false
-                                        },
-                                        colors = ButtonDefaults.buttonColors(containerColor = VistaBrandColors.Indigo),
-                                    ) {
-                                        Text("تایید نقاشی", color = Color.White, fontWeight = FontWeight.Bold)
-                                    }
-                                }
                             }
                         }
                     }
 
-                    // Top Toolbar
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .statusBarsPadding()
-                            .padding(horizontal = 14.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
+                    AnimatedVisibility(
+                        visible = activeDraggingId == null,
+                        enter = fadeIn(),
+                        exit = fadeOut(),
+                        modifier = Modifier.align(Alignment.BottomCenter),
                     ) {
-                        IconButton(
-                            onClick = {
-                                if (hasUnsavedChanges) {
-                                    showDiscardDialog = true
-                                } else {
-                                    onClose()
-                                }
-                            },
-                            modifier = Modifier
-                                .size(40.dp)
-                                .clip(CircleShape)
-                                .background(Color.Black.copy(alpha = 0.5f)),
-                        ) {
-                            Icon(Icons.Default.Close, contentDescription = "بستن", tint = Color.White)
-                        }
-
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            // Text tool button
-                            IconButton(
-                                onClick = { showTextDialog = true },
-                                modifier = Modifier
-                                    .size(40.dp)
-                                    .clip(CircleShape)
-                                    .background(Color.Black.copy(alpha = 0.5f)),
-                            ) {
-                                Icon(Icons.Default.TextFields, contentDescription = "متن", tint = Color.White)
-                            }
-
-                            // Drawing tool button
-                            IconButton(
-                                onClick = { isDrawingMode = !isDrawingMode },
-                                modifier = Modifier
-                                    .size(40.dp)
-                                    .clip(CircleShape)
-                                    .background(if (isDrawingMode) VistaBrandColors.Indigo else Color.Black.copy(alpha = 0.5f)),
-                            ) {
-                                Icon(Icons.Default.Brush, contentDescription = "نقاشی", tint = Color.White)
-                            }
-
-                            // Sticker tool button
-                            IconButton(
-                                onClick = { showStickerSheet = true },
-                                modifier = Modifier
-                                    .size(40.dp)
-                                    .clip(CircleShape)
-                                    .background(Color.Black.copy(alpha = 0.5f)),
-                            ) {
-                                Icon(Icons.Default.Poll, contentDescription = "استیکرها", tint = Color.White)
-                            }
-
-                            // 24h / 48h Duration Chip
-                            FilterChip(
-                                selected = uiState.durationType == StoryDurationType.Hours48,
-                                onClick = {
-                                    viewModel.setDuration(
-                                        if (uiState.durationType == StoryDurationType.Hours24) StoryDurationType.Hours48
-                                        else StoryDurationType.Hours24,
-                                    )
-                                },
-                                label = {
-                                    Text(
-                                        if (uiState.durationType == StoryDurationType.Hours48) "۴۸ ساعت (طلایی)" else "۲۴ ساعت",
-                                        color = Color.White,
-                                        fontSize = 11.sp,
-                                    )
-                                },
-                                colors = FilterChipDefaults.filterChipColors(
-                                    containerColor = Color.Black.copy(alpha = 0.5f),
-                                    selectedContainerColor = VistaBrandColors.Indigo,
-                                ),
-                            )
-                        }
-                    }
-
-                    // Upload Progress Indicator
-                    if (uiState.isUploading) {
-                        Column(
-                            modifier = Modifier
-                                .align(Alignment.Center)
-                                .clip(RoundedCornerShape(16.dp))
-                                .background(Color.Black.copy(alpha = 0.8f))
-                                .padding(24.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                        ) {
-                            CircularProgressIndicator(color = Color.White)
-                            Spacer(modifier = Modifier.height(14.dp))
-                            Text(
-                                text = uiState.uploadStatus ?: "در حال انتشار استوری…",
-                                color = Color.White,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold,
-                            )
-                        }
-                    }
-
-                    // Bottom Action Bar (Privacy & Publish Button)
-                    if (!isDrawingMode) {
                         Row(
                             modifier = Modifier
-                                .align(Alignment.BottomCenter)
                                 .fillMaxWidth()
                                 .navigationBarsPadding()
                                 .padding(horizontal = 16.dp, vertical = 16.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween,
                         ) {
-                            // Privacy Selector
                             FilterChip(
                                 selected = uiState.privacyType == StoryPrivacyType.CloseFriends,
                                 onClick = {
@@ -796,7 +718,6 @@ fun StoryEditorScreen(
                                 ),
                             )
 
-                            // Publish Button
                             Button(
                                 onClick = viewModel::publishStory,
                                 enabled = uiState.canPublish,
@@ -813,38 +734,59 @@ fun StoryEditorScreen(
                             }
                         }
                     }
+
+                    if (uiState.isUploading) {
+                        Column(
+                            modifier = Modifier
+                                .align(Alignment.Center)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(Color.Black.copy(alpha = 0.85f))
+                                .padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            CircularProgressIndicator(color = Color.White)
+                            Spacer(modifier = Modifier.height(14.dp))
+                            Text(
+                                text = uiState.uploadStatus ?: "در حال انتشار استوری…",
+                                color = Color.White,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
+                    }
                 }
             }
 
-            // Text Tool Dialog
-            if (showTextDialog) {
-                AlertDialog(
-                    onDismissRequest = { showTextDialog = false },
-                    title = { Text("افزودن متن به استوری") },
-                    text = {
-                        OutlinedTextField(
-                            value = textInput,
-                            onValueChange = { textInput = it },
-                            placeholder = { Text("متن خود را بنویسید…") },
-                            modifier = Modifier.fillMaxWidth(),
-                        )
+            if (showTextEditor) {
+                StoryTextEditorOverlay(
+                    initialSpec = textEditorInitialSpec,
+                    onDone = { spec ->
+                        viewModel.addOrUpdateTextElement(spec, editingTextElementId)
+                        showTextEditor = false
+                        editingTextElementId = null
                     },
-                    confirmButton = {
-                        TextButton(onClick = {
-                            viewModel.addTextElement(textInput)
-                            textInput = ""
-                            showTextDialog = false
-                        }) {
-                            Text("تایید")
-                        }
-                    },
-                    dismissButton = {
-                        TextButton(onClick = { showTextDialog = false }) { Text("انصراف") }
+                    onDismiss = {
+                        showTextEditor = false
+                        editingTextElementId = null
                     },
                 )
             }
 
-            // Sticker Selector Bottom Sheet
+            if (showDrawingEditor) {
+                val currentStrokes = remember(uiState.elements) {
+                    val drawingElem = uiState.elements.firstOrNull { it.type == "drawing" }
+                    StoryDrawingCodec.decode(drawingElem?.content)
+                }
+                StoryDrawingEditorOverlay(
+                    initialStrokes = currentStrokes,
+                    onDone = { strokes ->
+                        viewModel.setDrawingStrokes(strokes)
+                        showDrawingEditor = false
+                    },
+                    onDismiss = { showDrawingEditor = false },
+                )
+            }
+
             if (showStickerSheet) {
                 ModalBottomSheet(onDismissRequest = { showStickerSheet = false }) {
                     Column(
@@ -923,7 +865,6 @@ fun StoryEditorScreen(
                 }
             }
 
-            // Question Sticker Dialog
             if (showQuestionDialog) {
                 AlertDialog(
                     onDismissRequest = { showQuestionDialog = false },
@@ -953,7 +894,6 @@ fun StoryEditorScreen(
                 )
             }
 
-            // Countdown Sticker Dialog
             if (showCountdownDialog) {
                 AlertDialog(
                     onDismissRequest = { showCountdownDialog = false },
@@ -1003,7 +943,6 @@ fun StoryEditorScreen(
                 )
             }
 
-            // Weather Sticker Dialog
             if (showWeatherDialog) {
                 AlertDialog(
                     onDismissRequest = { showWeatherDialog = false },
@@ -1043,7 +982,6 @@ fun StoryEditorScreen(
                 )
             }
 
-            // Hashtag Sticker Dialog
             if (showHashtagDialog) {
                 AlertDialog(
                     onDismissRequest = { showHashtagDialog = false },
@@ -1076,7 +1014,6 @@ fun StoryEditorScreen(
                 )
             }
 
-            // GIF Sticker Dialog
             if (showGifDialog) {
                 val sampleGifs = listOf(
                     "https://media.giphy.com/media/26AHONQ79FdWZhAI0/giphy.gif" to "جشن",
@@ -1128,7 +1065,6 @@ fun StoryEditorScreen(
                 )
             }
 
-            // Music Picker Bottom Sheet
             if (showMusicPickerSheet) {
                 MusicPickerBottomSheet(
                     musicRepository = viewModel.musicRepository,
@@ -1140,7 +1076,6 @@ fun StoryEditorScreen(
                 )
             }
 
-            // Poll Dialog
             if (showPollDialog) {
                 AlertDialog(
                     onDismissRequest = { showPollDialog = false },
@@ -1182,7 +1117,6 @@ fun StoryEditorScreen(
                 )
             }
 
-            // Link Dialog
             if (showLinkDialog) {
                 AlertDialog(
                     onDismissRequest = { showLinkDialog = false },
@@ -1219,7 +1153,6 @@ fun StoryEditorScreen(
                 )
             }
 
-            // Mention Dialog
             if (showMentionDialog) {
                 AlertDialog(
                     onDismissRequest = { showMentionDialog = false },
@@ -1247,7 +1180,6 @@ fun StoryEditorScreen(
                 )
             }
 
-            // Location Dialog
             if (showLocationDialog) {
                 AlertDialog(
                     onDismissRequest = { showLocationDialog = false },
@@ -1274,8 +1206,6 @@ fun StoryEditorScreen(
                     },
                 )
             }
-
-
 
             if (showCloseFriendsDialog) {
                 AlertDialog(
@@ -1332,7 +1262,6 @@ fun StoryEditorScreen(
                 )
             }
 
-            // Discard Confirmation Dialog
             if (showDiscardDialog) {
                 AlertDialog(
                     onDismissRequest = { showDiscardDialog = false },

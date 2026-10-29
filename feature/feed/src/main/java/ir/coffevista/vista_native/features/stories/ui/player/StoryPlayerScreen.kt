@@ -339,45 +339,6 @@ fun StoryPlayerScreen(
                     )
                 }
 
-                // Interactive Elements Overlay (Poll, Mention, Link, Question, etc.)
-                if (activeStory.interactiveElements.isNotEmpty()) {
-                    StoryElementsOverlay(
-                        elements = activeStory.interactiveElements,
-                        isAuthor = (activeStory.userId == currentUserId || activeUser.id == currentUserId || isOwnStory),
-                        onPollVote = { elementId, optionIndex ->
-                            coroutineScope.launch {
-                                repository.votePoll(activeStory.id, elementId, optionIndex)
-                            }
-                        },
-                        onQuestionAnswer = { elementId, answer ->
-                            viewModel.answerQuestion(activeStory.id, elementId, answer) { success, err ->
-                                coroutineScope.launch {
-                                    snackbarHostState.showSnackbar(
-                                        if (success) "پاسخ شما با موفقیت ثبت شد"
-                                        else (err ?: "خطا در ثبت پاسخ"),
-                                    )
-                                }
-                            }
-                        },
-                        onViewQuestionAnswers = { _ ->
-                            isPaused = true
-                            isLoadingQuestionAnswers = true
-                            showQuestionAnswersSheet = true
-                            viewModel.loadQuestionAnswers(activeStory.id) { answers ->
-                                questionAnswers = answers
-                                isLoadingQuestionAnswers = false
-                            }
-                        },
-                        onLinkClick = onOpenLink,
-                        onMentionClick = onOpenProfile,
-                        onHashtagClick = { tag ->
-                            coroutineScope.launch {
-                                snackbarHostState.showSnackbar("#$tag")
-                            }
-                        },
-                    )
-                }
-
                 // Tap Areas for Next / Previous / Pause
                 Row(modifier = Modifier.fillMaxSize()) {
                     // Right area in RTL = Previous
@@ -419,6 +380,47 @@ fun StoryPlayerScreen(
                                     onTap = { goToNextStory() },
                                 )
                             },
+                    )
+                }
+
+                // Interactive Elements Overlay (Poll, Mention, Link, Question, etc.).
+                // Composed above the tap areas so widgets receive their own taps; empty
+                // regions fall through to next/previous/hold-to-pause underneath.
+                if (activeStory.interactiveElements.isNotEmpty()) {
+                    StoryElementsOverlay(
+                        elements = activeStory.interactiveElements,
+                        isAuthor = (activeStory.userId == currentUserId || activeUser.id == currentUserId || isOwnStory),
+                        onPollVote = { elementId, optionIndex ->
+                            coroutineScope.launch {
+                                repository.votePoll(activeStory.id, elementId, optionIndex)
+                            }
+                        },
+                        onQuestionAnswer = { elementId, answer ->
+                            viewModel.answerQuestion(activeStory.id, elementId, answer) { success, err ->
+                                coroutineScope.launch {
+                                    snackbarHostState.showSnackbar(
+                                        if (success) "پاسخ شما با موفقیت ثبت شد"
+                                        else (err ?: "خطا در ثبت پاسخ"),
+                                    )
+                                }
+                            }
+                        },
+                        onViewQuestionAnswers = { _ ->
+                            isPaused = true
+                            isLoadingQuestionAnswers = true
+                            showQuestionAnswersSheet = true
+                            viewModel.loadQuestionAnswers(activeStory.id) { answers ->
+                                questionAnswers = answers
+                                isLoadingQuestionAnswers = false
+                            }
+                        },
+                        onLinkClick = onOpenLink,
+                        onMentionClick = onOpenProfile,
+                        onHashtagClick = { tag ->
+                            coroutineScope.launch {
+                                snackbarHostState.showSnackbar("#$tag")
+                            }
+                        },
                     )
                 }
 

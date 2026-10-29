@@ -126,7 +126,7 @@ class CommentsViewModel @Inject constructor(
 
     /**
      * Blue Tick supervisors / moderators can edit ANY comment ("ویرایش ناظر").
-     * Comment authors can edit their comment.
+     * Comment authors can edit their comment ONLY if they have premium privileges (Gold Tick / Premium).
      */
     fun canEdit(comment: Comment): Boolean {
         if (isModerator()) return true
@@ -135,7 +135,7 @@ class CommentsViewModel @Inject constructor(
         val hasSpecialBadge = verification.contains("black") ||
             verification.contains("gold") ||
             verification.contains("blue")
-        return comment.authorIsVerified || hasSpecialBadge || _uiState.value.currentUserHasPremium
+        return hasSpecialBadge || _uiState.value.currentUserHasPremium
     }
 
     /**

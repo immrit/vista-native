@@ -639,7 +639,7 @@ fun VistaApp(
                                 onSaveClick = postsViewModel::toggleSave,
                                 onDeletePost = postsViewModel::deletePost,
                                 onEditPost = { post, newContent, onResult ->
-                                    postsViewModel.updatePostContent(post.id, newContent, onResult)
+                                    postsViewModel.updatePostContent(post.id, newContent, onResult = onResult)
                                 },
                                 onReportPost = { post, reason, details, onResult ->
                                     postsViewModel.reportPost(post.id, post.userId, reason, details, onResult)
@@ -800,7 +800,7 @@ fun VistaApp(
                                 onSaveClick = postsViewModel::toggleSave,
                                 onDeletePost = postsViewModel::deletePost,
                                 onEditPost = { post, newContent, onResult ->
-                                    postsViewModel.updatePostContent(post.id, newContent, onResult)
+                                    postsViewModel.updatePostContent(post.id, newContent, onResult = onResult)
                                 },
                                 onReportPost = { post, reason, details, onResult ->
                                     postsViewModel.reportPost(post.id, post.userId, reason, details, onResult)

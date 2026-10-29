@@ -1039,18 +1039,18 @@ internal fun ProfilePostCard(
                             },
                         )
                     }
-                    if (isBlueTick || hasPremiumEdit) {
+                    if (isBlueTick || (isOwnPost && hasPremiumEdit)) {
                         DropdownMenuItem(
                             text = {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Icon(
-                                        imageVector = if (isBlueTick) Icons.Default.AdminPanelSettings else Icons.Default.Edit,
+                                        imageVector = if (isBlueTick && !isOwnPost) Icons.Default.AdminPanelSettings else Icons.Default.Edit,
                                         contentDescription = null,
                                         tint = MaterialTheme.colorScheme.primary,
                                         modifier = Modifier.size(20.dp),
                                     )
                                     Spacer(Modifier.width(8.dp))
-                                    Text(if (isBlueTick) "ویرایش ناظر" else "ویرایش پست")
+                                    Text(if (isBlueTick && !isOwnPost) "ویرایش ناظر" else "ویرایش پست")
                                 }
                             },
                             onClick = {

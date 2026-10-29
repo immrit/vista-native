@@ -38,6 +38,12 @@ import javax.inject.Inject
 import ir.coffevista.vista_native.features.feed.music.MusicRepository
 import ir.coffevista.vista_native.features.feed.music.MusicTrack
 import ir.coffevista.vista_native.features.stories.domain.StoryMusic
+import ir.coffevista.vista_native.features.stories.ui.canvas.StoryTransform
+import ir.coffevista.vista_native.features.stories.ui.canvas.withTransform
+import ir.coffevista.vista_native.features.stories.ui.render.StoryDrawingCodec
+import ir.coffevista.vista_native.features.stories.ui.render.StoryStroke
+import ir.coffevista.vista_native.features.stories.ui.render.StoryTextSpec
+import ir.coffevista.vista_native.features.stories.ui.render.applyTo
 
 internal object StoryVideoUploadPolicy {
     const val MaxBytes: Long = 100L * 1024 * 1024
@@ -255,6 +261,77 @@ class StoryEditorViewModel @Inject constructor(
             content = drawingJson,
         )
         _uiState.update { it.copy(elements = it.elements + element) }
+    }
+
+    internal fun addOrUpdateTextElement(spec: StoryTextSpec, existingId: String? = null) {
+        if (spec.text.isBlank()) {
+            if (existingId != null) removeElement(existingId)
+            return
+        }
+        _uiState.update { state ->
+            val existing = if (existingId != null) state.elements.firstOrNull { it.id == existingId } else null
+            if (existing != null) {
+                state.copy(
+                    elements = state.elements.map { el ->
+                        if (el.id == existingId) spec.applyTo(el) else el
+                    },
+                )
+            } else {
+                val newElem = spec.applyTo(
+                    StoryElement(
+                        id = UUID.randomUUID().toString(),
+                        type = "text",
+                    ),
+                ).withTransform(StoryTransform(cx = 0.5f, cy = 0.45f, scale = 1f, rotation = 0f))
+                state.copy(elements = state.elements + newElem)
+            }
+        }
+    }
+
+    internal fun updateElementTransform(id: String, transform: StoryTransform) {
+        _uiState.update { state ->
+            state.copy(
+                elements = state.elements.map { el ->
+                    if (el.id == id) el.withTransform(transform) else el
+                },
+            )
+        }
+    }
+
+    fun bringToFront(id: String) {
+        _uiState.update { state ->
+            val target = state.elements.firstOrNull { it.id == id } ?: return@update state
+            if (state.elements.lastOrNull()?.id == id) return@update state
+            state.copy(elements = state.elements.filterNot { it.id == id } + target)
+        }
+    }
+
+    fun cycleWidgetVariant(id: String) {
+        _uiState.update { state ->
+            state.copy(
+                elements = state.elements.map { el ->
+                    if (el.id == id) el.copy(variant = (el.variant + 1) % 4) else el
+                },
+            )
+        }
+    }
+
+    internal fun setDrawingStrokes(strokes: List<StoryStroke>) {
+        val encoded = if (strokes.isNotEmpty()) StoryDrawingCodec.encode(strokes) else ""
+        _uiState.update { state ->
+            val withoutDrawing = state.elements.filterNot { it.type == "drawing" }
+            if (encoded.isBlank()) {
+                state.copy(elements = withoutDrawing)
+            } else {
+                val drawingElem = StoryElement(
+                    id = state.elements.firstOrNull { it.type == "drawing" }?.id ?: UUID.randomUUID().toString(),
+                    type = "drawing",
+                    content = encoded,
+                )
+                // Drawing always placed first (bottom-most layer)
+                state.copy(elements = listOf(drawingElem) + withoutDrawing)
+            }
+        }
     }
 
     fun updateElementPosition(id: String, deltaX: Float, deltaY: Float) {

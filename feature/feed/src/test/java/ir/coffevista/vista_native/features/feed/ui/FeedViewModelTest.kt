@@ -301,7 +301,19 @@ private class FakeFeedRepository : FeedRepository {
 
     override suspend fun toggleLike(accountId: String, postId: String, ownerId: String, isLiked: Boolean, newLikeCount: Long) {}
     override suspend fun toggleSave(accountId: String, postId: String, isSaved: Boolean) {}
-    override suspend fun updatePost(accountId: String, postId: String, content: String?, hideLikeCount: Boolean?, hideCommentCount: Boolean?) = error("unused")
+    override suspend fun updatePost(
+        accountId: String,
+        postId: String,
+        content: String?,
+        hideLikeCount: Boolean?,
+        hideCommentCount: Boolean?,
+        moderationReason: String?,
+        clearContent: Boolean?,
+        clearImage: Boolean?,
+        clearVideo: Boolean?,
+        clearMusic: Boolean?,
+        notifyUser: Boolean?,
+    ) = error("unused")
     override suspend fun deletePost(accountId: String, postId: String) = Unit
     override suspend fun reportPost(postId: String, reportedUserId: String, reason: String, additionalDetails: String?) = Unit
     override suspend fun submitAppeal(postId: String, reason: String) = Unit

@@ -175,6 +175,12 @@ data class UpdatePostRequestDto(
     @SerialName("content") val content: String? = null,
     @SerialName("hide_like_count") val hideLikeCount: Boolean? = null,
     @SerialName("hide_comment_count") val hideCommentCount: Boolean? = null,
+    @SerialName("moderation_reason") val moderationReason: String? = null,
+    @SerialName("clear_content") val clearContent: Boolean? = null,
+    @SerialName("clear_image") val clearImage: Boolean? = null,
+    @SerialName("clear_video") val clearVideo: Boolean? = null,
+    @SerialName("clear_music") val clearMusic: Boolean? = null,
+    @SerialName("notify_user") val notifyUser: Boolean? = null,
 )
 
 @Serializable

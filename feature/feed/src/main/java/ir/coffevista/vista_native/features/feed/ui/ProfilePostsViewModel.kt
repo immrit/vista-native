@@ -230,7 +230,13 @@ class ProfilePostsViewModel @Inject constructor(
 
     fun updatePostContent(
         postId: String,
-        newContent: String,
+        newContent: String?,
+        moderationReason: String? = null,
+        clearContent: Boolean? = null,
+        clearImage: Boolean? = null,
+        clearVideo: Boolean? = null,
+        clearMusic: Boolean? = null,
+        notifyUser: Boolean? = null,
         onResult: (Boolean) -> Unit,
     ) {
         val account = accountId ?: return
@@ -240,11 +246,27 @@ class ProfilePostsViewModel @Inject constructor(
                     accountId = account,
                     postId = postId,
                     content = newContent,
+                    moderationReason = moderationReason,
+                    clearContent = clearContent,
+                    clearImage = clearImage,
+                    clearVideo = clearVideo,
+                    clearMusic = clearMusic,
+                    notifyUser = notifyUser,
                 )
                 _uiState.update { current ->
                     current.copy(
                         posts = current.posts.map { post ->
-                            if (post.id == postId) post.copy(content = newContent) else post
+                            if (post.id == postId) {
+                                post.copy(
+                                    content = if (clearContent == true) "" else (newContent ?: post.content),
+                                    editedByVista = moderationReason != null || post.editedByVista,
+                                    moderationReason = moderationReason ?: post.moderationReason,
+                                    imageUrl = if (clearImage == true) null else post.imageUrl,
+                                    imageUrls = if (clearImage == true) emptyList() else post.imageUrls,
+                                    videoUrl = if (clearVideo == true) null else post.videoUrl,
+                                    musicUrl = if (clearMusic == true) null else post.musicUrl,
+                                )
+                            } else post
                         }
                     )
                 }

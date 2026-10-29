@@ -299,22 +299,49 @@ fun FeedScreen(
         )
     }
     editPostTarget?.let { target ->
-        val maxLen = if (isViewerBlueTick) 10000 else if (viewerHasPremiumEdit) 1000 else 500
-        val title = if (isViewerBlueTick && target.userId != viewerUserId) "ویرایش ناظر" else "ویرایش پست"
-        EditPostDialog(
-            initialContent = target.content.orEmpty(),
-            maxCharLength = maxLen,
-            title = title,
-            isSubmitting = isEditing,
-            onDismiss = { if (!isEditing) editPostTarget = null },
-            onConfirm = { newContent ->
-                isEditing = true
-                viewModel.updatePostContent(target.id, newContent) {
-                    isEditing = false
-                    editPostTarget = null
-                }
-            },
-        )
+        val isModeratorEdit = isViewerBlueTick && target.userId != viewerUserId
+        if (isModeratorEdit) {
+            ir.coffevista.vista_native.core.designsystem.component.VistaAdminEditPostDialog(
+                initialContent = target.content.orEmpty(),
+                hasImage = !target.imageUrl.isNullOrBlank() || target.imageUrls.isNotEmpty(),
+                hasVideo = !target.videoUrl.isNullOrBlank(),
+                hasMusic = !target.musicUrl.isNullOrBlank(),
+                isSubmitting = isEditing,
+                onDismiss = { if (!isEditing) editPostTarget = null },
+                onConfirm = { result ->
+                    isEditing = true
+                    viewModel.updatePostContent(
+                        postId = target.id,
+                        newContent = result.content,
+                        moderationReason = result.moderationReason,
+                        clearContent = result.clearContent,
+                        clearImage = result.clearImage,
+                        clearVideo = result.clearVideo,
+                        clearMusic = result.clearMusic,
+                        notifyUser = result.notifyUser,
+                    ) {
+                        isEditing = false
+                        editPostTarget = null
+                    }
+                },
+            )
+        } else {
+            val maxLen = if (viewerHasPremiumEdit) 1000 else 500
+            EditPostDialog(
+                initialContent = target.content.orEmpty(),
+                maxCharLength = maxLen,
+                title = "ویرایش پست",
+                isSubmitting = isEditing,
+                onDismiss = { if (!isEditing) editPostTarget = null },
+                onConfirm = { newContent ->
+                    isEditing = true
+                    viewModel.updatePostContent(target.id, newContent) {
+                        isEditing = false
+                        editPostTarget = null
+                    }
+                },
+            )
+        }
     }
     premiumPromptFeature?.let { feature ->
         VistaPremiumPromptDialog(
@@ -1695,18 +1722,18 @@ private fun PostActionRow(
                         }
                     )
                 }
-                if (isBlueTick || hasPremiumEdit) {
+                if (isBlueTick || (isOwnPost && hasPremiumEdit)) {
                     DropdownMenuItem(
                         text = {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(
-                                    imageVector = if (isBlueTick) Icons.Default.AdminPanelSettings else Icons.Default.Edit,
+                                    imageVector = if (isBlueTick && !isOwnPost) Icons.Default.AdminPanelSettings else Icons.Default.Edit,
                                     contentDescription = null,
                                     tint = MaterialTheme.colorScheme.primary,
                                     modifier = Modifier.size(20.dp),
                                 )
                                 Spacer(Modifier.width(8.dp))
-                                Text(if (isBlueTick) "ویرایش ناظر" else "ویرایش پست")
+                                Text(if (isBlueTick && !isOwnPost) "ویرایش ناظر" else "ویرایش پست")
                             }
                         },
                         onClick = {

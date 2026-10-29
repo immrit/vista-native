@@ -214,7 +214,13 @@ class PostDetailViewModel @Inject constructor(
     }
 
     fun updatePostContent(
-        newContent: String,
+        newContent: String?,
+        moderationReason: String? = null,
+        clearContent: Boolean? = null,
+        clearImage: Boolean? = null,
+        clearVideo: Boolean? = null,
+        clearMusic: Boolean? = null,
+        notifyUser: Boolean? = null,
         onResult: (Boolean) -> Unit,
     ) {
         viewModelScope.launch {
@@ -224,6 +230,12 @@ class PostDetailViewModel @Inject constructor(
                     accountId = accountId,
                     postId = postId,
                     content = newContent,
+                    moderationReason = moderationReason,
+                    clearContent = clearContent,
+                    clearImage = clearImage,
+                    clearVideo = clearVideo,
+                    clearMusic = clearMusic,
+                    notifyUser = notifyUser,
                 )
                 val current = _uiState.value as? PostDetailUiState.Content
                 if (current != null) {

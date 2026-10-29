@@ -87,6 +87,15 @@ data class StoryElement(
     val location: StoryLocation? = null,
     val mention: StoryMention? = null,
     val music: StoryMusic? = null,
+    val schema: Int = 1,
+    @SerialName("x_norm") val xNorm: Float? = null,
+    @SerialName("y_norm") val yNorm: Float? = null,
+    @SerialName("font_size") val fontSize: Float? = null,
+    @SerialName("text_style") val textStyle: String? = null,
+    @SerialName("text_bg") val textBackground: String? = null,
+    @SerialName("text_align") val textAlign: String? = null,
+    @SerialName("text_gradient") val textGradient: String? = null,
+    val variant: Int = 0,
 )
 
 @Serializable

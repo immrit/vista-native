@@ -286,13 +286,31 @@ class OfflineFirstFeedRepository @Inject constructor(
         content: String?,
         hideLikeCount: Boolean?,
         hideCommentCount: Boolean?,
+        moderationReason: String?,
+        clearContent: Boolean?,
+        clearImage: Boolean?,
+        clearVideo: Boolean?,
+        clearMusic: Boolean?,
+        notifyUser: Boolean?,
     ): FeedPost {
-        require(content != null || hideLikeCount != null || hideCommentCount != null) {
+        val hasChange = content != null || hideLikeCount != null || hideCommentCount != null ||
+            moderationReason != null || clearContent == true || clearImage == true || clearVideo == true || clearMusic == true
+        require(hasChange) {
             "حداقل یک تغییر برای پست لازم است"
         }
         val response = feedApi.updatePost(
             postId,
-            UpdatePostRequestDto(content, hideLikeCount, hideCommentCount),
+            UpdatePostRequestDto(
+                content = content,
+                hideLikeCount = hideLikeCount,
+                hideCommentCount = hideCommentCount,
+                moderationReason = moderationReason,
+                clearContent = clearContent,
+                clearImage = clearImage,
+                clearVideo = clearVideo,
+                clearMusic = clearMusic,
+                notifyUser = notifyUser,
+            ),
         )
         feedDao.updatePostFields(postId, content, hideLikeCount, hideCommentCount)
         return response.asEntity(accountId, sortOrder = 0).asExternalModel()

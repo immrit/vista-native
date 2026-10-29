@@ -57,6 +57,17 @@
 - [x] Run test suite with Gradle.
 - [x] Verify compilation with `./gradlew :app:compileBetaDebugKotlin`.
 
+### Phase 5 — Strict Visibility Guard & Admin Content Studio Tools (vista-manager Parity)
+- [x] Backend: Expand `UpdatePostInput` to support `moderation_reason`, `clear_content`, `clear_image`, `clear_video`, `clear_music`, `notify_user` in `internal/posts/repository.go` and `internal/posts/service.go`.
+- [x] Backend: Verify backend Go build with `go build ./...`.
+- [x] Native: Strict visibility guard:
+      - Posts: Only visible to author or Blue Tick; author can only edit if premium (Gold Tick / Premium); non-authors/non-blue-tick never see edit or delete.
+      - Comments: Only visible to author or Blue Tick; author can only edit if premium; post owner can delete any comment on their post; non-authors/non-owners/non-blue-tick never see edit or delete.
+- [x] Native: Create `VistaAdminEditPostDialog.kt` matching `vista-manager` `/dashboard/content` (Presets, Moderation Reason, Clear Image/Video/Music, Notify User checkbox, Moderation Banner preview).
+- [x] Native: Wire `VistaAdminEditPostDialog` in `FeedScreen.kt`, `PostDetailScreen.kt`, and `ProfileParityComponents.kt`.
+- [x] Native: Pass `postOwnerId` in `ReelsViewerScreen.kt` to `CommentsBottomSheet`.
+- [x] Native: Run unit tests and compile `:app:compileBetaDebugKotlin`.
+
 ## Decisions & Notes
 - Blue Tick users are platform supervisors and can moderate comments across all posts.
 - All report dialogs use the centralized `VistaReportReasonDialog` from `core:designsystem`.
