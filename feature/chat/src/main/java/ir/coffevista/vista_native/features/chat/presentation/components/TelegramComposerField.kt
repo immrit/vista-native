@@ -102,9 +102,9 @@ fun ChatComposerField(
     val latestOnFocusText = rememberUpdatedState(onFocusText)
     val latestIsEmojiPanelOpen = rememberUpdatedState(isEmojiPanelOpen)
     val latestKeyboardController = rememberUpdatedState(keyboardController)
-    var editTextRef by remember { mutableStateOf<EditText?>(null) }
+    val editTextRef = remember { arrayOfNulls<EditText>(1) }
 
-    DisposableEffect(controller, actualFocusRequester, editTextRef) {
+    DisposableEffect(controller, actualFocusRequester) {
         controller.onInsertEmoji = { symbol ->
             val currentValue = latestValue.value
             val start = currentValue.selection.min
@@ -129,54 +129,69 @@ fun ChatComposerField(
             }
         }
         controller.onRequestKeyboard = {
-            editTextRef?.let { et ->
+            actualFocusRequester.requestFocus()
+            latestKeyboardController.value?.show()
+            val et = editTextRef[0]
+            if (et != null) {
+                et.isFocusable = true
+                et.isFocusableInTouchMode = true
                 et.requestFocus()
                 val imm = et.context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
                 imm?.showSoftInput(et, 0)
-                val activity = et.context as? android.app.Activity
-                if (activity?.window != null) {
-                    androidx.core.view.WindowCompat.getInsetsController(activity.window, et)
+                val activity = et.context.findActivity() ?: et.rootView.context.findActivity()
+                val window = activity?.window
+                if (window != null) {
+                    androidx.core.view.WindowCompat.getInsetsController(window, et)
                         .show(WindowInsetsCompat.Type.ime())
-                } else {
-                    ViewCompat.getWindowInsetsController(et)
-                        ?.show(WindowInsetsCompat.Type.ime())
                 }
                 et.post {
                     et.requestFocus()
                     imm?.showSoftInput(et, 0)
+                    if (window != null) {
+                        androidx.core.view.WindowCompat.getInsetsController(window, et)
+                            .show(WindowInsetsCompat.Type.ime())
+                    }
                 }
-            } ?: run {
-                actualFocusRequester.requestFocus()
-                latestKeyboardController.value?.show()
+                et.postDelayed({
+                    et.requestFocus()
+                    imm?.showSoftInput(et, 0)
+                    if (window != null) {
+                        androidx.core.view.WindowCompat.getInsetsController(window, et)
+                            .show(WindowInsetsCompat.Type.ime())
+                    }
+                }, 40)
+                et.postDelayed({
+                    et.requestFocus()
+                    imm?.showSoftInput(et, 0)
+                    if (window != null) {
+                        androidx.core.view.WindowCompat.getInsetsController(window, et)
+                            .show(WindowInsetsCompat.Type.ime())
+                    }
+                }, 100)
             }
         }
         controller.onHideKeyboard = {
-            editTextRef?.let { et ->
+            val et = editTextRef[0]
+            if (et != null) {
                 val imm = et.context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
-                val activity = et.context as? android.app.Activity
-                if (activity?.window != null) {
-                    androidx.core.view.WindowCompat.getInsetsController(activity.window, et)
+                val activity = et.context.findActivity() ?: et.rootView.context.findActivity()
+                val window = activity?.window
+                if (window != null) {
+                    androidx.core.view.WindowCompat.getInsetsController(window, et)
                         .hide(WindowInsetsCompat.Type.ime())
-                } else {
-                    ViewCompat.getWindowInsetsController(et)
-                        ?.hide(WindowInsetsCompat.Type.ime())
                 }
                 imm?.hideSoftInputFromWindow(et.windowToken, 0)
                 et.clearFocus()
-            } ?: run {
+            } else {
                 latestKeyboardController.value?.hide()
             }
         }
         onDispose {
-            runCatching {
-                controller.onHideKeyboard?.invoke()
-                editTextRef?.clearFocus()
-            }
             controller.onInsertEmoji = null
             controller.onDispatchBackspace = null
             controller.onRequestKeyboard = null
             controller.onHideKeyboard = null
-            editTextRef = null
+            editTextRef[0] = null
         }
     }
 
@@ -197,7 +212,7 @@ fun ChatComposerField(
                 object : EditText(context) {
                     override fun focusSearch(direction: Int): android.view.View = this
                 }.apply {
-                    editTextRef = this
+                    editTextRef[0] = this
                     setOnTouchListener { _, event ->
                         if (event.action == android.view.MotionEvent.ACTION_UP && latestIsEmojiPanelOpen.value) {
                             latestOnFocusText.value()
@@ -270,4 +285,10 @@ private fun previousGraphemeStart(text: String, cursor: Int): Int {
     val iterator = BreakIterator.getCharacterInstance()
     iterator.setText(text)
     return iterator.preceding(cursor).takeIf { it != BreakIterator.DONE } ?: 0
+}
+
+private tailrec fun Context.findActivity(): android.app.Activity? = when (this) {
+    is android.app.Activity -> this
+    is android.content.ContextWrapper -> baseContext.findActivity()
+    else -> null
 }

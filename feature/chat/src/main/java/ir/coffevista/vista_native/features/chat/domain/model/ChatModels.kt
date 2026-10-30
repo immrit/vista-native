@@ -185,7 +185,7 @@ data class Message(
     val opaqueEncryptedPayload: String? = null,
     val isMine: Boolean,
 ) {
-    val stableKey: String get() = serverId ?: "local:$clientId"
+    val stableKey: String get() = clientId.ifBlank { serverId ?: "local:$clientId" }
 
     val isSecretHandshakeFrame: Boolean
         get() = transportType.equals("exchange_key", ignoreCase = true) ||

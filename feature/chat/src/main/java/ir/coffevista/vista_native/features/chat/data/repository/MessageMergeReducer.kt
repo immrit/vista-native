@@ -83,7 +83,7 @@ object MessageMergeReducer {
             val index = result.indexOfFirst { sameIdentity(it, candidate) }
             if (index < 0) result += candidate else result[index] = merge(result[index], candidate, source)
         }
-        return result.distinctBy { it.serverId ?: "local:${it.clientId}" }
+        return result.distinctBy { it.stableKey }
             .sortedWith(
                 compareByDescending<Message> { it.createdAtEpochMillis }
                     .thenByDescending { it.serverId ?: it.clientId },

@@ -1964,7 +1964,7 @@ fun MessageDetailScreen(
     // Track peak resting keyboard height while IME is open.
     // Avoids capturing intermediate opening or closing animation frames.
     var peakImeHeightDp by remember { mutableFloatStateOf(0f) }
-    val isImeOpen = isImeVisible || imeBottomDp >= 160.dp
+    val isImeOpen = isImeVisible || imeBottomDp.value >= 160f
 
     LaunchedEffect(isImeOpen, imeBottomDp.value) {
         val currentDp = imeBottomDp.value
@@ -1972,12 +1972,15 @@ fun MessageDetailScreen(
             if (currentDp > peakImeHeightDp) {
                 peakImeHeightDp = currentDp
             }
-            if (currentDp >= 160f && currentDp >= (peakImeHeightDp - 2f)) {
+            if (currentDp >= 160f && currentDp >= (peakImeHeightDp - 1f)) {
                 kotlinx.coroutines.delay(80)
-                if (isImeOpen && imeBottomDp.value >= (peakImeHeightDp - 4f)) {
+                if (isImeOpen && imeBottomDp.value >= (peakImeHeightDp - 2f)) {
                     val finalVal = maxOf(imeBottomDp.value, peakImeHeightDp)
                     composerPanelHeightDp = finalVal
                     KeyboardHeightStore.saveKeyboardHeightDp(context, isLandscape, finalVal, screenHeightDp)
+                    if (emojiPanelVisible) {
+                        emojiPanelVisible = false
+                    }
                 }
             }
         } else {
@@ -1985,32 +1988,12 @@ fun MessageDetailScreen(
         }
     }
 
-    var isSwitchingToKeyboard by remember { mutableStateOf(false) }
-    LaunchedEffect(isSwitchingToKeyboard) {
-        if (isSwitchingToKeyboard) {
-            composerController.openKeyboard()
-            kotlinx.coroutines.delay(600)
-            if (isSwitchingToKeyboard) {
-                isSwitchingToKeyboard = false
-                emojiPanelVisible = false
-            }
-        }
-    }
-
-    LaunchedEffect(isImeOpen, imeBottomDp.value, isSwitchingToKeyboard) {
-        if (isSwitchingToKeyboard && isImeOpen && imeBottomDp >= (composerPanelHeightDp.dp - 28.dp)) {
-            isSwitchingToKeyboard = false
-            emojiPanelVisible = false
-        }
-    }
-
-    val isPanelActive = emojiPanelVisible || isSwitchingToKeyboard
-    BackHandler(enabled = !emojiPanelVisible && !isSwitchingToKeyboard && selectedMessageKeys.isEmpty()) {
+    val isPanelActive = emojiPanelVisible
+    BackHandler(enabled = !emojiPanelVisible && selectedMessageKeys.isEmpty()) {
         safeBack()
     }
-    BackHandler(enabled = emojiPanelVisible || isSwitchingToKeyboard) {
+    BackHandler(enabled = emojiPanelVisible) {
         emojiPanelVisible = false
-        isSwitchingToKeyboard = false
         composerController.closeKeyboard()
     }
     // Back handlers are dispatched in reverse composition order. Register
@@ -2156,11 +2139,10 @@ fun MessageDetailScreen(
                 Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .pointerInput(emojiPanelVisible, isSwitchingToKeyboard) {
-                        if (emojiPanelVisible || isSwitchingToKeyboard) {
+                    .pointerInput(emojiPanelVisible) {
+                        if (emojiPanelVisible) {
                             detectTapGestures {
                                 emojiPanelVisible = false
-                                isSwitchingToKeyboard = false
                             }
                         }
                     },
@@ -2168,9 +2150,8 @@ fun MessageDetailScreen(
                 val isDragged by listState.interactionSource.collectIsDraggedAsState()
                 LaunchedEffect(isDragged) {
                     if (isDragged) {
-                        if (emojiPanelVisible || isSwitchingToKeyboard) {
+                        if (emojiPanelVisible) {
                             emojiPanelVisible = false
-                            isSwitchingToKeyboard = false
                         }
                         composerController.closeKeyboard()
                     }
@@ -2562,11 +2543,12 @@ fun MessageDetailScreen(
                 onAttach = { attachmentSheetVisible = true },
                 onEmoji = {
                     if (emojiPanelVisible) {
-                        isSwitchingToKeyboard = true
                         composerController.openKeyboard()
                     } else {
-                        focusManager.clearFocus(force = true)
-                        isSwitchingToKeyboard = false
+                        if (imeBottomDp.value >= 160f) {
+                            composerPanelHeightDp = imeBottomDp.value
+                            KeyboardHeightStore.saveKeyboardHeightDp(context, isLandscape, imeBottomDp.value, screenHeightDp)
+                        }
                         emojiPanelVisible = true
                         composerController.closeKeyboard()
                     }
@@ -2574,7 +2556,6 @@ fun MessageDetailScreen(
                 isEmojiPanelOpen = emojiPanelVisible,
                 onFocusText = {
                     if (emojiPanelVisible) {
-                        isSwitchingToKeyboard = true
                         composerController.openKeyboard()
                     }
                 },
@@ -2630,11 +2611,12 @@ fun MessageDetailScreen(
             }
             val currentPanelHeight = composerPanelHeightDp.dp
 
-            if (emojiPanelVisible || isSwitchingToKeyboard) {
+            if (emojiPanelVisible) {
+                val panelHeight = maxOf(currentPanelHeight, imeBottomDp)
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(currentPanelHeight)
+                        .height(panelHeight)
                 ) {
                     TelegramXMediaPanel(
                         modifier = Modifier
@@ -2654,7 +2636,6 @@ fun MessageDetailScreen(
                         },
                         onGif = { gifUrl ->
                             emojiPanelVisible = false
-                            isSwitchingToKeyboard = false
                             onSendGif(gifUrl)
                         },
                         onSticker = { sticker ->
@@ -6060,7 +6041,12 @@ private fun Composer(
                         }
                     }
                     IconButton(
-                        onClick = onEmoji,
+                        onClick = {
+                            if (isEmojiPanelOpen) {
+                                focusRequester.requestFocus()
+                            }
+                            onEmoji()
+                        },
                         modifier = Modifier
                             .focusProperties { canFocus = false }
                             .size(40.dp)
