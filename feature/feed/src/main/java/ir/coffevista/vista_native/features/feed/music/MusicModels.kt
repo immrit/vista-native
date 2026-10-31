@@ -52,6 +52,8 @@ data class MusicTrack(
     val avatarUrl: String,
     val isVerified: Boolean,
     val genres: List<String>,
+    val durationMs: Long = 0L,
+    val isLocalDeviceFile: Boolean = false,
 )
 
 fun MusicDto.toDomain(): MusicTrack = MusicTrack(

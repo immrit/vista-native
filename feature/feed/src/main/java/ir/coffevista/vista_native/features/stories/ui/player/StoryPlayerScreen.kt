@@ -43,6 +43,13 @@ import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VolumeOff
+import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -105,6 +112,7 @@ import ir.coffevista.vista_native.features.stories.domain.StoryPrivacyType
 import ir.coffevista.vista_native.features.stories.domain.StoryQuestionAnswerDto
 import ir.coffevista.vista_native.features.stories.domain.StoryUser
 import ir.coffevista.vista_native.features.stories.domain.StoryVerificationType
+import ir.coffevista.vista_native.features.stories.ui.canvas.StoryStage
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -117,6 +125,7 @@ fun StoryPlayerScreen(
     onClose: () -> Unit,
     onOpenProfile: (userId: String) -> Unit,
     onOpenLink: (url: String) -> Unit,
+    onOpenHashtag: (String) -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: StoryPlayerViewModel = androidx.hilt.navigation.compose.hiltViewModel(),
 ) {
@@ -152,6 +161,13 @@ fun StoryPlayerScreen(
     val isOwnStory = activeUser.id == currentUserId
 
     var isPaused by remember { mutableStateOf(false) }
+    var isMuted by remember { mutableStateOf(false) }
+    var isImageReady by remember(activeStory.id) { mutableStateOf(false) }
+    var isBuffering by remember(activeStory.id) { mutableStateOf(false) }
+    var isAppInForeground by remember { mutableStateOf(true) }
+    var dragOffsetY by remember { mutableFloatStateOf(0f) }
+
+    var isQuestionDialogOpen by remember { mutableStateOf(false) }
     var showOptionsSheet by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showReportDialog by remember { mutableStateOf(false) }
@@ -168,7 +184,36 @@ fun StoryPlayerScreen(
     var isLiked by remember(activeStory.id) { mutableStateOf(false) }
     var floatingReaction by remember(activeStory.id) { mutableStateOf<String?>(null) }
 
-    val isPlaybackPaused = isPaused || showOptionsSheet || showDeleteDialog || showReportDialog || showViewersSheet || showAddToHighlightDialog || showNewHighlightDialog || showQuestionAnswersSheet
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_PAUSE, Lifecycle.Event.ON_STOP -> {
+                    isAppInForeground = false
+                }
+                Lifecycle.Event.ON_RESUME -> {
+                    isAppInForeground = true
+                }
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
+    val isPlaybackPaused = isPaused ||
+        isQuestionDialogOpen ||
+        showOptionsSheet ||
+        showDeleteDialog ||
+        showReportDialog ||
+        showViewersSheet ||
+        showAddToHighlightDialog ||
+        showNewHighlightDialog ||
+        showQuestionAnswersSheet ||
+        replyText.isNotBlank() ||
+        !isAppInForeground
 
     LaunchedEffect(floatingReaction) {
         if (floatingReaction != null) {
@@ -186,26 +231,53 @@ fun StoryPlayerScreen(
             ExoPlayer.Builder(context).build().apply {
                 setMediaItem(MediaItem.fromUri(Uri.parse(activeStory.mediaUrl)))
                 videoScalingMode = C.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING
-                if (hasMusic) {
-                    volume = 0f
-                }
+                volume = if (isMuted || hasMusic) 0f else 1f
+                addListener(object : Player.Listener {
+                    override fun onPlaybackStateChanged(state: Int) {
+                        isBuffering = state == Player.STATE_BUFFERING
+                    }
+                })
                 prepare()
                 playWhenReady = true
             }
         } else null
     }
 
-    // Music Audio Player (for stories with attached music or music sticker)
+    // Music Audio Player (for stories with attached music or music sticker, honoring selected chorus offset)
+    val musicElement = remember(activeStory.id) {
+        activeStory.interactiveElements.firstOrNull { it.type == "music" }?.music
+    }
     val musicPlayer = remember(activeStory.id) {
-        val musicUrl = activeStory.musicUrl
-            ?: activeStory.interactiveElements.firstOrNull { it.type == "music" }?.music?.musicUrl
+        val musicUrl = activeStory.musicUrl ?: musicElement?.musicUrl
         if (!musicUrl.isNullOrBlank()) {
+            val baseItem = MediaItem.fromUri(Uri.parse(musicUrl))
+            val startMs = musicElement?.startMs ?: 0
+            val endMs = musicElement?.endMs ?: 0
+            val clippedItem = if (startMs > 0 || endMs > startMs) {
+                val clipBuilder = MediaItem.ClippingConfiguration.Builder()
+                    .setStartPositionMs(startMs.coerceAtLeast(0).toLong())
+                if (endMs > startMs) {
+                    clipBuilder.setEndPositionMs(endMs.toLong())
+                }
+                baseItem.buildUpon()
+                    .setClippingConfiguration(clipBuilder.build())
+                    .build()
+            } else {
+                baseItem
+            }
             ExoPlayer.Builder(context).build().apply {
-                setMediaItem(MediaItem.fromUri(Uri.parse(musicUrl)))
+                setMediaItem(clippedItem)
+                volume = if (isMuted) 0f else 1f
+                repeatMode = Player.REPEAT_MODE_ONE
                 prepare()
                 playWhenReady = true
             }
         } else null
+    }
+
+    LaunchedEffect(isMuted, exoPlayer, musicPlayer, hasMusic) {
+        exoPlayer?.volume = if (isMuted || hasMusic) 0f else 1f
+        musicPlayer?.volume = if (isMuted) 0f else 1f
     }
 
     DisposableEffect(exoPlayer, musicPlayer) {
@@ -217,7 +289,7 @@ fun StoryPlayerScreen(
 
     // Mark as viewed
     LaunchedEffect(activeStory.id) {
-        repository.markStoryAsViewed(activeStory.id)
+        repository.markStoryAsViewed(activeStory.id, currentUserId)
     }
 
     fun goToNextStory() {
@@ -244,6 +316,9 @@ fun StoryPlayerScreen(
         }
     }
 
+    val updatedGoToNext by rememberUpdatedState(::goToNextStory)
+    val updatedGoToPrevious by rememberUpdatedState(::goToPreviousStory)
+
     // Timer & Progress Engine
     LaunchedEffect(activeStory.id, isPlaybackPaused, currentUserIndex, currentStoryIndex) {
         if (isPlaybackPaused) {
@@ -258,16 +333,23 @@ fun StoryPlayerScreen(
         val isVideo = activeStory.mediaType == StoryMediaType.Video
         if (isVideo && exoPlayer != null) {
             while (isActive && !isPlaybackPaused) {
-                val duration = exoPlayer.duration.coerceAtLeast(1)
-                val position = exoPlayer.currentPosition
-                currentProgress = (position.toFloat() / duration).coerceIn(0f, 1f)
+                if (exoPlayer.playbackState == Player.STATE_READY && exoPlayer.duration > 0L) {
+                    val duration = exoPlayer.duration.coerceAtLeast(1L)
+                    val position = exoPlayer.currentPosition
+                    currentProgress = (position.toFloat() / duration).coerceIn(0f, 1f)
+                }
                 if (exoPlayer.playbackState == Player.STATE_ENDED || currentProgress >= 1f) {
-                    goToNextStory()
+                    updatedGoToNext()
                     break
                 }
                 delay(30)
             }
         } else {
+            // Hold until image is actually loaded from CDN/Disk
+            while (!isImageReady && isActive && !isPlaybackPaused) {
+                delay(40)
+            }
+
             val totalDurationMs = 5000L // 5 seconds for image
             val stepMs = 30L
             var elapsed = (currentProgress * totalDurationMs).toLong()
@@ -279,9 +361,13 @@ fun StoryPlayerScreen(
             }
 
             if (currentProgress >= 1f && !isPlaybackPaused) {
-                goToNextStory()
+                updatedGoToNext()
             }
         }
+    }
+
+    val videoTransformElement = remember(activeStory.id) {
+        activeStory.interactiveElements.firstOrNull { it.type == "media_transform" }
     }
 
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
@@ -295,56 +381,94 @@ fun StoryPlayerScreen(
                     .fillMaxSize()
                     .padding(padding)
                     .pointerInput(Unit) {
-                        var totalDragY = 0f
                         detectDragGestures(
-                            onDragStart = { totalDragY = 0f },
-                            onDragCancel = { totalDragY = 0f },
+                            onDragStart = { dragOffsetY = 0f },
+                            onDragCancel = { dragOffsetY = 0f },
                             onDragEnd = {
                                 when {
-                                    totalDragY > 100f -> onClose()
-                                    totalDragY < -100f && isOwnStory -> showViewersSheet = true
+                                    dragOffsetY > 140f -> onClose()
+                                    dragOffsetY < -140f && isOwnStory -> {
+                                        dragOffsetY = 0f
+                                        showViewersSheet = true
+                                    }
+                                    else -> dragOffsetY = 0f
                                 }
-                                totalDragY = 0f
                             },
                         ) { _, dragAmount ->
-                            // Drag callbacks carry small frame deltas, not the
-                            // full gesture distance. Accumulate before deciding
-                            // so the threshold matches Flutter's end-of-drag UX.
-                            totalDragY += dragAmount.y
+                            dragOffsetY = (dragOffsetY + dragAmount.y).coerceIn(-280f, 400f)
                         }
                     },
             ) {
-                // Media Layer
-                if (activeStory.mediaType == StoryMediaType.Video && exoPlayer != null) {
-                    AndroidView(
-                        factory = { ctx ->
-                            PlayerView(ctx).apply {
-                                player = exoPlayer
-                                useController = false
-                                resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-                                layoutParams = FrameLayout.LayoutParams(
-                                    ViewGroup.LayoutParams.MATCH_PARENT,
-                                    ViewGroup.LayoutParams.MATCH_PARENT,
-                                )
-                            }
+                // 9:16 Stage Media Layer (1:1 coordinate parity with StoryEditorScreen & StoryElementsOverlay)
+                StoryStage(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            translationY = dragOffsetY
+                            val s = (1f - (kotlin.math.abs(dragOffsetY) / 1400f)).coerceIn(0.72f, 1f)
+                            scaleX = s
+                            scaleY = s
                         },
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                } else {
-                    AsyncImage(
-                        model = activeStory.mediaUrl,
-                        contentDescription = "استوری",
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop,
-                    )
+                    cornerRadius = 16.dp,
+                ) { stage ->
+                    if (activeStory.mediaType == StoryMediaType.Video && exoPlayer != null) {
+                        val tScale = videoTransformElement?.scale ?: 1f
+                        val tRot = videoTransformElement?.rotation ?: 0f
+                        val tCx = videoTransformElement?.xNorm ?: 0.5f
+                        val tCy = videoTransformElement?.yNorm ?: 0.5f
+                        AndroidView(
+                            factory = { ctx ->
+                                PlayerView(ctx).apply {
+                                    player = exoPlayer
+                                    useController = false
+                                    resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                                    layoutParams = FrameLayout.LayoutParams(
+                                        ViewGroup.LayoutParams.MATCH_PARENT,
+                                        ViewGroup.LayoutParams.MATCH_PARENT,
+                                    )
+                                }
+                            },
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .graphicsLayer {
+                                    translationX = (tCx - 0.5f) * stage.width
+                                    translationY = (tCy - 0.5f) * stage.height
+                                    scaleX = tScale
+                                    scaleY = tScale
+                                    rotationZ = tRot
+                                },
+                        )
+                    } else {
+                        AsyncImage(
+                            model = activeStory.mediaUrl,
+                            contentDescription = "استوری",
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Fit,
+                            onSuccess = { isImageReady = true },
+                            onError = { isImageReady = true },
+                        )
+                    }
+
+                    if (isBuffering || (activeStory.mediaType != StoryMediaType.Video && !isImageReady)) {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            CircularProgressIndicator(
+                                color = Color.White.copy(alpha = 0.85f),
+                                modifier = Modifier.size(36.dp),
+                                strokeWidth = 3.dp,
+                            )
+                        }
+                    }
                 }
 
                 // Tap Areas for Next / Previous / Pause
                 Row(modifier = Modifier.fillMaxSize()) {
-                    // Right area in RTL = Previous
+                    // Right area in RTL = Previous (30% width)
                     Box(
                         modifier = Modifier
-                            .weight(1f)
+                            .weight(0.32f)
                             .fillMaxSize()
                             .pointerInput(Unit) {
                                 detectTapGestures(
@@ -354,17 +478,19 @@ fun StoryPlayerScreen(
                                         musicPlayer?.pause()
                                         tryAwaitRelease()
                                         isPaused = false
-                                        exoPlayer?.play()
-                                        musicPlayer?.play()
+                                        if (!isPlaybackPaused) {
+                                            exoPlayer?.play()
+                                            musicPlayer?.play()
+                                        }
                                     },
-                                    onTap = { goToPreviousStory() },
+                                    onTap = { updatedGoToPrevious() },
                                 )
                             },
                     )
-                    // Left area in RTL = Next
+                    // Left area in RTL = Next (70% width)
                     Box(
                         modifier = Modifier
-                            .weight(1f)
+                            .weight(0.68f)
                             .fillMaxSize()
                             .pointerInput(Unit) {
                                 detectTapGestures(
@@ -374,10 +500,12 @@ fun StoryPlayerScreen(
                                         musicPlayer?.pause()
                                         tryAwaitRelease()
                                         isPaused = false
-                                        exoPlayer?.play()
-                                        musicPlayer?.play()
+                                        if (!isPlaybackPaused) {
+                                            exoPlayer?.play()
+                                            musicPlayer?.play()
+                                        }
                                     },
-                                    onTap = { goToNextStory() },
+                                    onTap = { updatedGoToNext() },
                                 )
                             },
                     )
@@ -416,10 +544,12 @@ fun StoryPlayerScreen(
                         },
                         onLinkClick = onOpenLink,
                         onMentionClick = onOpenProfile,
-                        onHashtagClick = { tag ->
-                            coroutineScope.launch {
-                                snackbarHostState.showSnackbar("#$tag")
-                            }
+                        onHashtagClick = onOpenHashtag,
+                        onReactionClick = { emoji ->
+                            viewModel.reactToStory(activeStory.id, emoji)
+                        },
+                        onDialogVisibilityChanged = { visible ->
+                            isQuestionDialogOpen = visible
                         },
                     )
                 }
@@ -542,6 +672,13 @@ fun StoryPlayerScreen(
                             }
 
                             Row(verticalAlignment = Alignment.CenterVertically) {
+                                IconButton(onClick = { isMuted = !isMuted }) {
+                                    Icon(
+                                        imageVector = if (isMuted) Icons.Default.VolumeOff else Icons.Default.VolumeUp,
+                                        contentDescription = if (isMuted) "صدادار کردن" else "بی‌صدا کردن",
+                                        tint = Color.White,
+                                    )
+                                }
                                 IconButton(onClick = { showOptionsSheet = true }) {
                                     Icon(
                                         imageVector = Icons.Default.MoreVert,
@@ -712,7 +849,11 @@ fun StoryPlayerScreen(
                                     onClick = {
                                         isLiked = !isLiked
                                         coroutineScope.launch {
-                                            repository.reactToStory(activeStory.id, if (isLiked) "heart" else "unlike")
+                                            if (isLiked) {
+                                                repository.reactToStory(activeStory.id, "heart")
+                                            } else {
+                                                repository.removeReaction(activeStory.id)
+                                            }
                                         }
                                     },
                                     modifier = Modifier
@@ -813,9 +954,10 @@ fun StoryPlayerScreen(
                                                 verticalAlignment = Alignment.CenterVertically,
                                                 modifier = Modifier.fillMaxWidth(),
                                             ) {
-                                                if (!item.profile?.avatarUrl.isNullOrBlank()) {
+                                                val avatarUrl = item.resolvedAvatarUrl
+                                                if (!avatarUrl.isNullOrBlank()) {
                                                     AsyncImage(
-                                                        model = item.profile?.avatarUrl,
+                                                        model = avatarUrl,
                                                         contentDescription = null,
                                                         modifier = Modifier
                                                             .size(28.dp)
@@ -825,7 +967,7 @@ fun StoryPlayerScreen(
                                                     Spacer(modifier = Modifier.width(8.dp))
                                                 }
                                                 Text(
-                                                    text = item.profile?.username?.let { "@$it" } ?: "کاربر ناشناس",
+                                                    text = item.resolvedUsername?.let { "@$it" } ?: "کاربر ناشناس",
                                                     color = Color.White,
                                                     fontSize = 13.sp,
                                                     fontWeight = FontWeight.Bold,

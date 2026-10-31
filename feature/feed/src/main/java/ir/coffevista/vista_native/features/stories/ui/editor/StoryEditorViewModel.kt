@@ -10,7 +10,9 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import ir.coffevista.vista_native.core.model.session.AuthenticationState
 import ir.coffevista.vista_native.core.model.session.AuthenticationStateProvider
 import ir.coffevista.vista_native.features.feed.data.PostMediaUploadGateway
+import ir.coffevista.vista_native.features.stories.data.StoryDynamicContextService
 import ir.coffevista.vista_native.features.stories.data.StoryRepository
+import ir.coffevista.vista_native.features.stories.data.StorySecurityGuard
 import ir.coffevista.vista_native.features.stories.domain.CreateStoryRequestDto
 import ir.coffevista.vista_native.features.stories.domain.StoryDurationType
 import ir.coffevista.vista_native.features.stories.domain.StoryElement
@@ -41,9 +43,11 @@ import ir.coffevista.vista_native.features.stories.domain.StoryMusic
 import ir.coffevista.vista_native.features.stories.ui.canvas.StoryTransform
 import ir.coffevista.vista_native.features.stories.ui.canvas.withTransform
 import ir.coffevista.vista_native.features.stories.ui.render.StoryDrawingCodec
+import ir.coffevista.vista_native.features.stories.ui.render.StoryRasterizer
 import ir.coffevista.vista_native.features.stories.ui.render.StoryStroke
 import ir.coffevista.vista_native.features.stories.ui.render.StoryTextSpec
 import ir.coffevista.vista_native.features.stories.ui.render.applyTo
+import androidx.core.content.FileProvider
 
 internal object StoryVideoUploadPolicy {
     const val MaxBytes: Long = 100L * 1024 * 1024
@@ -60,11 +64,26 @@ internal object StoryVideoUploadPolicy {
     }
 }
 
+internal data class StoryCanvasHistorySnapshot(
+    val elements: List<StoryElement>,
+    val mediaTransform: StoryTransform,
+    val musicTrack: MusicTrack? = null,
+    val musicStartMs: Int = 0,
+    val musicEndMs: Int = 0,
+    val saveMusicToLibrary: Boolean = false,
+)
+
 data class StoryEditorUiState(
     val mediaUri: Uri? = null,
     val isVideo: Boolean = false,
+    val mediaTransform: StoryTransform = StoryTransform(cx = 0.5f, cy = 0.5f, scale = 1f, rotation = 0f),
     val elements: List<StoryElement> = emptyList(),
+    val canUndo: Boolean = false,
+    val canRedo: Boolean = false,
     val musicTrack: MusicTrack? = null,
+    val musicStartMs: Int = 0,
+    val musicEndMs: Int = 0,
+    val saveMusicToLibrary: Boolean = false,
     val durationType: StoryDurationType = StoryDurationType.Hours24,
     val privacyType: StoryPrivacyType = StoryPrivacyType.Everyone,
     val closeFriendCandidates: List<StoryUser> = emptyList(),
@@ -84,6 +103,7 @@ data class StoryEditorUiState(
 class StoryEditorViewModel @Inject constructor(
     private val repository: StoryRepository,
     val musicRepository: MusicRepository,
+    val contextService: StoryDynamicContextService,
     private val uploader: PostMediaUploadGateway,
     private val authStateProvider: AuthenticationStateProvider,
     @ApplicationContext private val context: Context,
@@ -92,16 +112,110 @@ class StoryEditorViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(StoryEditorUiState())
     val uiState: StateFlow<StoryEditorUiState> = _uiState.asStateFlow()
 
+    // Transactional UndoStore stacks (lightweight structural references, zero bitmap duplication)
+    private val undoStack = ArrayDeque<StoryCanvasHistorySnapshot>()
+    private val redoStack = ArrayDeque<StoryCanvasHistorySnapshot>()
+
     private val currentUserId: String
         get() = (authStateProvider.state.value as? AuthenticationState.SignedIn)?.context?.userId.orEmpty()
 
+    val signedInUserId: String
+        get() = currentUserId
+
+    private fun snapshotOf(state: StoryEditorUiState) = StoryCanvasHistorySnapshot(
+        elements = state.elements,
+        mediaTransform = state.mediaTransform,
+        musicTrack = state.musicTrack,
+        musicStartMs = state.musicStartMs,
+        musicEndMs = state.musicEndMs,
+        saveMusicToLibrary = state.saveMusicToLibrary,
+    )
+
+    private fun pushHistoryBeforeMutation(current: StoryEditorUiState) {
+        val snapshot = snapshotOf(current)
+        if (undoStack.lastOrNull() != snapshot) {
+            undoStack.addLast(snapshot)
+            if (undoStack.size > 60) undoStack.removeFirst()
+        }
+        redoStack.clear()
+    }
+
+    private fun mutateCanvas(block: (StoryEditorUiState) -> StoryEditorUiState) {
+        _uiState.update { current ->
+            val next = block(current)
+            if (snapshotOf(next) == snapshotOf(current)) {
+                return@update next
+            }
+            pushHistoryBeforeMutation(current)
+            next.copy(
+                canUndo = undoStack.isNotEmpty(),
+                canRedo = redoStack.isNotEmpty(),
+            )
+        }
+    }
+
+    fun undo() {
+        val prev = undoStack.removeLastOrNull() ?: return
+        _uiState.update { current ->
+            redoStack.addLast(snapshotOf(current))
+            current.copy(
+                elements = prev.elements,
+                mediaTransform = prev.mediaTransform,
+                musicTrack = prev.musicTrack,
+                musicStartMs = prev.musicStartMs,
+                musicEndMs = prev.musicEndMs,
+                saveMusicToLibrary = prev.saveMusicToLibrary,
+                canUndo = undoStack.isNotEmpty(),
+                canRedo = redoStack.isNotEmpty(),
+            )
+        }
+    }
+
+    fun redo() {
+        val next = redoStack.removeLastOrNull() ?: return
+        _uiState.update { current ->
+            undoStack.addLast(snapshotOf(current))
+            current.copy(
+                elements = next.elements,
+                mediaTransform = next.mediaTransform,
+                musicTrack = next.musicTrack,
+                musicStartMs = next.musicStartMs,
+                musicEndMs = next.musicEndMs,
+                saveMusicToLibrary = next.saveMusicToLibrary,
+                canUndo = undoStack.isNotEmpty(),
+                canRedo = redoStack.isNotEmpty(),
+            )
+        }
+    }
+
     fun onMediaSelected(uri: Uri, isVideo: Boolean = false) {
+        if (!StorySecurityGuard.isSafeReadableMediaUri(context, uri)) {
+            _uiState.update { it.copy(errorMessage = "دسترسی به این فایل مجاز نیست") }
+            return
+        }
+        undoStack.clear()
+        redoStack.clear()
         _uiState.update {
             it.copy(
                 mediaUri = uri,
                 isVideo = isVideo,
+                mediaTransform = StoryTransform(cx = 0.5f, cy = 0.5f, scale = 1f, rotation = 0f),
+                canUndo = false,
+                canRedo = false,
                 errorMessage = null,
             )
+        }
+    }
+
+    internal fun updateMediaTransform(transform: StoryTransform) {
+        mutateCanvas { state ->
+            state.copy(mediaTransform = transform)
+        }
+    }
+
+    fun resetMediaTransform() {
+        mutateCanvas { state ->
+            state.copy(mediaTransform = StoryTransform(cx = 0.5f, cy = 0.5f, scale = 1f, rotation = 0f))
         }
     }
 
@@ -115,10 +229,10 @@ class StoryEditorViewModel @Inject constructor(
             backgroundColor = bgHex,
             y = 0f,
         )
-        _uiState.update { it.copy(elements = it.elements + element) }
+        mutateCanvas { it.copy(elements = it.elements + element) }
     }
 
-    fun addPollElement(question: String, option1: String, option2: String) {
+    fun addPollElement(question: String, option1: String, option2: String, variant: Int = 0) {
         if (question.isBlank() || option1.isBlank() || option2.isBlank()) return
         val poll = StoryPoll(
             id = UUID.randomUUID().toString(),
@@ -132,45 +246,84 @@ class StoryEditorViewModel @Inject constructor(
             id = UUID.randomUUID().toString(),
             type = "poll",
             poll = poll,
+            schema = 2,
+            xNorm = 0.5f,
+            yNorm = 0.48f,
+            variant = variant,
         )
-        _uiState.update { it.copy(elements = it.elements + element) }
+        mutateCanvas { it.copy(elements = it.elements + element) }
     }
 
-    fun addLocationElement(name: String) {
+    fun addLocationElement(
+        name: String,
+        latitude: Double? = null,
+        longitude: Double? = null,
+        address: String? = null,
+        variant: Int = 1,
+    ) {
         if (name.isBlank()) return
         val element = StoryElement(
             id = UUID.randomUUID().toString(),
             type = "location",
-            location = StoryLocation(name = name),
+            location = StoryLocation(
+                name = name.trim(),
+                latitude = latitude,
+                longitude = longitude,
+                address = address?.trim()?.takeIf { it.isNotBlank() },
+            ),
             y = -0.3f,
+            schema = 2,
+            xNorm = 0.5f,
+            yNorm = 0.32f,
+            variant = variant,
         )
-        _uiState.update { it.copy(elements = it.elements + element) }
+        mutateCanvas { it.copy(elements = it.elements + element) }
     }
 
-    fun addLinkElement(url: String, title: String?) {
-        if (url.isBlank()) return
+    fun addLinkElement(url: String, title: String?, variant: Int = 0): Boolean {
+        val normalizedUrl = StorySecurityGuard.normalizeSafeHttpUrl(url)
+        if (normalizedUrl == null) {
+            _uiState.update { it.copy(errorMessage = "نشانی وب وارد شده معتبر نیست") }
+            return false
+        }
         val element = StoryElement(
             id = UUID.randomUUID().toString(),
             type = "link",
-            link = StoryLink(url = url, title = title),
+            link = StoryLink(url = normalizedUrl, title = title?.trim()?.takeIf { it.isNotBlank() }),
             y = 0.3f,
+            schema = 2,
+            xNorm = 0.5f,
+            yNorm = 0.65f,
+            variant = variant,
         )
-        _uiState.update { it.copy(elements = it.elements + element) }
+        mutateCanvas { it.copy(elements = it.elements + element, errorMessage = null) }
+        return true
     }
 
-    fun addMentionElement(username: String) {
+    fun addMentionElement(username: String, userId: String? = null, variant: Int = 1) {
         if (username.isBlank()) return
-        val clean = username.removePrefix("@")
+        val clean = username.removePrefix("@").trim()
+        if (clean.isBlank()) return
+        val resolvedUserId = userId?.trim()?.takeIf { it.isNotBlank() } ?: clean
         val element = StoryElement(
             id = UUID.randomUUID().toString(),
             type = "mention",
-            mention = StoryMention(userId = clean, username = clean),
+            mention = StoryMention(userId = resolvedUserId, username = clean),
             y = -0.2f,
+            schema = 2,
+            xNorm = 0.5f,
+            yNorm = 0.38f,
+            variant = variant,
         )
-        _uiState.update { it.copy(elements = it.elements + element) }
+        mutateCanvas { it.copy(elements = it.elements + element) }
     }
 
-    fun addMusicElement(track: MusicTrack) {
+    fun addMusicElement(
+        track: MusicTrack,
+        startMs: Int = 0,
+        endMs: Int = 0,
+        saveToLibrary: Boolean = false,
+    ) {
         val element = StoryElement(
             id = UUID.randomUUID().toString(),
             type = "music",
@@ -179,45 +332,86 @@ class StoryEditorViewModel @Inject constructor(
                 title = track.title,
                 artist = track.artist,
                 coverUrl = track.coverUrl,
+                startMs = startMs.coerceAtLeast(0),
+                endMs = endMs.coerceAtLeast(0),
             ),
             y = 0.35f,
+            schema = 2,
+            xNorm = 0.5f,
+            yNorm = 0.72f,
+            variant = 1,
         )
-        _uiState.update {
+        mutateCanvas {
             it.copy(
                 musicTrack = track,
+                musicStartMs = startMs.coerceAtLeast(0),
+                musicEndMs = endMs.coerceAtLeast(0),
+                saveMusicToLibrary = saveToLibrary,
                 elements = it.elements.filterNot { el -> el.type == "music" } + element,
             )
         }
     }
 
-    fun addQuestionElement(question: String) {
+    fun onMusicConfigured(result: SelectedStoryMusicResult) {
+        addMusicElement(
+            track = result.track,
+            startMs = result.startMs,
+            endMs = result.endMs,
+            saveToLibrary = result.saveToVistaLibrary,
+        )
+    }
+
+    fun addQuestionElement(question: String, variant: Int = 0) {
         val element = StoryElement(
             id = UUID.randomUUID().toString(),
             type = "question",
             content = question.ifBlank { "از من بپرسید" },
             y = 0f,
+            schema = 2,
+            xNorm = 0.5f,
+            yNorm = 0.5f,
+            variant = variant,
         )
-        _uiState.update { it.copy(elements = it.elements + element) }
+        mutateCanvas { it.copy(elements = it.elements + element) }
     }
 
-    fun addCountdownElement(title: String, targetTimestampMs: Long) {
+    fun addCountdownElement(title: String, targetTimestampMs: Long, variant: Int = 1) {
         val element = StoryElement(
             id = UUID.randomUUID().toString(),
             type = "countdown",
             content = "$title|$targetTimestampMs",
             y = -0.1f,
+            schema = 2,
+            xNorm = 0.5f,
+            yNorm = 0.42f,
+            variant = variant,
         )
-        _uiState.update { it.copy(elements = it.elements + element) }
+        mutateCanvas { it.copy(elements = it.elements + element) }
     }
 
-    fun addWeatherElement(city: String, temperature: String) {
+    fun addWeatherElement(
+        city: String,
+        temperature: String,
+        conditionEmoji: String? = null,
+        variant: Int = 1,
+    ) {
+        val cleanEmoji = conditionEmoji?.trim().orEmpty()
+        val encodedContent = if (cleanEmoji.isNotBlank()) {
+            "${city.trim()}|${temperature.trim()}|$cleanEmoji"
+        } else {
+            "${city.trim()}|${temperature.trim()}"
+        }
         val element = StoryElement(
             id = UUID.randomUUID().toString(),
             type = "weather",
-            content = "$city|$temperature",
+            content = encodedContent,
             y = -0.25f,
+            schema = 2,
+            xNorm = 0.5f,
+            yNorm = 0.28f,
+            variant = variant,
         )
-        _uiState.update { it.copy(elements = it.elements + element) }
+        mutateCanvas { it.copy(elements = it.elements + element) }
     }
 
     fun addDateElement(dateText: String) {
@@ -226,11 +420,15 @@ class StoryEditorViewModel @Inject constructor(
             type = "date",
             content = dateText,
             y = -0.3f,
+            schema = 2,
+            xNorm = 0.5f,
+            yNorm = 0.25f,
+            variant = 1,
         )
-        _uiState.update { it.copy(elements = it.elements + element) }
+        mutateCanvas { it.copy(elements = it.elements + element) }
     }
 
-    fun addHashtagElement(tag: String) {
+    fun addHashtagElement(tag: String, variant: Int = 2) {
         val clean = tag.trim().removePrefix("#")
         if (clean.isBlank()) return
         val element = StoryElement(
@@ -238,19 +436,85 @@ class StoryEditorViewModel @Inject constructor(
             type = "hashtag",
             content = clean,
             y = 0.1f,
+            schema = 2,
+            xNorm = 0.5f,
+            yNorm = 0.55f,
+            variant = variant,
         )
-        _uiState.update { it.copy(elements = it.elements + element) }
+        mutateCanvas { it.copy(elements = it.elements + element) }
     }
 
-    fun addGifElement(gifUrl: String) {
-        if (gifUrl.isBlank()) return
+    fun addGifElement(gifUrl: String): Boolean {
+        val safeUrl = StorySecurityGuard.normalizeSafeHttpUrl(gifUrl)
+        if (safeUrl == null) {
+            _uiState.update { it.copy(errorMessage = "نشانی تصویر متحرک معتبر نیست") }
+            return false
+        }
         val element = StoryElement(
             id = UUID.randomUUID().toString(),
             type = "gif",
-            content = gifUrl.trim(),
+            content = safeUrl,
             y = 0f,
+            schema = 2,
+            xNorm = 0.5f,
+            yNorm = 0.5f,
         )
-        _uiState.update { it.copy(elements = it.elements + element) }
+        mutateCanvas { it.copy(elements = it.elements + element, errorMessage = null) }
+        return true
+    }
+
+    fun addReactionElement(emoji: String = "❤️") {
+        val element = StoryElement(
+            id = UUID.randomUUID().toString(),
+            type = "reaction",
+            content = emoji.ifBlank { "❤️" },
+            schema = 2,
+            xNorm = 0.5f,
+            yNorm = 0.58f,
+            variant = 0,
+        )
+        mutateCanvas { it.copy(elements = it.elements + element) }
+    }
+
+    fun updateReactionEmoji(id: String, emoji: String) {
+        mutateCanvas { state ->
+            state.copy(
+                elements = state.elements.map { el ->
+                    if (el.id == id && el.type == "reaction") el.copy(content = emoji) else el
+                },
+            )
+        }
+    }
+
+    fun addPhotoCutoutElement(photoUri: Uri) {
+        if (!StorySecurityGuard.isSafeReadableMediaUri(context, photoUri)) {
+            _uiState.update { it.copy(errorMessage = "دسترسی به این تصویر مجاز نیست") }
+            return
+        }
+        val element = StoryElement(
+            id = UUID.randomUUID().toString(),
+            type = "photo",
+            content = photoUri.toString(),
+            schema = 2,
+            xNorm = 0.5f,
+            yNorm = 0.5f,
+            variant = 0, // 0 = Squircle, 1 = Circle, 2 = Star, 3 = Heart
+        )
+        mutateCanvas { it.copy(elements = it.elements + element) }
+    }
+
+    fun addEmojiStickerElement(emoji: String) {
+        if (emoji.isBlank()) return
+        val element = StoryElement(
+            id = UUID.randomUUID().toString(),
+            type = "emoji",
+            content = emoji,
+            schema = 2,
+            xNorm = 0.5f,
+            yNorm = 0.48f,
+            variant = 0,
+        )
+        mutateCanvas { it.copy(elements = it.elements + element) }
     }
 
     fun addDrawingElement(drawingJson: String) {
@@ -260,7 +524,7 @@ class StoryEditorViewModel @Inject constructor(
             type = "drawing",
             content = drawingJson,
         )
-        _uiState.update { it.copy(elements = it.elements + element) }
+        mutateCanvas { it.copy(elements = it.elements + element) }
     }
 
     internal fun addOrUpdateTextElement(spec: StoryTextSpec, existingId: String? = null) {
@@ -268,7 +532,7 @@ class StoryEditorViewModel @Inject constructor(
             if (existingId != null) removeElement(existingId)
             return
         }
-        _uiState.update { state ->
+        mutateCanvas { state ->
             val existing = if (existingId != null) state.elements.firstOrNull { it.id == existingId } else null
             if (existing != null) {
                 state.copy(
@@ -289,7 +553,7 @@ class StoryEditorViewModel @Inject constructor(
     }
 
     internal fun updateElementTransform(id: String, transform: StoryTransform) {
-        _uiState.update { state ->
+        mutateCanvas { state ->
             state.copy(
                 elements = state.elements.map { el ->
                     if (el.id == id) el.withTransform(transform) else el
@@ -307,10 +571,10 @@ class StoryEditorViewModel @Inject constructor(
     }
 
     fun cycleWidgetVariant(id: String) {
-        _uiState.update { state ->
+        mutateCanvas { state ->
             state.copy(
                 elements = state.elements.map { el ->
-                    if (el.id == id) el.copy(variant = (el.variant + 1) % 4) else el
+                    if (el.id == id) el.copy(schema = 2, variant = (el.variant + 1) % 4) else el
                 },
             )
         }
@@ -318,7 +582,7 @@ class StoryEditorViewModel @Inject constructor(
 
     internal fun setDrawingStrokes(strokes: List<StoryStroke>) {
         val encoded = if (strokes.isNotEmpty()) StoryDrawingCodec.encode(strokes) else ""
-        _uiState.update { state ->
+        mutateCanvas { state ->
             val withoutDrawing = state.elements.filterNot { it.type == "drawing" }
             if (encoded.isBlank()) {
                 state.copy(elements = withoutDrawing)
@@ -335,7 +599,7 @@ class StoryEditorViewModel @Inject constructor(
     }
 
     fun updateElementPosition(id: String, deltaX: Float, deltaY: Float) {
-        _uiState.update { state ->
+        mutateCanvas { state ->
             state.copy(
                 elements = state.elements.map { el ->
                     if (el.id == id) el.copy(x = (el.x + deltaX).coerceIn(-1.5f, 1.5f), y = (el.y + deltaY).coerceIn(-1.5f, 1.5f))
@@ -346,7 +610,21 @@ class StoryEditorViewModel @Inject constructor(
     }
 
     fun removeElement(id: String) {
-        _uiState.update { it.copy(elements = it.elements.filterNot { el -> el.id == id }) }
+        mutateCanvas { state ->
+            val removed = state.elements.firstOrNull { it.id == id }
+            val nextElements = state.elements.filterNot { el -> el.id == id }
+            if (removed?.type == "music") {
+                state.copy(
+                    elements = nextElements,
+                    musicTrack = null,
+                    musicStartMs = 0,
+                    musicEndMs = 0,
+                    saveMusicToLibrary = false,
+                )
+            } else {
+                state.copy(elements = nextElements)
+            }
+        }
     }
 
     fun setDuration(duration: StoryDurationType) {
@@ -355,6 +633,9 @@ class StoryEditorViewModel @Inject constructor(
 
     fun setPrivacy(privacy: StoryPrivacyType) {
         _uiState.update { it.copy(privacyType = privacy) }
+        if (privacy == StoryPrivacyType.CloseFriends && _uiState.value.closeFriendCandidates.isEmpty()) {
+            loadCloseFriends()
+        }
     }
 
     fun loadCloseFriends() {
@@ -420,25 +701,176 @@ class StoryEditorViewModel @Inject constructor(
             }
 
             try {
-                // 1. Upload Media
-                val uploadResult = if (state.isVideo) {
-                    _uiState.update { it.copy(uploadStatus = "در حال آپلود ویدیو…") }
-                    uploadStoryVideo(userId, uri) { p ->
-                        _uiState.update { it.copy(uploadProgress = 0.1f + p * 0.7f) }
+                // 1. Upload any local device music track (plus embedded cover art) so all viewers hear it
+                var uploadedMusicRemoteUrl: String? = null
+                var uploadedMusicCoverUrl: String? = null
+                var effectiveMusicStartMs = state.musicStartMs
+                var effectiveMusicEndMs = state.musicEndMs
+
+                val activeMusicElem = state.elements.firstOrNull { it.type == "music" }?.music
+                val rawMusicUrl = state.musicTrack?.musicUrl ?: activeMusicElem?.musicUrl
+                val rawMusicTitle = state.musicTrack?.title ?: activeMusicElem?.title ?: "موزیک"
+                val rawMusicArtist = state.musicTrack?.artist ?: activeMusicElem?.artist ?: "موزیک انتخابی"
+                val rawMusicCover = state.musicTrack?.coverUrl ?: activeMusicElem?.coverUrl
+
+                if (!rawMusicUrl.isNullOrBlank() &&
+                    (rawMusicUrl.startsWith("content://", ignoreCase = true) ||
+                        rawMusicUrl.startsWith("file://", ignoreCase = true))
+                ) {
+                    _uiState.update {
+                        it.copy(
+                            uploadProgress = 0.12f,
+                            uploadStatus = "در حال پردازش و آپلود موزیک انتخابی…",
+                        )
                     }
-                } else {
-                    _uiState.update { it.copy(uploadStatus = "در حال آپلود تصویر…") }
-                    uploader.uploadImage(userId, uri) { p ->
-                        _uiState.update { it.copy(uploadProgress = 0.1f + p * 0.7f) }
+                    if (!rawMusicCover.isNullOrBlank() &&
+                        (rawMusicCover.startsWith("content://", ignoreCase = true) ||
+                            rawMusicCover.startsWith("file://", ignoreCase = true))
+                    ) {
+                        uploadedMusicCoverUrl = runCatching {
+                            uploader.uploadImage(userId, Uri.parse(rawMusicCover)).url
+                        }.getOrNull()
+                    }
+                    val audioUploaded = uploader.uploadAudio(
+                        userId = userId,
+                        uri = Uri.parse(rawMusicUrl),
+                        maxBytes = 30L * 1024 * 1024,
+                        startMs = state.musicStartMs,
+                        endMs = state.musicEndMs,
+                    ) { p ->
+                        _uiState.update { it.copy(uploadProgress = 0.12f + p * 0.25f) }
+                    }
+                    uploadedMusicRemoteUrl = audioUploaded.url
+                    if (audioUploaded.wasTrimmed) {
+                        effectiveMusicStartMs = 0
+                        effectiveMusicEndMs = 0
+                    }
+                    if (state.saveMusicToLibrary) {
+                        runCatching {
+                            musicRepository.publishMusic(
+                                title = rawMusicTitle,
+                                artist = rawMusicArtist,
+                                musicUrl = audioUploaded.url,
+                                coverUrl = uploadedMusicCoverUrl,
+                            )
+                        }
                     }
                 }
 
-                // 2. Create Story via API
+                // 2. Upload any local photo-cutout stickers & bind uploaded music CDN URLs
+                val uploadedElements = state.elements.map { element ->
+                    when (element.type) {
+                        "photo" -> {
+                            val rawUriStr = element.content.orEmpty()
+                            if (rawUriStr.startsWith("content://", ignoreCase = true) ||
+                                rawUriStr.startsWith("file://", ignoreCase = true)
+                            ) {
+                                _uiState.update { it.copy(uploadStatus = "در حال آپلود برش تصویر…") }
+                                val cutoutUploaded = uploader.uploadImage(userId, Uri.parse(rawUriStr))
+                                element.copy(content = cutoutUploaded.url)
+                            } else {
+                                element
+                            }
+                        }
+                        "music" -> {
+                            val currentMusic = element.music
+                            if (currentMusic != null && uploadedMusicRemoteUrl != null) {
+                                element.copy(
+                                    music = currentMusic.copy(
+                                        musicUrl = uploadedMusicRemoteUrl,
+                                        coverUrl = uploadedMusicCoverUrl ?: currentMusic.coverUrl?.takeIf {
+                                            it.startsWith("http://", ignoreCase = true) ||
+                                                it.startsWith("https://", ignoreCase = true)
+                                        },
+                                        startMs = effectiveMusicStartMs,
+                                        endMs = effectiveMusicEndMs,
+                                    ),
+                                )
+                            } else {
+                                element
+                            }
+                        }
+                        else -> element
+                    }
+                }
+
+                // 3. Upload Primary Media (for images, export 9:16 base canvas with dominant gradient + mediaTransform)
+                val baseProgressOffset = if (uploadedMusicRemoteUrl != null) 0.40f else 0.15f
+                val baseProgressSpan = if (uploadedMusicRemoteUrl != null) 0.48f else 0.65f
+                val uploadResult = if (state.isVideo) {
+                    _uiState.update { it.copy(uploadStatus = "در حال آپلود ویدیو…") }
+                    uploadStoryVideo(userId, uri) { p ->
+                        _uiState.update { it.copy(uploadProgress = baseProgressOffset + p * baseProgressSpan) }
+                    }
+                } else {
+                    _uiState.update { it.copy(uploadStatus = "در حال پردازش و آپلود تصویر…") }
+                    val exportDir = File(context.cacheDir, "camera").apply { mkdirs() }
+                    val tempBaseFile = File(exportDir, "story_export_${System.currentTimeMillis()}.jpg")
+                    try {
+                        val exported = runCatching {
+                            StoryRasterizer.exportBaseCanvasToFile(
+                                context = context,
+                                mediaUri = uri,
+                                mediaTransform = state.mediaTransform,
+                                outputFile = tempBaseFile,
+                            )
+                        }.getOrNull()
+                        val effectiveUri = if (exported != null && exported.exists() && exported.length() > 0L) {
+                            FileProvider.getUriForFile(
+                                context,
+                                "${context.packageName}.files",
+                                exported,
+                            )
+                        } else {
+                            uri
+                        }
+                        uploader.uploadImage(userId, effectiveUri) { p ->
+                            _uiState.update { it.copy(uploadProgress = baseProgressOffset + p * baseProgressSpan) }
+                        }
+                    } finally {
+                        tempBaseFile.delete()
+                    }
+                }
+
+                // 4. Create Story via API
                 _uiState.update {
                     it.copy(
-                        uploadProgress = 0.9f,
+                        uploadProgress = 0.92f,
                         uploadStatus = "در حال انتشار استوری…",
                     )
+                }
+
+                val resolvedMusicUrl = uploadedMusicRemoteUrl
+                    ?: uploadedElements.firstOrNull { it.type == "music" }?.music?.musicUrl
+                    ?: state.musicTrack?.musicUrl?.takeIf {
+                        it.startsWith("http://", ignoreCase = true) ||
+                            it.startsWith("https://", ignoreCase = true)
+                    }
+                val resolvedMusicTitle = state.musicTrack?.let { "${it.title} — ${it.artist}" }
+                    ?: uploadedElements.firstOrNull { it.type == "music" }?.music?.let { "${it.title} — ${it.artist}" }
+
+                val finalInteractiveElements = if (state.isVideo) {
+                    val t = state.mediaTransform
+                    val hasVideoTransform = kotlin.math.abs(t.cx - 0.5f) > 0.004f ||
+                        kotlin.math.abs(t.cy - 0.5f) > 0.004f ||
+                        kotlin.math.abs(t.scale - 1f) > 0.008f ||
+                        kotlin.math.abs(t.rotation) > 0.15f
+                    val base = uploadedElements.filterNot { it.type == "media_transform" }
+                    if (hasVideoTransform) {
+                        base + StoryElement(
+                            id = "__media_transform__",
+                            type = "media_transform",
+                            schema = 2,
+                            xNorm = t.cx,
+                            yNorm = t.cy,
+                            scale = t.scale,
+                            rotation = t.rotation,
+                        )
+                    } else {
+                        base
+                    }
+                } else {
+                    uploadedElements.filterNot { it.type == "media_transform" }
                 }
 
                 val createReq = CreateStoryRequestDto(
@@ -453,8 +885,9 @@ class StoryEditorViewModel @Inject constructor(
                         else -> "everyone"
                     },
                     allowedUserIds = state.selectedCloseFriendIds.toList(),
-                    interactiveElements = state.elements,
-                    musicUrl = state.musicTrack?.musicUrl ?: state.elements.firstOrNull { it.type == "music" }?.music?.musicUrl,
+                    interactiveElements = finalInteractiveElements,
+                    musicUrl = resolvedMusicUrl,
+                    musicTitle = resolvedMusicTitle,
                 )
 
                 val result = repository.createStory(createReq)

@@ -262,6 +262,11 @@ private class FakeSearchApi : SearchApi {
         limit: Int,
         days: Int,
     ): Response<HashtagResponseDto> = Response.success(trendingResponse)
+
+    override suspend fun getExploreGrid(
+        limit: Int,
+        offset: Int,
+    ): Response<SearchPostsResponseDto> = Response.success(postsResponse)
 }
 
 private class FakeHistoryDao : SearchHistoryDao {

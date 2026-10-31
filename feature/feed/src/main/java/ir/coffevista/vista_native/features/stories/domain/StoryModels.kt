@@ -55,6 +55,7 @@ data class StoryLocation(
     val name: String,
     val latitude: Double? = null,
     val longitude: Double? = null,
+    val address: String? = null,
 )
 
 @Serializable
@@ -69,6 +70,8 @@ data class StoryMusic(
     val title: String,
     val artist: String,
     @SerialName("cover_url") val coverUrl: String? = null,
+    @SerialName("start_ms") val startMs: Int = 0,
+    @SerialName("end_ms") val endMs: Int = 0,
 )
 
 @Serializable
@@ -221,6 +224,7 @@ data class CreateStoryRequestDto(
     @SerialName("excluded_user_ids") val excludedUserIds: List<String> = emptyList(),
     @SerialName("interactive_elements") val interactiveElements: List<StoryElement> = emptyList(),
     @SerialName("music_url") val musicUrl: String? = null,
+    @SerialName("music_title") val musicTitle: String? = null,
 )
 
 @Serializable
@@ -269,10 +273,18 @@ data class StoryQuestionAnswerDto(
     val id: String = "",
     @SerialName("story_id") val storyId: String = "",
     @SerialName("user_id") val userId: String = "",
+    @SerialName("answerer_id") val answererId: String = "",
+    @SerialName("answerer_username") val answererUsername: String? = null,
+    @SerialName("answerer_avatar_url") val answererAvatarUrl: String? = null,
+    @SerialName("answerer_is_verified") val answererIsVerified: Boolean = false,
     val answer: String = "",
     @SerialName("created_at") val createdAt: String = "",
     val profile: StoryViewProfileDto? = null,
-)
+) {
+    val resolvedUserId: String get() = userId.ifBlank { answererId }
+    val resolvedUsername: String? get() = profile?.username?.ifBlank { null } ?: answererUsername?.ifBlank { null }
+    val resolvedAvatarUrl: String? get() = profile?.avatarUrl?.ifBlank { null } ?: answererAvatarUrl?.ifBlank { null }
+}
 
 @Serializable
 data class StoryQuestionAnswersResponseDto(
@@ -291,6 +303,7 @@ data class HighlightDto(
     val title: String,
     @SerialName("cover_url") val coverUrl: String? = null,
     @SerialName("story_ids") val storyIds: List<String> = emptyList(),
+    val stories: List<Story> = emptyList(),
     @SerialName("created_at") val createdAt: String? = null,
     @SerialName("updated_at") val updatedAt: String? = null,
 )
@@ -317,5 +330,33 @@ data class UserHighlightsResponseDto(
 @Serializable
 data class HighlightCountResponseDto(
     val count: Int = 0,
+)
+
+@Serializable
+data class StoryWeatherContextDto(
+    val city: String = "",
+    val country: String? = null,
+    val latitude: Double = 0.0,
+    val longitude: Double = 0.0,
+    @SerialName("temp_c") val tempC: Int = 24,
+    @SerialName("feels_like_c") val feelsLikeC: Int = 24,
+    @SerialName("weather_code") val weatherCode: Int = 0,
+    @SerialName("is_day") val isDay: Boolean = true,
+    @SerialName("condition_text") val conditionText: String = "آفتابی",
+    @SerialName("condition_icon") val conditionIcon: String = "☀️",
+)
+
+@Serializable
+data class StoryPlaceDto(
+    val name: String = "",
+    val subtitle: String? = null,
+    val latitude: Double = 0.0,
+    val longitude: Double = 0.0,
+    val category: String? = null,
+)
+
+@Serializable
+data class StoryPlacesResponseDto(
+    val places: List<StoryPlaceDto> = emptyList(),
 )
 

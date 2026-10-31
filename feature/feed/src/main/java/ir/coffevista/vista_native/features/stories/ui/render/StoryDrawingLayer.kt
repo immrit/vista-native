@@ -37,10 +37,17 @@ internal fun DrawScope.drawStoryStroke(stroke: StoryStroke) {
     val (color, widthPx, blend, cap) = when (stroke.brush) {
         StoryBrush.Pen -> BrushSpec(base, stroke.width * unit, BlendMode.SrcOver, StrokeCap.Round)
         StoryBrush.Marker -> BrushSpec(base.copy(alpha = base.alpha * 0.5f), stroke.width * unit * 1.8f, BlendMode.SrcOver, StrokeCap.Square)
+        StoryBrush.Neon -> BrushSpec(base, stroke.width * unit, BlendMode.SrcOver, StrokeCap.Round)
         StoryBrush.Eraser -> BrushSpec(Color.Black, stroke.width * unit * 1.6f, BlendMode.Clear, StrokeCap.Round)
     }
     if (points.size == 1) {
-        drawCircle(color = color, radius = widthPx / 2f, center = points[0], blendMode = blend)
+        if (stroke.brush == StoryBrush.Neon) {
+            drawCircle(color = color.copy(alpha = 0.25f), radius = widthPx * 1.45f, center = points[0], blendMode = blend)
+            drawCircle(color = color.copy(alpha = 0.55f), radius = widthPx * 0.95f, center = points[0], blendMode = blend)
+            drawCircle(color = Color.White, radius = widthPx * 0.42f, center = points[0], blendMode = blend)
+        } else {
+            drawCircle(color = color, radius = widthPx / 2f, center = points[0], blendMode = blend)
+        }
         return
     }
     val path = Path().apply {
@@ -51,12 +58,34 @@ internal fun DrawScope.drawStoryStroke(stroke: StoryStroke) {
         }
         lineTo(points.last().x, points.last().y)
     }
-    drawPath(
-        path = path,
-        color = color,
-        style = Stroke(width = widthPx, cap = cap, join = StrokeJoin.Round),
-        blendMode = blend,
-    )
+    if (stroke.brush == StoryBrush.Neon) {
+        // Multi-pass Telegram neon glow shader: outer halo, mid glow, and bright white core
+        drawPath(
+            path = path,
+            color = color.copy(alpha = 0.22f),
+            style = Stroke(width = widthPx * 2.6f, cap = cap, join = StrokeJoin.Round),
+            blendMode = blend,
+        )
+        drawPath(
+            path = path,
+            color = color.copy(alpha = 0.55f),
+            style = Stroke(width = widthPx * 1.55f, cap = cap, join = StrokeJoin.Round),
+            blendMode = blend,
+        )
+        drawPath(
+            path = path,
+            color = Color.White.copy(alpha = 0.95f),
+            style = Stroke(width = widthPx * 0.58f, cap = cap, join = StrokeJoin.Round),
+            blendMode = blend,
+        )
+    } else {
+        drawPath(
+            path = path,
+            color = color,
+            style = Stroke(width = widthPx, cap = cap, join = StrokeJoin.Round),
+            blendMode = blend,
+        )
+    }
 }
 
 private data class BrushSpec(val color: Color, val width: Float, val blend: BlendMode, val cap: StrokeCap)

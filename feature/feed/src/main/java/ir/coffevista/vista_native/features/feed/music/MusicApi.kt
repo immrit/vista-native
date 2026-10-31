@@ -14,6 +14,14 @@ interface MusicApi {
         @Query("offset") offset: Int = 0,
     ): Response<MusicListResponseDto>
 
+    @GET("v1/music")
+    suspend fun fetchFilteredMusics(
+        @Query("user_id") userId: String? = null,
+        @Query("q") query: String? = null,
+        @Query("limit") limit: Int = 30,
+        @Query("offset") offset: Int = 0,
+    ): Response<MusicListResponseDto> = fetchMusics(limit = limit, offset = offset)
+
     @POST("v1/music")
     suspend fun publishMusic(
         @Body request: PublishMusicRequestDto,

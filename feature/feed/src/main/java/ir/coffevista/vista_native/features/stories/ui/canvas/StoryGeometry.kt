@@ -40,7 +40,7 @@ internal object StoryStageSpec {
 }
 
 /** Centre (normalised), uniform scale and clockwise rotation (degrees) of a story element. */
-internal data class StoryTransform(
+data class StoryTransform(
     val cx: Float,
     val cy: Float,
     val scale: Float = 1f,
@@ -228,6 +228,12 @@ internal data class SnapGuides(
     val vertical: List<Float> = emptyList(),
     val horizontal: List<Float> = emptyList(),
     val rotationLocked: Boolean = false,
+    val snappedRotationDeg: Float? = null,
+    val snappedCenterPx: Pair<Float, Float>? = null,
+    val marginLeftLocked: Boolean = false,
+    val marginRightLocked: Boolean = false,
+    val marginTopLocked: Boolean = false,
+    val marginBottomLocked: Boolean = false,
 ) {
     companion object {
         val None = SnapGuides()
@@ -324,7 +330,17 @@ internal class StorySnapEngine(private val stage: StageSize) {
         return SnapResult(
             transform = raw.copy(cx = cxPx / stage.width, cy = cyPx / stage.height, rotation = rotation),
             state = SnapState(snapX, snapY, detent),
-            guides = SnapGuides(vertical, horizontal, rotationLocked = detent != null),
+            guides = SnapGuides(
+                vertical = vertical,
+                horizontal = horizontal,
+                rotationLocked = detent != null,
+                snappedRotationDeg = if (detent != null) rotation else null,
+                snappedCenterPx = cxPx to cyPx,
+                marginLeftLocked = snapX == SnapTarget.MinMargin,
+                marginRightLocked = snapX == SnapTarget.MaxMargin,
+                marginTopLocked = snapY == SnapTarget.MinMargin,
+                marginBottomLocked = snapY == SnapTarget.MaxMargin,
+            ),
         )
     }
 
@@ -348,28 +364,158 @@ internal class StorySnapEngine(private val stage: StageSize) {
 
     companion object {
         const val ENTER_UNITS = 6f
-        const val HOLD_UNITS = 11f
+        const val HOLD_UNITS = 14f
         const val DETENT_STEP = 45f
-        const val DETENT_ENTER = 4f
-        const val DETENT_HOLD = 8f
+        const val DETENT_ENTER = 3.0f
+        const val DETENT_HOLD = 6.5f
     }
 }
 
 // ---------------------------------------------------------------------------------------------
-// Trash zone
+// Trash zone & Magnetic Pull Interpolation (Telegram EntityView parity)
 // ---------------------------------------------------------------------------------------------
 
 internal class StoryTrashZone(private val stage: StageSize) {
     val centerX: Float = stage.width / 2f
     val centerY: Float = stage.height - TRASH_BOTTOM_UNITS * stage.unit
     val radius: Float = TRASH_RADIUS_UNITS * stage.unit
+    val outerInfluenceRadius: Float = radius * OUTER_INFLUENCE_FACTOR
 
     fun isHovered(px: Float, py: Float): Boolean =
         hypot(px - centerX, py - centerY) <= radius * HOVER_FACTOR
 
-    private companion object {
+    /**
+     * Returns continuous proximity [0f..1f] within the outer influence field.
+     */
+    fun proximity(px: Float, py: Float): Float {
+        val dist = hypot(px - centerX, py - centerY)
+        val captureR = radius * HOVER_FACTOR
+        if (dist <= captureR) return 1f
+        if (dist >= outerInfluenceRadius) return 0f
+        return ((outerInfluenceRadius - dist) / (outerInfluenceRadius - captureR)).coerceIn(0f, 1f)
+    }
+
+    /**
+     * Applies magnetic pull towards the trash bin center and scales down to ~0.30x
+     * when the entity is captured inside the trash zone.
+     */
+    fun applyMagneticPull(
+        snappedTransform: StoryTransform,
+        trashProgress: Float,
+    ): StoryTransform {
+        val u = trashProgress.coerceIn(0f, 1f)
+        if (u <= 0.001f) return snappedTransform
+        val rawX = snappedTransform.cx * stage.width
+        val rawY = snappedTransform.cy * stage.height
+        val targetX = centerX + MAGNETIC_OFFSET_RETENTION * (rawX - centerX)
+        val targetY = centerY + MAGNETIC_OFFSET_RETENTION * (rawY - centerY)
+        val pulledX = rawX + (targetX - rawX) * u
+        val pulledY = rawY + (targetY - rawY) * u
+        return snappedTransform.copy(
+            cx = pulledX / stage.width,
+            cy = pulledY / stage.height,
+        )
+    }
+
+    companion object {
         const val TRASH_BOTTOM_UNITS = 76f
         const val TRASH_RADIUS_UNITS = 28f
         const val HOVER_FACTOR = 1.9f
+        const val OUTER_INFLUENCE_FACTOR = 3.8f
+        const val MAGNETIC_OFFSET_RETENTION = 0.18f
+        const val CAPTURED_SCALE_FACTOR = 0.30f
+        const val CAPTURED_ALPHA = 0.45f
+
+        fun interpolateScaleMultiplier(trashProgress: Float): Float {
+            val u = trashProgress.coerceIn(0f, 1f)
+            return 1f + (CAPTURED_SCALE_FACTOR - 1f) * u
+        }
+
+        fun interpolateAlpha(trashProgress: Float): Float {
+            val u = trashProgress.coerceIn(0f, 1f)
+            return 1f + (CAPTURED_ALPHA - 1f) * u
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Mathematical Export Parity & MediaArea Normalization (Telegram StoryEntry parity)
+// ---------------------------------------------------------------------------------------------
+
+internal data class NormalizedMediaAreaSpec(
+    val elementId: String,
+    val type: String,
+    val xPercent: Float,
+    val yPercent: Float,
+    val widthPercent: Float,
+    val heightPercent: Float,
+    val rotationDeg: Float,
+    val cornerRadiusPercent: Float,
+)
+
+internal object StoryExportMatrix {
+    /**
+     * Computes the 6 affine matrix components [scaleX, skewX, transX, skewY, scaleY, transY]
+     * (and full 9-element row-major 3x3 array) mapping local entity coordinates [0..entityW, 0..entityH]
+     * onto the off-screen export canvas (e.g., 1080x1920).
+     */
+    fun computeAffineValues(
+        transform: StoryTransform,
+        entityWidthPx: Float,
+        entityHeightPx: Float,
+        uiStage: StageSize,
+        exportWidth: Float = StoryStageSpec.LegacyRefWidthPx,
+        exportHeight: Float = StoryStageSpec.LegacyRefHeightPx,
+    ): FloatArray {
+        val lambdaX = exportWidth / uiStage.width.coerceAtLeast(1f)
+        val lambdaY = exportHeight / uiStage.height.coerceAtLeast(1f)
+        val rad = transform.rotation * (PI.toFloat() / 180f)
+        val cosT = cos(rad)
+        val sinT = sin(rad)
+        val halfW = entityWidthPx * 0.5f
+        val halfH = entityHeightPx * 0.5f
+        val cxUi = transform.cx * uiStage.width
+        val cyUi = transform.cy * uiStage.height
+
+        val scaleX = lambdaX * transform.scale * cosT
+        val skewX = -lambdaY * transform.scale * sinT
+        val transX = (lambdaX * cxUi) - halfW * (lambdaX * transform.scale * cosT) + halfH * (lambdaY * transform.scale * sinT)
+
+        val skewY = lambdaX * transform.scale * sinT
+        val scaleY = lambdaY * transform.scale * cosT
+        val transY = (lambdaY * cyUi) - halfW * (lambdaX * transform.scale * sinT) - halfH * (lambdaY * transform.scale * cosT)
+
+        return floatArrayOf(
+            scaleX, skewX, transX,
+            skewY, scaleY, transY,
+            0f, 0f, 1f,
+        )
+    }
+
+    /**
+     * Maps live stage element geometry into normalized [0..100] clickable MediaArea coordinates.
+     */
+    fun toNormalizedMediaArea(
+        elementId: String,
+        type: String,
+        transform: StoryTransform,
+        entityWidthPx: Float,
+        entityHeightPx: Float,
+        cornerRadiusPx: Float,
+        uiStage: StageSize,
+    ): NormalizedMediaAreaSpec {
+        val stageW = uiStage.width.coerceAtLeast(1f)
+        val stageH = uiStage.height.coerceAtLeast(1f)
+        val deg = ((transform.rotation % 360f) + 360f) % 360f
+        return NormalizedMediaAreaSpec(
+            elementId = elementId,
+            type = type,
+            xPercent = (transform.cx * 100f).coerceIn(0f, 100f),
+            yPercent = (transform.cy * 100f).coerceIn(0f, 100f),
+            widthPercent = ((entityWidthPx * transform.scale) / stageW * 100f).coerceIn(0f, 100f),
+            heightPercent = ((entityHeightPx * transform.scale) / stageH * 100f).coerceIn(0f, 100f),
+            rotationDeg = deg,
+            cornerRadiusPercent = ((cornerRadiusPx * transform.scale) / stageW * 100f).coerceIn(0f, 100f),
+        )
     }
 }

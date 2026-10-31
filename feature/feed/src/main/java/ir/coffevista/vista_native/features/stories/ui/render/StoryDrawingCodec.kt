@@ -5,6 +5,7 @@ import kotlin.math.max
 internal enum class StoryBrush(val code: String) {
     Pen("p"),
     Marker("m"),
+    Neon("n"),
     Eraser("e");
 
     companion object {

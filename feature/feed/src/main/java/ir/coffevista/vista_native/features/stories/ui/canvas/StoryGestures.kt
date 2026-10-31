@@ -13,8 +13,11 @@ import androidx.compose.ui.input.pointer.positionChanged
 import kotlin.math.PI
 import kotlin.math.abs
 
+internal const val PRIMARY_MEDIA_GESTURE_ID = "__primary_media__"
+
 internal interface StoryGestureCallbacks {
     val selectedId: String?
+    val allowBackgroundMediaTransform: Boolean get() = true
     fun hitTest(x: Float, y: Float): String?
     fun onGestureStart(id: String)
     fun onGestureUpdate(
@@ -29,11 +32,17 @@ internal interface StoryGestureCallbacks {
     )
     fun onGestureEnd(id: String, cancelled: Boolean)
     fun onTap(x: Float, y: Float, hitId: String?)
+    fun onDoubleTap(x: Float, y: Float, hitId: String?) {}
 }
 
 internal suspend fun PointerInputScope.detectStoryGestures(callbacks: () -> StoryGestureCallbacks) {
     val touchSlop = viewConfiguration.touchSlop
     val tapTimeout = viewConfiguration.longPressTimeoutMillis
+    val doubleTapTimeout = viewConfiguration.doubleTapTimeoutMillis
+    var lastTapTime = 0L
+    var lastTapPos = Offset.Zero
+    var lastTapHitId: String? = null
+
     awaitEachGesture {
         val down = awaitFirstDown(requireUnconsumed = false)
         val cb = callbacks()
@@ -62,7 +71,9 @@ internal suspend fun PointerInputScope.detectStoryGestures(callbacks: () -> Stor
             val rotationChange = event.calculateRotation()
             val panChange = event.calculatePan()
 
-            if (activeId == null && pressed >= 2) activeId = cb.selectedId
+            if (activeId == null && pressed >= 2) {
+                activeId = cb.selectedId ?: if (cb.allowBackgroundMediaTransform) PRIMARY_MEDIA_GESTURE_ID else null
+            }
 
             if (!pastSlop) {
                 zoomAcc *= zoomChange
@@ -121,7 +132,19 @@ internal suspend fun PointerInputScope.detectStoryGestures(callbacks: () -> Stor
         if (started && id != null) {
             cb.onGestureEnd(id, cancelled)
         } else if (!pastSlop && !cancelled && maxPointers == 1 && lastUptime - down.uptimeMillis < tapTimeout) {
-            cb.onTap(down.position.x, down.position.y, hitId)
+            val now = lastUptime
+            val isDouble = (now - lastTapTime <= doubleTapTimeout) &&
+                (down.position - lastTapPos).getDistance() <= touchSlop * 2.5f &&
+                hitId == lastTapHitId && hitId != null
+            if (isDouble) {
+                lastTapTime = 0L
+                cb.onDoubleTap(down.position.x, down.position.y, hitId)
+            } else {
+                lastTapTime = now
+                lastTapPos = down.position
+                lastTapHitId = hitId
+                cb.onTap(down.position.x, down.position.y, hitId)
+            }
         }
     }
 }

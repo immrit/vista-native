@@ -14,6 +14,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import ir.coffevista.vista_native.features.stories.domain.StoryUser
+import ir.coffevista.vista_native.features.stories.data.StorySecurityGuard
+import ir.coffevista.vista_native.features.stories.ui.player.StoryPlayerViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -540,8 +545,28 @@ fun VistaApp(
                             ir.coffevista.vista_native.features.stories.ui.player.StoryPlayerScreen(
                                 initialUserIndex = initialUserIndex,
                                 onClose = onClose,
-                                onOpenProfile = onOpenProfile,
+                                onOpenProfile = { target ->
+                                    if (StorySecurityGuard.isValidUuid(target)) {
+                                        onOpenProfile(target)
+                                    } else {
+                                        applicationScope.launch {
+                                            val searchResult = runCatching {
+                                                searchRepository.searchUsers(target.removePrefix("@").trim(), 0)
+                                            }.getOrNull()
+                                            val matchedUser = searchResult?.users?.firstOrNull {
+                                                it.username.equals(target.removePrefix("@").trim(), ignoreCase = true)
+                                            }
+                                            if (matchedUser != null) {
+                                                onOpenProfile(matchedUser.id)
+                                            }
+                                        }
+                                    }
+                                },
                                 onOpenLink = onOpenLink,
+                                onOpenHashtag = { tag ->
+                                    onClose()
+                                    navController.navigate(ShellRoutes.hashtag(tag))
+                                },
                             )
                         },
                         storyCreate = { initialUri, onClose, onStoryPublished ->
@@ -618,6 +643,11 @@ fun VistaApp(
                         ownProfile = { onPostClick, onSettingsClick, logout, onOpenFollowers, onOpenQrScanner, onEditProfile, onAddStory, onReelClick, onAddPost ->
                             val postsViewModel = hiltViewModel<ProfilePostsViewModel>()
                             val postsState by postsViewModel.uiState.collectAsStateWithLifecycle()
+                            val storyPlayerViewModel = hiltViewModel<StoryPlayerViewModel>()
+                            val storyRepo = storyPlayerViewModel.repository
+                            val coroutineScope = rememberCoroutineScope()
+                            var activeHighlightUser by remember { mutableStateOf<StoryUser?>(null) }
+
                             LaunchedEffect(signedIn.context.userId) {
                                 postsViewModel.bind(signedIn.context.userId)
                             }
@@ -648,7 +678,56 @@ fun VistaApp(
                                     postsViewModel.updateEngagementVisibility(post.id, hideLike, hideComment)
                                 },
                                 onNavigateToPricing = { navController.navigate(ShellRoutes.PricingPage) },
+                                onHighlightClick = { highlight ->
+                                    coroutineScope.launch {
+                                        val hlResult = storyRepo.getUserHighlights(signedIn.context.userId)
+                                        val hl = hlResult.getOrNull()?.firstOrNull { it.id == highlight.id }
+                                        val stories = if (hl != null && hl.stories.isNotEmpty()) {
+                                            hl.stories
+                                        } else {
+                                            highlight.storyIds.mapNotNull { storyId ->
+                                                storyRepo.getStoryById(storyId).getOrNull()
+                                            }
+                                        }
+                                        if (stories.isNotEmpty()) {
+                                            activeHighlightUser = StoryUser(
+                                                id = signedIn.context.userId,
+                                                username = highlight.title,
+                                                avatarUrl = highlight.coverUrl,
+                                                stories = stories,
+                                            )
+                                        }
+                                    }
+                                },
                             )
+
+                            activeHighlightUser?.let { highlightUser ->
+                                Dialog(
+                                    onDismissRequest = { activeHighlightUser = null },
+                                    properties = DialogProperties(
+                                        usePlatformDefaultWidth = false,
+                                        decorFitsSystemWindows = false,
+                                    ),
+                                ) {
+                                    ir.coffevista.vista_native.features.stories.ui.player.StoryPlayerScreen(
+                                        initialUserIndex = 0,
+                                        customStoryUsers = listOf(highlightUser),
+                                        onClose = { activeHighlightUser = null },
+                                        onOpenProfile = { uid ->
+                                            activeHighlightUser = null
+                                            navController.navigate(ShellRoutes.userProfile(uid))
+                                        },
+                                        onOpenLink = { url ->
+                                            activeHighlightUser = null
+                                            navController.navigate(ShellRoutes.servicesWeb(url, "پیوند"))
+                                        },
+                                        onOpenHashtag = { tag ->
+                                            activeHighlightUser = null
+                                            navController.navigate(ShellRoutes.hashtag(tag))
+                                        },
+                                    )
+                                }
+                            }
                         },
                         settingsRoot = { onBack, onEditProfile, onPremium, onAccountDetails, onPrivacySecurity, onNotifications, onAppearance, onDataStorage, onSavedPosts, onChangePassword, onVerificationRequest, onTerms, onAbout, onLogout ->
                             val profileViewModel = hiltViewModel<OwnProfileViewModel>()
@@ -782,10 +861,14 @@ fun VistaApp(
                         userProfile = { userId, onBack, onSelfProfile, onPostClick, onOpenFollowers, onOpenChat, onReelClick ->
                             val postsViewModel = hiltViewModel<ProfilePostsViewModel>()
                             val postsState by postsViewModel.uiState.collectAsStateWithLifecycle()
+                            val storyPlayerViewModel = hiltViewModel<StoryPlayerViewModel>()
+                            val storyRepo = storyPlayerViewModel.repository
+                            val coroutineScope = rememberCoroutineScope()
+                            var activeHighlightUser by remember { mutableStateOf<StoryUser?>(null) }
+
                             LaunchedEffect(userId) {
                                 if (userId.isNotBlank()) postsViewModel.bind(userId)
                             }
-                            val coroutineScope = rememberCoroutineScope()
                             OtherUserProfileScreen(
                                 viewModel = hiltViewModel(),
                                 onBack = onBack,
@@ -809,6 +892,27 @@ fun VistaApp(
                                     postsViewModel.updateEngagementVisibility(post.id, hideLike, hideComment)
                                 },
                                 onNavigateToPricing = { navController.navigate(ShellRoutes.PricingPage) },
+                                onHighlightClick = { highlight ->
+                                    coroutineScope.launch {
+                                        val hlResult = storyRepo.getUserHighlights(userId)
+                                        val hl = hlResult.getOrNull()?.firstOrNull { it.id == highlight.id }
+                                        val stories = if (hl != null && hl.stories.isNotEmpty()) {
+                                            hl.stories
+                                        } else {
+                                            highlight.storyIds.mapNotNull { storyId ->
+                                                storyRepo.getStoryById(storyId).getOrNull()
+                                            }
+                                        }
+                                        if (stories.isNotEmpty()) {
+                                            activeHighlightUser = StoryUser(
+                                                id = userId,
+                                                username = highlight.title,
+                                                avatarUrl = highlight.coverUrl,
+                                                stories = stories,
+                                            )
+                                        }
+                                    }
+                                },
                                 onMessage = onOpenChat?.let { openChat ->
                                     {
                                         coroutineScope.launch {
@@ -826,6 +930,34 @@ fun VistaApp(
                                     }
                                 },
                             )
+
+                            activeHighlightUser?.let { highlightUser ->
+                                Dialog(
+                                    onDismissRequest = { activeHighlightUser = null },
+                                    properties = DialogProperties(
+                                        usePlatformDefaultWidth = false,
+                                        decorFitsSystemWindows = false,
+                                    ),
+                                ) {
+                                    ir.coffevista.vista_native.features.stories.ui.player.StoryPlayerScreen(
+                                        initialUserIndex = 0,
+                                        customStoryUsers = listOf(highlightUser),
+                                        onClose = { activeHighlightUser = null },
+                                        onOpenProfile = { uid ->
+                                            activeHighlightUser = null
+                                            navController.navigate(ShellRoutes.userProfile(uid))
+                                        },
+                                        onOpenLink = { url ->
+                                            activeHighlightUser = null
+                                            navController.navigate(ShellRoutes.servicesWeb(url, "پیوند"))
+                                        },
+                                        onOpenHashtag = { tag ->
+                                            activeHighlightUser = null
+                                            navController.navigate(ShellRoutes.hashtag(tag))
+                                        },
+                                    )
+                                }
+                            }
                         },
                         followersFollowing = { targetUserId, initialTab, onBack, onOpenProfile ->
                             ir.coffevista.vista_native.features.profile.ui.follow.FollowersFollowingScreen(

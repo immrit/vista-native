@@ -1,6 +1,7 @@
 package ir.coffevista.vista_native.features.stories.ui.render
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.BasicTextField
@@ -89,12 +90,24 @@ internal fun StoryRichText(
             ),
         )
     }
-    val fillStyle = remember(baseStyle, fillColor, spec.gradient) {
+    val fillStyle = remember(baseStyle, fillColor, spec.gradient, spec.background, neon) {
         val gradient = spec.gradient
-        if (gradient != null) baseStyle.copy(brush = gradient.brush()) else baseStyle.copy(color = fillColor)
+        val styled = if (gradient != null) baseStyle.copy(brush = gradient.brush()) else baseStyle.copy(color = fillColor)
+        if (spec.background == StoryTextBackground.None && !neon) {
+            styled.copy(
+                shadow = Shadow(
+                    color = Color.Black.copy(alpha = 0.58f),
+                    offset = Offset(0f, 3f),
+                    blurRadius = 10f,
+                ),
+            )
+        } else {
+            styled
+        }
     }
     val glowPx = with(density) { (spec.fontSize * 0.55f).dp.toPx() }
     val strokePx = with(density) { (spec.fontSize * 0.16f).dp.toPx() }
+    val glassBorderStrokePx = with(density) { 1.dp.toPx() }
 
     val badgePath = remember(layout, padXPx, padYPx, radiusPx, hasBadge) {
         val result = layout
@@ -119,7 +132,21 @@ internal fun StoryRichText(
     Box(
         modifier = modifier
             .drawBehind {
-                badgePath?.let { drawPath(it, color = spec.backgroundColor) }
+                badgePath?.let { path ->
+                    val pillFill = if (spec.background == StoryTextBackground.Soft) {
+                        spec.backgroundColor.copy(alpha = spec.backgroundColor.alpha.coerceIn(0.42f, 0.68f))
+                    } else {
+                        spec.backgroundColor.copy(alpha = 1f)
+                    }
+                    drawPath(path, color = pillFill)
+                    if (spec.background == StoryTextBackground.Soft) {
+                        drawPath(
+                            path = path,
+                            color = Color.White.copy(alpha = 0.24f),
+                            style = Stroke(width = glassBorderStrokePx, join = StrokeJoin.Round),
+                        )
+                    }
+                }
             }
             .padding(horizontal = padXUnits.dp, vertical = padYUnits.dp),
     ) {
@@ -164,7 +191,10 @@ internal fun StoryRichText(
                     capitalization = KeyboardCapitalization.Sentences,
                     imeAction = ImeAction.Default,
                 ),
-                modifier = Modifier.align(Alignment.Center).focusRequester(editor.focusRequester),
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .defaultMinSize(minWidth = 120.dp)
+                    .focusRequester(editor.focusRequester),
                 decorationBox = { inner ->
                     Box(contentAlignment = Alignment.Center) {
                         if (editor.value.text.isEmpty()) {

@@ -14,8 +14,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import kotlin.math.floor
 import kotlin.math.min
@@ -49,10 +51,17 @@ internal fun StoryStage(
         } else {
             Modifier
         }
-        Box(modifier = Modifier.size(widthDp, heightDp).then(corner)) {
-            CompositionLocalProvider(
-                LocalStageSize provides stage,
-                LocalDensity provides Density(density = stage.unit, fontScale = 1f),
+        // CRITICAL: Provide LayoutDirection.Ltr AROUND the stage Box so Cartesian (0, 0) is
+        // strictly Top-Left, matching PointerInputScope (x, y) and graphicsLayer translations
+        // even when the surrounding screen runs in Persian RTL!
+        CompositionLocalProvider(
+            LocalLayoutDirection provides LayoutDirection.Ltr,
+            LocalStageSize provides stage,
+            LocalDensity provides Density(density = stage.unit, fontScale = 1f),
+        ) {
+            Box(
+                modifier = Modifier.size(widthDp, heightDp).then(corner),
+                contentAlignment = Alignment.TopStart,
             ) {
                 content(stage)
             }

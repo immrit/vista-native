@@ -25,6 +25,7 @@ data class UploadedMediaResult(
     val objectKey: String,
     val isVideo: Boolean = false,
     val thumbnailUrl: String? = null,
+    val wasTrimmed: Boolean = false,
 )
 
 /**
@@ -249,7 +250,11 @@ class PostMediaUploader @Inject constructor(
                 if (!response.isSuccessful) throw IOException("آپلود موسیقی با خطای ${response.code} متوقف شد")
             }
             onProgress(1f)
-            UploadedMediaResult(url = presign.objectUrl, objectKey = presign.objectKey)
+            UploadedMediaResult(
+                url = presign.objectUrl,
+                objectKey = presign.objectKey,
+                wasTrimmed = trimmedAudio != null,
+            )
         } finally {
             audioFile.delete()
         }

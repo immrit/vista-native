@@ -27,6 +27,7 @@ class StoryRepositoryTest {
         var lastReplySent: String? = null
         var lastVoteOption: String? = null
         var isDeleteCalled: Boolean = false
+        var isRemoveReactionCalled: Boolean = false
 
         val sampleStory = Story(
             id = "story_1",
@@ -85,6 +86,10 @@ class StoryRepositoryTest {
 
         override suspend fun reactToStory(storyId: String, request: StoryReactRequestDto) {
             lastReactionSent = request.reaction
+        }
+
+        override suspend fun removeStoryReaction(storyId: String) {
+            isRemoveReactionCalled = true
         }
 
         override suspend fun replyToStory(storyId: String, request: StoryReplyRequestDto) {
@@ -173,5 +178,68 @@ class StoryRepositoryTest {
     fun `createHighlight succeeds`() = runTest {
         val result = repository.createHighlight("خاطرات", null, listOf("story_1"))
         assertTrue(result.isSuccess)
+    }
+
+    @Test
+    fun `removeReaction calls removeStoryReaction API`() = runTest {
+        val result = repository.removeReaction("story_1")
+        assertTrue(result.isSuccess)
+        assertTrue(fakeApi.isRemoveReactionCalled)
+    }
+
+    @Test
+    fun `normalizeAndSortStoryUsers prioritizes current user, unseen stories, and recency`() {
+        val storyOlder = Story(
+            id = "s_old",
+            userId = "user_b",
+            mediaUrl = "https://example.com/2.jpg",
+            createdAt = "2026-08-20T10:00:00Z",
+            expiresAt = "2026-08-21T10:00:00Z",
+            isViewed = true,
+        )
+        val storyNewer = Story(
+            id = "s_new",
+            userId = "user_b",
+            mediaUrl = "https://example.com/3.jpg",
+            createdAt = "2026-08-24T12:00:00Z",
+            expiresAt = "2026-08-25T12:00:00Z",
+            isViewed = false,
+        )
+
+        // Stories provided in reverse chronological order
+        val userB = StoryUser(
+            id = "user_b",
+            username = "user_b",
+            stories = listOf(storyNewer, storyOlder),
+        )
+
+        val storyMe = Story(
+            id = "s_me",
+            userId = "my_user_id",
+            mediaUrl = "https://example.com/me.jpg",
+            createdAt = "2026-08-22T10:00:00Z",
+            expiresAt = "2026-08-23T10:00:00Z",
+            isViewed = true,
+        )
+        val userMe = StoryUser(
+            id = "my_user_id",
+            username = "me",
+            stories = listOf(storyMe),
+        )
+
+        val sortedUsers = StoryRepository.normalizeAndSortStoryUsers(
+            users = listOf(userB, userMe),
+            currentUserId = "my_user_id",
+        )
+
+        assertEquals(2, sortedUsers.size)
+        // Current user must be first
+        assertEquals("my_user_id", sortedUsers[0].id)
+        assertEquals("user_b", sortedUsers[1].id)
+
+        // Stories inside user_b must be sorted ascending chronologically (oldest first)
+        val sortedStoriesB = sortedUsers[1].stories
+        assertEquals("s_old", sortedStoriesB[0].id)
+        assertEquals("s_new", sortedStoriesB[1].id)
     }
 }

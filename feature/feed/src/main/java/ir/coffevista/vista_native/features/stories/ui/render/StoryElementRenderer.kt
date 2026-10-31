@@ -1,19 +1,28 @@
 package ir.coffevista.vista_native.features.stories.ui.render
 
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.dp
 import ir.coffevista.vista_native.features.stories.domain.StoryElement
+import ir.coffevista.vista_native.features.stories.domain.StoryLocation
 import ir.coffevista.vista_native.features.stories.ui.canvas.StageSize
 import ir.coffevista.vista_native.features.stories.ui.canvas.StoryTransform
 import ir.coffevista.vista_native.features.stories.ui.canvas.resolvedTransform
@@ -27,6 +36,8 @@ internal data class StoryWidgetActions(
     val onLinkClick: (url: String) -> Unit = {},
     val onMentionClick: (userId: String) -> Unit = {},
     val onHashtagClick: (tag: String) -> Unit = {},
+    val onLocationClick: (location: StoryLocation) -> Unit = {},
+    val onReactionClick: (element: StoryElement) -> Unit = {},
 )
 
 internal class ElementVisualState(
@@ -64,6 +75,7 @@ internal fun BoxScope.StoryElementLayers(
     elements: List<StoryElement>,
     stage: StageSize,
     actions: StoryWidgetActions? = null,
+    selectedElementId: String? = null,
     visualFor: (StoryElement) -> ElementVisualState = { element ->
         val resolved = element.resolvedTransform()
         ElementVisualState(transform = { resolved })
@@ -77,15 +89,31 @@ internal fun BoxScope.StoryElementLayers(
         }
     }
     elements.forEach { element ->
-        if (element.type == "drawing") return@forEach
+        if (element.type == "drawing" || element.type == "media_transform") return@forEach
         key(element.id) {
-            val visual = remember(element, stage) { visualFor(element) }
+            val visual = visualFor(element)
+            val isSelected = selectedElementId == element.id && actions == null
             Box(
                 modifier = Modifier
                     .onSizeChanged { onSizeChanged(element.id, it) }
-                    .storyPlacement(stage, visual),
+                    .storyPlacement(stage, visual)
+                    .then(
+                        if (isSelected) {
+                            Modifier
+                                .border(
+                                    width = 1.dp,
+                                    color = Color.White.copy(alpha = 0.55f),
+                                    shape = RoundedCornerShape(16.dp),
+                                )
+                                .padding(2.dp)
+                        } else {
+                            Modifier
+                        },
+                    ),
             ) {
-                StoryElementContent(element = element, actions = actions)
+                CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+                    StoryElementContent(element = element, actions = actions)
+                }
             }
         }
     }
@@ -122,6 +150,8 @@ internal fun StoryElementContent(
             StoryPillWidget(
                 text = "@${mention.username}",
                 variant = variant,
+                categoryAccent = androidx.compose.ui.graphics.Color(0xFF9C27B0),
+                gleaming = interactive,
                 modifier = clickableIf(interactive) { actions?.onMentionClick?.invoke(mention.userId) },
             )
         }
@@ -131,30 +161,52 @@ internal fun StoryElementContent(
             StoryPillWidget(
                 text = "#$tag",
                 variant = variant,
+                categoryAccent = androidx.compose.ui.graphics.Color(0xFF4092FF),
+                gleaming = interactive,
                 modifier = clickableIf(interactive) { actions?.onHashtagClick?.invoke(tag) },
             )
         }
 
-        "location" -> element.location?.let { StoryPillWidget(text = it.name, variant = variant, icon = LocationIcon) }
+        "location" -> element.location?.let { loc ->
+            StoryPillWidget(
+                text = loc.name,
+                variant = variant,
+                icon = LocationIcon,
+                categoryAccent = androidx.compose.ui.graphics.Color(0xFFFF4B55),
+                gleaming = interactive,
+                modifier = clickableIf(interactive) { actions?.onLocationClick?.invoke(loc) },
+            )
+        }
 
         "link" -> element.link?.let { link ->
             StoryPillWidget(
                 text = link.title?.ifBlank { null } ?: displayHost(link.url),
                 variant = variant,
                 icon = LinkIcon,
+                categoryAccent = androidx.compose.ui.graphics.Color(0xFF2481CC),
+                gleaming = interactive,
                 modifier = clickableIf(interactive) { actions?.onLinkClick?.invoke(link.url) },
             )
         }
 
-        "date" -> StoryPillWidget(text = element.content?.ifBlank { null } ?: "امروز", variant = variant, icon = DateIcon)
+        "date" -> StoryPillWidget(
+            text = element.content?.ifBlank { null } ?: "امروز",
+            variant = variant,
+            icon = DateIcon,
+            categoryAccent = androidx.compose.ui.graphics.Color(0xFF00E676),
+        )
 
         "weather" -> {
             val parts = element.content.orEmpty().split("|")
+            val condEmoji = parts.getOrNull(2)?.trim()?.takeIf { it.isNotBlank() }
             StoryPillWidget(
-                text = parts.getOrNull(1) ?: "۲۴°C",
-                trailing = parts.getOrNull(0) ?: "تهران",
+                text = parts.getOrNull(1)?.ifBlank { null } ?: "۲۴°C",
+                trailing = parts.getOrNull(0)?.ifBlank { null } ?: "تهران",
                 variant = variant,
-                icon = WeatherIcon,
+                icon = if (condEmoji == null) WeatherIcon else null,
+                leadingEmoji = condEmoji,
+                categoryAccent = androidx.compose.ui.graphics.Color(0xFFFFB300),
+                gleaming = interactive,
             )
         }
 
@@ -170,6 +222,23 @@ internal fun StoryElementContent(
         "music" -> element.music?.let { StoryMusicStickerWidget(music = it, variant = variant) }
 
         "gif" -> StoryGifWidget(url = element.content.orEmpty())
+
+        "reaction" -> StoryReactionWidget(
+            emoji = element.content?.ifBlank { null } ?: "❤️",
+            variant = variant,
+            gleaming = interactive,
+            modifier = clickableIf(interactive) { actions?.onReactionClick?.invoke(element) },
+        )
+
+        "photo" -> StoryPhotoCutoutWidget(
+            imageUri = element.content.orEmpty(),
+            variant = variant,
+        )
+
+        "emoji" -> StoryEmojiStickerWidget(
+            emoji = element.content?.ifBlank { null } ?: "🔥",
+            variant = variant,
+        )
 
         else -> Unit
     }

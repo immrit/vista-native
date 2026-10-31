@@ -12,6 +12,12 @@ import javax.inject.Singleton
 interface MusicRepository {
     val cachedTracks: StateFlow<List<MusicTrack>>
     suspend fun fetchMusics(limit: Int = 20, offset: Int = 0): Result<List<MusicTrack>>
+    suspend fun fetchUserMusics(
+        userId: String? = null,
+        query: String? = null,
+        limit: Int = 40,
+        offset: Int = 0,
+    ): Result<List<MusicTrack>> = fetchMusics(limit = limit, offset = offset)
     suspend fun publishMusic(
         title: String,
         artist: String,
@@ -48,6 +54,30 @@ class DefaultMusicRepository @Inject constructor(
             _cachedTracks.value = existing
         }
         tracks
+    }
+
+    override suspend fun fetchUserMusics(
+        userId: String?,
+        query: String?,
+        limit: Int,
+        offset: Int,
+    ): Result<List<MusicTrack>> = runCatching {
+        val cleanUserId = userId?.trim()?.takeIf { it.isNotBlank() }
+        val cleanQuery = query?.trim()?.takeIf { it.isNotBlank() }
+        val response = musicApi.fetchFilteredMusics(
+            userId = cleanUserId,
+            query = cleanQuery,
+            limit = limit,
+            offset = offset,
+        ).bodyOrThrow("music_fetch_failed")
+        response.music
+            .map { it.toDomain() }
+            .filter { track ->
+                (cleanUserId == null || track.userId == cleanUserId) &&
+                    (cleanQuery == null ||
+                        track.title.contains(cleanQuery, ignoreCase = true) ||
+                        track.artist.contains(cleanQuery, ignoreCase = true))
+            }
     }
 
     override suspend fun publishMusic(

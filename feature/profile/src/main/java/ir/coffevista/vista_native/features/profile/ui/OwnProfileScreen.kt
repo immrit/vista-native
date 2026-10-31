@@ -54,6 +54,7 @@ import ir.coffevista.vista_native.core.designsystem.component.VistaErrorState
 import ir.coffevista.vista_native.core.designsystem.component.VistaPremiumPromptDialog
 import ir.coffevista.vista_native.core.designsystem.component.VistaReportReasonDialog
 import ir.coffevista.vista_native.features.profile.R
+import ir.coffevista.vista_native.features.profile.data.ProfileHighlightDto
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -79,6 +80,7 @@ fun OwnProfileScreen(
     onOpenFollowers: ((userId: String, initialTab: Int) -> Unit)? = null,
     onOpenQrScanner: (() -> Unit)? = null,
     onNavigateToPricing: (() -> Unit)? = null,
+    onHighlightClick: ((ProfileHighlightDto) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -237,7 +239,11 @@ fun OwnProfileScreen(
                                             onAddStory?.invoke()
                                         },
                                         onHighlightClick = { highlight ->
-                                            Toast.makeText(context, highlight.title, Toast.LENGTH_SHORT).show()
+                                            if (onHighlightClick != null) {
+                                                onHighlightClick.invoke(highlight)
+                                            } else {
+                                                Toast.makeText(context, highlight.title, Toast.LENGTH_SHORT).show()
+                                            }
                                         },
                                     )
                                 },

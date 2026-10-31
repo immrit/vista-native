@@ -65,6 +65,7 @@ fun OtherUserProfileScreen(
     onMessage: (() -> Unit)? = null,
     onOpenFollowers: ((userId: String, initialTab: Int) -> Unit)? = null,
     onNavigateToPricing: (() -> Unit)? = null,
+    onHighlightClick: ((ir.coffevista.vista_native.features.profile.data.ProfileHighlightDto) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -101,6 +102,7 @@ fun OtherUserProfileScreen(
         onMessage = onMessage,
         onOpenFollowers = onOpenFollowers,
         onNavigateToPricing = onNavigateToPricing,
+        onHighlightClick = onHighlightClick,
         onAction = viewModel::onAction,
         modifier = modifier,
     )
@@ -128,6 +130,7 @@ internal fun OtherUserProfileContent(
     onMessage: (() -> Unit)? = null,
     onOpenFollowers: ((userId: String, initialTab: Int) -> Unit)? = null,
     onNavigateToPricing: (() -> Unit)? = null,
+    onHighlightClick: ((ir.coffevista.vista_native.features.profile.data.ProfileHighlightDto) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -239,7 +242,11 @@ internal fun OtherUserProfileContent(
                                         highlights = highlights,
                                         isOwnProfile = false,
                                         onHighlightClick = { highlight ->
-                                            android.widget.Toast.makeText(context, highlight.title, android.widget.Toast.LENGTH_SHORT).show()
+                                            if (onHighlightClick != null) {
+                                                onHighlightClick.invoke(highlight)
+                                            } else {
+                                                android.widget.Toast.makeText(context, highlight.title, android.widget.Toast.LENGTH_SHORT).show()
+                                            }
                                         },
                                     )
                                 },

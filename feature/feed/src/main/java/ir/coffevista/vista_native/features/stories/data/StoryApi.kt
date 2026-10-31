@@ -6,6 +6,7 @@ import ir.coffevista.vista_native.features.stories.domain.CreateStoryRequestDto
 import ir.coffevista.vista_native.features.stories.domain.HighlightCountResponseDto
 import ir.coffevista.vista_native.features.stories.domain.HighlightDto
 import ir.coffevista.vista_native.features.stories.domain.Story
+import ir.coffevista.vista_native.features.stories.domain.StoryPlacesResponseDto
 import ir.coffevista.vista_native.features.stories.domain.StoryQuestionAnswerRequestDto
 import ir.coffevista.vista_native.features.stories.domain.StoryQuestionAnswersResponseDto
 import ir.coffevista.vista_native.features.stories.domain.StoryReactRequestDto
@@ -15,6 +16,7 @@ import ir.coffevista.vista_native.features.stories.domain.StoryReportRequestDto
 import ir.coffevista.vista_native.features.stories.domain.StorySettingsDto
 import ir.coffevista.vista_native.features.stories.domain.StoryViewsResponseDto
 import ir.coffevista.vista_native.features.stories.domain.StoryVoteRequestDto
+import ir.coffevista.vista_native.features.stories.domain.StoryWeatherContextDto
 import ir.coffevista.vista_native.features.stories.domain.UpdateHighlightRequestDto
 import ir.coffevista.vista_native.features.stories.domain.UserHighlightsResponseDto
 import ir.coffevista.vista_native.features.stories.domain.UserStoriesResponseDto
@@ -83,6 +85,11 @@ interface StoryApi {
         @Path("storyId") storyId: String,
         @Body request: StoryReactRequestDto,
     )
+
+    @DELETE("v1/stories/{storyId}/reaction")
+    suspend fun removeStoryReaction(
+        @Path("storyId") storyId: String,
+    ) {}
 
     @POST("v1/stories/{storyId}/reply")
     suspend fun replyToStory(
@@ -153,4 +160,18 @@ interface StoryApi {
     suspend fun deleteHighlight(
         @Path("highlightId") highlightId: String,
     ) {}
+
+    @GET("v1/stories/context/weather")
+    suspend fun getStoryWeatherContext(
+        @Query("lat") lat: Double? = null,
+        @Query("lon") lon: Double? = null,
+        @Query("city") city: String? = null,
+    ): StoryWeatherContextDto = StoryWeatherContextDto()
+
+    @GET("v1/stories/context/places")
+    suspend fun getStoryPlacesContext(
+        @Query("lat") lat: Double? = null,
+        @Query("lon") lon: Double? = null,
+        @Query("q") query: String? = null,
+    ): StoryPlacesResponseDto = StoryPlacesResponseDto()
 }

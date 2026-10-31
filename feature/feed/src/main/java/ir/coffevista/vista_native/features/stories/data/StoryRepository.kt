@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.time.Instant
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -40,11 +41,12 @@ class StoryRepository internal constructor(
     private val _activeStoryUsers = MutableStateFlow<List<StoryUser>>(emptyList())
     val activeStoryUsers: StateFlow<List<StoryUser>> = _activeStoryUsers.asStateFlow()
 
-    suspend fun refreshActiveStories(): Result<List<StoryUser>> = withContext(ioDispatcher) {
+    suspend fun refreshActiveStories(currentUserId: String = ""): Result<List<StoryUser>> = withContext(ioDispatcher) {
         try {
             val response = api.getActiveStories()
-            _activeStoryUsers.value = response.users
-            Result.success(response.users)
+            val normalized = normalizeAndSortStoryUsers(response.users, currentUserId)
+            _activeStoryUsers.value = normalized
+            Result.success(normalized)
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -53,7 +55,7 @@ class StoryRepository internal constructor(
     suspend fun getUserStories(userId: String): Result<List<Story>> = withContext(ioDispatcher) {
         try {
             val response = api.getUserStories(userId)
-            Result.success(response.stories)
+            Result.success(sortStoriesChronologically(response.stories))
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -95,17 +97,26 @@ class StoryRepository internal constructor(
         }
     }
 
-    fun markStoryAsViewed(storyId: String) {
+    fun markStoryAsViewed(storyId: String, currentUserId: String = "") {
+        var isOwnStory = false
         // 1. Update state immediately in-memory for zero latency
         _activeStoryUsers.update { users ->
             users.map { user ->
                 val updatedStories = user.stories.map { story ->
-                    if (story.id == storyId) story.copy(isViewed = true) else story
+                    if (story.id == storyId) {
+                        if (currentUserId.isNotBlank() && (story.userId == currentUserId || user.id == currentUserId)) {
+                            isOwnStory = true
+                        }
+                        story.copy(isViewed = true)
+                    } else {
+                        story
+                    }
                 }
                 user.copy(stories = updatedStories)
             }
         }
-        // 2. Track on backend asynchronously
+        if (isOwnStory) return
+        // 2. Track on backend asynchronously for non-owner viewers
         scope.launch {
             try {
                 api.trackView(storyId)
@@ -117,7 +128,20 @@ class StoryRepository internal constructor(
 
     suspend fun reactToStory(storyId: String, reaction: String = "heart"): Result<Unit> = withContext(ioDispatcher) {
         try {
-            api.reactToStory(storyId, StoryReactRequestDto(reaction))
+            if (reaction.equals("unlike", ignoreCase = true) || reaction.equals("none", ignoreCase = true)) {
+                api.removeStoryReaction(storyId)
+            } else {
+                api.reactToStory(storyId, StoryReactRequestDto(reaction))
+            }
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun removeReaction(storyId: String): Result<Unit> = withContext(ioDispatcher) {
+        try {
+            api.removeStoryReaction(storyId)
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
@@ -225,7 +249,9 @@ class StoryRepository internal constructor(
 
     suspend fun getUserHighlights(userId: String): Result<List<HighlightDto>> = withContext(ioDispatcher) {
         runCatching {
-            api.getUserHighlights(userId).highlights
+            api.getUserHighlights(userId).highlights.map { hl ->
+                hl.copy(stories = sortStoriesChronologically(hl.stories))
+            }
         }
     }
 
@@ -274,5 +300,36 @@ class StoryRepository internal constructor(
         } catch (e: Exception) {
             Result.failure(e)
         }
+    }
+
+    companion object {
+        fun sortStoriesChronologically(stories: List<Story>): List<Story> =
+            stories.sortedWith(
+                compareBy<Story> { story ->
+                    runCatching { Instant.parse(story.createdAt).toEpochMilli() }.getOrDefault(0L)
+                }.thenBy { it.id },
+            )
+
+        fun normalizeAndSortStoryUsers(
+            users: List<StoryUser>,
+            currentUserId: String = "",
+        ): List<StoryUser> =
+            users
+                .filter { it.stories.isNotEmpty() }
+                .map { user ->
+                    user.copy(stories = sortStoriesChronologically(user.stories))
+                }
+                .sortedWith(
+                    compareByDescending<StoryUser> { user ->
+                        currentUserId.isNotBlank() && user.id == currentUserId
+                    }
+                        .thenByDescending { it.hasUnseenStories }
+                        .thenByDescending { user ->
+                            runCatching {
+                                user.lastStoryAt?.let(Instant::parse)?.toEpochMilli()
+                                    ?: user.stories.maxOfOrNull { Instant.parse(it.createdAt).toEpochMilli() }
+                            }.getOrNull() ?: 0L
+                        },
+                )
     }
 }

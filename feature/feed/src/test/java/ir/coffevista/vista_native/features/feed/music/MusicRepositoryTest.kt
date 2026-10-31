@@ -123,4 +123,26 @@ class MusicRepositoryTest {
         val result = repository.fetchMusics()
         assertTrue(result.isFailure)
     }
+
+    @Test
+    fun `fetchUserMusics filters tracks to signed-in user and search query`() = runTest {
+        val fakeApi = FakeMusicApi(
+            musicsToReturn = listOf(
+                MusicDto(id = "u1_a", userId = "user_1", title = "شب بارانی", artist = "شادمهر", musicUrl = "https://cdn.example.com/1.mp3"),
+                MusicDto(id = "u2_a", userId = "user_2", title = "شب مهتابی", artist = "سایر", musicUrl = "https://cdn.example.com/2.mp3"),
+                MusicDto(id = "u1_b", userId = "user_1", title = "طلوع آفتاب", artist = "شادمهر", musicUrl = "https://cdn.example.com/3.mp3"),
+            ),
+        )
+        val repository = DefaultMusicRepository(fakeApi)
+
+        val allMine = repository.fetchUserMusics(userId = "user_1")
+        assertTrue(allMine.isSuccess)
+        assertEquals(2, allMine.getOrThrow().size)
+        assertTrue(allMine.getOrThrow().all { it.userId == "user_1" })
+
+        val searchedMine = repository.fetchUserMusics(userId = "user_1", query = "بارانی")
+        assertTrue(searchedMine.isSuccess)
+        assertEquals(1, searchedMine.getOrThrow().size)
+        assertEquals("u1_a", searchedMine.getOrThrow().first().id)
+    }
 }
