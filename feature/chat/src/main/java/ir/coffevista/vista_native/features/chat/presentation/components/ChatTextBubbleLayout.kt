@@ -25,11 +25,10 @@ internal data class ChatTextBubbleLayoutResult(
 )
 
 /**
- * موتور خالص محاسبه موقعیت متن پیام و فوتر متادیتا به سبک تلگرام.
+ * موتور خالص محاسبه موقعیت متن پیام و فوتر متادیتا.
  *
- * در صورتی که متن و فوتر در یک سطر جا شوند، به صورت افقی در کنار هم قرار می‌گیرند (Inline)
- * تا از ایجاد خط جدید و پرش بیهوده ارتفاع حباب جلوگیری شود.
- * در غیر این صورت، فوتر در سطر پایین و در لبه خارجی چیدمان قرار می‌گیرد.
+ * طبق درخواست طراحی، فوتر متادیتا (ساعت و وضعیت تیک) همواره در زیر محتوای متن پیام (در سطر پایین)
+ * قرار می‌گیرد؛ چه در پیام‌های تک‌کلمه‌ای و کوتاه و چه در پیام‌های طولانی و چندسطری.
  */
 internal fun calculateChatTextBubblePlacement(
     textWidth: Int,
@@ -37,54 +36,27 @@ internal fun calculateChatTextBubblePlacement(
     footerWidth: Int,
     footerHeight: Int,
     maxWidthPx: Int,
-    spacingPx: Int,
+    spacingPx: Int = 8,
     verticalGapPx: Int = 2,
     layoutDirection: LayoutDirection = LayoutDirection.Rtl,
 ): ChatTextBubbleLayoutResult {
-    val canFitInline = textWidth + spacingPx + footerWidth <= maxWidthPx
+    val totalWidth = max(textWidth, footerWidth).coerceAtMost(maxWidthPx)
+    val totalHeight = textHeight + verticalGapPx + footerHeight
+    val isRtl = layoutDirection == LayoutDirection.Rtl
 
-    return if (canFitInline) {
-        val totalWidth = (textWidth + spacingPx + footerWidth).coerceAtMost(maxWidthPx)
-        val totalHeight = max(textHeight, footerHeight)
-        val isRtl = layoutDirection == LayoutDirection.Rtl
-
-        val textOffset = if (isRtl) {
-            IntOffset(x = footerWidth + spacingPx, y = (totalHeight - textHeight) / 2)
-        } else {
-            IntOffset(x = 0, y = (totalHeight - textHeight) / 2)
-        }
-
-        val footerOffset = if (isRtl) {
-            IntOffset(x = 0, y = totalHeight - footerHeight)
-        } else {
-            IntOffset(x = textWidth + spacingPx, y = totalHeight - footerHeight)
-        }
-
-        ChatTextBubbleLayoutResult(
-            size = IntSize(totalWidth, totalHeight),
-            textOffset = textOffset,
-            footerOffset = footerOffset,
-            isInline = true,
-        )
+    val textOffset = IntOffset(x = 0, y = 0)
+    val footerOffset = if (isRtl) {
+        IntOffset(x = 0, y = textHeight + verticalGapPx)
     } else {
-        val totalWidth = max(textWidth, footerWidth).coerceAtMost(maxWidthPx)
-        val totalHeight = textHeight + verticalGapPx + footerHeight
-        val isRtl = layoutDirection == LayoutDirection.Rtl
-
-        val textOffset = IntOffset(x = 0, y = 0)
-        val footerOffset = if (isRtl) {
-            IntOffset(x = 0, y = textHeight + verticalGapPx)
-        } else {
-            IntOffset(x = (totalWidth - footerWidth).coerceAtLeast(0), y = textHeight + verticalGapPx)
-        }
-
-        ChatTextBubbleLayoutResult(
-            size = IntSize(totalWidth, totalHeight),
-            textOffset = textOffset,
-            footerOffset = footerOffset,
-            isInline = false,
-        )
+        IntOffset(x = (totalWidth - footerWidth).coerceAtLeast(0), y = textHeight + verticalGapPx)
     }
+
+    return ChatTextBubbleLayoutResult(
+        size = IntSize(totalWidth, totalHeight),
+        textOffset = textOffset,
+        footerOffset = footerOffset,
+        isInline = false,
+    )
 }
 
 /**

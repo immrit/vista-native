@@ -44,8 +44,8 @@ class PostUploadWorker @AssistedInject constructor(
             val musicUriRaw = inputData.getString(KEY_MUSIC_URI)
             val musicUrl = inputData.getString(KEY_MUSIC_URL)
             val musicTitle = inputData.getString(KEY_MUSIC_TITLE)
-            val musicStartMs = inputData.getInt(KEY_MUSIC_START_MS, 0)
-            val musicEndMs = inputData.getInt(KEY_MUSIC_END_MS, 0)
+            var musicStartMs = inputData.getInt(KEY_MUSIC_START_MS, 0)
+            var musicEndMs = inputData.getInt(KEY_MUSIC_END_MS, 0)
             val hideLikeCount = inputData.getBoolean(KEY_HIDE_LIKE_COUNT, false)
             val hideCommentCount = inputData.getBoolean(KEY_HIDE_COMMENT_COUNT, false)
             val commentsDisabled = inputData.getBoolean(KEY_COMMENTS_DISABLED, false)
@@ -55,6 +55,7 @@ class PostUploadWorker @AssistedInject constructor(
 
             var finalVideoUrl: String? = null
             var finalThumbUrl: String? = null
+            var temporaryVideoFile: File? = null
             val finalImageUrls = mutableListOf<String>()
 
             // 1. Audio / Music upload
@@ -68,12 +69,14 @@ class PostUploadWorker @AssistedInject constructor(
                     startMs = musicStartMs,
                     endMs = musicEndMs,
                     onProgress = { p ->
-                        kotlinx.coroutines.runBlocking {
-                            updateProgressState(0.05f + p * 0.2f, "در حال آپلود موسیقی…")
-                        }
+                        throttleProgress(0.05f + p * 0.2f, "در حال آپلود موسیقی…")
                     },
                 )
                 uploadedObjectKeys.add(result.objectKey)
+                if (result.wasTrimmed) {
+                    musicStartMs = 0
+                    musicEndMs = 0
+                }
                 result.url
             } else {
                 musicUrl
@@ -87,6 +90,7 @@ class PostUploadWorker @AssistedInject constructor(
                 } else {
                     val uri = Uri.parse(videoUriRaw!!)
                     val temp = File(context.cacheDir, "work_upload_video_${System.currentTimeMillis()}.mp4")
+                    temporaryVideoFile = temp
                     context.contentResolver.openInputStream(uri)?.use { input ->
                         temp.outputStream().use { output -> input.copyTo(output) }
                     } ?: throw java.io.IOException("امکان خواندن فایل ویدیو وجود ندارد")
@@ -98,9 +102,7 @@ class PostUploadWorker @AssistedInject constructor(
                     videoFile = videoFile,
                     maxBytes = maxUploadBytes,
                     onProgress = { p ->
-                        kotlinx.coroutines.runBlocking {
-                            updateProgressState(0.25f + p * 0.6f, "در حال آپلود ویدیو…")
-                        }
+                        throttleProgress(0.25f + p * 0.6f, "در حال آپلود ویدیو…")
                     },
                 )
                 uploadedObjectKeys.add(result.objectKey)
@@ -123,12 +125,10 @@ class PostUploadWorker @AssistedInject constructor(
                         onProgress = { p ->
                             val baseProgress = 0.25f + (index.toFloat() / total) * 0.6f
                             val currentItemProgress = (p / total) * 0.6f
-                            kotlinx.coroutines.runBlocking {
-                                updateProgressState(
-                                    baseProgress + currentItemProgress,
-                                    "در حال آپلود تصویر (${index + 1} از $total)…",
-                                )
-                            }
+                            throttleProgress(
+                                baseProgress + currentItemProgress,
+                                "در حال آپلود تصویر (${index + 1} از $total)…",
+                            )
                         },
                     )
                     uploadedObjectKeys.add(result.objectKey)
@@ -143,15 +143,22 @@ class PostUploadWorker @AssistedInject constructor(
 
             updateProgressState(0.9f, "در حال انتشار پست…")
 
+            val effectiveMusicUrl = if (!finalMusicUrl.isNullOrBlank() && (musicStartMs > 0 || musicEndMs > musicStartMs)) {
+                val cleanUrl = finalMusicUrl.substringBefore('#')
+                "$cleanUrl#t=$musicStartMs,$musicEndMs"
+            } else {
+                finalMusicUrl
+            }
+
             val createReq = CreatePostRequestDto(
                 content = content.trim().ifBlank { null },
                 imageUrl = finalImageUrls.firstOrNull() ?: finalThumbUrl,
                 imageUrls = finalImageUrls,
                 videoUrl = finalVideoUrl,
-                musicUrl = finalMusicUrl,
+                musicUrl = effectiveMusicUrl,
                 musicTitle = musicTitle,
-                musicStartMs = musicStartMs.takeIf { finalMusicUrl != null },
-                musicEndMs = musicEndMs.takeIf { finalMusicUrl != null },
+                musicStartMs = musicStartMs.takeIf { effectiveMusicUrl != null },
+                musicEndMs = musicEndMs.takeIf { effectiveMusicUrl != null },
                 aspectRatio = aspectRatio,
                 tags = hashtags,
                 location = location,
@@ -172,6 +179,7 @@ class PostUploadWorker @AssistedInject constructor(
                 }
             }
 
+            runCatching { temporaryVideoFile?.delete() }
             updateProgressState(1f, "پست با موفقیت منتشر شد")
             Result.success(workDataOf(KEY_POST_ID to postDto.id))
         } catch (cancelled: CancellationException) {
@@ -182,6 +190,13 @@ class PostUploadWorker @AssistedInject constructor(
             Result.failure(workDataOf(KEY_ERROR to (e.message ?: "خطا در ارسال پست")))
         }
     }
+
+    override suspend fun getForegroundInfo(): ForegroundInfo {
+        return createForegroundInfo(0.05f, "در حال آماده‌سازی فایل‌ها…")
+    }
+
+    private var lastProgressUpdateTime = 0L
+    private var lastProgressValue = 0f
 
     private suspend fun updateProgressState(progress: Float, message: String) {
         runCatching {
@@ -194,6 +209,19 @@ class PostUploadWorker @AssistedInject constructor(
         }
         runCatching {
             setForeground(createForegroundInfo(progress, message))
+        }
+    }
+
+    private fun throttleProgress(progress: Float, message: String) {
+        val now = System.currentTimeMillis()
+        if (progress >= 1f || kotlin.math.abs(progress - lastProgressValue) >= 0.04f || (now - lastProgressUpdateTime) >= 300L) {
+            lastProgressUpdateTime = now
+            lastProgressValue = progress
+            runCatching {
+                kotlinx.coroutines.runBlocking {
+                    updateProgressState(progress, message)
+                }
+            }
         }
     }
 

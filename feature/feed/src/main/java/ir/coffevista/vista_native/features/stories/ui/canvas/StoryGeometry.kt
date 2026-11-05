@@ -372,7 +372,7 @@ internal class StorySnapEngine(private val stage: StageSize) {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Trash zone & Magnetic Pull Interpolation (Telegram EntityView parity)
+// Trash zone & Magnetic Pull Interpolation
 // ---------------------------------------------------------------------------------------------
 
 internal class StoryTrashZone(private val stage: StageSize) {
@@ -439,7 +439,7 @@ internal class StoryTrashZone(private val stage: StageSize) {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Mathematical Export Parity & MediaArea Normalization (Telegram StoryEntry parity)
+// Mathematical Export Parity & MediaArea Normalization
 // ---------------------------------------------------------------------------------------------
 
 internal data class NormalizedMediaAreaSpec(

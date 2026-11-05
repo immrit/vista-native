@@ -136,7 +136,7 @@ fun StoryElementsOverlay(
     StoryStage(modifier = modifier.fillMaxSize()) { stage ->
         StoryElementLayers(elements = elements, stage = stage, actions = actions)
 
-        // Telegram StoryMediaAreasView Location Card & Map Launcher Overlay
+        // StoryMediaAreasView Location Card & Map Launcher Overlay
         AnimatedVisibility(
             visible = activeLocation != null,
             enter = fadeIn() + scaleIn(spring(dampingRatio = Spring.DampingRatioMediumBouncy)),

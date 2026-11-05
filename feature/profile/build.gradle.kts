@@ -44,6 +44,7 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.zxing.core)
     implementation(libs.poolakey)
+    implementation(libs.androidx.media3.exoplayer)
 
     testImplementation(project(":core:testing"))
     testImplementation(libs.junit)

@@ -54,6 +54,12 @@ interface FeedDao {
     @Query("SELECT * FROM feed_post WHERE account_id = :accountId AND id = :postId LIMIT 1")
     fun observePostById(accountId: String, postId: String): Flow<FeedPostEntity?>
 
+    @Query("SELECT * FROM feed_post WHERE id = :postId LIMIT 1")
+    fun observeAnyPostById(postId: String): Flow<FeedPostEntity?>
+
+    @Query("SELECT * FROM feed_post WHERE id = :postId LIMIT 1")
+    suspend fun findAnyPostById(postId: String): FeedPostEntity?
+
     @Transaction
     suspend fun replaceFirstPage(
         accountId: String,
@@ -97,6 +103,9 @@ interface FeedDao {
 
     @Query("UPDATE feed_post SET content = COALESCE(:content, content), hide_like_count = COALESCE(:hideLikeCount, hide_like_count), hide_comment_count = COALESCE(:hideCommentCount, hide_comment_count) WHERE id = :postId")
     suspend fun updatePostFields(postId: String, content: String?, hideLikeCount: Boolean?, hideCommentCount: Boolean?)
+
+    @Query("UPDATE feed_post SET author_follow_status = :followStatus WHERE author_id = :authorId OR user_id = :authorId")
+    suspend fun updateAuthorFollowStatus(authorId: String, followStatus: String)
 
     @Query("DELETE FROM feed_post WHERE id = :postId")
     suspend fun deletePostEverywhere(postId: String)

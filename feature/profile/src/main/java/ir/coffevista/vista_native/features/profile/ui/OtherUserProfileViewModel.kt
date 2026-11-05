@@ -37,6 +37,9 @@ class OtherUserProfileViewModel @Inject constructor(
     private val _highlights = MutableStateFlow<List<ProfileHighlightDto>>(emptyList())
     val highlights: StateFlow<List<ProfileHighlightDto>> = _highlights.asStateFlow()
 
+    private val _activeNote = MutableStateFlow<ir.coffevista.vista_native.features.profile.data.ProfileNoteDto?>(null)
+    val activeNote: StateFlow<ir.coffevista.vista_native.features.profile.data.ProfileNoteDto?> = _activeNote.asStateFlow()
+
     private val effectChannel = Channel<OtherUserProfileEffect>(Channel.BUFFERED)
     val effects = effectChannel.receiveAsFlow()
 
@@ -99,6 +102,10 @@ class OtherUserProfileViewModel @Inject constructor(
     private fun refresh(viewer: String) {
         viewModelScope.launch {
             _highlights.value = repository.getUserHighlights(profileUserId)
+            launch {
+                val batchResult = repository.getBatchNotes(listOf(profileUserId))
+                _activeNote.value = batchResult.getOrNull()?.get(profileUserId)
+            }
             val hadContent = mutableUiState.value.profile != null
             mutableUiState.update {
                 it.copy(

@@ -46,6 +46,38 @@ interface PublicProfileApi {
         @Path("userId") userId: String,
     ): Response<ProfileHighlightsResponseDto>
 
+    @POST("v1/highlights")
+    suspend fun createHighlight(
+        @Body request: CreateProfileHighlightRequestDto,
+    ): Response<ProfileHighlightDto>
+
+    @retrofit2.http.PATCH("v1/highlights/{highlightId}")
+    suspend fun updateHighlight(
+        @Path("highlightId") highlightId: String,
+        @Body request: UpdateProfileHighlightRequestDto,
+    ): Response<ProfileHighlightDto>
+
+    @retrofit2.http.DELETE("v1/highlights/{highlightId}")
+    suspend fun deleteHighlight(
+        @Path("highlightId") highlightId: String,
+    ): Response<Unit>
+
+    @GET("v1/me/note")
+    suspend fun getOwnNote(): Response<ProfileNoteDto?>
+
+    @POST("v1/me/note")
+    suspend fun upsertNote(
+        @Body request: UpsertNoteRequestDto,
+    ): Response<ProfileNoteDto>
+
+    @retrofit2.http.DELETE("v1/me/note")
+    suspend fun deleteNote(): Response<Unit>
+
+    @POST("v1/profiles/notes/batch")
+    suspend fun getBatchNotes(
+        @Body request: BatchNotesRequestDto,
+    ): Response<Map<String, ProfileNoteDto>>
+
     @POST("v1/profiles/report")
     suspend fun reportProfile(
         @Body request: ReportProfileRequestDto,

@@ -71,8 +71,9 @@ class OfflineFirstFeedRepository @Inject constructor(
         feedDao.observePostById(accountId, postId),
         feedDao.observePostById(storageKey(accountId, FeedKind.Following), postId),
         feedDao.observePostById(detailStorageKey(accountId), postId),
-    ) { explore, following, detail ->
-        (detail ?: explore ?: following)?.asExternalModel()
+        feedDao.observeAnyPostById(postId),
+    ) { explore, following, detail, anyPost ->
+        (detail ?: explore ?: following ?: anyPost)?.asExternalModel()
     }
 
     override suspend fun refreshFeed(
@@ -351,6 +352,10 @@ class OfflineFirstFeedRepository @Inject constructor(
             if (!sentViewEvents.add(postId)) return
         }
         pendingEvents[key] = FeedEventRequestDto(postId, eventType)
+    }
+
+    override suspend fun updateAuthorFollowStatus(authorId: String, followStatus: String) {
+        feedDao.updateAuthorFollowStatus(authorId, followStatus)
     }
 
     private fun storageKey(accountId: String, kind: FeedKind): String = when (kind) {

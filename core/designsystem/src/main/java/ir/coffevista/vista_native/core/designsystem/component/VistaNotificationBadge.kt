@@ -33,7 +33,7 @@ import androidx.compose.ui.unit.sp
 import ir.coffevista.vista_native.core.designsystem.theme.VistaFontFamily
 
 object VistaBadgeDefaults {
-    /** Modern, vibrant notification scarlet used by Threads, Instagram, and iOS. */
+    /** Modern, vibrant notification scarlet. */
     val NotificationColor = Color(0xFFFF334B)
     val ChatBadgeColor = Color(0xFFFF334B)
     val BadgeHeight = 18.dp
@@ -43,7 +43,7 @@ object VistaBadgeDefaults {
 
 /**
  * A delicate, modern badge for unread notification and message counts.
- * Inspired by design systems of X, Threads, and iOS 18.
+ * Inspired by modern clean mobile design systems.
  *
  * - Single digits (e.g. 1 to 9) form a perfect 18dp circle.
  * - Multi-digits (e.g. 10 to 99, 99+) form a sleek horizontal pill with fixed 18dp height.

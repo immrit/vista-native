@@ -39,6 +39,9 @@ class FeedViewModel @Inject constructor(
     private val authStateProvider: AuthenticationStateProvider,
     private val ownProfileDao: OwnProfileDao? = null,
     private val postUploadManager: ir.coffevista.vista_native.features.feed.data.PostUploadManager? = null,
+    private val storyUploadManager: ir.coffevista.vista_native.features.stories.data.StoryUploadManager? = null,
+    private val feedApi: ir.coffevista.vista_native.features.feed.data.FeedApi? = null,
+    private val settingsStore: ir.coffevista.vista_native.core.datastore.SettingsPreferenceStore? = null,
 ) : ViewModel() {
 
     // Test constructor
@@ -78,6 +81,8 @@ class FeedViewModel @Inject constructor(
     val activeStoryUsers = storyRepository.activeStoryUsers
     val postUploadState: StateFlow<ir.coffevista.vista_native.features.feed.data.PostUploadState> =
         postUploadManager?.uploadState ?: MutableStateFlow(ir.coffevista.vista_native.features.feed.data.PostUploadState())
+    val storyUploadState: StateFlow<ir.coffevista.vista_native.features.stories.data.StoryUploadState> =
+        storyUploadManager?.uploadState ?: MutableStateFlow(ir.coffevista.vista_native.features.stories.data.StoryUploadState())
 
     fun retryPostUpload() {
         postUploadManager?.retry()
@@ -89,6 +94,18 @@ class FeedViewModel @Inject constructor(
 
     fun dismissPostUpload() {
         postUploadManager?.dismiss()
+    }
+
+    fun retryStoryUpload() {
+        storyUploadManager?.retry()
+    }
+
+    fun cancelStoryUpload() {
+        storyUploadManager?.cancel()
+    }
+
+    fun dismissStoryUpload() {
+        storyUploadManager?.dismiss()
     }
 
     val unreadNotificationCount: StateFlow<Int> = notificationRepository.unreadCount.stateIn(
@@ -105,6 +122,30 @@ class FeedViewModel @Inject constructor(
 
     private val _viewerUserId = MutableStateFlow<String?>(null)
     val viewerUserId: StateFlow<String?> = _viewerUserId.asStateFlow()
+
+    val settingsPreferences: StateFlow<ir.coffevista.vista_native.core.datastore.SettingsPreferences> =
+        settingsStore?.preferences?.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000),
+            initialValue = ir.coffevista.vista_native.core.datastore.SettingsPreferences(),
+        ) ?: MutableStateFlow(ir.coffevista.vista_native.core.datastore.SettingsPreferences())
+
+    fun toggleFollowAuthor(authorUserId: String) {
+        if (authorUserId.isBlank()) return
+        val currentViewer = _viewerUserId.value
+        if (currentViewer != null && authorUserId.equals(currentViewer, ignoreCase = true)) return
+
+        viewModelScope.launch {
+            feedRepository.updateAuthorFollowStatus(authorUserId, "following")
+            if (feedApi != null) {
+                runCatching {
+                    feedApi.follow(ir.coffevista.vista_native.features.feed.data.FollowActionRequestDto(authorUserId))
+                }.onFailure {
+                    feedRepository.updateAuthorFollowStatus(authorUserId, "none")
+                }
+            }
+        }
+    }
 
     val ownProfile: StateFlow<OwnProfileEntity?> = _viewerUserId
         .flatMapLatest { userId ->

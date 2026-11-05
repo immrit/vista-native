@@ -76,7 +76,7 @@ import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
 import ir.coffevista.vista_native.core.designsystem.component.VistaVerificationBadge
 
-/** Height shared by every media preview card so mixed media lines up (X / Threads style). */
+/** Height shared by every media preview card so mixed media lines up cleanly. */
 private val MediaCardHeight = 220.dp
 
 /**
@@ -178,7 +178,7 @@ private fun MediaBarButton(
 }
 
 /**
- * Flat composer row: avatar next to name + caption field, like the X / Threads composers.
+ * Flat composer row: avatar next to name + caption field.
  * Previews of the attached media go into [attachments], directly under the text.
  */
 @Composable

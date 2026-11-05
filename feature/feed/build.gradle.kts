@@ -26,6 +26,7 @@ dependencies {
     implementation(project(":core:model"))
     implementation(project(":core:network"))
     implementation(project(":core:database"))
+    implementation(project(":core:datastore"))
     implementation(project(":feature:search"))
 
     implementation(libs.androidx.activity.compose)

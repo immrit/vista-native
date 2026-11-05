@@ -29,6 +29,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
@@ -37,6 +38,7 @@ import java.io.File
 import java.util.UUID
 import javax.inject.Inject
 
+import ir.coffevista.vista_native.features.feed.music.AudioTrimEngine
 import ir.coffevista.vista_native.features.feed.music.MusicRepository
 import ir.coffevista.vista_native.features.feed.music.MusicTrack
 import ir.coffevista.vista_native.features.stories.domain.StoryMusic
@@ -107,6 +109,7 @@ class StoryEditorViewModel @Inject constructor(
     private val uploader: PostMediaUploadGateway,
     private val authStateProvider: AuthenticationStateProvider,
     @ApplicationContext private val context: Context,
+    private val storyUploadManager: ir.coffevista.vista_native.features.stories.data.StoryUploadManager? = null,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(StoryEditorUiState())
@@ -690,6 +693,164 @@ class StoryEditorViewModel @Inject constructor(
             return
         }
 
+        _uiState.update { it.copy(isUploading = true, errorMessage = null) }
+
+        if (storyUploadManager != null) {
+            viewModelScope.launch(Dispatchers.IO) {
+                try {
+                    // 1. Ensure local device audio stream and cover are copied to private cache before worker runs
+                    var effectiveMusicTrack = state.musicTrack
+                    var effectiveMusicStartMs = state.musicStartMs
+                    var effectiveMusicEndMs = state.musicEndMs
+
+                    if (effectiveMusicTrack != null) {
+                        val mUrl = effectiveMusicTrack.musicUrl
+                        if (!mUrl.isNullOrBlank() && (mUrl.startsWith("content://", ignoreCase = true) || mUrl.startsWith("file://", ignoreCase = true))) {
+                            val audioDir = File(context.cacheDir, "story_uploads").apply { mkdirs() }
+                            val srcUri = Uri.parse(mUrl)
+
+                            // Hardware/software transcode trim to 128kbps AAC (.m4a) with strict timeout fallback
+                            val trimmedFile = if (state.musicEndMs > state.musicStartMs && state.musicEndMs > 0) {
+                                withTimeoutOrNull(3500L) {
+                                    val tempTrimmed = File(audioDir, "story_trimmed_${System.currentTimeMillis()}.m4a")
+                                    AudioTrimEngine.trimAudio(
+                                        context = context,
+                                        audioUri = srcUri,
+                                        startMs = state.musicStartMs.toLong(),
+                                        endMs = state.musicEndMs.toLong(),
+                                        outputFile = tempTrimmed,
+                                    )
+                                }
+                            } else null
+
+                            val openStream: (Uri) -> java.io.InputStream? = { u ->
+                                runCatching {
+                                    if (u.scheme.equals("file", ignoreCase = true)) {
+                                        val f = File(u.path ?: u.toString().removePrefix("file://"))
+                                        if (f.exists()) f.inputStream() else context.contentResolver.openInputStream(u)
+                                    } else {
+                                        context.contentResolver.openInputStream(u)
+                                    }
+                                }.getOrNull()
+                            }
+
+                            val cachedAudioFile = if (trimmedFile != null && trimmedFile.exists() && trimmedFile.length() > 0) {
+                                effectiveMusicStartMs = 0
+                                effectiveMusicEndMs = 0
+                                trimmedFile
+                            } else {
+                                val tempAudio = File(audioDir, "story_audio_${System.currentTimeMillis()}.mp3")
+                                runCatching {
+                                    openStream(srcUri)?.use { input ->
+                                        tempAudio.outputStream().use { output -> input.copyTo(output) }
+                                    }
+                                }
+                                if (tempAudio.exists() && tempAudio.length() > 0) tempAudio else null
+                            }
+
+                            val cachedCoverUrl = effectiveMusicTrack.coverUrl?.let { cUrl ->
+                                if (cUrl.startsWith("content://", ignoreCase = true) || cUrl.startsWith("file://", ignoreCase = true)) {
+                                    runCatching {
+                                        val coverDir = File(context.cacheDir, "story_uploads").apply { mkdirs() }
+                                        val tempCover = File(coverDir, "story_cover_${System.currentTimeMillis()}.jpg")
+                                        val coverUri = Uri.parse(cUrl)
+                                        openStream(coverUri)?.use { input ->
+                                            tempCover.outputStream().use { output -> input.copyTo(output) }
+                                        }
+                                        if (tempCover.exists() && tempCover.length() > 0) Uri.fromFile(tempCover).toString() else null
+                                    }.getOrNull()
+                                } else cUrl
+                            }
+
+                            if (cachedAudioFile != null) {
+                                effectiveMusicTrack = effectiveMusicTrack.copy(
+                                    musicUrl = Uri.fromFile(cachedAudioFile).toString(),
+                                    coverUrl = cachedCoverUrl,
+                                )
+                            }
+                        }
+                    }
+
+                    val updatedElements = if (effectiveMusicTrack != null) {
+                        state.elements.map { el ->
+                            if (el.type == "music" && el.music != null) {
+                                el.copy(
+                                    music = el.music.copy(
+                                        musicUrl = effectiveMusicTrack.musicUrl,
+                                        coverUrl = effectiveMusicTrack.coverUrl,
+                                        startMs = effectiveMusicStartMs,
+                                        endMs = effectiveMusicEndMs,
+                                    ),
+                                )
+                            } else el
+                        }
+                    } else {
+                        state.elements
+                    }
+
+                    // 2. Prepare media file in cache so background worker has 100% persistent access
+                    val mediaFile: File? = if (!state.isVideo) {
+                        val exportDir = File(context.cacheDir, "story_uploads").apply { mkdirs() }
+                        val tempBaseFile = File(exportDir, "story_base_${System.currentTimeMillis()}.jpg")
+                        val exported = runCatching {
+                            StoryRasterizer.exportBaseCanvasToFile(
+                                context = context,
+                                mediaUri = uri,
+                                mediaTransform = state.mediaTransform,
+                                outputFile = tempBaseFile,
+                            )
+                        }.getOrNull()
+                        exported ?: tempBaseFile
+                    } else {
+                        runCatching {
+                            val exportDir = File(context.cacheDir, "story_uploads").apply { mkdirs() }
+                            val tempVideoFile = File(exportDir, "story_video_${System.currentTimeMillis()}.mp4")
+                            val vStream = if (uri.scheme.equals("file", ignoreCase = true)) {
+                                val f = File(uri.path ?: uri.toString().removePrefix("file://"))
+                                if (f.exists()) f.inputStream() else context.contentResolver.openInputStream(uri)
+                            } else {
+                                context.contentResolver.openInputStream(uri)
+                            }
+                            vStream?.use { input ->
+                                tempVideoFile.outputStream().use { output -> input.copyTo(output) }
+                            }
+                            if (tempVideoFile.exists() && tempVideoFile.length() > 0) tempVideoFile else null
+                        }.getOrNull()
+                    }
+
+                    val pending = ir.coffevista.vista_native.features.stories.data.PendingStoryUpload(
+                        userId = userId,
+                        mediaUri = uri,
+                        mediaFile = mediaFile,
+                        isVideo = state.isVideo,
+                        mediaTransform = state.mediaTransform,
+                        elements = updatedElements,
+                        musicTrack = effectiveMusicTrack,
+                        musicStartMs = effectiveMusicStartMs,
+                        musicEndMs = effectiveMusicEndMs,
+                        saveMusicToLibrary = state.saveMusicToLibrary,
+                        durationType = state.durationType,
+                        privacyType = state.privacyType,
+                        selectedCloseFriendIds = state.selectedCloseFriendIds.toList(),
+                    )
+                    storyUploadManager.startUpload(pending)
+                    withContext(Dispatchers.Main) {
+                        _uiState.update { it.copy(isUploading = false, isSuccess = true) }
+                    }
+                } catch (e: Exception) {
+                    withContext(Dispatchers.Main) {
+                        _uiState.update {
+                            it.copy(
+                                isUploading = false,
+                                errorMessage = e.message ?: "خطا در آماده‌سازی استوری",
+                            )
+                        }
+                    }
+                }
+            }
+            return
+        }
+
         viewModelScope.launch {
             _uiState.update {
                 it.copy(
@@ -816,11 +977,15 @@ class StoryEditorViewModel @Inject constructor(
                             )
                         }.getOrNull()
                         val effectiveUri = if (exported != null && exported.exists() && exported.length() > 0L) {
-                            FileProvider.getUriForFile(
-                                context,
-                                "${context.packageName}.files",
-                                exported,
-                            )
+                            runCatching {
+                                FileProvider.getUriForFile(
+                                    context,
+                                    "${context.packageName}.files",
+                                    exported,
+                                )
+                            }.getOrElse {
+                                Uri.fromFile(exported)
+                            }
                         } else {
                             uri
                         }

@@ -36,6 +36,26 @@ data class FeedPost(
 
     val videoThumbnailUrl: String?
         get() = if (videoUrl != null) primaryImageUrl else null
+
+    val musicStartMs: Long
+        get() {
+            val url = musicUrl ?: return 0L
+            val fragment = url.substringAfter('#', "").trim()
+            if (fragment.startsWith("t=")) {
+                return fragment.removePrefix("t=").substringBefore(',').toLongOrNull() ?: 0L
+            }
+            return 0L
+        }
+
+    val musicEndMs: Long?
+        get() {
+            val url = musicUrl ?: return null
+            val fragment = url.substringAfter('#', "").trim()
+            if (fragment.startsWith("t=")) {
+                return fragment.removePrefix("t=").substringAfter(',', "").takeIf(String::isNotBlank)?.toLongOrNull()
+            }
+            return null
+        }
 }
 
 fun FeedPostEntity.asExternalModel() = FeedPost(

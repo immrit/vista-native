@@ -5,6 +5,8 @@ import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.ClickableText
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -60,6 +62,8 @@ internal fun StoryRichText(
     spec: StoryTextSpec,
     modifier: Modifier = Modifier,
     editor: StoryTextEditorBinding? = null,
+    onHashtagClick: ((String) -> Unit)? = null,
+    onMentionClick: ((String) -> Unit)? = null,
 ) {
     val density = LocalDensity.current
     val hasBadge = spec.background == StoryTextBackground.Solid || spec.background == StoryTextBackground.Soft
@@ -173,12 +177,66 @@ internal fun StoryRichText(
         }
 
         if (editor == null) {
-            BasicText(
-                text = text,
-                style = if (neon) fillStyle.copy(shadow = Shadow(glowColor(spec).copy(alpha = 0.8f), Offset.Zero, glowPx * 0.4f)) else fillStyle,
-                onTextLayout = { layout = it },
-                modifier = Modifier.align(Alignment.Center),
-            )
+            val hasEntities = remember(text) { text.contains('#') || text.contains('@') }
+            if (hasEntities && (onHashtagClick != null || onMentionClick != null)) {
+                val annotated = remember(text) {
+                    buildAnnotatedString {
+                        val pattern = Regex("""(?<![^\s\n])@([\u0600-\u06FF\w_]+)|#([\u0600-\u06FF\w_]+)""")
+                        var cursor = 0
+                        pattern.findAll(text).forEach { match ->
+                            if (match.range.first > cursor) {
+                                append(text.substring(cursor, match.range.first))
+                            }
+                            val start = length
+                            append(match.value)
+                            if (match.value.startsWith("#")) {
+                                addStringAnnotation(
+                                    tag = "HASHTAG",
+                                    annotation = match.value.removePrefix("#"),
+                                    start = start,
+                                    end = length,
+                                )
+                            } else if (match.value.startsWith("@")) {
+                                addStringAnnotation(
+                                    tag = "MENTION",
+                                    annotation = match.value.removePrefix("@"),
+                                    start = start,
+                                    end = length,
+                                )
+                            }
+                            cursor = match.range.last + 1
+                        }
+                        if (cursor < text.length) {
+                            append(text.substring(cursor))
+                        }
+                    }
+                }
+                ClickableText(
+                    text = annotated,
+                    style = if (neon) fillStyle.copy(shadow = Shadow(glowColor(spec).copy(alpha = 0.8f), Offset.Zero, glowPx * 0.4f)) else fillStyle,
+                    onTextLayout = { layout = it },
+                    modifier = Modifier.align(Alignment.Center),
+                    onClick = { offset ->
+                        val hashtag = annotated.getStringAnnotations(tag = "HASHTAG", start = offset, end = offset).firstOrNull()
+                        if (hashtag != null) {
+                            onHashtagClick?.invoke(hashtag.item)
+                            return@ClickableText
+                        }
+                        val mention = annotated.getStringAnnotations(tag = "MENTION", start = offset, end = offset).firstOrNull()
+                        if (mention != null) {
+                            onMentionClick?.invoke(mention.item)
+                            return@ClickableText
+                        }
+                    },
+                )
+            } else {
+                BasicText(
+                    text = text,
+                    style = if (neon) fillStyle.copy(shadow = Shadow(glowColor(spec).copy(alpha = 0.8f), Offset.Zero, glowPx * 0.4f)) else fillStyle,
+                    onTextLayout = { layout = it },
+                    modifier = Modifier.align(Alignment.Center),
+                )
+            }
         } else {
             BasicTextField(
                 value = editor.value,

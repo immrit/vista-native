@@ -37,7 +37,7 @@ import kotlin.math.sin
 
 /**
  * High-resolution (1080x1920) offscreen rasterizer for exporting stories with 1:1 preview parity.
- * Mirrors Telegram's StoryEntry export pipeline:
+ * StoryEntry export pipeline:
  *  - Layer 0: Dominant dual-color background gradient extracted from media
  *  - Layer 1: Transformable primary media layer
  *  - Layer 2: Multi-shader freehand drawing layer (Pen, Marker, Neon Glow, Eraser)
@@ -49,7 +49,7 @@ object StoryRasterizer {
     const val EXPORT_HEIGHT = 1920
 
     /**
-     * Extracts top and bottom dominant colors from a media bitmap (Telegram GradientTools parity).
+     * Extracts top and bottom dominant colors from a media bitmap.
      */
     internal fun extractDominantColors(bitmap: Bitmap?): StoryDominantColors {
         if (bitmap == null || bitmap.isRecycled || bitmap.width <= 0 || bitmap.height <= 0) {

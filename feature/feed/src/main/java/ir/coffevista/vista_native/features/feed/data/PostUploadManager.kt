@@ -161,17 +161,26 @@ class PostUploadManager @Inject constructor(
             PostUploadWorker.KEY_MAX_BYTES to upload.maxUploadBytes,
         )
 
-        val request = OneTimeWorkRequestBuilder<PostUploadWorker>()
-            .setInputData(inputData)
-            .addTag(PostUploadWorker.WORK_TAG)
-            .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
-            .build()
+        runCatching {
+            val request = OneTimeWorkRequestBuilder<PostUploadWorker>()
+                .setInputData(inputData)
+                .addTag(PostUploadWorker.WORK_TAG)
+                .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
+                .build()
 
-        workManager.enqueueUniqueWork(
-            PostUploadWorker.WORK_NAME,
-            ExistingWorkPolicy.REPLACE,
-            request,
-        )
+            workManager.enqueueUniqueWork(
+                PostUploadWorker.WORK_NAME,
+                ExistingWorkPolicy.REPLACE,
+                request,
+            )
+        }.onFailure { err ->
+            _uploadState.update {
+                it.copy(
+                    isUploading = false,
+                    errorMessage = err.message ?: "خطا در شروع ارسال پست",
+                )
+            }
+        }
     }
 
     fun retry() {

@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -50,6 +51,8 @@ fun StoryTray(
     onOpenStoryPlayer: (userIndex: Int) -> Unit,
     onCreateStory: () -> Unit,
     modifier: Modifier = Modifier,
+    isStoryUploading: Boolean = false,
+    storyUploadProgress: Float = 0f,
 ) {
     val brandGradient = remember {
         Brush.linearGradient(
@@ -92,6 +95,8 @@ fun StoryTray(
                 brandGradient = brandGradient,
                 closeFriendsGradient = closeFriendsGradient,
                 primaryGradient = primaryGradient,
+                isUploading = isStoryUploading,
+                uploadProgress = storyUploadProgress,
                 onOpenOwnStories = {
                     val target = ownStoryUser
                     if (target != null) {
@@ -130,6 +135,8 @@ private fun YourStoryItem(
     brandGradient: Brush,
     closeFriendsGradient: Brush,
     primaryGradient: Brush,
+    isUploading: Boolean = false,
+    uploadProgress: Float = 0f,
     onOpenOwnStories: () -> Unit,
     onAddStory: () -> Unit,
 ) {
@@ -146,7 +153,7 @@ private fun YourStoryItem(
         modifier = Modifier
             .width(86.dp)
             .padding(horizontal = 6.dp, vertical = 8.dp)
-            .clickable(onClick = if (hasActiveStories) onOpenOwnStories else onAddStory),
+            .clickable(onClick = if (hasActiveStories && !isUploading) onOpenOwnStories else onAddStory),
     ) {
         Box(
             modifier = Modifier.size(74.dp),
@@ -157,6 +164,10 @@ private fun YourStoryItem(
                     .fillMaxSize()
                     .then(
                         when {
+                            isUploading -> Modifier
+                                .clip(CircleShape)
+                                .background(brandGradient)
+                                .padding(2.5.dp)
                             hasCloseFriendsUnseen -> Modifier
                                 .clip(CircleShape)
                                 .background(closeFriendsGradient)
@@ -179,7 +190,7 @@ private fun YourStoryItem(
                     )
                     .clip(CircleShape)
                     .background(MaterialTheme.colorScheme.surface)
-                    .padding(if (hasActiveStories) 2.5.dp else 1.5.dp),
+                    .padding(if (hasActiveStories || isUploading) 2.5.dp else 1.5.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 if (resolvedAvatar != null) {
@@ -209,36 +220,61 @@ private fun YourStoryItem(
                 }
             }
 
-            // Corner '+' badge — always allows adding another story even when own stories exist
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .size(24.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.background)
-                    .padding(2.dp)
-                    .clip(CircleShape)
-                    .background(primaryGradient)
-                    .clickable(onClick = onAddStory),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Add,
-                    contentDescription = "افزودن استوری جدید",
-                    tint = Color.White,
-                    modifier = Modifier.size(15.dp),
-                )
+            // Corner badge: upload progress spinner while uploading, or '+' add button otherwise
+            if (isUploading) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .size(24.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.background)
+                        .padding(2.dp)
+                        .clip(CircleShape)
+                        .background(primaryGradient),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CircularProgressIndicator(
+                        progress = { uploadProgress.coerceIn(0.1f, 1f) },
+                        color = Color.White,
+                        strokeWidth = 2.dp,
+                        modifier = Modifier.size(13.dp),
+                    )
+                }
+            } else {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .size(24.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.background)
+                        .padding(2.dp)
+                        .clip(CircleShape)
+                        .background(primaryGradient)
+                        .clickable(onClick = onAddStory),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = "افزودن استوری جدید",
+                        tint = Color.White,
+                        modifier = Modifier.size(15.dp),
+                    )
+                }
             }
         }
 
         Text(
-            text = if (hasActiveStories) "استوری شما" else "استوری جدید",
+            text = when {
+                isUploading -> "در حال ارسال…"
+                hasActiveStories -> "استوری شما"
+                else -> "استوری جدید"
+            },
             fontSize = 11.5.sp,
-            fontWeight = if (hasActiveStories) FontWeight.SemiBold else FontWeight.Normal,
-            color = if (hasActiveStories) {
-                MaterialTheme.colorScheme.onSurface
-            } else {
-                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f)
+            fontWeight = if (hasActiveStories || isUploading) FontWeight.SemiBold else FontWeight.Normal,
+            color = when {
+                isUploading -> VistaBrandColors.Indigo
+                hasActiveStories -> MaterialTheme.colorScheme.onSurface
+                else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f)
             },
             textAlign = TextAlign.Center,
             maxLines = 1,

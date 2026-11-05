@@ -38,6 +38,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import ir.coffevista.vista_native.features.feed.ui.HashtagMentionCaption
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -207,12 +208,25 @@ fun HashtagPostsScreen(
     onBack: () -> Unit,
     onPostClick: (String) -> Unit,
     onAuthorClick: (String) -> Unit,
+    onHashtagClick: (String) -> Unit = {},
 ) {
     val viewModel: HashtagPostsViewModel = hiltViewModel()
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val listState = rememberLazyListState()
     val normalized = remember(hashtag) { hashtag.removePrefix("#").trim() }
     var fullscreenMedia by remember { mutableStateOf<Pair<List<String>, Int>?>(null) }
+    val effectiveOnHashtagClick: (String) -> Unit = remember(onHashtagClick) {
+        { tag ->
+            val cleaned = tag.removePrefix("#").trim()
+            if (cleaned.isNotBlank()) {
+                if (cleaned.equals(normalized, ignoreCase = true)) {
+                    viewModel.refresh()
+                } else {
+                    onHashtagClick(cleaned)
+                }
+            }
+        }
+    }
 
     LaunchedEffect(normalized) { viewModel.bind(normalized) }
     LaunchedEffect(listState, state.posts.size, state.hasMore) {
@@ -251,6 +265,7 @@ fun HashtagPostsScreen(
                                 post = post,
                                 onPostClick = onPostClick,
                                 onAuthorClick = onAuthorClick,
+                                onHashtagClick = effectiveOnHashtagClick,
                                 onMediaClick = { imgs, idx -> fullscreenMedia = imgs to idx },
                                 onLikeClick = { viewModel.toggleLike(post) },
                                 onSaveClick = { viewModel.toggleSave(post) },
@@ -291,6 +306,7 @@ private fun HashtagPostCard(
     post: FeedPost,
     onPostClick: (String) -> Unit,
     onAuthorClick: (String) -> Unit,
+    onHashtagClick: (String) -> Unit = {},
     onMediaClick: ((List<String>, Int) -> Unit)? = null,
     onLikeClick: () -> Unit,
     onSaveClick: () -> Unit,
@@ -335,12 +351,18 @@ private fun HashtagPostCard(
 
             // Text
             post.content?.takeIf(String::isNotBlank)?.let {
-                Text(
+                HashtagMentionCaption(
                     text = it,
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontSize = 14.5.sp,
+                        lineHeight = 21.sp,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    ),
                     maxLines = 4,
                     overflow = TextOverflow.Ellipsis,
-                    fontSize = 14.5.sp,
-                    lineHeight = 21.sp,
+                    onHashtagClick = onHashtagClick,
+                    onMentionClick = onAuthorClick,
+                    onPostClick = { onPostClick(post.id) },
                 )
             }
 

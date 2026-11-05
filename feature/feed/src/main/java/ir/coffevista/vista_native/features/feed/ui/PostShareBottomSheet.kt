@@ -4,16 +4,19 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
-import kotlinx.coroutines.launch
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -21,43 +24,48 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AutoAwesome
-import androidx.compose.material.icons.outlined.AutoStories
-import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.DarkMode
-import androidx.compose.material.icons.outlined.Email
 import androidx.compose.material.icons.outlined.LightMode
 import androidx.compose.material.icons.outlined.MailOutline
-import androidx.compose.material.icons.outlined.Share
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.core.content.FileProvider
+import ir.coffevista.vista_native.core.designsystem.R as DesignR
 import ir.coffevista.vista_native.features.feed.data.FeedPost
+import kotlinx.coroutines.launch
+import java.io.File
 
 private fun postShareUrl(postId: String): String = "https://cafevista.ir/post/$postId"
 
@@ -87,7 +95,7 @@ fun PostShareBottomSheet(
 ) {
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
-    val coroutineScope = androidx.compose.runtime.rememberCoroutineScope()
+    val coroutineScope = rememberCoroutineScope()
     val text = remember(post) { postShareText(post) }
     val url = remember(post.id) { postShareUrl(post.id) }
     var showStoryThemeDialog by remember { mutableStateOf(false) }
@@ -96,182 +104,285 @@ fun PostShareBottomSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = MaterialTheme.colorScheme.surface,
+        containerColor = Color.Black,
+        scrimColor = Color.Black.copy(alpha = 0.5f),
+        shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
         dragHandle = null,
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            // Drag handle
-            Box(
-                modifier = Modifier
-                    .padding(top = 12.dp, bottom = 8.dp)
-                    .width(40.dp)
-                    .height(4.dp)
-                    .clip(RoundedCornerShape(2.dp))
-                    .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)),
-            )
-
-            // Title
-            Text(
-                text = "اشتراک‌گذاری پست",
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
-            )
-
-            // Send via Direct Message option
-            Row(
+        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable {
-                        if (onSendDirectMessage != null) {
-                            onDismiss()
-                            onSendDirectMessage(post)
-                        }
-                    }
-                    .padding(horizontal = 20.dp, vertical = 14.dp),
-                verticalAlignment = Alignment.CenterVertically,
+                    .navigationBarsPadding()
+                    .padding(bottom = 20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Icon(
-                    imageVector = Icons.Outlined.MailOutline,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.size(24.dp),
+                // Handle bar
+                Box(
+                    modifier = Modifier
+                        .padding(top = 12.dp)
+                        .width(40.dp)
+                        .height(4.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(Color(0xFFBDBDBD)), // Colors.grey[400]
                 )
-                Spacer(Modifier.width(16.dp))
+
+                // Title
                 Text(
-                    text = "ارسال از طریق پیام مستقیم",
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    text = "اشتراک‌گذاری پست",
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(20.dp),
                 )
-            }
 
-            HorizontalDivider(
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
-                thickness = 0.5.dp,
-                modifier = Modifier.padding(horizontal = 20.dp),
-            )
+                // Send via Direct Message option
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            onDismiss()
+                            onSendDirectMessage?.invoke(post)
+                        }
+                        .padding(horizontal = 20.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.MailOutline,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(24.dp),
+                    )
+                    Spacer(Modifier.width(16.dp))
+                    Text(
+                        text = "ارسال از طریق پیام مستقیم",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Normal,
+                        color = Color.White,
+                    )
+                }
 
-            // Action buttons row (Copy Link, Share..., Add to Story)
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 20.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-            ) {
-                ShareActionButton(
-                    icon = Icons.Outlined.ContentCopy,
-                    label = "کپی لینک",
-                    onClick = {
-                        clipboard.setText(AnnotatedString(url))
-                        Toast.makeText(context, "لینک پست کپی شد", Toast.LENGTH_SHORT).show()
-                        onShared()
-                        onDismiss()
-                    },
+                // Divider
+                HorizontalDivider(
+                    color = Color(0xFF424242), // Colors.grey[800]
+                    thickness = 1.dp,
+                    modifier = Modifier.padding(horizontal = 20.dp),
                 )
-                ShareActionButton(
-                    icon = Icons.Outlined.Share,
-                    label = "اشتراک‌گذاری...",
-                    onClick = {
-                        shareExternal(context, text)
-                        onShared()
-                        onDismiss()
-                    },
-                )
-                ShareActionButton(
-                    icon = Icons.Outlined.AutoStories,
-                    label = "افزودن به استوری",
-                    onClick = {
-                        showStoryThemeDialog = true
-                    },
-                )
-            }
 
-            HorizontalDivider(
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
-                thickness = 0.5.dp,
-                modifier = Modifier.padding(horizontal = 20.dp),
-            )
-
-            // App shortcuts row (Stories, WhatsApp, Gmail, Rubika)
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 20.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-            ) {
-                AppShortcutButton(
-                    label = "استوری",
-                    background = Brush.linearGradient(
-                        colors = listOf(Color(0xFF833AB4), Color(0xFFFD1D1D), Color(0xFFFCB045))
-                    ),
-                    icon = Icons.Outlined.AutoStories,
-                    iconColor = Color.White,
-                    onClick = {
-                        showStoryThemeDialog = true
-                    },
-                )
-                AppShortcutButton(
-                    label = "پیام‌رسان",
-                    background = Brush.linearGradient(
-                        colors = listOf(Color(0xFF25D366), Color(0xFF128C7E))
-                    ),
-                    icon = Icons.Outlined.Share,
-                    iconColor = Color.White,
-                    onClick = {
-                        shareToTargetApp(
-                            context = context,
-                            text = text,
-                            packageName = "com.whatsapp",
-                            fallbackName = "واتساپ",
+                // Action buttons row (Copy Link, Share..., Add to Story)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 20.dp, horizontal = 12.dp),
+                    verticalAlignment = Alignment.Top,
+                ) {
+                    // Copy Link
+                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                        ShareActionButton(
+                            label = "کپی لینک",
+                            onClick = {
+                                clipboard.setText(AnnotatedString(url))
+                                Toast.makeText(context, "لینک پست کپی شد", Toast.LENGTH_SHORT).show()
+                                onShared()
+                                onDismiss()
+                            },
+                            iconContent = {
+                                Icon(
+                                    painter = painterResource(DesignR.drawable.ic_share_link),
+                                    contentDescription = "کپی لینک",
+                                    tint = Color.Black,
+                                    modifier = Modifier.size(24.dp),
+                                )
+                            },
                         )
-                        onShared()
-                        onDismiss()
-                    },
-                )
-                AppShortcutButton(
-                    label = "جیمیل",
-                    background = Brush.linearGradient(
-                        colors = listOf(Color(0xFFEA4335), Color(0xFFD93025))
-                    ),
-                    icon = Icons.Outlined.Email,
-                    iconColor = Color.White,
-                    onClick = {
-                        shareToTargetApp(
-                            context = context,
-                            text = text,
-                            packageName = "com.google.android.gm",
-                            fallbackName = "جیمیل",
+                    }
+
+                    // Share via...
+                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                        ShareActionButton(
+                            label = "اشتراک‌گذاری...",
+                            onClick = {
+                                shareExternal(context, text)
+                                onShared()
+                                onDismiss()
+                            },
+                            iconContent = {
+                                Image(
+                                    painter = painterResource(DesignR.drawable.ic_share_send),
+                                    contentDescription = "اشتراک‌گذاری...",
+                                    colorFilter = ColorFilter.tint(Color.Black),
+                                    modifier = Modifier.size(24.dp),
+                                )
+                            },
                         )
-                        onShared()
-                        onDismiss()
-                    },
-                )
-                AppShortcutButton(
-                    label = "روبیکا",
-                    background = Brush.linearGradient(
-                        colors = listOf(Color(0xFF6C5CE7), Color(0xFF5B4BC4))
-                    ),
-                    icon = Icons.Outlined.Share,
-                    iconColor = Color.White,
-                    onClick = {
-                        shareToTargetApp(
-                            context = context,
-                            text = text,
-                            packageName = "ir.resaneh1.iptv",
-                            fallbackPackageName = "app.rbmain.a",
-                            fallbackName = "روبیکا",
+                    }
+
+                    // Add to Story
+                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                        ShareActionButton(
+                            label = "افزودن به استوری",
+                            onClick = {
+                                if (!isGeneratingStory) {
+                                    showStoryThemeDialog = true
+                                }
+                            },
+                            iconContent = {
+                                Image(
+                                    painter = painterResource(DesignR.drawable.ic_share_story),
+                                    contentDescription = "افزودن به استوری",
+                                    contentScale = ContentScale.Fit,
+                                    modifier = Modifier.size(24.dp),
+                                )
+                            },
                         )
-                        onShared()
-                        onDismiss()
-                    },
+                    }
+                }
+
+                // Divider
+                HorizontalDivider(
+                    color = Color(0xFF424242), // Colors.grey[800]
+                    thickness = 1.dp,
+                    modifier = Modifier.padding(horizontal = 20.dp),
                 )
+
+                // App icons row (Story, Messenger, Gmail, Rubika)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 20.dp, horizontal = 12.dp),
+                    verticalAlignment = Alignment.Top,
+                ) {
+                    // Story (Social)
+                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                        AppIconButton(
+                            label = "استوری",
+                            onClick = {
+                                if (isGeneratingStory) return@AppIconButton
+                                isGeneratingStory = true
+                                Toast.makeText(context, "در حال تولید تصویر استوری...", Toast.LENGTH_SHORT).show()
+                                coroutineScope.launch {
+                                    try {
+                                        val storyFile = PostStoryTemplateGenerator.generateTemplate(
+                                            context,
+                                            post,
+                                            "dark",
+                                        )
+                                        isGeneratingStory = false
+                                        onShared()
+                                        onDismiss()
+                                        shareDirectlyToInstagramStory(context, storyFile, url, text)
+                                    } catch (_: Throwable) {
+                                        isGeneratingStory = false
+                                        Toast.makeText(context, "خطا در تولید تصویر استوری", Toast.LENGTH_SHORT).show()
+                                        shareExternal(context, text)
+                                    }
+                                }
+                            },
+                            iconContent = {
+                                Box(
+                                    modifier = Modifier
+                                        .size(56.dp)
+                                        .clip(RoundedCornerShape(12.dp)),
+                                ) {
+                                    Image(
+                                        painter = painterResource(DesignR.drawable.ic_share_social),
+                                        contentDescription = "استوری",
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize(),
+                                    )
+                                }
+                            },
+                        )
+                    }
+
+                    // Messaging (WhatsApp)
+                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                        AppIconButton(
+                            label = "پیام‌رسان",
+                            onClick = {
+                                onShared()
+                                onDismiss()
+                                shareToWhatsApp(context, text)
+                            },
+                            iconContent = {
+                                Box(
+                                    modifier = Modifier
+                                        .size(56.dp)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(Color.White)
+                                        .padding(8.dp),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Image(
+                                        painter = painterResource(DesignR.drawable.ic_share_whatsapp),
+                                        contentDescription = "پیام‌رسان",
+                                        contentScale = ContentScale.Fit,
+                                        modifier = Modifier.fillMaxSize(),
+                                    )
+                                }
+                            },
+                        )
+                    }
+
+                    // Gmail
+                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                        AppIconButton(
+                            label = "جیمیل",
+                            onClick = {
+                                onShared()
+                                onDismiss()
+                                shareToGmail(context, text)
+                            },
+                            iconContent = {
+                                Box(
+                                    modifier = Modifier
+                                        .size(56.dp)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(Color.White)
+                                        .padding(8.dp),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Image(
+                                        painter = painterResource(DesignR.drawable.ic_share_gmail),
+                                        contentDescription = "جیمیل",
+                                        contentScale = ContentScale.Fit,
+                                        modifier = Modifier.fillMaxSize(),
+                                    )
+                                }
+                            },
+                        )
+                    }
+
+                    // Rubika
+                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                        AppIconButton(
+                            label = "روبیکا",
+                            onClick = {
+                                onShared()
+                                onDismiss()
+                                shareToRubika(context, text)
+                            },
+                            iconContent = {
+                                Box(
+                                    modifier = Modifier
+                                        .size(56.dp)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(Color(0xFF6C5CE7))
+                                        .padding(8.dp),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Image(
+                                        painter = painterResource(DesignR.drawable.ic_share_rubika),
+                                        contentDescription = "روبیکا",
+                                        contentScale = ContentScale.Fit,
+                                        modifier = Modifier.fillMaxSize(),
+                                    )
+                                }
+                            },
+                        )
+                    }
+                }
             }
         }
     }
@@ -306,124 +417,146 @@ fun PostShareBottomSheet(
     }
 
     if (showStoryThemeDialog) {
-        AlertDialog(
+        Dialog(
             onDismissRequest = { if (!isGeneratingStory) showStoryThemeDialog = false },
-            title = {
-                Text(
-                    text = "انتخاب قالب استوری",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                )
-            },
-            text = {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    StoryThemeOption(
-                        icon = Icons.Outlined.DarkMode,
-                        label = "قالب تیره",
-                        onClick = { handleStoryThemeSelection("dark") },
-                    )
-                    StoryThemeOption(
-                        icon = Icons.Outlined.LightMode,
-                        label = "قالب روشن",
-                        onClick = { handleStoryThemeSelection("light") },
-                    )
-                    StoryThemeOption(
-                        icon = Icons.Outlined.AutoAwesome,
-                        label = "قالب ویستا",
-                        onClick = { handleStoryThemeSelection("vista") },
-                    )
+            properties = DialogProperties(usePlatformDefaultWidth = false),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) {
+                        if (!isGeneratingStory) showStoryThemeDialog = false
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                Surface(
+                    modifier = Modifier
+                        .width(260.dp)
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                        ) { /* absorb click */ },
+                    shape = RoundedCornerShape(14.dp),
+                    color = Color(0xFF252525),
+                    shadowElevation = 14.dp,
+                ) {
+                    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                        ) {
+                            StoryThemeMenuItem(
+                                icon = Icons.Outlined.DarkMode,
+                                label = "قالب تیره",
+                                onClick = { handleStoryThemeSelection("dark") },
+                            )
+                            HorizontalDivider(
+                                color = Color.White.copy(alpha = 0.12f),
+                                thickness = 0.5.dp,
+                            )
+                            StoryThemeMenuItem(
+                                icon = Icons.Outlined.LightMode,
+                                label = "قالب روشن",
+                                onClick = { handleStoryThemeSelection("light") },
+                            )
+                            HorizontalDivider(
+                                color = Color.White.copy(alpha = 0.12f),
+                                thickness = 0.5.dp,
+                            )
+                            StoryThemeMenuItem(
+                                icon = Icons.Outlined.AutoAwesome,
+                                label = "قالب ویستا",
+                                onClick = { handleStoryThemeSelection("vista") },
+                            )
+                        }
+                    }
                 }
-            },
-            confirmButton = {},
-            dismissButton = {
-                TextButton(onClick = { if (!isGeneratingStory) showStoryThemeDialog = false }) {
-                    Text("انصراف")
-                }
-            },
-        )
+            }
+        }
     }
 }
 
 @Composable
 private fun ShareActionButton(
-    icon: ImageVector,
     label: String,
     onClick: () -> Unit,
+    iconContent: @Composable () -> Unit,
 ) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.width(80.dp),
-    ) {
-        Surface(
+        modifier = Modifier.clickable(
+            interactionSource = remember { MutableInteractionSource() },
+            indication = null,
             onClick = onClick,
-            shape = CircleShape,
-            color = MaterialTheme.colorScheme.surfaceVariant,
-            modifier = Modifier.size(54.dp),
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = label,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(24.dp),
-                )
-            }
-        }
-        Spacer(Modifier.height(8.dp))
-        Text(
-            text = label,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Medium,
-            color = MaterialTheme.colorScheme.onSurface,
-            textAlign = TextAlign.Center,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
-}
-
-@Composable
-private fun AppShortcutButton(
-    label: String,
-    background: Brush,
-    icon: ImageVector,
-    iconColor: Color,
-    onClick: () -> Unit,
-) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.width(72.dp),
+        ),
     ) {
         Box(
             modifier = Modifier
-                .size(52.dp)
-                .clip(RoundedCornerShape(16.dp))
-                .background(background)
+                .size(56.dp)
+                .clip(CircleShape)
+                .background(Color.White)
                 .clickable(onClick = onClick),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = label,
-                tint = iconColor,
-                modifier = Modifier.size(26.dp),
-            )
+            iconContent()
         }
         Spacer(Modifier.height(8.dp))
-        Text(
-            text = label,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Medium,
-            color = MaterialTheme.colorScheme.onSurface,
-            textAlign = TextAlign.Center,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+        Box(
+            modifier = Modifier.height(32.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = label,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Normal,
+                color = Color.White,
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 
 @Composable
-private fun StoryThemeOption(
+private fun AppIconButton(
+    label: String,
+    onClick: () -> Unit,
+    iconContent: @Composable () -> Unit,
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.clickable(
+            interactionSource = remember { MutableInteractionSource() },
+            indication = null,
+            onClick = onClick,
+        ),
+    ) {
+        iconContent()
+        Spacer(Modifier.height(8.dp))
+        Box(
+            modifier = Modifier.height(32.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = label,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Normal,
+                color = Color.White,
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
+private fun StoryThemeMenuItem(
     icon: ImageVector,
     label: String,
     onClick: () -> Unit,
@@ -432,21 +565,21 @@ private fun StoryThemeOption(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(vertical = 12.dp, horizontal = 8.dp),
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        Text(
+            text = label,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Normal,
+            color = Color.White,
+        )
         Icon(
             imageVector = icon,
             contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(22.dp),
-        )
-        Spacer(Modifier.width(16.dp))
-        Text(
-            text = label,
-            fontSize = 15.sp,
-            fontWeight = FontWeight.Medium,
-            color = MaterialTheme.colorScheme.onSurface,
+            tint = Color.White.copy(alpha = 0.7f),
+            modifier = Modifier.size(19.dp),
         )
     }
 }
@@ -459,39 +592,141 @@ private fun shareExternal(context: Context, text: String) {
     context.startActivity(Intent.createChooser(intent, "اشتراک‌گذاری پست"))
 }
 
-private fun shareToTargetApp(
-    context: Context,
-    text: String,
-    packageName: String,
-    fallbackPackageName: String? = null,
-    fallbackName: String,
-) {
-    val pm = context.packageManager
-    var targetPackage: String? = null
-
+private fun shareDirectlyToInstagramStory(context: Context, file: File, postUrl: String, text: String) {
     try {
-        pm.getPackageInfo(packageName, 0)
-        targetPackage = packageName
-    } catch (_: Exception) {
-        if (fallbackPackageName != null) {
-            try {
-                pm.getPackageInfo(fallbackPackageName, 0)
-                targetPackage = fallbackPackageName
-            } catch (_: Exception) {
-                targetPackage = null
-            }
-        }
-    }
+        val uri = FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.files",
+            file,
+        )
 
-    if (targetPackage != null) {
+        // Explicitly grant read URI permission to Instagram package
+        try {
+            context.grantUriPermission(
+                "com.instagram.android",
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION,
+            )
+        } catch (_: Exception) {}
+
+        // 1. Official Instagram Story Intent
+        val instagramStoryIntent = Intent("com.instagram.share.ADD_TO_STORY").apply {
+            setDataAndType(uri, "image/png")
+            setPackage("com.instagram.android")
+            putExtra("interactive_asset_uri", uri)
+            putExtra("content_url", postUrl)
+            putExtra("source_application", context.packageName)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+
+        try {
+            context.startActivity(instagramStoryIntent)
+            return
+        } catch (_: android.content.ActivityNotFoundException) {
+            // Instagram story action not registered, try standard send
+        } catch (_: SecurityException) {
+            // Permission or signature issue
+        }
+
+        // 2. Direct Send to Instagram app
+        val directInstagramIntent = Intent(Intent.ACTION_SEND).apply {
+            type = "image/png"
+            setPackage("com.instagram.android")
+            putExtra(Intent.EXTRA_STREAM, uri)
+            putExtra(Intent.EXTRA_TEXT, text)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+
+        try {
+            context.startActivity(directInstagramIntent)
+            return
+        } catch (_: android.content.ActivityNotFoundException) {
+            // Instagram not installed at all
+        }
+
+        // 3. Fallback when Instagram is not installed
+        Toast.makeText(context, "برنامه اینستاگرام بر روی دستگاه شما نصب نیست", Toast.LENGTH_SHORT).show()
+        shareStoryImageFile(context, file, text)
+    } catch (_: Exception) {
+        shareStoryImageFile(context, file, text)
+    }
+}
+
+private fun shareStoryImageFile(context: Context, file: File, caption: String) {
+    try {
+        val uri = FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.files",
+            file,
+        )
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "image/png"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            putExtra(Intent.EXTRA_TEXT, caption)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        context.startActivity(Intent.createChooser(intent, "اشتراک‌گذاری در استوری"))
+    } catch (_: Exception) {
+        shareExternal(context, caption)
+    }
+}
+
+private fun shareToWhatsApp(context: Context, text: String) {
+    try {
         val intent = Intent(Intent.ACTION_SEND).apply {
             type = "text/plain"
+            `package` = "com.whatsapp"
             putExtra(Intent.EXTRA_TEXT, text)
-            setPackage(targetPackage)
         }
         context.startActivity(intent)
-    } else {
-        Toast.makeText(context, "برنامه $fallbackName نصب نیست", Toast.LENGTH_SHORT).show()
+    } catch (_: Exception) {
+        shareExternal(context, text)
+    }
+}
+
+private fun shareToGmail(context: Context, text: String) {
+    try {
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            `package` = "com.google.android.gm"
+            putExtra(Intent.EXTRA_SUBJECT, "Vista - اشتراک‌گذاری پست")
+            putExtra(Intent.EXTRA_TEXT, text)
+        }
+        context.startActivity(intent)
+    } catch (_: Exception) {
+        val mailtoIntent = Intent(Intent.ACTION_SENDTO).apply {
+            data = Uri.parse("mailto:")
+            putExtra(Intent.EXTRA_SUBJECT, "Vista - اشتراک‌گذاری پست")
+            putExtra(Intent.EXTRA_TEXT, text)
+        }
+        try {
+            context.startActivity(mailtoIntent)
+        } catch (_: Exception) {
+            shareExternal(context, text)
+        }
+    }
+}
+
+private fun shareToRubika(context: Context, text: String) {
+    val packages = listOf("app.rubika.im", "ir.resaneh1.iptv")
+    var launched = false
+    for (pkg in packages) {
+        try {
+            val intent = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                `package` = pkg
+                putExtra(Intent.EXTRA_TEXT, text)
+            }
+            context.startActivity(intent)
+            launched = true
+            break
+        } catch (_: Exception) {
+            // try next package
+        }
+    }
+    if (!launched) {
         shareExternal(context, text)
     }
 }

@@ -386,6 +386,7 @@ fun VistaShell(
                             { navController.popBackStack() },
                             { userId -> navController.navigate(ShellRoutes.userProfile(userId)) },
                             { url -> navController.navigate(ShellRoutes.servicesWeb(url, "پیوند استوری")) },
+                            { tag -> navController.navigate(ShellRoutes.hashtag(tag)) },
                         )
                     }
                 }
@@ -787,6 +788,17 @@ fun VistaShell(
                     { tag -> navController.navigate(ShellRoutes.hashtag(tag)) },
                     { postId -> navController.navigate(ShellRoutes.appeal(postId)) },
                     { uri -> navController.navigate(ShellRoutes.storyCreate(uri.toString())) },
+                )
+            }
+            composable(
+                route = ShellRoutes.HashtagRoute,
+                arguments = listOf(navArgument("tag") { type = NavType.StringType }),
+            ) { backStackEntry ->
+                content.hashtagPosts(
+                    java.net.URLDecoder.decode(backStackEntry.arguments?.getString("tag").orEmpty(), "UTF-8"),
+                    { navController.popBackStack() },
+                    { postId -> navController.navigate(ShellRoutes.postDetail(postId)) },
+                    { userId -> navController.navigate(ShellRoutes.userProfile(userId)) },
                 )
             }
             composable(

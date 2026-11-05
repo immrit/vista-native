@@ -18,17 +18,35 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
+/**
+ * GIF catalog implementation with resilient fallback to [IranGifBank] and
+ * domain proxying via [IranMediaProxy] to ensure fast, censorship-resistant GIF
+ * loading for users in Iran.
+ */
 @Singleton
 class TenorGifCatalog @Inject constructor(
     @ExternalMedia private val client: OkHttpClient,
 ) : GifCatalog {
     private val json = Json { ignoreUnknownKeys = true }
 
-    override suspend fun trending(limit: Int): List<GifItem> = request("trending", null, limit)
+    override suspend fun trending(limit: Int): List<GifItem> = withContext(Dispatchers.IO) {
+        val online = runCatching { request("trending", null, limit) }.getOrNull()
+        if (!online.isNullOrEmpty()) online else IranGifBank.trending(limit)
+    }
 
-    override suspend fun search(query: String, limit: Int): List<GifItem> =
-        query.trim().takeIf(String::isNotEmpty)?.let { request("search", it, limit) }
-            ?: trending(limit)
+    override suspend fun search(query: String, limit: Int): List<GifItem> = withContext(Dispatchers.IO) {
+        val cleanQuery = query.trim()
+        if (cleanQuery.isEmpty()) {
+            return@withContext trending(limit)
+        }
+        val bankResults = IranGifBank.search(cleanQuery, limit)
+        val online = runCatching { request("search", cleanQuery, limit) }.getOrNull()
+        if (!online.isNullOrEmpty()) {
+            online
+        } else {
+            bankResults
+        }
+    }
 
     private suspend fun request(path: String, query: String?, limit: Int): List<GifItem> = withContext(Dispatchers.IO) {
         val url = "$BASE_URL/$path".toHttpUrl().newBuilder()
@@ -39,7 +57,12 @@ class TenorGifCatalog @Inject constructor(
         client.newCall(Request.Builder().url(url).get().build()).execute().use { response ->
             if (!response.isSuccessful) throw java.io.IOException("GIF HTTP ${response.code}")
             val body = response.body?.string().orEmpty()
-            parse(body)
+            parse(body).map { item ->
+                item.copy(
+                    url = IranMediaProxy.toIranAccessibleUrl(item.url, preview = false),
+                    previewUrl = IranMediaProxy.toIranAccessibleUrl(item.previewUrl, preview = true),
+                )
+            }
         }
     }
 

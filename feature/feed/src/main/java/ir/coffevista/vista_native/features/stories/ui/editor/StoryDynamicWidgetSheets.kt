@@ -247,7 +247,7 @@ internal fun DynamicLocationPickerBottomSheet(
                     }
                 }
 
-                // Live Preview Stage (Tap to cycle 4 Telegram styles)
+                // Live Preview Stage (Tap to cycle 4 widget styles)
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()

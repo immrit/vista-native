@@ -141,6 +141,12 @@ object FeedApiModule {
 
             override suspend fun createPost(request: CreatePostRequestDto): FeedPostDto =
                 remote.createPost(request)
+
+            override suspend fun follow(request: FollowActionRequestDto) =
+                remote.follow(request)
+
+            override suspend fun unfollow(request: FollowActionRequestDto) =
+                remote.unfollow(request)
         }
     }
 

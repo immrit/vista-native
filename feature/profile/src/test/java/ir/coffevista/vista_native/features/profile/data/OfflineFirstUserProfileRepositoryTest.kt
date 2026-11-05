@@ -317,6 +317,27 @@ private class FakePublicProfileApi : PublicProfileApi {
     override suspend fun getUserHighlights(userId: String): Response<ProfileHighlightsResponseDto> =
         Response.success(ProfileHighlightsResponseDto())
 
+    override suspend fun createHighlight(request: CreateProfileHighlightRequestDto): Response<ProfileHighlightDto> =
+        Response.success(ProfileHighlightDto(id = "hl_1", title = request.title))
+
+    override suspend fun updateHighlight(highlightId: String, request: UpdateProfileHighlightRequestDto): Response<ProfileHighlightDto> =
+        Response.success(ProfileHighlightDto(id = highlightId, title = request.title.orEmpty()))
+
+    override suspend fun deleteHighlight(highlightId: String): Response<Unit> =
+        Response.success(Unit)
+
+    override suspend fun getOwnNote(): Response<ProfileNoteDto?> =
+        Response.success(null)
+
+    override suspend fun upsertNote(request: UpsertNoteRequestDto): Response<ProfileNoteDto> =
+        Response.success(ProfileNoteDto(content = request.content))
+
+    override suspend fun deleteNote(): Response<Unit> =
+        Response.success(Unit)
+
+    override suspend fun getBatchNotes(request: BatchNotesRequestDto): Response<Map<String, ProfileNoteDto>> =
+        Response.success(emptyMap())
+
     override suspend fun reportProfile(request: ReportProfileRequestDto): Response<Unit> =
         Response.success(Unit)
 }

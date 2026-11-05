@@ -20,7 +20,7 @@ class VistaReplySwipePolicyTest {
     }
 
     @Test
-    fun `both incoming and outgoing bubbles accept leftward horizontal movement like telegram`() {
+    fun `both incoming and outgoing bubbles accept leftward horizontal movement for reply`() {
         assertTrue(incoming.accepts(horizontalDeltaPx = -20f, verticalDeltaPx = 2f))
         assertFalse(incoming.accepts(horizontalDeltaPx = 20f, verticalDeltaPx = 2f))
         assertTrue(outgoing.accepts(horizontalDeltaPx = -20f, verticalDeltaPx = 2f))

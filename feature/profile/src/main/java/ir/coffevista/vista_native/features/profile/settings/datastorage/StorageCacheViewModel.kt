@@ -11,6 +11,7 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 data class StorageCacheUiState(
+    val breakdown: CacheBreakdown = CacheBreakdown(),
     val sizeBytes: Long? = null,
     val isClearing: Boolean = false,
     val message: String? = null,
@@ -28,17 +29,32 @@ class StorageCacheViewModel @Inject constructor(
     }
 
     fun refresh() = viewModelScope.launch {
-        runCatching { cacheManager.sizeBytes() }
-            .onSuccess { size -> mutableUiState.update { it.copy(sizeBytes = size) } }
-            .onFailure { mutableUiState.update { it.copy(message = "محاسبهٔ حجم کش ناموفق بود") } }
+        runCatching { cacheManager.calculateBreakdown() }
+            .onSuccess { breakdown ->
+                mutableUiState.update {
+                    it.copy(
+                        breakdown = breakdown,
+                        sizeBytes = breakdown.totalBytes,
+                    )
+                }
+            }
+            .onFailure {
+                mutableUiState.update { it.copy(message = "محاسبهٔ حجم کش ناموفق بود") }
+            }
     }
 
-    fun clear() = viewModelScope.launch {
+    fun clear(categories: Set<CacheCategory> = CacheCategory.entries.toSet()) = viewModelScope.launch {
         mutableUiState.update { it.copy(isClearing = true, message = null) }
-        runCatching { cacheManager.clear() }
-            .onSuccess {
+        runCatching { cacheManager.clear(categories) }
+            .onSuccess { freed ->
+                val newBreakdown = runCatching { cacheManager.calculateBreakdown() }.getOrDefault(CacheBreakdown())
                 mutableUiState.update {
-                    it.copy(sizeBytes = 0L, isClearing = false, message = "حافظهٔ موقت با موفقیت پاکسازی شد")
+                    it.copy(
+                        breakdown = newBreakdown,
+                        sizeBytes = newBreakdown.totalBytes,
+                        isClearing = false,
+                        message = "حافظهٔ موقت با موفقیت پاکسازی شد",
+                    )
                 }
             }
             .onFailure {

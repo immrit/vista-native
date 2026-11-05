@@ -178,7 +178,7 @@ fun VistaSettingsTile(
 }
 
 /**
- * Reusable Settings Switch Tile (matching VistaSettingsSwitch in Flutter with custom Telegram-style switch)
+ * Reusable Settings Switch Tile (with custom switch component)
  */
 @Composable
 fun VistaSettingsSwitch(
@@ -245,7 +245,7 @@ fun VistaSettingsSwitch(
 
         Spacer(modifier = Modifier.width(12.dp))
 
-        // Custom Telegram/Vista Switch (at END = Left in RTL)
+        // Custom Vista Switch (at END = Left in RTL)
         ir.coffevista.vista_native.core.designsystem.component.VistaSwitch(
             checked = value,
             onCheckedChange = if (enabled && onChanged != null) onChanged else null,

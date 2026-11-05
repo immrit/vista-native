@@ -359,8 +359,11 @@ class AddPostViewModel @Inject constructor(
 
     override fun onCleared() {
         super.onCleared()
-        runCatching {
-            _uiState.value.selectedVideo?.delete()
+        // If the post was submitted or is uploading, PostUploadWorker owns the file and will clean it up after upload.
+        if (!_uiState.value.isSuccess && !_uiState.value.isUploading) {
+            runCatching {
+                _uiState.value.selectedVideo?.delete()
+            }
         }
     }
 
@@ -544,9 +547,11 @@ class AddPostViewModel @Inject constructor(
                 val mentionIds = postMentions.resolve(extractMentions(state.content))
                 var finalThumbUrl: String? = null
                 val finalImageUrls = mutableListOf<String>()
+                var effectiveMusicStartMs = state.musicStartMs.takeIf { state.selectedMusicUri != null || state.selectedMusicUrl != null }
+                var effectiveMusicEndMs = state.musicEndMs.takeIf { state.selectedMusicUri != null || state.selectedMusicUrl != null }
                 val finalMusicUrl = state.selectedMusicUri?.let { audioUri ->
                     _uiState.update { it.copy(uploadStatusMessage = "در حال آپلود موسیقی…") }
-                    uploader.uploadAudio(
+                    val audioRes = uploader.uploadAudio(
                         userId = userId,
                         uri = audioUri,
                         maxBytes = state.maxUploadBytes,
@@ -554,7 +559,12 @@ class AddPostViewModel @Inject constructor(
                         endMs = state.musicEndMs,
                     ) { progress ->
                         _uiState.update { it.copy(uploadProgress = 0.05f + progress * 0.25f) }
-                    }.url
+                    }
+                    if (audioRes.wasTrimmed) {
+                        effectiveMusicStartMs = 0
+                        effectiveMusicEndMs = 0
+                    }
+                    audioRes.url
                 } ?: state.selectedMusicUrl
 
                 // 1. Upload Video if present
@@ -618,8 +628,8 @@ class AddPostViewModel @Inject constructor(
                     videoUrl = finalVideoUrl,
                     musicUrl = finalMusicUrl,
                     musicTitle = state.selectedMusicTitle,
-                    musicStartMs = state.musicStartMs.takeIf { finalMusicUrl != null },
-                    musicEndMs = state.musicEndMs.takeIf { finalMusicUrl != null },
+                    musicStartMs = effectiveMusicStartMs,
+                    musicEndMs = effectiveMusicEndMs,
                     aspectRatio = state.aspectRatio.ratioValue,
                     tags = hashtags,
                     location = state.selectedLocation,

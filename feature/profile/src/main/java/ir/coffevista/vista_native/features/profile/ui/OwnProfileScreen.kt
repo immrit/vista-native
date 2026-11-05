@@ -1,5 +1,14 @@
 package ir.coffevista.vista_native.features.profile.ui
 
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.widthIn
+import ir.coffevista.vista_native.core.model.note.ProfileNotePrompts
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.ui.text.style.TextDirection
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -18,8 +27,18 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextButton
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -45,6 +64,7 @@ import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import ir.coffevista.vista_native.features.profile.ui.components.ProfileShareBottomSheet
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -85,11 +105,17 @@ fun OwnProfileScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val highlights by viewModel.highlights.collectAsStateWithLifecycle()
+    val activeNote by viewModel.activeNote.collectAsStateWithLifecycle()
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     var showOptionsSheet by rememberSaveable { mutableStateOf(false) }
+    var showShareSheet by rememberSaveable { mutableStateOf(false) }
     var showVistaIdCard by rememberSaveable { mutableStateOf(false) }
     var showAccountDetails by rememberSaveable { mutableStateOf(false) }
-    var showQrDialog by rememberSaveable { mutableStateOf(false) }
+    var showCreateHighlightDialog by remember { mutableStateOf(false) }
+    var highlightForOptions by remember { mutableStateOf<ProfileHighlightDto?>(null) }
+    var highlightToEdit by remember { mutableStateOf<ProfileHighlightDto?>(null) }
+    var highlightToDelete by remember { mutableStateOf<ProfileHighlightDto?>(null) }
+    var showNoteInputSheet by remember { mutableStateOf(false) }
     var editPostTarget by remember { mutableStateOf<ProfilePostUiModel?>(null) }
     var isEditingPost by remember { mutableStateOf(false) }
     var reportPostTarget by remember { mutableStateOf<ProfilePostUiModel?>(null) }
@@ -99,6 +125,11 @@ fun OwnProfileScreen(
     val clipboardManager = LocalClipboardManager.current
 
     val currentUsername = (uiState as? OwnProfileUiState.Content)?.profile?.username
+
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        viewModel.loadNote()
+        viewModel.loadHighlights()
+    }
 
     androidx.compose.runtime.CompositionLocalProvider(
         androidx.compose.ui.platform.LocalLayoutDirection provides androidx.compose.ui.unit.LayoutDirection.Rtl,
@@ -143,7 +174,6 @@ fun OwnProfileScreen(
                         verified = (uiState as? OwnProfileUiState.Content)?.profile?.isVerified == true,
                         verificationType = (uiState as? OwnProfileUiState.Content)?.profile?.verificationType,
                         role = (uiState as? OwnProfileUiState.Content)?.profile?.accountType,
-                        onQrClick = { showQrDialog = true },
                         onSettingsClick = {
                             onSettingsClick?.invoke()
                         },
@@ -207,6 +237,9 @@ fun OwnProfileScreen(
                                 onPremiumPrompt = { feature -> premiumPromptFeature = feature },
                                 onLoadMore = onPostsLoadMore,
                                 onRefresh = onPostsRefresh,
+                                activeNote = activeNote,
+                                onNoteClick = { showNoteInputSheet = true },
+                                onAvatarClick = { onAddStory?.invoke() },
                                 onAvatarAddClick = onAddStory ?: {
                                     Toast.makeText(context, "افزودن استوری در دسترس نیست", Toast.LENGTH_SHORT).show()
                                 },
@@ -227,7 +260,7 @@ fun OwnProfileScreen(
                                             Toast.makeText(context, "ویرایش پروفایل", Toast.LENGTH_SHORT).show()
                                         },
                                         onShareProfile = onShareProfile ?: {
-                                            showVistaIdCard = true
+                                            showShareSheet = true
                                         },
                                     )
                                 },
@@ -236,7 +269,7 @@ fun OwnProfileScreen(
                                         highlights = highlights,
                                         isOwnProfile = true,
                                         onAddClick = {
-                                            onAddStory?.invoke()
+                                            showCreateHighlightDialog = true
                                         },
                                         onHighlightClick = { highlight ->
                                             if (onHighlightClick != null) {
@@ -245,6 +278,9 @@ fun OwnProfileScreen(
                                                 Toast.makeText(context, highlight.title, Toast.LENGTH_SHORT).show()
                                             }
                                         },
+                                        onHighlightLongClick = { highlight ->
+                                            highlightForOptions = highlight
+                                        },
                                     )
                                 },
                             )
@@ -252,16 +288,117 @@ fun OwnProfileScreen(
                     }
                 }
 
-                if (showQrDialog) {
-                    val profile = (uiState as? OwnProfileUiState.Content)?.profile
-                    if (profile != null) {
-                        ir.coffevista.vista_native.features.profile.ui.qr.ProfileQrDialog(
-                            username = profile.username.orEmpty(),
-                            fullName = profile.fullName.orEmpty(),
-                            avatarUrl = profile.avatarUrl,
-                            onDismiss = { showQrDialog = false },
-                        )
-                    }
+                // Highlight Management Dialogs & Bottom Sheet
+                if (showCreateHighlightDialog) {
+                    CreateHighlightDialog(
+                        onDismiss = { showCreateHighlightDialog = false },
+                        onConfirm = { title, coverUrl ->
+                            showCreateHighlightDialog = false
+                            viewModel.createHighlight(title, coverUrl) { success ->
+                                if (success) {
+                                    Toast.makeText(context, "هایلایت ایجاد شد", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    Toast.makeText(context, "خطا در ایجاد هایلایت", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        },
+                    )
+                }
+
+                highlightForOptions?.let { hl ->
+                    HighlightOptionsBottomSheet(
+                        highlight = hl,
+                        onDismiss = { highlightForOptions = null },
+                        onPlay = {
+                            highlightForOptions = null
+                            onHighlightClick?.invoke(hl)
+                        },
+                        onEdit = {
+                            highlightForOptions = null
+                            highlightToEdit = hl
+                        },
+                        onDelete = {
+                            highlightForOptions = null
+                            highlightToDelete = hl
+                        },
+                    )
+                }
+
+                highlightToEdit?.let { hl ->
+                    EditHighlightDialog(
+                        initialTitle = hl.title,
+                        initialCoverUrl = hl.coverUrl,
+                        onDismiss = { highlightToEdit = null },
+                        onConfirm = { title, coverUrl ->
+                            highlightToEdit = null
+                            viewModel.updateHighlight(hl.id, title, coverUrl) { success ->
+                                if (success) {
+                                    Toast.makeText(context, "هایلایت ویرایش شد", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    Toast.makeText(context, "خطا در ویرایش هایلایت", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        },
+                    )
+                }
+
+                highlightToDelete?.let { hl ->
+                    AlertDialog(
+                        onDismissRequest = { highlightToDelete = null },
+                        title = { Text("حذف هایلایت", fontWeight = FontWeight.Bold) },
+                        text = { Text("آیا از حذف هایلایت «${hl.title}» مطمئن هستید؟") },
+                        confirmButton = {
+                            Button(
+                                onClick = {
+                                    val idToDelete = hl.id
+                                    highlightToDelete = null
+                                    viewModel.deleteHighlight(idToDelete) { success ->
+                                        if (success) {
+                                            Toast.makeText(context, "هایلایت حذف شد", Toast.LENGTH_SHORT).show()
+                                        } else {
+                                            Toast.makeText(context, "خطا در حذف هایلایت", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                            ) {
+                                Text("حذف")
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { highlightToDelete = null }) {
+                                Text("انصراف")
+                            }
+                        },
+                    )
+                }
+
+                // Profile Note Input Bottom Sheet
+                if (showNoteInputSheet) {
+                    NoteInputBottomSheet(
+                        currentNote = activeNote?.content,
+                        onDismiss = { showNoteInputSheet = false },
+                        onSave = { content ->
+                            showNoteInputSheet = false
+                            viewModel.upsertNote(content) { success ->
+                                if (success) {
+                                    Toast.makeText(context, "یادداشت ذخیره شد", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    Toast.makeText(context, "خطا در ثبت یادداشت", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        },
+                        onDelete = if (activeNote != null) {
+                            {
+                                showNoteInputSheet = false
+                                viewModel.deleteNote { success ->
+                                    if (success) {
+                                        Toast.makeText(context, "یادداشت حذف شد", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            }
+                        } else null,
+                    )
                 }
 
                 Box(modifier = Modifier.fillMaxSize()) {
@@ -280,18 +417,29 @@ fun OwnProfileScreen(
                     ProfileOptionsBottomSheet(
                         onDismiss = { showOptionsSheet = false },
                         onShare = {
-                            val shareIntent = android.content.Intent().apply {
-                                action = android.content.Intent.ACTION_SEND
-                                putExtra(android.content.Intent.EXTRA_TEXT, "https://coffevista.ir/u/${currentUsername ?: ""}")
-                                type = "text/plain"
-                            }
-                            context.startActivity(android.content.Intent.createChooser(shareIntent, "اشتراک‌گذاری پروفایل"))
+                            showOptionsSheet = false
+                            showShareSheet = true
                         },
                         onCopyLink = {
                             val link = "https://coffevista.ir/u/${currentUsername ?: ""}"
                             clipboardManager.setText(AnnotatedString(link))
                             Toast.makeText(context, "لینک پروفایل کپی شد", Toast.LENGTH_SHORT).show()
                         },
+                    )
+                }
+
+                // Profile Share Bottom Sheet
+                if (showShareSheet && contentState != null) {
+                    val profile = contentState.profile
+                    ProfileShareBottomSheet(
+                        username = profile.username.orEmpty(),
+                        fullName = profile.fullName,
+                        avatarUrl = profile.avatarUrl,
+                        bio = profile.bio,
+                        isVerified = profile.isVerified,
+                        onDismiss = { showShareSheet = false },
+                        onSendDirectMessage = null,
+                        onShowQrCard = { showVistaIdCard = true },
                     )
                 }
 
@@ -377,7 +525,6 @@ private fun OwnProfileAppBar(
     verified: Boolean,
     verificationType: String? = null,
     role: String? = null,
-    onQrClick: (() -> Unit)? = null,
     onSettingsClick: () -> Unit,
     onOptionsClick: () -> Unit,
 ) {
@@ -413,25 +560,11 @@ private fun OwnProfileAppBar(
             }
         }
 
-        // End in RTL (Left side of screen): QR, more options, then settings.
-        // This matches Flutter's three affordances in the profile header.
+        // End in RTL (Left side of screen): more options, then settings.
         Row(
             modifier = Modifier.align(Alignment.CenterEnd),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButton(
-                onClick = { onQrClick?.invoke() },
-                enabled = onQrClick != null,
-                modifier = Modifier.size(40.dp),
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.QrCodeScanner,
-                    contentDescription = "کد QR پروفایل",
-                    modifier = Modifier.size(24.dp),
-                    tint = MaterialTheme.colorScheme.onBackground,
-                )
-            }
-            Spacer(Modifier.width(4.dp))
             IconButton(
                 onClick = onOptionsClick,
                 modifier = Modifier.size(40.dp),
@@ -583,4 +716,417 @@ private fun ProfileLoadingSkeleton() {
 internal object OwnProfileTestTags {
     const val Loading = "own-profile-loading"
     const val PullToRefresh = "own-profile-pull-to-refresh"
+}
+
+@Composable
+private fun CreateHighlightDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (title: String, coverUrl: String?) -> Unit,
+) {
+    var title by remember { mutableStateOf("") }
+    var coverUrl by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text("هایلایت جدید", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                OutlinedTextField(
+                    value = title,
+                    onValueChange = { title = it },
+                    label = { Text("عنوان هایلایت") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = coverUrl,
+                    onValueChange = { coverUrl = it },
+                    label = { Text("لینک کاور (اختیاری)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (title.isNotBlank()) {
+                        onConfirm(title.trim(), coverUrl.trim().ifBlank { null })
+                    }
+                },
+                enabled = title.isNotBlank(),
+            ) {
+                Text("ایجاد")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("انصراف")
+            }
+        },
+    )
+}
+
+@Composable
+private fun EditHighlightDialog(
+    initialTitle: String,
+    initialCoverUrl: String?,
+    onDismiss: () -> Unit,
+    onConfirm: (title: String, coverUrl: String?) -> Unit,
+) {
+    var title by remember { mutableStateOf(initialTitle) }
+    var coverUrl by remember { mutableStateOf(initialCoverUrl.orEmpty()) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text("ویرایش هایلایت", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                OutlinedTextField(
+                    value = title,
+                    onValueChange = { title = it },
+                    label = { Text("عنوان هایلایت") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = coverUrl,
+                    onValueChange = { coverUrl = it },
+                    label = { Text("لینک کاور") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (title.isNotBlank()) {
+                        onConfirm(title.trim(), coverUrl.trim().ifBlank { null })
+                    }
+                },
+                enabled = title.isNotBlank(),
+            ) {
+                Text("ذخیره")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("انصراف")
+            }
+        },
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun HighlightOptionsBottomSheet(
+    highlight: ProfileHighlightDto,
+    onDismiss: () -> Unit,
+    onPlay: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surface,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 12.dp),
+        ) {
+            Text(
+                text = "هایلایت «${highlight.title}»",
+                fontWeight = FontWeight.Bold,
+                fontSize = 17.sp,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(bottom = 16.dp),
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onPlay() }
+                    .padding(vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Default.PlayArrow,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+                Text("مشاهده استوری‌ها", fontSize = 15.sp)
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onEdit() }
+                    .padding(vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Edit,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurface,
+                )
+                Text("ویرایش عنوان و کاور", fontSize = 15.sp)
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onDelete() }
+                    .padding(vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Delete,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                )
+                Text("حذف هایلایت", fontSize = 15.sp, color = MaterialTheme.colorScheme.error)
+            }
+            Spacer(modifier = Modifier.height(24.dp))
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun NoteInputBottomSheet(
+    currentNote: String?,
+    onDismiss: () -> Unit,
+    onSave: (String) -> Unit,
+    onDelete: (() -> Unit)?,
+) {
+    var content by remember { mutableStateOf(currentNote.orEmpty()) }
+    var activePrompt by remember { mutableStateOf(ProfileNotePrompts.randomPrompt()) }
+    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surface,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            // Live Preview Card with thought bubble
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(
+                        if (isDark) Color(0xFF141923) else Color(0xFFF1F5F9)
+                    )
+                    .padding(vertical = 18.dp, horizontal = 16.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    val previewText = content.trim().ifEmpty { activePrompt }
+                    val (fontSize, lineHeight, maxLines) = when {
+                        previewText.length <= 14 -> Triple(12.sp, 16.sp, 2)
+                        previewText.length <= 34 -> Triple(10.5.sp, 14.sp, 2)
+                        else -> Triple(9.5.sp, 12.5.sp, 3)
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .widthIn(min = 60.dp, max = 220.dp)
+                            .shadow(6.dp, RoundedCornerShape(20.dp))
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(if (isDark) Color(0xF21C2230) else Color(0xF8FFFFFF))
+                            .border(
+                                1.dp,
+                                if (content.isNotBlank()) {
+                                    if (isDark) Color(0x4DFFFFFF) else Color(0x22000000)
+                                } else {
+                                    Color(0xFF2196F3).copy(alpha = 0.6f)
+                                },
+                                RoundedCornerShape(20.dp)
+                            )
+                            .padding(horizontal = 14.dp, vertical = 8.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = previewText,
+                            style = androidx.compose.ui.text.TextStyle(
+                                fontSize = fontSize,
+                                lineHeight = lineHeight,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (content.isBlank()) {
+                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                } else {
+                                    if (isDark) Color.White else Color(0xFF0F172A)
+                                },
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                textDirection = TextDirection.ContentOrRtl,
+                            ),
+                            maxLines = maxLines,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(3.dp))
+                    Box(
+                        modifier = Modifier
+                            .size(7.dp)
+                            .clip(CircleShape)
+                            .background(if (isDark) Color(0xF21C2230) else Color(0xF8FFFFFF))
+                            .border(0.5.dp, if (isDark) Color(0x38FFFFFF) else Color(0x20000000), CircleShape),
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Box(
+                        modifier = Modifier
+                            .size(4.dp)
+                            .clip(CircleShape)
+                            .background(if (isDark) Color(0xF21C2230) else Color(0xF8FFFFFF))
+                            .border(0.5.dp, if (isDark) Color(0x38FFFFFF) else Color(0x20000000), CircleShape),
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // Header with Random Prompt Refresh Button
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Column {
+                    Text(
+                        text = "یادداشت وضعیت",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 17.sp,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Text(
+                        text = "۲۴ ساعت در بالای تصویر نمایه شما نمایش داده می‌شود.",
+                        fontSize = 11.5.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                IconButton(
+                    onClick = { activePrompt = ProfileNotePrompts.randomPrompt() },
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = "ایده دیگر",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Quick suggestion chips
+            LazyRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                items(ProfileNotePrompts.quickChips) { chip ->
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(
+                                if (content == chip) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
+                                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                            )
+                            .clickable { content = chip }
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                    ) {
+                        Text(
+                            text = chip,
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = if (content == chip) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Text Input with Colored Counter
+            val charColor = when {
+                content.length <= 44 -> MaterialTheme.colorScheme.onSurfaceVariant
+                content.length <= 54 -> Color(0xFFFFA000)
+                else -> Color(0xFFE53935)
+            }
+
+            OutlinedTextField(
+                value = content,
+                onValueChange = {
+                    if (it.length <= 60) content = it
+                },
+                label = { Text(activePrompt) },
+                supportingText = {
+                    Text(
+                        text = "${content.length}/60",
+                        modifier = Modifier.fillMaxWidth(),
+                        color = charColor,
+                        fontWeight = if (content.length > 54) FontWeight.Bold else FontWeight.Normal,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.End,
+                    )
+                },
+                maxLines = 3,
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Button(
+                    onClick = {
+                        if (content.isNotBlank()) {
+                            onSave(content.trim())
+                        }
+                    },
+                    enabled = content.isNotBlank(),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("اشتراک‌گذاری یادداشت", fontWeight = FontWeight.SemiBold)
+                }
+                if (!currentNote.isNullOrBlank() && onDelete != null) {
+                    OutlinedButton(
+                        onClick = onDelete,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = MaterialTheme.colorScheme.error,
+                        ),
+                    ) {
+                        Text("حذف")
+                    }
+                }
+                TextButton(
+                    onClick = onDismiss,
+                    shape = RoundedCornerShape(12.dp),
+                ) {
+                    Text("انصراف")
+                }
+            }
+            Spacer(modifier = Modifier.height(20.dp))
+        }
+    }
 }

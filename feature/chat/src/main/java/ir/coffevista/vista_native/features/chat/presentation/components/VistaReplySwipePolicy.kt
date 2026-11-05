@@ -5,7 +5,7 @@ import kotlin.math.abs
 /**
  * Keeps reply-swipe arbitration deterministic and independent from Compose
  * pointer-detector implementation details.
- * Telegram gesture: swiping to the left triggers reply for all messages.
+ * Fluid reply gesture: swiping to the left triggers reply for all messages.
  */
 internal data class ReplySwipePolicy(
     val thresholdPx: Float,

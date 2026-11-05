@@ -78,6 +78,27 @@ class FollowersFollowingViewModelTest {
             return Response.success(ProfileHighlightsResponseDto())
         }
 
+        override suspend fun createHighlight(request: ir.coffevista.vista_native.features.profile.data.CreateProfileHighlightRequestDto): Response<ir.coffevista.vista_native.features.profile.data.ProfileHighlightDto> =
+            Response.success(ir.coffevista.vista_native.features.profile.data.ProfileHighlightDto(id = "hl_1", title = request.title))
+
+        override suspend fun updateHighlight(highlightId: String, request: ir.coffevista.vista_native.features.profile.data.UpdateProfileHighlightRequestDto): Response<ir.coffevista.vista_native.features.profile.data.ProfileHighlightDto> =
+            Response.success(ir.coffevista.vista_native.features.profile.data.ProfileHighlightDto(id = highlightId, title = request.title.orEmpty()))
+
+        override suspend fun deleteHighlight(highlightId: String): Response<Unit> =
+            Response.success(Unit)
+
+        override suspend fun getOwnNote(): Response<ir.coffevista.vista_native.features.profile.data.ProfileNoteDto?> =
+            Response.success(null)
+
+        override suspend fun upsertNote(request: ir.coffevista.vista_native.features.profile.data.UpsertNoteRequestDto): Response<ir.coffevista.vista_native.features.profile.data.ProfileNoteDto> =
+            Response.success(ir.coffevista.vista_native.features.profile.data.ProfileNoteDto(content = request.content))
+
+        override suspend fun deleteNote(): Response<Unit> =
+            Response.success(Unit)
+
+        override suspend fun getBatchNotes(request: ir.coffevista.vista_native.features.profile.data.BatchNotesRequestDto): Response<Map<String, ir.coffevista.vista_native.features.profile.data.ProfileNoteDto>> =
+            Response.success(emptyMap())
+
         override suspend fun reportProfile(request: ReportProfileRequestDto): Response<Unit> {
             return Response.success(Unit)
         }

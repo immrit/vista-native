@@ -216,7 +216,7 @@ class StoryGeometryAndTextEngineTest {
     }
 
     @Test
-    fun `trash zone magnetic pull and scale interpolation match Telegram EntityView spec`() {
+    fun `trash zone magnetic pull and scale interpolation match interactive EntityView spec`() {
         val stage = StageSize(width = 1080f, height = 1920f)
         val trashZone = StoryTrashZone(stage)
 

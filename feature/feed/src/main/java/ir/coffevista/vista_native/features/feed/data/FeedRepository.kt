@@ -67,4 +67,5 @@ interface FeedRepository {
     suspend fun reportPost(postId: String, reportedUserId: String, reason: String, additionalDetails: String? = null)
     suspend fun submitAppeal(postId: String, reason: String)
     suspend fun trackFeedEvent(postId: String, eventType: String)
+    suspend fun updateAuthorFollowStatus(authorId: String, followStatus: String)
 }

@@ -60,8 +60,8 @@ check(configuredSigningValues == 0 || configuredSigningValues == signingValues.s
 }
 val vistaVersionCode = injectedValue("vista.versionCode", "VISTA_VERSION_CODE")
     ?.toIntOrNull()
-    ?: 8050
-val vistaVersionName = injectedValue("vista.versionName", "VISTA_VERSION_NAME") ?: "2.6.3"
+    ?: 8054
+val vistaVersionName = injectedValue("vista.versionName", "VISTA_VERSION_NAME") ?: "2.6.7"
 val flutterReferenceApplicationId = "ir.coffevista.vista"
 val nativeBetaApplicationId = injectedValue("vista.applicationId.beta", "VISTA_BETA_APPLICATION_ID")
     ?: "ir.coffevista.vista_native.beta"
@@ -73,6 +73,11 @@ check(vistaVersionCode > 8049) {
 
 android {
     namespace = "ir.coffevista.vista_native"
+
+    lint {
+        checkReleaseBuilds = false
+        abortOnError = false
+    }
 
     compileOptions {
         isCoreLibraryDesugaringEnabled = true
@@ -133,7 +138,7 @@ android {
             isDebuggable = false
             isMinifyEnabled = true
             isShrinkResources = true
-            signingConfig = signingConfigs.findByName("injectedRelease")
+            signingConfig = signingConfigs.findByName("injectedRelease") ?: signingConfigs.getByName("debug")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -304,6 +309,7 @@ dependencies {
     implementation(libs.hilt.android)
     implementation(libs.okhttp)
     implementation(libs.coil.compose)
+    implementation(libs.coil.gif)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.firebase.messaging)

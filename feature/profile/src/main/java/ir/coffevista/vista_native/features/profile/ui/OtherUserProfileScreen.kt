@@ -29,6 +29,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
+import ir.coffevista.vista_native.features.profile.ui.components.ProfileShareBottomSheet
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -70,6 +71,7 @@ fun OtherUserProfileScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val highlights by viewModel.highlights.collectAsStateWithLifecycle()
+    val activeNote by viewModel.activeNote.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(viewModel) {
@@ -86,6 +88,7 @@ fun OtherUserProfileScreen(
     OtherUserProfileContent(
         state = state,
         highlights = highlights,
+        activeNote = activeNote,
         snackbarHostState = snackbarHostState,
         postsState = postsState,
         onPostsRefresh = onPostsRefresh,
@@ -113,6 +116,7 @@ fun OtherUserProfileScreen(
 internal fun OtherUserProfileContent(
     state: OtherUserProfileUiState,
     highlights: List<ir.coffevista.vista_native.features.profile.data.ProfileHighlightDto> = emptyList(),
+    activeNote: ir.coffevista.vista_native.features.profile.data.ProfileNoteDto? = null,
     snackbarHostState: SnackbarHostState,
     onAction: (OtherUserProfileAction) -> Unit,
     postsState: ProfilePostsPresentationState = ProfilePostsPresentationState(),
@@ -136,6 +140,7 @@ internal fun OtherUserProfileContent(
     val context = androidx.compose.ui.platform.LocalContext.current
     val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
     var showOptionsSheet by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
+    var showShareSheet by remember { mutableStateOf(false) }
     var editPostTarget by remember { mutableStateOf<ProfilePostUiModel?>(null) }
     var isEditingPost by remember { mutableStateOf(false) }
     var reportPostTarget by remember { mutableStateOf<ProfilePostUiModel?>(null) }
@@ -219,6 +224,14 @@ internal fun OtherUserProfileContent(
                                 onPremiumPrompt = { feature -> premiumPromptFeature = feature },
                                 onLoadMore = onPostsLoadMore,
                                 onRefresh = onPostsRefresh,
+                                activeNote = activeNote,
+                                onNoteClick = {
+                                    if (onMessage != null) {
+                                        onMessage.invoke()
+                                    } else {
+                                        android.widget.Toast.makeText(context, activeNote?.content.orEmpty(), android.widget.Toast.LENGTH_SHORT).show()
+                                    }
+                                },
                                 onMemberBadgeClick = {
                                     showAccountDetails = true
                                 },
@@ -272,12 +285,8 @@ internal fun OtherUserProfileContent(
                 ProfileOptionsBottomSheet(
                     onDismiss = { showOptionsSheet = false },
                     onShare = {
-                        val shareIntent = android.content.Intent().apply {
-                            action = android.content.Intent.ACTION_SEND
-                            putExtra(android.content.Intent.EXTRA_TEXT, "https://coffevista.ir/u/${state.profile.username ?: ""}")
-                            type = "text/plain"
-                        }
-                        context.startActivity(android.content.Intent.createChooser(shareIntent, "اشتراک‌گذاری پروفایل"))
+                        showOptionsSheet = false
+                        showShareSheet = true
                     },
                     onCopyLink = {
                         clipboardManager.setText(androidx.compose.ui.text.AnnotatedString("https://coffevista.ir/u/${state.profile.username ?: ""}"))
@@ -289,6 +298,20 @@ internal fun OtherUserProfileContent(
                     onBlock = {
                         android.widget.Toast.makeText(context, "کاربر مسدود شد", android.widget.Toast.LENGTH_SHORT).show()
                     },
+                )
+            }
+
+            if (showShareSheet && state.profile != null) {
+                val profile = state.profile
+                ProfileShareBottomSheet(
+                    username = profile.username.orEmpty(),
+                    fullName = profile.fullName,
+                    avatarUrl = profile.avatarUrl,
+                    bio = profile.bio,
+                    isVerified = profile.isVerified,
+                    onDismiss = { showShareSheet = false },
+                    onSendDirectMessage = onMessage,
+                    onShowQrCard = null,
                 )
             }
 

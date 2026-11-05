@@ -37,6 +37,9 @@ secrets/
 dependency-check-report/
 dependency-check-data/
 artifacts/
+dist/
+*.apk
+*.aab
 
 # Local validation builds, caches, and logs
 .chat-validation-build*/
@@ -44,10 +47,11 @@ artifacts/
 .claude/
 .codex-temp/
 *.log
-*.apk
 **/*build_old*/
 build_services/
 screen.png
+screen*.png
+*_screen.png
 vista-ui.xml
 memory.md
 .gitmodules
@@ -58,5 +62,8 @@ package*.json
 pnpm-lock.yaml
 yarn.lock
 *.flutter-reference.json
+feature/chat/src/main/java/ir/coffevista/vista_native/features/chat/presentation/components/TelegramMessageContextMenu.kt
+feature/chat/src/main/java/ir/coffevista/vista_native/features/chat/presentation/components/TelegramEmojiText.kt
+feature/chat/src/main/java/ir/coffevista/vista_native/features/chat/presentation/components/TelegramXMediaPanel.kt
 
 

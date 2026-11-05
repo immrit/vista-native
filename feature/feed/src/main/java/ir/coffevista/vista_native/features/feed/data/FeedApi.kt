@@ -91,4 +91,10 @@ interface FeedApi {
 
     @retrofit2.http.POST("v1/posts")
     suspend fun createPost(@retrofit2.http.Body request: CreatePostRequestDto): FeedPostDto
+
+    @retrofit2.http.POST("v1/me/follow")
+    suspend fun follow(@retrofit2.http.Body request: FollowActionRequestDto): retrofit2.Response<FollowActionResponseDto>
+
+    @retrofit2.http.POST("v1/me/unfollow")
+    suspend fun unfollow(@retrofit2.http.Body request: FollowActionRequestDto): retrofit2.Response<FollowActionResponseDto>
 }

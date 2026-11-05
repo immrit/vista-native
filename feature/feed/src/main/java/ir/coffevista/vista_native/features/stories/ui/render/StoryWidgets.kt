@@ -128,7 +128,7 @@ internal data class WidgetPalette(
 internal const val WidgetVariantCount = 4
 
 /**
- * Telegram LocationMarker / LinkView 4-preset flagship theme engine:
+ * LocationMarker / LinkView 4-preset flagship theme engine:
  * 0 = Crisp White Porcelain (Pure white capsule, jewel-tinted icon badge, charcoal typography)
  * 1 = Frosted Obsidian Glass (Deep dark glass, top-lit specular border, glowing category badge)
  * 2 = Chameleon Media Aurora (Dynamic diagonal gradient from media dominant colors)
@@ -199,7 +199,7 @@ internal fun widgetPalette(
 
 /**
  * Spring scale pulse (1.0 -> 0.92 -> 1.0) triggered whenever a widget's
- * variant/shape mode is cycled via single-tap (Telegram LocationMarker / PhotoPaintView parity).
+ * variant/shape mode is cycled via single-tap (Interactive LocationMarker / PhotoPaintView pattern).
  */
 @Composable
 internal fun Modifier.tapCycleBounce(variant: Int): Modifier {
@@ -225,7 +225,7 @@ internal fun Modifier.tapCycleBounce(variant: Int): Modifier {
 }
 
 /**
- * Viewer-side gleaming border sweep animation (Telegram StoryMediaAreasView parity).
+ * Viewer-side gleaming border sweep animation.
  */
 @Composable
 internal fun Modifier.gleamingMediaAreaBorder(
@@ -266,7 +266,7 @@ internal fun Modifier.gleamingMediaAreaBorder(
     }
 }
 
-private fun Modifier.telegramStickerSurface(
+private fun Modifier.storyStickerSurface(
     palette: WidgetPalette,
     shape: Shape,
     elevation: Dp = 10.dp,
@@ -366,7 +366,7 @@ internal fun StoryPillWidget(
     Row(
         modifier = modifier
             .tapCycleBounce(variant)
-            .telegramStickerSurface(palette, pillShape, elevation = 10.dp)
+            .storyStickerSurface(palette, pillShape, elevation = 10.dp)
             .gleamingMediaAreaBorder(enabled = gleaming, cornerRadiusDp = 28f)
             .padding(
                 start = if (hasLeadingBadge) 7.dp else 16.dp,
@@ -465,7 +465,7 @@ internal fun StoryCountdownWidget(
         modifier = modifier
             .tapCycleBounce(variant)
             .width(256.dp)
-            .telegramStickerSurface(palette, cardShape, elevation = 12.dp)
+            .storyStickerSurface(palette, cardShape, elevation = 12.dp)
             .padding(horizontal = 16.dp, vertical = 14.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -545,7 +545,7 @@ internal fun StoryQuestionWidget(
         modifier = modifier
             .tapCycleBounce(variant)
             .width(268.dp)
-            .telegramStickerSurface(palette, shape, elevation = 12.dp),
+            .storyStickerSurface(palette, shape, elevation = 12.dp),
     ) {
         Box(
             modifier = Modifier
@@ -633,7 +633,7 @@ internal fun StoryPollWidget(
         modifier = modifier
             .tapCycleBounce(variant)
             .width(268.dp)
-            .telegramStickerSurface(palette, shape, elevation = 12.dp)
+            .storyStickerSurface(palette, shape, elevation = 12.dp)
             .padding(15.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -740,7 +740,7 @@ fun StoryMusicStickerWidget(
         modifier = modifier
             .tapCycleBounce(variant)
             .then(if (isCompactPill) Modifier else Modifier.width(256.dp))
-            .telegramStickerSurface(palette, shape, elevation = 12.dp)
+            .storyStickerSurface(palette, shape, elevation = 12.dp)
             .padding(
                 horizontal = if (isCompactPill) 10.dp else 10.dp,
                 vertical = if (isCompactPill) 7.dp else 10.dp,
@@ -869,7 +869,7 @@ internal fun StoryGifWidget(url: String, modifier: Modifier = Modifier) {
 }
 
 /**
- * Telegram Reaction Widget (ReactionWidgetEntityView parity):
+ * Story Reaction Widget:
  * Floating asymmetric speech-bubble pill with tap-to-cycle theme and pop animation.
  */
 @Composable
@@ -901,7 +901,7 @@ internal fun StoryReactionWidget(
     Box(
         modifier = modifier
             .tapCycleBounce(variant)
-            .telegramStickerSurface(palette, bubbleShape, elevation = 12.dp)
+            .storyStickerSurface(palette, bubbleShape, elevation = 12.dp)
             .gleamingMediaAreaBorder(enabled = gleaming, cornerRadiusDp = 28f)
             .padding(horizontal = 20.dp, vertical = 12.dp),
         contentAlignment = Alignment.Center,
@@ -918,7 +918,7 @@ internal fun StoryReactionWidget(
 }
 
 /**
- * Telegram Photo-on-Photo Cutout Overlay Widget (PhotoPaintView parity):
+ * Photo-on-Photo Cutout Overlay Widget:
  * Single-tapping cycles shape mask (variant 0..3):
  * 0 = Squircle, 1 = Circle, 2 = Smooth 5-Point Star, 3 = Smooth Heart
  */
@@ -970,7 +970,7 @@ internal class PhotoCutoutShape(private val shapeMode: Int) : Shape {
                 val r = minDim * 0.48f
                 path.addOval(Rect(cx - r, cy - r, cx + r, cy + r))
             }
-            2 -> { // Smooth Rounded 5-Point Star (Telegram PhotoPaintView parity)
+            2 -> { // Smooth Rounded 5-Point Star
                 val outerR = minDim * 0.48f
                 val innerR = minDim * 0.24f
                 val pts = Array(10) { i ->

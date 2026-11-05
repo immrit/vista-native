@@ -27,7 +27,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 /**
- * Signature Telegram-styled Switch used across Vista design system.
+ * Signature Switch used across Vista design system.
  * Features a pill track with custom animated hollow/accent thumb matching the reference design.
  */
 @Composable

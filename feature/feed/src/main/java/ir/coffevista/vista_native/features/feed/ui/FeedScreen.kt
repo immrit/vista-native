@@ -1,6 +1,7 @@
 package ir.coffevista.vista_native.features.feed.ui
 
 import android.net.Uri
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
@@ -11,6 +12,7 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyListState
@@ -18,13 +20,17 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import ir.coffevista.vista_native.features.feed.ui.components.SoundCloudMusicBubble
 import ir.coffevista.vista_native.core.designsystem.component.LocalBottomBarVisibility
+import ir.coffevista.vista_native.core.designsystem.tokens.VistaBrandColors
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -36,8 +42,10 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.navigationBars
@@ -210,6 +218,8 @@ fun FeedScreen(
     val storyUsers by viewModel.activeStoryUsers.collectAsStateWithLifecycle()
     val ownProfile by viewModel.ownProfile.collectAsStateWithLifecycle()
     val postUploadState by viewModel.postUploadState.collectAsStateWithLifecycle()
+    val storyUploadState by viewModel.storyUploadState.collectAsStateWithLifecycle()
+    val preferences by viewModel.settingsPreferences.collectAsStateWithLifecycle()
     val isViewerBlueTick = ownProfile?.hasBlueBadge == true
     val viewerHasPremiumEdit = ownProfile?.hasPremiumPrivileges == true
     var premiumPromptFeature by remember { mutableStateOf<String?>(null) }
@@ -223,11 +233,17 @@ fun FeedScreen(
         currentUserAvatar = ownProfile?.avatarUrl,
         unreadNotificationCount = unreadNotificationCount,
         selectedKind = selectedKind,
+        autoplayPostMusic = preferences.autoplayPostMusic,
+        onFollowClick = viewModel::toggleFollowAuthor,
         storyUsers = storyUsers,
         postUploadState = postUploadState,
+        storyUploadState = storyUploadState,
         onRetryUpload = viewModel::retryPostUpload,
         onCancelUpload = viewModel::cancelPostUpload,
         onDismissUpload = viewModel::dismissPostUpload,
+        onRetryStoryUpload = viewModel::retryStoryUpload,
+        onCancelStoryUpload = viewModel::cancelStoryUpload,
+        onDismissStoryUpload = viewModel::dismissStoryUpload,
         onKindSelected = viewModel::selectKind,
         onRefresh = viewModel::refresh,
         onLoadMore = viewModel::loadMore,
@@ -386,14 +402,20 @@ internal fun FeedScreenContent(
     onOpenStoryPlayer: (Int) -> Unit = {},
     onCreateStory: () -> Unit = {},
     postUploadState: PostUploadState = PostUploadState(),
+    storyUploadState: ir.coffevista.vista_native.features.stories.data.StoryUploadState = ir.coffevista.vista_native.features.stories.data.StoryUploadState(),
     onRetryUpload: () -> Unit = {},
     onCancelUpload: () -> Unit = {},
     onDismissUpload: () -> Unit = {},
+    onRetryStoryUpload: () -> Unit = {},
+    onCancelStoryUpload: () -> Unit = {},
+    onDismissStoryUpload: () -> Unit = {},
     selectedKind: FeedKind = FeedKind.Explore,
     onKindSelected: (FeedKind) -> Unit = {},
     onBarsVisibilityChange: (Boolean) -> Unit = {},
     homeTabClickFlow: SharedFlow<Unit>? = null,
     onTrackEvent: (String, String) -> Unit = { _, _ -> },
+    autoplayPostMusic: Boolean = true,
+    onFollowClick: (String) -> Unit = {},
 ) {
     val exploreListState = rememberLazyListState()
     val followingListState = rememberLazyListState()
@@ -540,6 +562,8 @@ internal fun FeedScreenContent(
                         onMentionClick = onMentionClick,
                         onAppealClick = onAppealClick,
                         onTrackEvent = onTrackEvent,
+                        autoplayPostMusic = autoplayPostMusic,
+                        onFollowClick = onFollowClick,
                         topPadding = topHeaderHeight + 8.dp,
                     )
                 }
@@ -608,12 +632,20 @@ internal fun FeedScreenContent(
                         onCancel = onCancelUpload,
                         onDismiss = onDismissUpload,
                     )
+                    FeedStoryUploadBanner(
+                        uploadState = storyUploadState,
+                        onRetry = onRetryStoryUpload,
+                        onCancel = onCancelStoryUpload,
+                        onDismiss = onDismissStoryUpload,
+                    )
                     ir.coffevista.vista_native.features.stories.ui.tray.StoryTray(
                         storyUsers = storyUsers,
                         currentUserId = viewerUserId.orEmpty(),
                         currentUserAvatar = currentUserAvatar,
                         onOpenStoryPlayer = onOpenStoryPlayer,
                         onCreateStory = onCreateStory,
+                        isStoryUploading = storyUploadState.isUploading,
+                        storyUploadProgress = storyUploadState.progress,
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(115.dp),
@@ -799,11 +831,87 @@ internal fun FeedContent(
     selectedKind: FeedKind = FeedKind.Explore,
     listState: LazyListState = rememberLazyListState(),
     onTrackEvent: (String, String) -> Unit = { _, _ -> },
+    autoplayPostMusic: Boolean = true,
+    onFollowClick: (String) -> Unit = {},
     topPadding: androidx.compose.ui.unit.Dp = 8.dp,
 ) {
     val navigationBarInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val viewedPostIds = remember { mutableSetOf<String>() }
     val postVisibilityStartTimes = remember { mutableMapOf<String, Long>() }
+
+    val context = LocalContext.current
+    val backgroundMusicPlayer = remember {
+        ExoPlayer.Builder(context).build().apply {
+            repeatMode = Player.REPEAT_MODE_ONE
+        }
+    }
+    DisposableEffect(backgroundMusicPlayer) {
+        onDispose {
+            backgroundMusicPlayer.stop()
+            backgroundMusicPlayer.release()
+        }
+    }
+
+    var activeMusicPostId by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(listState, state.posts, autoplayPostMusic) {
+        if (!autoplayPostMusic) {
+            activeMusicPostId = null
+            if (backgroundMusicPlayer.isPlaying) {
+                backgroundMusicPlayer.pause()
+            }
+            return@LaunchedEffect
+        }
+        snapshotFlow {
+            val layoutInfo = listState.layoutInfo
+            val viewportCenter = (layoutInfo.viewportStartOffset + layoutInfo.viewportEndOffset) / 2
+            val visibleItems = layoutInfo.visibleItemsInfo
+            visibleItems
+                .filter { it.key is String && it.key != "offline-banner" && it.key != "empty" && it.key != "append-loading" }
+                .minByOrNull { item ->
+                    val itemCenter = item.offset + item.size / 2
+                    kotlin.math.abs(itemCenter - viewportCenter)
+                }?.key as? String
+        }
+            .distinctUntilChanged()
+            .collect { centerPostId ->
+                val post = state.posts.firstOrNull { it.id == centerPostId }
+                val musicUrl = post?.musicUrl?.trim()
+                if (!musicUrl.isNullOrBlank()) {
+                    if (activeMusicPostId != centerPostId) {
+                        activeMusicPostId = centerPostId
+                        val startMs = post.musicStartMs
+                        val endMs = post.musicEndMs
+                        val cleanUri = musicUrl.substringBefore('#')
+                        val mediaItem = MediaItem.Builder()
+                            .setUri(cleanUri)
+                            .apply {
+                                if (startMs > 0 || endMs != null) {
+                                    setClippingConfiguration(
+                                        MediaItem.ClippingConfiguration.Builder()
+                                            .setStartPositionMs(startMs)
+                                            .apply {
+                                                if (endMs != null && endMs > startMs) {
+                                                    setEndPositionMs(endMs)
+                                                }
+                                            }
+                                            .build()
+                                    )
+                                }
+                            }
+                            .build()
+                        backgroundMusicPlayer.setMediaItem(mediaItem)
+                        backgroundMusicPlayer.prepare()
+                        backgroundMusicPlayer.playWhenReady = true
+                    }
+                } else {
+                    if (activeMusicPostId != null) {
+                        activeMusicPostId = null
+                        backgroundMusicPlayer.pause()
+                    }
+                }
+            }
+    }
 
     LaunchedEffect(listState, state.posts) {
         val activeJobs = mutableMapOf<String, Job>()
@@ -883,10 +991,11 @@ internal fun FeedContent(
         items(state.posts, key = { it.id }) { post ->
             VistaFeedPostCard(
                 post = post,
-                isOwnPost = post.userId == viewerUserId,
+                isOwnPost = !viewerUserId.isNullOrBlank() && post.userId.equals(viewerUserId, ignoreCase = true),
                 isBlueTick = isViewerBlueTick,
                 hasPremiumEdit = viewerHasPremiumEdit,
                 showFollowState = selectedKind == FeedKind.Explore,
+                onFollowClick = onFollowClick,
                 onPostClick = { onPostClick(post.id) },
                 onVideoClick = { onVideoClick(post.id) },
                 onMediaClick = onMediaClick,
@@ -973,6 +1082,65 @@ internal fun FeedContent(
 }
 
 @Composable
+private fun PostHeaderTimeOrMusicBadge(
+    createdAt: String,
+    musicTitle: String?,
+    modifier: Modifier = Modifier,
+) {
+    var showMusic by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        while (isActive) {
+            delay(3000L)
+            showMusic = !showMusic
+        }
+    }
+
+    AnimatedContent(
+        targetState = showMusic,
+        transitionSpec = {
+            (slideInVertically { height -> height } + fadeIn())
+                .togetherWith(slideOutVertically { height -> -height } + fadeOut())
+        },
+        label = "post-time-music-slide",
+        modifier = modifier,
+    ) { isMusic ->
+        if (isMusic) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(VistaBrandColors.Indigo.copy(alpha = 0.12f))
+                    .padding(horizontal = 6.dp, vertical = 2.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Default.MusicNote,
+                    contentDescription = null,
+                    tint = VistaBrandColors.Indigo,
+                    modifier = Modifier.size(12.dp),
+                )
+                Spacer(Modifier.width(3.dp))
+                val title = musicTitle?.takeIf(String::isNotBlank) ?: "موسیقی پست"
+                Text(
+                    text = title,
+                    color = VistaBrandColors.Indigo,
+                    fontSize = 11.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        } else {
+            Text(
+                text = relativeTime(createdAt),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 13.sp,
+            )
+        }
+    }
+}
+
+@Composable
 fun VistaFeedPostCard(
     post: FeedPost,
     isOwnPost: Boolean = false,
@@ -997,6 +1165,7 @@ fun VistaFeedPostCard(
     onMentionClick: (String) -> Unit = {},
     onAppealClick: (String) -> Unit = {},
     showFollowState: Boolean = false,
+    onFollowClick: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     var expanded by rememberSaveable(post.id) { mutableStateOf(false) }
@@ -1046,20 +1215,26 @@ fun VistaFeedPostCard(
                             fontSize = 13.sp,
                             modifier = Modifier.padding(horizontal = 6.dp),
                         )
-                        Text(
-                            text = relativeTime(post.createdAt),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 13.sp,
-                        )
+                        if (!post.musicUrl.isNullOrBlank()) {
+                            PostHeaderTimeOrMusicBadge(
+                                createdAt = post.createdAt,
+                                musicTitle = post.musicTitle,
+                            )
+                        } else {
+                            Text(
+                                text = relativeTime(post.createdAt),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 13.sp,
+                            )
+                        }
                     }
                 }
             }
+            val isAuthorFollowed = post.authorFollowStatus?.equals("following", ignoreCase = true) == true
             val followState = post.authorFollowStatus?.lowercase()
-            if (showFollowState && (followState == null || followState == "none" ||
-                    followState == "requested")
-            ) {
+            if (!isOwnPost && showFollowState && !isAuthorFollowed) {
                 Surface(
-                    onClick = onAuthorClick,
+                    onClick = { onFollowClick(post.userId) },
                     modifier = Modifier
                         .width(112.dp)
                         .height(28.dp)
@@ -1142,7 +1317,6 @@ fun VistaFeedPostCard(
                 .padding(horizontal = 16.dp, vertical = 6.dp)
                 .then(if (verticalMenu) Modifier.testTag(PostDetailTestTags.Media) else Modifier),
         )
-        PostMusicBubble(post = post)
         Spacer(Modifier.height(4.dp))
         PostActionRow(
             post = post,
@@ -1353,7 +1527,7 @@ private fun PostMedia(
 }
 
 @Composable
-private fun HashtagMentionCaption(
+internal fun HashtagMentionCaption(
     text: String,
     style: TextStyle,
     maxLines: Int,
@@ -1422,90 +1596,33 @@ private fun HashtagMentionCaption(
     )
 }
 
+internal fun resolveMusicRange(musicUrl: String): Pair<Long, Long?> {
+    val fragment = musicUrl.substringAfter('#', "").trim()
+    if (fragment.startsWith("t=")) {
+        val parts = fragment.removePrefix("t=").split(',')
+        val start = parts.getOrNull(0)?.toLongOrNull() ?: 0L
+        val end = parts.getOrNull(1)?.toLongOrNull()
+        return Pair(start, end)
+    }
+    val uri = runCatching { Uri.parse(musicUrl) }.getOrNull()
+    val startParam = uri?.getQueryParameter("startMs")?.toLongOrNull()
+        ?: uri?.getQueryParameter("t")?.substringBefore(',')?.toLongOrNull()
+        ?: 0L
+    val endParam = uri?.getQueryParameter("endMs")?.toLongOrNull()
+        ?: uri?.getQueryParameter("t")?.substringAfter(',', "")?.toLongOrNull()
+    return Pair(startParam, endParam)
+}
+
 @Composable
 private fun PostMusicBubble(post: FeedPost) {
     val musicUrl = post.musicUrl?.trim().orEmpty()
     if (musicUrl.isEmpty()) return
 
-    val context = LocalContext.current
-    var isPlaying by remember(post.id) { mutableStateOf(false) }
-    var player by remember(musicUrl) { mutableStateOf<ExoPlayer?>(null) }
-
-    DisposableEffect(musicUrl) {
-        onDispose {
-            player?.release()
-            player = null
-        }
-    }
-
-    Surface(
-        modifier = Modifier
-            .padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 8.dp)
-            .fillMaxWidth()
-            .clickable {
-                val p = player ?: ExoPlayer.Builder(context).build().apply {
-                    setMediaItem(MediaItem.fromUri(Uri.parse(musicUrl)))
-                    repeatMode = Player.REPEAT_MODE_OFF
-                    addListener(object : Player.Listener {
-                        override fun onIsPlayingChanged(playing: Boolean) {
-                            isPlaying = playing
-                        }
-                    })
-                    prepare()
-                }.also { player = it }
-
-                if (p.isPlaying) {
-                    p.pause()
-                } else {
-                    p.play()
-                }
-            },
-        shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.70f),
-        contentColor = MaterialTheme.colorScheme.onSurface,
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Surface(
-                modifier = Modifier.size(42.dp),
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
-                contentColor = MaterialTheme.colorScheme.primary,
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                        contentDescription = if (isPlaying) "توقف موسیقی" else "پخش موسیقی",
-                        modifier = Modifier.size(24.dp),
-                    )
-                }
-            }
-            Spacer(Modifier.width(10.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = resolveMusicTitle(post),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                )
-                Text(
-                    text = "موسیقی پست",
-                    maxLines = 1,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 12.sp,
-                )
-            }
-            Icon(
-                imageVector = Icons.Default.MusicNote,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(22.dp),
-            )
-        }
-    }
+    SoundCloudMusicBubble(
+        musicUrl = musicUrl,
+        musicTitle = resolveMusicTitle(post),
+        subtitle = "موسیقی پست",
+    )
 }
 
 @Composable
@@ -2234,19 +2351,33 @@ private fun FeedPostUploadBanner(
         exit = shrinkVertically() + fadeOut(),
         modifier = modifier,
     ) {
-        androidx.compose.material3.Surface(
-            color = if (uploadState.errorMessage != null) MaterialTheme.colorScheme.errorContainer
-            else MaterialTheme.colorScheme.surfaceVariant,
-            shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+        val isError = uploadState.errorMessage != null
+        val isSuccess = uploadState.isSuccess
+
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 6.dp),
-            shadowElevation = 2.dp,
+                .padding(horizontal = 14.dp, vertical = 6.dp)
+                .clip(androidx.compose.foundation.shape.RoundedCornerShape(16.dp))
+                .background(
+                    when {
+                        isError -> Color(0xFF261217)
+                        isSuccess -> Color(0xFF10241A)
+                        else -> Color(0xFF161826)
+                    }
+                )
+                .border(
+                    width = 1.dp,
+                    color = when {
+                        isError -> Color(0xFFFF5252).copy(alpha = 0.5f)
+                        isSuccess -> Color(0xFF4CAF50).copy(alpha = 0.5f)
+                        else -> Color.White.copy(alpha = 0.12f)
+                    },
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+                )
+                .padding(12.dp),
         ) {
-            Column(
-                modifier = Modifier.padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
@@ -2254,59 +2385,367 @@ private fun FeedPostUploadBanner(
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
                         modifier = Modifier.weight(1f),
                     ) {
-                        if (uploadState.isUploading) {
-                            androidx.compose.material3.CircularProgressIndicator(
-                                progress = { uploadState.progress },
-                                modifier = Modifier.size(18.dp),
-                                strokeWidth = 2.dp,
-                            )
-                        } else if (uploadState.isSuccess) {
-                            androidx.compose.material3.Icon(
-                                imageVector = Icons.Default.CheckCircle,
-                                contentDescription = null,
-                                tint = Color(0xFF4CAF50),
-                                modifier = Modifier.size(18.dp),
-                            )
-                        } else {
-                            androidx.compose.material3.Icon(
-                                imageVector = Icons.Default.Error,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.size(18.dp),
-                            )
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(androidx.compose.foundation.shape.RoundedCornerShape(10.dp))
+                                .background(
+                                    when {
+                                        isError -> Color(0xFFFF5252).copy(alpha = 0.15f)
+                                        isSuccess -> Color(0xFF4CAF50).copy(alpha = 0.15f)
+                                        else -> Color(0xFFFF2E7E).copy(alpha = 0.15f)
+                                    }
+                                ),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            if (uploadState.isUploading) {
+                                androidx.compose.material3.CircularProgressIndicator(
+                                    progress = { uploadState.progress },
+                                    modifier = Modifier.size(20.dp),
+                                    strokeWidth = 2.5.dp,
+                                    color = Color(0xFFFF2E7E),
+                                )
+                            } else if (isSuccess) {
+                                androidx.compose.material3.Icon(
+                                    imageVector = Icons.Default.CheckCircle,
+                                    contentDescription = null,
+                                    tint = Color(0xFF4CAF50),
+                                    modifier = Modifier.size(22.dp),
+                                )
+                            } else {
+                                androidx.compose.material3.Icon(
+                                    imageVector = Icons.Default.Error,
+                                    contentDescription = null,
+                                    tint = Color(0xFFFF5252),
+                                    modifier = Modifier.size(22.dp),
+                                )
+                            }
                         }
-                        androidx.compose.material3.Text(
-                            text = uploadState.statusMessage ?: uploadState.errorMessage ?: "در حال پردازش…",
-                            fontSize = 13.sp,
-                            fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
-                            maxLines = 1,
-                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                        )
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                androidx.compose.material3.Text(
+                                    text = when {
+                                        isSuccess -> "پست با موفقیت منتشر شد"
+                                        isError -> "خطا در ارسال پست"
+                                        else -> uploadState.statusMessage ?: "در حال انتشار پست…"
+                                    },
+                                    fontSize = 12.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f, fill = false),
+                                )
+                                if (uploadState.isUploading) {
+                                    androidx.compose.material3.Text(
+                                        text = "${(uploadState.progress * 100).toInt()}%".toPersianDigits(),
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFFFF2E7E),
+                                    )
+                                }
+                            }
+                            if (isError && !uploadState.errorMessage.isNullOrBlank()) {
+                                androidx.compose.material3.Text(
+                                    text = uploadState.errorMessage,
+                                    fontSize = 11.sp,
+                                    color = Color(0xFFFF8A80),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
                     }
 
-                    if (uploadState.errorMessage != null) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            TextButton(onClick = onRetry) {
-                                androidx.compose.material3.Text("تلاش مجدد", fontSize = 12.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                    if (isError) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(10.dp))
+                                    .background(Color(0xFFFF2E7E))
+                                    .clickable(onClick = onRetry)
+                                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                            ) {
+                                androidx.compose.material3.Text(
+                                    text = "تلاش مجدد",
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White,
+                                )
                             }
-                            androidx.compose.material3.IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
-                                androidx.compose.material3.Icon(Icons.Default.Close, contentDescription = "بستن", modifier = Modifier.size(16.dp))
+                            androidx.compose.material3.IconButton(
+                                onClick = onDismiss,
+                                modifier = Modifier.size(28.dp),
+                            ) {
+                                androidx.compose.material3.Icon(
+                                    Icons.Default.Close,
+                                    contentDescription = "بستن",
+                                    tint = Color.White.copy(alpha = 0.7f),
+                                    modifier = Modifier.size(16.dp),
+                                )
                             }
                         }
                     }
                 }
 
                 if (uploadState.isUploading) {
-                    LinearProgressIndicator(
-                        progress = { uploadState.progress },
+                    Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(3.dp)
-                            .clip(androidx.compose.foundation.shape.RoundedCornerShape(2.dp)),
-                    )
+                            .height(4.dp)
+                            .clip(androidx.compose.foundation.shape.RoundedCornerShape(2.dp))
+                            .background(Color.White.copy(alpha = 0.10f)),
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxHeight()
+                                .fillMaxWidth(uploadState.progress.coerceIn(0.04f, 1f))
+                                .clip(androidx.compose.foundation.shape.RoundedCornerShape(2.dp))
+                                .background(
+                                    Brush.horizontalGradient(
+                                        listOf(
+                                            Color(0xFFFF2E7E),
+                                            Color(0xFFA855F7),
+                                        )
+                                    )
+                                ),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FeedStoryUploadBanner(
+    uploadState: ir.coffevista.vista_native.features.stories.data.StoryUploadState,
+    onRetry: () -> Unit,
+    onCancel: () -> Unit,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    AnimatedVisibility(
+        visible = uploadState.isUploading || uploadState.errorMessage != null || uploadState.isSuccess,
+        enter = expandVertically() + fadeIn(),
+        exit = shrinkVertically() + fadeOut(),
+        modifier = modifier,
+    ) {
+        val isError = uploadState.errorMessage != null
+        val isSuccess = uploadState.isSuccess
+        val pending = uploadState.pendingUpload
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 6.dp)
+                .clip(androidx.compose.foundation.shape.RoundedCornerShape(16.dp))
+                .background(
+                    when {
+                        isError -> Color(0xFF261217)
+                        isSuccess -> Color(0xFF10241A)
+                        else -> Color(0xFF161826)
+                    }
+                )
+                .border(
+                    width = 1.dp,
+                    color = when {
+                        isError -> Color(0xFFFF5252).copy(alpha = 0.5f)
+                        isSuccess -> Color(0xFF4CAF50).copy(alpha = 0.5f)
+                        else -> Color.White.copy(alpha = 0.12f)
+                    },
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+                )
+                .padding(12.dp),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        // Thumbnail or status icon
+                        val thumbModel = pending?.mediaFile ?: pending?.mediaUri ?: pending?.musicTrack?.coverUrl
+                        if (thumbModel != null) {
+                            Box(
+                                modifier = Modifier
+                                    .size(38.dp)
+                                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(10.dp))
+                                    .background(Color.White.copy(alpha = 0.08f)),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                AsyncImage(
+                                    model = thumbModel,
+                                    contentDescription = null,
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop,
+                                )
+                                if (uploadState.isUploading) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .background(Color.Black.copy(alpha = 0.35f)),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        androidx.compose.material3.CircularProgressIndicator(
+                                            progress = { uploadState.progress },
+                                            modifier = Modifier.size(20.dp),
+                                            strokeWidth = 2.5.dp,
+                                            color = Color(0xFFFF2E7E),
+                                        )
+                                    }
+                                }
+                            }
+                        } else {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(10.dp))
+                                    .background(
+                                        when {
+                                            isError -> Color(0xFFFF5252).copy(alpha = 0.15f)
+                                            isSuccess -> Color(0xFF4CAF50).copy(alpha = 0.15f)
+                                            else -> Color(0xFFFF2E7E).copy(alpha = 0.15f)
+                                        }
+                                    ),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                if (uploadState.isUploading) {
+                                    androidx.compose.material3.CircularProgressIndicator(
+                                        progress = { uploadState.progress },
+                                        modifier = Modifier.size(20.dp),
+                                        strokeWidth = 2.5.dp,
+                                        color = Color(0xFFFF2E7E),
+                                    )
+                                } else if (isSuccess) {
+                                    androidx.compose.material3.Icon(
+                                        imageVector = Icons.Default.CheckCircle,
+                                        contentDescription = null,
+                                        tint = Color(0xFF4CAF50),
+                                        modifier = Modifier.size(22.dp),
+                                    )
+                                } else {
+                                    androidx.compose.material3.Icon(
+                                        imageVector = Icons.Default.Error,
+                                        contentDescription = null,
+                                        tint = Color(0xFFFF5252),
+                                        modifier = Modifier.size(22.dp),
+                                    )
+                                }
+                            }
+                        }
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                androidx.compose.material3.Text(
+                                    text = when {
+                                        isSuccess -> "استوری با موفقیت منتشر شد"
+                                        isError -> "خطا در انتشار استوری"
+                                        else -> uploadState.statusMessage ?: "در حال انتشار استوری…"
+                                    },
+                                    fontSize = 12.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f, fill = false),
+                                )
+                                if (uploadState.isUploading) {
+                                    androidx.compose.material3.Text(
+                                        text = "${(uploadState.progress * 100).toInt()}%".toPersianDigits(),
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFFFF2E7E),
+                                    )
+                                }
+                            }
+                            if (isError && !uploadState.errorMessage.isNullOrBlank()) {
+                                androidx.compose.material3.Text(
+                                    text = uploadState.errorMessage,
+                                    fontSize = 11.sp,
+                                    color = Color(0xFFFF8A80),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                    }
+
+                    if (isError) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(10.dp))
+                                    .background(Color(0xFFFF2E7E))
+                                    .clickable(onClick = onRetry)
+                                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                            ) {
+                                androidx.compose.material3.Text(
+                                    text = "تلاش مجدد",
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White,
+                                )
+                            }
+                            androidx.compose.material3.IconButton(
+                                onClick = onDismiss,
+                                modifier = Modifier.size(28.dp),
+                            ) {
+                                androidx.compose.material3.Icon(
+                                    Icons.Default.Close,
+                                    contentDescription = "بستن",
+                                    tint = Color.White.copy(alpha = 0.7f),
+                                    modifier = Modifier.size(16.dp),
+                                )
+                            }
+                        }
+                    }
+                }
+
+                if (uploadState.isUploading) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(4.dp)
+                            .clip(androidx.compose.foundation.shape.RoundedCornerShape(2.dp))
+                            .background(Color.White.copy(alpha = 0.10f)),
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxHeight()
+                                .fillMaxWidth(uploadState.progress.coerceIn(0.04f, 1f))
+                                .clip(androidx.compose.foundation.shape.RoundedCornerShape(2.dp))
+                                .background(
+                                    Brush.horizontalGradient(
+                                        listOf(
+                                            Color(0xFFFF2E7E),
+                                            Color(0xFFA855F7),
+                                        )
+                                    )
+                                ),
+                        )
+                    }
                 }
             }
         }

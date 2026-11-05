@@ -16,6 +16,9 @@ import ir.coffevista.vista_native.features.chat.domain.model.ConversationType
 import ir.coffevista.vista_native.features.chat.domain.model.GroupInfo
 import ir.coffevista.vista_native.features.chat.domain.model.GroupMember
 import ir.coffevista.vista_native.features.chat.domain.model.GifItem
+import ir.coffevista.vista_native.features.chat.data.local.SavedGifStore
+import android.content.ContentResolver
+import android.net.Uri
 import ir.coffevista.vista_native.features.chat.domain.model.DownloadTask
 import ir.coffevista.vista_native.features.chat.domain.model.ModerationReason
 import ir.coffevista.vista_native.features.chat.domain.model.RealtimeConnectionState
@@ -71,6 +74,7 @@ data class MessagesUiState(
     val partnerProfile: ChatPartnerProfile? = null,
     val isPartnerProfileLoading: Boolean = false,
     val gifs: List<GifItem> = emptyList(),
+    val savedGifs: List<GifItem> = emptyList(),
     val gifQuery: String = "",
     val isLoadingGifs: Boolean = false,
     val gifError: String? = null,
@@ -86,6 +90,7 @@ class MessagesViewModel @Inject constructor(
     private val repository: ChatRepository,
     private val sessionStore: SessionStore? = null,
     private val gifCatalog: GifCatalog = EmptyGifCatalog,
+    private val savedGifStore: SavedGifStore? = null,
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(MessagesUiState())
     val state: StateFlow<MessagesUiState> = mutableState.asStateFlow()
@@ -111,6 +116,13 @@ class MessagesViewModel @Inject constructor(
     private val optimisticPendingMessages = java.util.concurrent.ConcurrentHashMap<String, Message>()
 
     init {
+        savedGifStore?.let { store ->
+            viewModelScope.launch {
+                store.savedGifs.collect { list ->
+                    mutableState.update { it.copy(savedGifs = list) }
+                }
+            }
+        }
         viewModelScope.launch {
             repository.realtimeState.collectLatest { connection ->
                 val reconnected = lastRealtimeState != RealtimeConnectionState.CONNECTED &&
@@ -208,9 +220,13 @@ class MessagesViewModel @Inject constructor(
         viewModelScope.launch {
             if (isConversationVisible) repository.setConversationActive(conversationId, true)
             acknowledgeVisibleUnread()
-            val canonical = repository.findConversationByPeer(conversationId, isSecret = false)
-            if (canonical != null && canonical.id != conversationId) {
-                bind(canonical.id)
+            val current = mutableState.value.conversation
+            if (current?.type != ConversationType.GROUP) {
+                val isSecret = current?.type == ConversationType.SECRET
+                val canonical = repository.findConversationByPeer(conversationId, isSecret = isSecret)
+                if (canonical != null && canonical.id != conversationId) {
+                    bind(canonical.id)
+                }
             }
         }
     }
@@ -483,6 +499,29 @@ class MessagesViewModel @Inject constructor(
                         if (current.gifQuery == query) current.copy(isLoadingGifs = false, gifError = "خطا در بارگذاری گیف‌ها") else current
                     }
                 }
+        }
+    }
+
+    fun toggleSaveGif(url: String, previewUrl: String? = null) {
+        val store = savedGifStore ?: return
+        if (store.isSaved(url)) {
+            store.removeGif(url)
+        } else {
+            store.saveGif(url, previewUrl)
+        }
+    }
+
+    fun isGifSaved(url: String): Boolean = savedGifStore?.isSaved(url) == true
+
+    fun importAndSendCustomGif(uri: Uri, resolver: ContentResolver) {
+        val store = savedGifStore ?: return
+        viewModelScope.launch {
+            runCatching {
+                val item = store.importFromDevice(uri, resolver)
+                sendGif(item.url)
+            }.onFailure { err ->
+                mutableState.update { it.copy(error = err.message ?: "خطا در بارگذاری گیف") }
+            }
         }
     }
 

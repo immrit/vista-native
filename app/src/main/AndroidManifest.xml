@@ -28,6 +28,19 @@
 
     <queries>
         <package android:name="com.farsitel.bazaar" />
+        <package android:name="com.instagram.android" />
+        <package android:name="com.whatsapp" />
+        <package android:name="com.google.android.gm" />
+        <package android:name="app.rubika.im" />
+        <package android:name="ir.resaneh1.iptv" />
+        <intent>
+            <action android:name="com.instagram.share.ADD_TO_STORY" />
+            <data android:mimeType="image/*" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.SEND" />
+            <data android:mimeType="*/*" />
+        </intent>
         <intent>
             <action android:name="ir.cafebazaar.pardakht.InAppBillingService.BIND" />
         </intent>
@@ -167,6 +180,11 @@
                 <action android:name="com.google.firebase.MESSAGING_EVENT" />
             </intent-filter>
         </service>
+
+        <service
+            android:name="androidx.work.impl.foreground.SystemForegroundService"
+            android:foregroundServiceType="dataSync"
+            tools:node="merge" />
 
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_icon"

@@ -62,7 +62,12 @@ class StoryRepository internal constructor(
     }
 
     suspend fun getFollowingUsers(userId: String): Result<List<StoryUser>> = withContext(ioDispatcher) {
-        runCatching { api.getFollowingUsers(userId).profiles }
+        runCatching {
+            api.getFollowingUsers(userId).allUsers.map { u ->
+                val resolved = u.id.ifBlank { u.userId }
+                u.copy(rawId = resolved, rawUserId = resolved)
+            }
+        }
     }
 
     suspend fun getCloseFriendIds(): Result<List<String>> = withContext(ioDispatcher) {

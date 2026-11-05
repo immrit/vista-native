@@ -25,7 +25,7 @@ data class ShellFeatureContent(
         onSuggestionsClick: () -> Unit,
         onAppealClick: (String) -> Unit,
     ) -> Unit,
-    val storyPlayer: (@Composable (initialUserIndex: Int, onClose: () -> Unit, onOpenProfile: (String) -> Unit, onOpenLink: (String) -> Unit) -> Unit),
+    val storyPlayer: (@Composable (initialUserIndex: Int, onClose: () -> Unit, onOpenProfile: (String) -> Unit, onOpenLink: (String) -> Unit, onOpenHashtag: (String) -> Unit) -> Unit),
     val storyCreate: (@Composable (initialUri: android.net.Uri?, onClose: () -> Unit, onStoryPublished: () -> Unit) -> Unit),
     val addPost: (@Composable (
         onBack: () -> Unit,

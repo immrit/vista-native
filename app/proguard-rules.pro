@@ -71,3 +71,6 @@
 -keep class com.android.vending.billing.** { *; }
 
 
+
+# Lottie Android
+-keep class com.airbnb.lottie.** { *; }

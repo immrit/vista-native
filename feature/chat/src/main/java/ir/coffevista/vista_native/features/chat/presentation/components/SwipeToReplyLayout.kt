@@ -37,7 +37,7 @@ fun SwipeToReplyLayout(
     val haptic = LocalHapticFeedback.current
     val density = LocalDensity.current
     val threshold = with(density) { 72.dp.toPx() }
-    // In Telegram, swiping to the left replies to any message (peer or mine)
+    // Swiping to the left replies to any message (peer or mine)
     val swipePolicy = remember(threshold) {
         ReplySwipePolicy(
             thresholdPx = threshold,
@@ -112,7 +112,7 @@ fun SwipeToReplyLayout(
             ),
         contentAlignment = Alignment.Center
     ) {
-        // Reply Icon Indicator Behind Bubble (Telegram style: always right edge)
+        // Reply Icon Indicator Behind Bubble (always right edge)
         val progress = (offsetX / threshold).coerceIn(0f, 1f)
         if (progress > 0.05f) {
             Box(

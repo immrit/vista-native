@@ -160,8 +160,8 @@ internal data class StoryGalleryMediaItem(
 )
 
 /**
- * Production-grade Camera2 Story Studio (mirroring Telegram's `StoryRecorder` & `Camera2Session`)
- * paired with an Instagram-style Continuous Physics-Driven Swipe-Up Gallery Drawer.
+ * Production-grade Camera2 Story Studio
+ * paired with a Continuous Physics-Driven Swipe-Up Gallery Drawer.
  *
  * - Real hardware Camera2 live preview inside a 9:16 [StoryStage] with zero visual clutter.
  * - Instant zero-shutter-lag WYSIWYG 1080x1920 photo capture (with LED torch flash on back camera
@@ -378,11 +378,15 @@ internal fun StoryCameraStudio(
                 }
 
                 if (photoFile != null && photoFile.exists() && photoFile.length() > 0L) {
-                    val uri = FileProvider.getUriForFile(
-                        context,
-                        "${context.packageName}.files",
-                        photoFile,
-                    )
+                    val uri = runCatching {
+                        FileProvider.getUriForFile(
+                            context,
+                            "${context.packageName}.files",
+                            photoFile,
+                        )
+                    }.getOrElse {
+                        Uri.fromFile(photoFile)
+                    }
                     latestOnMediaSelected(uri, false)
                 }
             } finally {
@@ -411,11 +415,15 @@ internal fun StoryCameraStudio(
                 lockSlideProgress = 0f
                 linearZoom = 0f
                 if (videoFile != null && videoFile.exists() && videoFile.length() > 1024L) {
-                    val uri = FileProvider.getUriForFile(
-                        context,
-                        "${context.packageName}.files",
-                        videoFile,
-                    )
+                    val uri = runCatching {
+                        FileProvider.getUriForFile(
+                            context,
+                            "${context.packageName}.files",
+                            videoFile,
+                        )
+                    }.getOrElse {
+                        Uri.fromFile(videoFile)
+                    }
                     latestOnMediaSelected(uri, true)
                 } else {
                     videoFile?.delete()
@@ -1053,7 +1061,7 @@ internal fun StoryCameraStudio(
         }
 
         // =========================================================================
-        // 3. INSTAGRAM-STYLE CONTINUOUS SWIPE-UP GALLERY SHEET
+        // 3. CONTINUOUS SWIPE-UP GALLERY SHEET
         // =========================================================================
         if (progress > 0.005f) {
             val sheetOffsetPx = ((1f - progress) * containerHeightPx).roundToInt()
@@ -1330,7 +1338,7 @@ internal fun StoryCameraStudio(
 }
 
 // =============================================================================================
-// TELEGRAM-GRADE HARDWARE CAMERA2 ENGINE (Mirroring DrKLO/Telegram Camera2Session + StoryRecorder)
+// HIGH-PERFORMANCE HARDWARE CAMERA2 ENGINE
 // =============================================================================================
 
 private class StoryCamera2Controller(
@@ -1519,8 +1527,8 @@ private class StoryCamera2Controller(
     }
 
     /**
-     * Captures the exact live hardware-rendered 9:16 frame from [TextureView] (Telegram StoryRecorder
-     * zero-shutter-lag WYSIWYG capture) and writes a crisp 1080x1920 JPEG on [Dispatchers.IO].
+     * Captures the exact live hardware-rendered 9:16 frame from [TextureView] (Zero-shutter-lag
+     * WYSIWYG capture) and writes a crisp 1080x1920 JPEG on [Dispatchers.IO].
      */
     suspend fun captureWysiwygPhotoFile(): File? {
         val tv = textureView ?: return null

@@ -1,5 +1,11 @@
 package ir.coffevista.vista_native.features.profile.ui
 
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.foundation.layout.offset
+import ir.coffevista.vista_native.features.profile.data.ProfileNoteDto
+import ir.coffevista.vista_native.features.profile.ui.components.SoundCloudMusicBubble
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.foundation.pager.HorizontalPager
@@ -12,6 +18,8 @@ import android.content.Intent
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import ir.coffevista.vista_native.core.model.note.ProfileNotePrompts
+import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
@@ -73,8 +81,11 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
+import androidx.compose.foundation.text.ClickableText
 import androidx.compose.material3.Text
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import ir.coffevista.vista_native.core.designsystem.component.VistaEmojiText
 import ir.coffevista.vista_native.core.designsystem.component.VistaFloatingActionButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -153,9 +164,18 @@ internal fun ProfileParityList(
     onReportPost: (ProfilePostUiModel) -> Unit = {},
     onVisibilityChange: (ProfilePostUiModel, Boolean?, Boolean?) -> Unit = { _, _, _ -> },
     onPremiumPrompt: (String) -> Unit = {},
+    onHashtagClick: (String) -> Unit = {},
+    onMentionClick: (String) -> Unit = {},
     onLoadMore: () -> Unit,
     onRefresh: () -> Unit = {},
+    activeNote: ProfileNoteDto? = null,
+    hasActiveStory: Boolean = false,
+    hasUnseenStory: Boolean = false,
+    isCloseFriendsStory: Boolean = false,
+    onAvatarClick: (() -> Unit)? = null,
+    onAvatarStoryClick: (() -> Unit)? = null,
     onAvatarAddClick: (() -> Unit)? = null,
+    onNoteClick: (() -> Unit)? = null,
     onMemberBadgeClick: (() -> Unit)? = null,
     onFollowersClick: (() -> Unit)? = null,
     onFollowingClick: (() -> Unit)? = null,
@@ -192,7 +212,14 @@ internal fun ProfileParityList(
         item(key = "profile-header") {
             ProfileHeader(
                 header = header,
+                activeNote = activeNote,
+                hasActiveStory = hasActiveStory,
+                hasUnseenStory = hasUnseenStory,
+                isCloseFriendsStory = isCloseFriendsStory,
+                onAvatarClick = onAvatarClick,
+                onAvatarStoryClick = onAvatarStoryClick,
                 onAvatarAddClick = onAvatarAddClick,
+                onNoteClick = onNoteClick,
                 onMemberBadgeClick = onMemberBadgeClick,
                 onFollowersClick = onFollowersClick,
                 onFollowingClick = onFollowingClick,
@@ -263,6 +290,8 @@ internal fun ProfileParityList(
                                 onReportPost = { onReportPost(post) },
                                 onVisibilityChange = { hideLike, hideComment -> onVisibilityChange(post, hideLike, hideComment) },
                                 onPremiumPrompt = onPremiumPrompt,
+                                onHashtagClick = onHashtagClick,
+                                onMentionClick = onMentionClick,
                             )
                             HorizontalDivider(
                                 thickness = .5.dp,
@@ -313,6 +342,7 @@ internal fun ProfileParityList(
                             ProfileMusicListItem(
                                 title = post.musicTitle ?: "موزیک پست",
                                 subtitle = post.authorUsername ?: post.authorFullName,
+                                musicUrl = post.musicUrl,
                                 onClick = { onPostClick(post.id) },
                             )
                             HorizontalDivider(
@@ -356,7 +386,14 @@ internal fun ProfileParityList(
 @Composable
 internal fun ProfileHeader(
     header: ProfileHeaderModel,
+    activeNote: ProfileNoteDto? = null,
+    hasActiveStory: Boolean = false,
+    hasUnseenStory: Boolean = false,
+    isCloseFriendsStory: Boolean = false,
+    onAvatarClick: (() -> Unit)? = null,
+    onAvatarStoryClick: (() -> Unit)? = null,
     onAvatarAddClick: (() -> Unit)? = null,
+    onNoteClick: (() -> Unit)? = null,
     onMemberBadgeClick: (() -> Unit)? = null,
     onFollowersClick: (() -> Unit)? = null,
     onFollowingClick: (() -> Unit)? = null,
@@ -373,7 +410,14 @@ internal fun ProfileHeader(
         ) {
             ProfileAvatar(
                 header = header,
-                onAddClick = onAvatarAddClick,
+                activeNote = activeNote,
+                hasActiveStory = hasActiveStory,
+                hasUnseenStory = hasUnseenStory,
+                isCloseFriendsStory = isCloseFriendsStory,
+                onAvatarClick = onAvatarClick,
+                onAvatarStoryClick = onAvatarStoryClick,
+                onAvatarAddClick = onAvatarAddClick,
+                onNoteClick = onNoteClick,
             )
             Spacer(Modifier.width(28.dp))
             Row(
@@ -565,63 +609,234 @@ private data class Tuple5<A, B, C, D, E>(
 )
 
 @Composable
+fun ProfileNoteBubble(
+    note: ProfileNoteDto?,
+    isOwnProfile: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    if (note == null && !isOwnProfile) return
+
+    val isDark = isSystemInDarkTheme()
+    val noteContent = note?.content?.trim().orEmpty()
+    val hasContent = noteContent.isNotBlank()
+    val randomPrompt = remember { ProfileNotePrompts.randomPrompt() }
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = modifier
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick,
+            ),
+    ) {
+        Surface(
+            shape = RoundedCornerShape(18.dp),
+            color = if (isDark) Color(0xF21C2230) else Color(0xF8FFFFFF),
+            shadowElevation = 5.dp,
+            border = BorderStroke(
+                width = 1.dp,
+                color = if (hasContent) {
+                    if (isDark) Color(0x4DFFFFFF) else Color(0x22000000)
+                } else {
+                    Color(0xFF2196F3).copy(alpha = 0.65f)
+                },
+            ),
+        ) {
+            Box(
+                modifier = Modifier
+                    .widthIn(min = 52.dp, max = 155.dp)
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (hasContent) {
+                    val (fontSize, lineHeight, maxLines) = when {
+                        noteContent.length <= 14 -> Triple(11.5.sp, 15.sp, 2)
+                        noteContent.length <= 34 -> Triple(10.sp, 13.5.sp, 2)
+                        else -> Triple(9.sp, 12.sp, 3)
+                    }
+                    Text(
+                        text = noteContent,
+                        style = TextStyle(
+                            fontSize = fontSize,
+                            lineHeight = lineHeight,
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (isDark) Color.White else Color(0xFF1E293B),
+                            textAlign = TextAlign.Center,
+                            textDirection = TextDirection.ContentOrRtl,
+                        ),
+                        maxLines = maxLines,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                } else {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(16.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFF2196F3).copy(alpha = 0.15f)),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Add,
+                                contentDescription = null,
+                                modifier = Modifier.size(11.dp),
+                                tint = Color(0xFF2196F3),
+                            )
+                        }
+                        Text(
+                            text = randomPrompt,
+                            style = TextStyle(
+                                fontSize = 9.5.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = if (isDark) Color(0xFF90CAF9) else Color(0xFF1976D2),
+                                textAlign = TextAlign.Center,
+                                textDirection = TextDirection.ContentOrRtl,
+                            ),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+        }
+        Spacer(modifier = Modifier.height(2.5.dp))
+        Box(
+            modifier = Modifier
+                .size(6.5.dp)
+                .clip(CircleShape)
+                .background(if (isDark) Color(0xF21C2230) else Color(0xF8FFFFFF))
+                .border(0.5.dp, if (isDark) Color(0x38FFFFFF) else Color(0x20000000), CircleShape),
+        )
+        Spacer(modifier = Modifier.height(1.5.dp))
+        Box(
+            modifier = Modifier
+                .size(3.5.dp)
+                .clip(CircleShape)
+                .background(if (isDark) Color(0xF21C2230) else Color(0xF8FFFFFF))
+                .border(0.5.dp, if (isDark) Color(0x38FFFFFF) else Color(0x20000000), CircleShape),
+        )
+    }
+}
+
+@Composable
 internal fun ProfileAvatar(
     header: ProfileHeaderModel,
-    onAddClick: (() -> Unit)? = null,
+    activeNote: ProfileNoteDto? = null,
+    hasActiveStory: Boolean = false,
+    hasUnseenStory: Boolean = false,
+    isCloseFriendsStory: Boolean = false,
+    onAvatarClick: (() -> Unit)? = null,
+    onAvatarStoryClick: (() -> Unit)? = null,
+    onAvatarAddClick: (() -> Unit)? = null,
+    onNoteClick: (() -> Unit)? = null,
 ) {
-    Box(
-        modifier = Modifier.size(84.dp),
-        contentAlignment = Alignment.BottomStart,
-    ) {
-        val imageModifier = Modifier
-            .size(84.dp)
-            .clip(CircleShape)
-            .border(
-                BorderStroke(1.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
-                CircleShape,
-            )
+    val showNote = activeNote != null || header.isOwnProfile
 
-        if (header.avatarUrl.isNullOrBlank()) {
-            Image(
-                painter = painterResource(DesignSystemR.drawable.vista_default_avatar),
-                contentDescription = "تصویر پیش‌فرض ${header.fullName}",
-                modifier = imageModifier,
-                contentScale = ContentScale.Crop,
-            )
-        } else {
-            AsyncImage(
-                model = header.avatarUrl,
-                contentDescription = "تصویر نمایه ${header.fullName}",
-                modifier = imageModifier,
-                placeholder = painterResource(DesignSystemR.drawable.vista_default_avatar),
-                error = painterResource(DesignSystemR.drawable.vista_default_avatar),
-                contentScale = ContentScale.Crop,
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        if (showNote) {
+            ProfileNoteBubble(
+                note = activeNote,
+                isOwnProfile = header.isOwnProfile,
+                onClick = { onNoteClick?.invoke() },
+                modifier = Modifier.padding(bottom = 2.dp),
             )
         }
 
-        // Circular Add button for own profile
-        if (header.isOwnProfile) {
-            Box(
-                modifier = Modifier
-                    .size(24.dp)
+        Box(
+            modifier = Modifier.size(if (hasActiveStory) 88.dp else 84.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            val storyRingModifier = if (hasActiveStory) {
+                val ringBrush = if (isCloseFriendsStory) {
+                    Brush.sweepGradient(listOf(Color(0xFF2ECC71), Color(0xFF27AE60), Color(0xFF2ECC71)))
+                } else if (hasUnseenStory) {
+                    Brush.sweepGradient(
+                        listOf(
+                            Color(0xFF962FBF),
+                            Color(0xFFD62976),
+                            Color(0xFFFA7E1E),
+                            Color(0xFFFEDA75),
+                            Color(0xFF962FBF),
+                        )
+                    )
+                } else {
+                    SolidColor(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                }
+                Modifier
+                    .size(88.dp)
                     .clip(CircleShape)
-                    .background(Color(0xFF2196F3))
-                    .border(BorderStroke(2.dp, MaterialTheme.colorScheme.background), CircleShape)
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = { onAddClick?.invoke() },
-                    ),
+                    .border(2.5.dp, ringBrush, CircleShape)
+                    .padding(3.dp)
+            } else {
+                Modifier.size(84.dp)
+            }
+
+            val imageModifier = Modifier
+                .fillMaxSize()
+                .clip(CircleShape)
+                .clickable {
+                    if (hasActiveStory && onAvatarStoryClick != null) {
+                        onAvatarStoryClick.invoke()
+                    } else {
+                        onAvatarClick?.invoke()
+                    }
+                }
+
+            Box(
+                modifier = storyRingModifier,
                 contentAlignment = Alignment.Center,
             ) {
-                Text(
-                    text = "+",
-                    color = Color.White,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(bottom = 1.dp),
-                )
+                if (header.avatarUrl.isNullOrBlank()) {
+                    Image(
+                        painter = painterResource(DesignSystemR.drawable.vista_default_avatar),
+                        contentDescription = "تصویر پیش‌فرض ${header.fullName}",
+                        modifier = imageModifier,
+                        contentScale = ContentScale.Crop,
+                    )
+                } else {
+                    AsyncImage(
+                        model = header.avatarUrl,
+                        contentDescription = "تصویر نمایه ${header.fullName}",
+                        modifier = imageModifier,
+                        placeholder = painterResource(DesignSystemR.drawable.vista_default_avatar),
+                        error = painterResource(DesignSystemR.drawable.vista_default_avatar),
+                        contentScale = ContentScale.Crop,
+                    )
+                }
+            }
+
+            // Circular Add button for own profile
+            if (header.isOwnProfile) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .size(24.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFF2196F3))
+                        .border(BorderStroke(2.dp, MaterialTheme.colorScheme.background), CircleShape)
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = { onAvatarAddClick?.invoke() },
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = "+",
+                        color = Color.White,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(bottom = 1.dp),
+                    )
+                }
             }
         }
     }
@@ -740,6 +955,8 @@ internal fun ProfilePostCard(
     onReportPost: () -> Unit = {},
     onVisibilityChange: (Boolean?, Boolean?) -> Unit = { _, _ -> },
     onPremiumPrompt: (String) -> Unit = {},
+    onHashtagClick: (String) -> Unit = {},
+    onMentionClick: (String) -> Unit = {},
 ) {
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
@@ -815,15 +1032,70 @@ internal fun ProfilePostCard(
 
         // Post Text
         post.content?.takeIf(String::isNotBlank)?.let { contentText ->
-            Text(
-                text = contentText,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                maxLines = 6,
-                overflow = TextOverflow.Ellipsis,
-                fontSize = 15.sp,
-                lineHeight = 22.sp,
-                color = MaterialTheme.colorScheme.onBackground,
-            )
+            val hasEntities = remember(contentText) { contentText.contains('#') || contentText.contains('@') }
+            if (hasEntities) {
+                val entityStyle = SpanStyle(
+                    color = Color(0xFF1E88E5),
+                    fontWeight = FontWeight.Bold,
+                )
+                val annotated = remember(contentText) {
+                    buildAnnotatedString {
+                        val pattern = Regex("""(?<![^\s\n])@([\u0600-\u06FF\w_]+)|#([\u0600-\u06FF\w_]+)""")
+                        var cursor = 0
+                        pattern.findAll(contentText).forEach { match ->
+                            if (match.range.first > cursor) {
+                                append(contentText.substring(cursor, match.range.first))
+                            }
+                            val start = length
+                            append(match.value)
+                            addStyle(entityStyle, start, length)
+                            if (match.value.startsWith("#")) {
+                                addStringAnnotation("HASHTAG", match.value.removePrefix("#"), start, length)
+                            } else if (match.value.startsWith("@")) {
+                                addStringAnnotation("MENTION", match.value.removePrefix("@"), start, length)
+                            }
+                            cursor = match.range.last + 1
+                        }
+                        if (cursor < contentText.length) {
+                            append(contentText.substring(cursor))
+                        }
+                    }
+                }
+                ClickableText(
+                    text = annotated,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                    style = TextStyle(
+                        fontSize = 15.sp,
+                        lineHeight = 22.sp,
+                        color = MaterialTheme.colorScheme.onBackground,
+                    ),
+                    maxLines = 6,
+                    overflow = TextOverflow.Ellipsis,
+                    onClick = { offset ->
+                        val hashtag = annotated.getStringAnnotations("HASHTAG", offset, offset).firstOrNull()
+                        if (hashtag != null) {
+                            onHashtagClick(hashtag.item)
+                            return@ClickableText
+                        }
+                        val mention = annotated.getStringAnnotations("MENTION", offset, offset).firstOrNull()
+                        if (mention != null) {
+                            onMentionClick(mention.item)
+                            return@ClickableText
+                        }
+                        onClick()
+                    },
+                )
+            } else {
+                Text(
+                    text = contentText,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                    maxLines = 6,
+                    overflow = TextOverflow.Ellipsis,
+                    fontSize = 15.sp,
+                    lineHeight = 22.sp,
+                    color = MaterialTheme.colorScheme.onBackground,
+                )
+            }
         }
 
         // Post Media
@@ -895,6 +1167,14 @@ internal fun ProfilePostCard(
                     }
                 }
             }
+        }
+
+        if (!post.musicUrl.isNullOrBlank()) {
+            SoundCloudMusicBubble(
+                musicUrl = post.musicUrl,
+                musicTitle = post.musicTitle ?: "موسیقی پست",
+                subtitle = "موسیقی پست",
+            )
         }
 
         // Action Buttons Row (Placed exactly like Feed: Like, Comment, Bookmark, Share, Spacer, 3-dots)
@@ -1259,56 +1539,65 @@ internal fun ProfileReelsInlineGrid(
 internal fun ProfileMusicListItem(
     title: String,
     subtitle: String,
+    musicUrl: String? = null,
     onClick: () -> Unit,
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        // Music icon container (46x46dp rounded)
-        Box(
+    if (!musicUrl.isNullOrBlank()) {
+        SoundCloudMusicBubble(
+            musicUrl = musicUrl,
+            musicTitle = title,
+            subtitle = subtitle,
+        )
+    } else {
+        Row(
             modifier = Modifier
-                .size(46.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant),
-            contentAlignment = Alignment.Center,
+                .fillMaxWidth()
+                .clickable(onClick = onClick)
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
+            // Music icon container (46x46dp rounded)
+            Box(
+                modifier = Modifier
+                    .size(46.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = ImageVector.vectorResource(R.drawable.ic_profile_music),
+                    contentDescription = null,
+                    modifier = Modifier.size(22.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Spacer(Modifier.width(14.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = MaterialTheme.colorScheme.onBackground,
+                )
+                Text(
+                    text = subtitle,
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 2.dp),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Spacer(Modifier.width(12.dp))
             Icon(
-                imageVector = ImageVector.vectorResource(R.drawable.ic_profile_music),
-                contentDescription = null,
-                modifier = Modifier.size(22.dp),
+                imageVector = ImageVector.vectorResource(R.drawable.ic_profile_play),
+                contentDescription = "پخش",
+                modifier = Modifier.size(24.dp),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        Spacer(Modifier.width(14.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = title,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                color = MaterialTheme.colorScheme.onBackground,
-            )
-            Text(
-                text = subtitle,
-                fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 2.dp),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        Spacer(Modifier.width(12.dp))
-        Icon(
-            imageVector = ImageVector.vectorResource(R.drawable.ic_profile_play),
-            contentDescription = "پخش",
-            modifier = Modifier.size(24.dp),
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
     }
 }
 
@@ -1672,12 +1961,14 @@ private fun ProfileEmptyView(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ProfileHighlightsRow(
     highlights: List<ProfileHighlightDto>,
     isOwnProfile: Boolean,
     onAddClick: () -> Unit = {},
     onHighlightClick: (ProfileHighlightDto) -> Unit = {},
+    onHighlightLongClick: ((ProfileHighlightDto) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     if (highlights.isEmpty() && !isOwnProfile) return
@@ -1727,7 +2018,10 @@ fun ProfileHighlightsRow(
         ) { highlight ->
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.clickable { onHighlightClick(highlight) },
+                modifier = Modifier.combinedClickable(
+                    onClick = { onHighlightClick(highlight) },
+                    onLongClick = onHighlightLongClick?.let { { it(highlight) } },
+                ),
             ) {
                 Box(
                     modifier = Modifier

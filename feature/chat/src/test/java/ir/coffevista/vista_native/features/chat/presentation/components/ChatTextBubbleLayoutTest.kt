@@ -11,7 +11,7 @@ import org.junit.Test
 class ChatTextBubbleLayoutTest {
 
     @Test
-    fun `short text fits inline with footer in RTL`() {
+    fun `short single-word text stacks footer vertically below content in RTL`() {
         val result = calculateChatTextBubblePlacement(
             textWidth = 100,
             textHeight = 40,
@@ -23,16 +23,14 @@ class ChatTextBubbleLayoutTest {
             layoutDirection = LayoutDirection.Rtl,
         )
 
-        assertTrue(result.isInline)
-        assertEquals(IntSize(170, 40), result.size)
-        // In RTL inline mode: text is shifted to the right by footerWidth + spacing
-        assertEquals(IntOffset(x = 70, y = 0), result.textOffset)
-        // Footer is at left edge x = 0, aligned to bottom y = 40 - 24 = 16
-        assertEquals(IntOffset(x = 0, y = 16), result.footerOffset)
+        assertFalse(result.isInline)
+        assertEquals(IntSize(100, 66), result.size) // 40 + 2 + 24 = 66
+        assertEquals(IntOffset(x = 0, y = 0), result.textOffset)
+        assertEquals(IntOffset(x = 0, y = 42), result.footerOffset)
     }
 
     @Test
-    fun `short text fits inline with footer in LTR`() {
+    fun `short single-word text stacks footer vertically below content in LTR`() {
         val result = calculateChatTextBubblePlacement(
             textWidth = 100,
             textHeight = 40,
@@ -44,12 +42,10 @@ class ChatTextBubbleLayoutTest {
             layoutDirection = LayoutDirection.Ltr,
         )
 
-        assertTrue(result.isInline)
-        assertEquals(IntSize(170, 40), result.size)
-        // In LTR inline mode: text is on the left x = 0
+        assertFalse(result.isInline)
+        assertEquals(IntSize(100, 66), result.size)
         assertEquals(IntOffset(x = 0, y = 0), result.textOffset)
-        // Footer is to the right of text x = 100 + 10 = 110, y = 40 - 24 = 16
-        assertEquals(IntOffset(x = 110, y = 16), result.footerOffset)
+        assertEquals(IntOffset(x = 40, y = 42), result.footerOffset) // 100 - 60 = 40
     }
 
     @Test
@@ -68,7 +64,6 @@ class ChatTextBubbleLayoutTest {
         assertFalse(result.isInline)
         assertEquals(IntSize(450, 149), result.size) // 120 + 4 + 25 = 149
         assertEquals(IntOffset(x = 0, y = 0), result.textOffset)
-        // In RTL stacked mode: footer is pinned to the left edge x = 0
         assertEquals(IntOffset(x = 0, y = 124), result.footerOffset)
     }
 
@@ -88,36 +83,37 @@ class ChatTextBubbleLayoutTest {
         assertFalse(result.isInline)
         assertEquals(IntSize(450, 149), result.size)
         assertEquals(IntOffset(x = 0, y = 0), result.textOffset)
-        // In LTR stacked mode: footer is pinned to the right edge x = 450 - 80 = 370
         assertEquals(IntOffset(x = 370, y = 124), result.footerOffset)
     }
 
     @Test
-    fun `exact boundary fit allows inline placement`() {
+    fun `tiny text smaller than footer expands width to footerWidth and stacks vertically`() {
         val result = calculateChatTextBubblePlacement(
-            textWidth = 200,
+            textWidth = 40,
             textHeight = 30,
             footerWidth = 90,
             footerHeight = 20,
             maxWidthPx = 300,
-            spacingPx = 10, // 200 + 10 + 90 = 300 == maxWidth
+            spacingPx = 10,
             verticalGapPx = 2,
             layoutDirection = LayoutDirection.Rtl,
         )
 
-        assertTrue(result.isInline)
-        assertEquals(IntSize(300, 30), result.size)
+        assertFalse(result.isInline)
+        assertEquals(IntSize(90, 52), result.size) // 30 + 2 + 20 = 52
+        assertEquals(IntOffset(x = 0, y = 0), result.textOffset)
+        assertEquals(IntOffset(x = 0, y = 32), result.footerOffset)
     }
 
     @Test
-    fun `text just exceeding boundary wraps vertically`() {
+    fun `text exceeding boundary wraps vertically`() {
         val result = calculateChatTextBubblePlacement(
             textWidth = 201,
             textHeight = 30,
             footerWidth = 90,
             footerHeight = 20,
             maxWidthPx = 300,
-            spacingPx = 10, // 201 + 10 + 90 = 301 > 300
+            spacingPx = 10,
             verticalGapPx = 3,
             layoutDirection = LayoutDirection.Rtl,
         )

@@ -12,20 +12,39 @@ import android.provider.MediaStore
 import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -34,6 +53,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AudioFile
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
@@ -66,20 +86,28 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -95,6 +123,8 @@ import ir.coffevista.vista_native.core.designsystem.tokens.VistaBrandColors
 import ir.coffevista.vista_native.features.feed.music.MusicRepository
 import ir.coffevista.vista_native.features.feed.music.MusicTrack
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -147,25 +177,83 @@ fun MusicPickerBottomSheet(
     var clipDurationSec by remember { mutableIntStateOf(30) } // 15, 30, 45, 60
     var clipStartFraction by remember { mutableFloatStateOf(0f) }
     var saveToVistaLibrary by remember { mutableStateOf(false) }
+    var playbackPositionMs by remember { mutableLongStateOf(0L) }
+    var isExoPlaying by remember { mutableStateOf(false) }
 
     val exoPlayer = remember {
         ExoPlayer.Builder(context).build().apply {
-            repeatMode = Player.REPEAT_MODE_ONE
+            repeatMode = Player.REPEAT_MODE_OFF
         }
     }
 
     DisposableEffect(exoPlayer) {
         val listener = object : Player.Listener {
             override fun onPlaybackStateChanged(state: Int) {
-                if (state == Player.STATE_ENDED && exoPlayer.repeatMode == Player.REPEAT_MODE_OFF) {
+                if (state == Player.STATE_READY) {
+                    val d = exoPlayer.duration
+                    if (d > 0L && stagedTrack != null && (stagedTrack?.durationMs ?: 0L) <= 0L) {
+                        stagedTrack = stagedTrack?.copy(durationMs = d)
+                    }
+                } else if (state == Player.STATE_ENDED) {
                     playingTrackId = null
+                    isExoPlaying = false
                 }
+            }
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                isExoPlaying = isPlaying
+            }
+            override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                android.util.Log.e("MusicPicker", "ExoPlayer playback error: ${error.errorCodeName} - ${error.message}", error)
             }
         }
         exoPlayer.addListener(listener)
         onDispose {
-            exoPlayer.removeListener(listener)
-            exoPlayer.release()
+            runCatching { exoPlayer.removeListener(listener) }
+            runCatching { exoPlayer.stop() }
+            runCatching { exoPlayer.release() }
+        }
+    }
+
+    fun playPreviewAt(track: MusicTrack, startMs: Long) {
+        runCatching {
+            val targetUri = Uri.parse(track.musicUrl)
+            val currentUri = exoPlayer.currentMediaItem?.localConfiguration?.uri
+
+            if (currentUri != targetUri) {
+                exoPlayer.stop()
+                val mediaItem = MediaItem.fromUri(targetUri)
+                exoPlayer.setMediaItem(mediaItem)
+                exoPlayer.prepare()
+            }
+            exoPlayer.seekTo(startMs.coerceAtLeast(0L))
+            exoPlayer.play()
+            playingTrackId = track.id
+        }.onFailure { err ->
+            android.util.Log.e("MusicPicker", "playPreviewAt error: ${err.message}", err)
+        }
+    }
+
+    // Active looping playback between start and end bounds
+    LaunchedEffect(playingTrackId, stagedTrack?.id) {
+        if (playingTrackId == null) return@LaunchedEffect
+        val active = stagedTrack ?: return@LaunchedEffect
+        while (isActive) {
+            delay(30L)
+            if (exoPlayer.isPlaying) {
+                val pos = exoPlayer.currentPosition
+                playbackPositionMs = pos
+                val total = (stagedTrack?.durationMs?.takeIf { it > 0L }
+                    ?: exoPlayer.duration.takeIf { it > 0L }
+                    ?: 180_000L)
+                val winMs = (clipDurationSec * 1_000L).coerceAtMost(total)
+                val maxSt = (total - winMs).coerceAtLeast(0L)
+                val startBound = (clipStartFraction * maxSt).toLong()
+                val endBound = (startBound + winMs).coerceAtMost(total)
+
+                if (pos >= endBound || pos < startBound - 500L) {
+                    exoPlayer.seekTo(startBound)
+                }
+            }
         }
     }
 
@@ -192,13 +280,7 @@ fun MusicPickerBottomSheet(
                 editTitle = extracted.title
                 editArtist = extracted.artist
                 clipStartFraction = 0f
-                playClipPreview(
-                    exoPlayer = exoPlayer,
-                    track = extracted,
-                    startMs = 0,
-                    endMs = resolveEndMs(extracted.durationMs, 0, clipDurationSec),
-                )
-                playingTrackId = extracted.id
+                playPreviewAt(extracted, 0L)
             }
         }
     }
@@ -250,9 +332,22 @@ fun MusicPickerBottomSheet(
         editTitle = track.title
         editArtist = track.artist
         clipStartFraction = 0f
-        val endMs = resolveEndMs(track.durationMs, 0, clipDurationSec)
-        playClipPreview(exoPlayer, track, 0, endMs)
-        playingTrackId = track.id
+        playPreviewAt(track, 0L)
+
+        if (track.durationMs <= 0L && !track.musicUrl.isNullOrBlank()) {
+            coroutineScope.launch {
+                val accurateMs = ir.coffevista.vista_native.features.feed.music.AudioTrimEngine.getExactAudioDurationMs(
+                    context,
+                    Uri.parse(track.musicUrl),
+                )
+                if (accurateMs > 0L) {
+                    val updated = track.copy(durationMs = accurateMs)
+                    if (stagedTrack?.id == track.id) {
+                        stagedTrack = updated
+                    }
+                }
+            }
+        }
     }
 
     ModalBottomSheet(
@@ -261,19 +356,32 @@ fun MusicPickerBottomSheet(
             onDismiss()
         },
         sheetState = sheetState,
+        dragHandle = null,
         containerColor = Color(0xF5131520),
         contentColor = Color.White,
         shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
         modifier = modifier,
     ) {
         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 420.dp, max = 640.dp)
-                    .navigationBarsPadding()
-                    .padding(horizontal = 16.dp),
-            ) {
+            AnimatedContent(
+                targetState = stagedTrack,
+                transitionSpec = {
+                    if (targetState != null) {
+                        (slideInHorizontally { it } + fadeIn()).togetherWith(slideOutHorizontally { -it } + fadeOut())
+                    } else {
+                        (slideInHorizontally { -it } + fadeIn()).togetherWith(slideOutHorizontally { it } + fadeOut())
+                    }
+                },
+                label = "MusicPickerStepTransition",
+            ) { activeTrack ->
+                if (activeTrack == null) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 460.dp, max = 640.dp)
+                            .navigationBarsPadding()
+                            .padding(horizontal = 16.dp),
+                    ) {
                 // Header
                 Row(
                     modifier = Modifier
@@ -609,14 +717,23 @@ fun MusicPickerBottomSheet(
                                         Spacer(Modifier.width(11.dp))
 
                                         Column(modifier = Modifier.weight(1f)) {
-                                            Text(
-                                                text = track.title,
-                                                fontWeight = FontWeight.Bold,
-                                                fontSize = 13.5.sp,
-                                                color = Color.White,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                            )
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                            ) {
+                                                Text(
+                                                    text = track.title,
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 13.5.sp,
+                                                    color = Color.White,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    modifier = Modifier.weight(1f, fill = false),
+                                                )
+                                                if (isPlaying) {
+                                                    MiniAudioEqualizer()
+                                                }
+                                            }
                                             Row(
                                                 verticalAlignment = Alignment.CenterVertically,
                                                 horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -669,200 +786,97 @@ fun MusicPickerBottomSheet(
                         }
                     }
                 }
+            }
+        } else {
+            StoryMusicTrimmerView(
+                        active = activeTrack,
+                        totalDurMs = activeTrack.durationMs.takeIf { it > 0L }
+                            ?: exoPlayer.duration.takeIf { it > 0L }
+                            ?: 180_000L,
+                        clipDurationSec = clipDurationSec,
+                        clipStartFraction = clipStartFraction,
+                        playbackPositionMs = playbackPositionMs,
+                        isPlaying = playingTrackId == activeTrack.id && isExoPlaying,
+                        editTitle = editTitle,
+                        editArtist = editArtist,
+                        saveToVistaLibrary = saveToVistaLibrary,
+                        onTitleChange = { editTitle = it },
+                        onArtistChange = { editArtist = it },
+                        onSaveToLibraryChange = { saveToVistaLibrary = it },
+                        onBackToSelection = {
+                            exoPlayer.stop()
+                            playingTrackId = null
+                            stagedTrack = null
+                        },
+                        onDurationCycle = {
+                            val durations = listOf(15, 30, 45, 60)
+                            val nextIdx = (durations.indexOf(clipDurationSec) + 1) % durations.size
+                            val newDur = durations[nextIdx]
+                            clipDurationSec = newDur
+                            val totalMs = activeTrack.durationMs.takeIf { it > 0L }
+                                ?: exoPlayer.duration.takeIf { it > 0L }
+                                ?: 180_000L
+                            val newWin = (newDur * 1_000L).coerceAtMost(totalMs)
+                            val newStart = (clipStartFraction * (totalMs - newWin).coerceAtLeast(0L)).roundToInt()
+                            playPreviewAt(activeTrack, newStart.toLong())
+                        },
+                        onTogglePlay = {
+                            val isCurPlaying = playingTrackId == activeTrack.id && isExoPlaying
+                            if (isCurPlaying) {
+                                exoPlayer.pause()
+                                playingTrackId = null
+                            } else {
+                                val totalMs = activeTrack.durationMs.takeIf { it > 0L }
+                                    ?: exoPlayer.duration.takeIf { it > 0L }
+                                    ?: 180_000L
+                                val winMs = (clipDurationSec * 1_000L).coerceAtMost(totalMs)
+                                val curStart = (clipStartFraction * (totalMs - winMs).coerceAtLeast(0L)).roundToInt()
+                                playPreviewAt(activeTrack, curStart.toLong())
+                            }
+                        },
+                        onFractionChange = { frac ->
+                            clipStartFraction = frac
+                        },
+                        onFractionChangeFinished = {
+                            val totalMs = activeTrack.durationMs.takeIf { it > 0L }
+                                ?: exoPlayer.duration.takeIf { it > 0L }
+                                ?: 180_000L
+                            val winMs = (clipDurationSec * 1_000L).coerceAtMost(totalMs)
+                            val curStart = (clipStartFraction * (totalMs - winMs).coerceAtLeast(0L)).roundToInt()
+                            playPreviewAt(activeTrack, curStart.toLong())
+                        },
+                        onConfirmSelection = {
+                            exoPlayer.stop()
+                            val finalTrack = activeTrack.copy(
+                                title = editTitle.trim().ifBlank { activeTrack.title.ifBlank { "موزیک" } },
+                                artist = editArtist.trim().ifBlank { activeTrack.artist.ifBlank { "موزیک انتخابی" } },
+                            )
+                            val totalMs = activeTrack.durationMs.takeIf { it > 0L }
+                                ?: exoPlayer.duration.takeIf { it > 0L }
+                                ?: 180_000L
+                            val winMs = (clipDurationSec * 1_000L).coerceAtMost(totalMs)
+                            val maxStartMs = (totalMs - winMs).coerceAtLeast(0L)
+                            val computedStartMs = (clipStartFraction * maxStartMs).roundToInt()
+                            val computedEndMs = (computedStartMs + winMs.toInt()).coerceAtMost(totalMs.toInt())
 
-                // Interactive Chorus Trimmer & Confirmation Dock
-                stagedTrack?.let { active ->
-                    val totalDurMs = active.durationMs.takeIf { it > 0L }
-                        ?: exoPlayer.duration.takeIf { it > 0L }
-                        ?: 180_000L
-                    val windowMs = (clipDurationSec * 1_000L).coerceAtMost(totalDurMs)
-                    val maxStartMs = (totalDurMs - windowMs).coerceAtLeast(0L)
-                    val computedStartMs = (clipStartFraction * maxStartMs).roundToInt()
-                    val computedEndMs = (computedStartMs + windowMs.toInt()).coerceAtMost(totalDurMs.toInt())
-
-                    Column(
+                            if (onRichMusicSelected != null) {
+                                onRichMusicSelected(
+                                    SelectedStoryMusicResult(
+                                        track = finalTrack,
+                                        startMs = computedStartMs,
+                                        endMs = computedEndMs,
+                                        saveToVistaLibrary = activeTrack.isLocalDeviceFile && saveToVistaLibrary,
+                                    ),
+                                )
+                            } else {
+                                onMusicSelected(finalTrack)
+                            }
+                        },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(top = 8.dp, bottom = 12.dp)
-                            .clip(RoundedCornerShape(20.dp))
-                            .background(Color(0xFF1B1E2E))
-                            .border(1.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(20.dp))
-                            .padding(horizontal = 14.dp, vertical = 12.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                text = "بخش انتخابی: ${formatMillisPersian(computedStartMs.toLong())} تا ${formatMillisPersian(computedEndMs.toLong())}",
-                                color = Color.White,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                            )
-                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                listOf(15, 30, 45, 60).forEach { sec ->
-                                    val sel = clipDurationSec == sec
-                                    Box(
-                                        modifier = Modifier
-                                            .clip(RoundedCornerShape(10.dp))
-                                            .background(if (sel) VistaBrandColors.Pink else Color.White.copy(alpha = 0.08f))
-                                            .clickable {
-                                                clipDurationSec = sec
-                                                val newWindow = (sec * 1_000L).coerceAtMost(totalDurMs)
-                                                val newStart = (clipStartFraction * (totalDurMs - newWindow).coerceAtLeast(0L)).roundToInt()
-                                                playClipPreview(
-                                                    exoPlayer = exoPlayer,
-                                                    track = active,
-                                                    startMs = newStart,
-                                                    endMs = (newStart + newWindow.toInt()).coerceAtMost(totalDurMs.toInt()),
-                                                )
-                                                playingTrackId = active.id
-                                            }
-                                            .padding(horizontal = 8.dp, vertical = 4.dp),
-                                    ) {
-                                        Text(
-                                            text = "${sec.toString().toPersianDigits()}ث",
-                                            color = Color.White,
-                                            fontSize = 10.5.sp,
-                                            fontWeight = FontWeight.Bold,
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        if (maxStartMs > 1_000L) {
-                            Slider(
-                                value = clipStartFraction,
-                                onValueChange = { frac ->
-                                    clipStartFraction = frac.coerceIn(0f, 1f)
-                                },
-                                onValueChangeFinished = {
-                                    val newStart = (clipStartFraction * maxStartMs).roundToInt()
-                                    val newEnd = (newStart + windowMs.toInt()).coerceAtMost(totalDurMs.toInt())
-                                    playClipPreview(exoPlayer, active, newStart, newEnd)
-                                    playingTrackId = active.id
-                                },
-                                colors = SliderDefaults.colors(
-                                    thumbColor = VistaBrandColors.Pink,
-                                    activeTrackColor = VistaBrandColors.Pink,
-                                    inactiveTrackColor = Color.White.copy(alpha = 0.16f),
-                                ),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(26.dp),
-                            )
-                        }
-
-                        if (active.isLocalDeviceFile) {
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                OutlinedTextField(
-                                    value = editTitle,
-                                    onValueChange = { editTitle = it },
-                                    placeholder = { Text("نام آهنگ", fontSize = 11.sp) },
-                                    singleLine = true,
-                                    shape = RoundedCornerShape(12.dp),
-                                    colors = OutlinedTextFieldDefaults.colors(
-                                        focusedContainerColor = Color.White.copy(alpha = 0.06f),
-                                        unfocusedContainerColor = Color.White.copy(alpha = 0.04f),
-                                        focusedBorderColor = VistaBrandColors.Pink,
-                                        unfocusedBorderColor = Color.White.copy(alpha = 0.12f),
-                                        focusedTextColor = Color.White,
-                                        unfocusedTextColor = Color.White,
-                                    ),
-                                    modifier = Modifier.weight(1f),
-                                )
-                                OutlinedTextField(
-                                    value = editArtist,
-                                    onValueChange = { editArtist = it },
-                                    placeholder = { Text("نام خواننده", fontSize = 11.sp) },
-                                    singleLine = true,
-                                    shape = RoundedCornerShape(12.dp),
-                                    colors = OutlinedTextFieldDefaults.colors(
-                                        focusedContainerColor = Color.White.copy(alpha = 0.06f),
-                                        unfocusedContainerColor = Color.White.copy(alpha = 0.04f),
-                                        focusedBorderColor = VistaBrandColors.Pink,
-                                        unfocusedBorderColor = Color.White.copy(alpha = 0.12f),
-                                        focusedTextColor = Color.White,
-                                        unfocusedTextColor = Color.White,
-                                    ),
-                                    modifier = Modifier.weight(1f),
-                                )
-                            }
-
-                            Row(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .clickable { saveToVistaLibrary = !saveToVistaLibrary }
-                                    .padding(vertical = 2.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(18.dp)
-                                        .clip(RoundedCornerShape(5.dp))
-                                        .background(
-                                            if (saveToVistaLibrary) VistaBrandColors.Pink
-                                            else Color.White.copy(alpha = 0.1f),
-                                        )
-                                        .border(1.dp, Color.White.copy(alpha = 0.25f), RoundedCornerShape(5.dp)),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    if (saveToVistaLibrary) {
-                                        Icon(
-                                            imageVector = Icons.Default.Check,
-                                            contentDescription = null,
-                                            tint = Color.White,
-                                            modifier = Modifier.size(13.dp),
-                                        )
-                                    }
-                                }
-                                Text(
-                                    text = "ذخیره در «موزیک‌های من» برای استفاده‌های بعدی",
-                                    color = Color.White.copy(alpha = 0.8f),
-                                    fontSize = 11.5.sp,
-                                )
-                            }
-                        }
-
-                        Button(
-                            onClick = {
-                                exoPlayer.stop()
-                                val finalTrack = active.copy(
-                                    title = editTitle.trim().ifBlank { active.title.ifBlank { "موزیک" } },
-                                    artist = editArtist.trim().ifBlank { active.artist.ifBlank { "موزیک انتخابی" } },
-                                )
-                                if (onRichMusicSelected != null) {
-                                    onRichMusicSelected(
-                                        SelectedStoryMusicResult(
-                                            track = finalTrack,
-                                            startMs = computedStartMs,
-                                            endMs = computedEndMs,
-                                            saveToVistaLibrary = active.isLocalDeviceFile && saveToVistaLibrary,
-                                        ),
-                                    )
-                                } else {
-                                    onMusicSelected(finalTrack)
-                                }
-                            },
-                            shape = RoundedCornerShape(16.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = VistaBrandColors.Pink,
-                                contentColor = Color.White,
-                            ),
-                            modifier = Modifier.fillMaxWidth(),
-                            contentPadding = PaddingValues(vertical = 11.dp),
-                        ) {
-                            Text(
-                                text = "افزودن موزیک به استوری",
-                                fontWeight = FontWeight.ExtraBold,
-                                fontSize = 13.5.sp,
-                            )
-                        }
-                    }
+                            .navigationBarsPadding()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                    )
                 }
             }
         }
@@ -912,31 +926,610 @@ private fun MusicTabPill(
     }
 }
 
-private fun playClipPreview(
-    exoPlayer: ExoPlayer,
-    track: MusicTrack,
-    startMs: Int,
-    endMs: Int,
+@Composable
+private fun MiniAudioEqualizer(
+    color: Color = VistaBrandColors.Pink,
+    modifier: Modifier = Modifier,
 ) {
-    runCatching {
-        exoPlayer.stop()
-        val baseItem = MediaItem.fromUri(Uri.parse(track.musicUrl))
-        val clipped = if (startMs > 0 || endMs > startMs) {
-            val builder = MediaItem.ClippingConfiguration.Builder()
-                .setStartPositionMs(startMs.coerceAtLeast(0).toLong())
-            if (endMs > startMs) {
-                builder.setEndPositionMs(endMs.toLong())
-            }
-            baseItem.buildUpon()
-                .setClippingConfiguration(builder.build())
-                .build()
-        } else {
-            baseItem
+    val infiniteTransition = rememberInfiniteTransition(label = "equalizer")
+    val h1 by infiniteTransition.animateFloat(
+        initialValue = 0.25f,
+        targetValue = 0.95f,
+        animationSpec = infiniteRepeatable(tween(380, easing = LinearEasing), RepeatMode.Reverse),
+        label = "eq1",
+    )
+    val h2 by infiniteTransition.animateFloat(
+        initialValue = 0.85f,
+        targetValue = 0.2f,
+        animationSpec = infiniteRepeatable(tween(300, easing = LinearEasing), RepeatMode.Reverse),
+        label = "eq2",
+    )
+    val h3 by infiniteTransition.animateFloat(
+        initialValue = 0.35f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(460, easing = LinearEasing), RepeatMode.Reverse),
+        label = "eq3",
+    )
+    Row(
+        modifier = modifier.height(13.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        verticalAlignment = Alignment.Bottom,
+    ) {
+        listOf(h1, h2, h3).forEach { h ->
+            Box(
+                modifier = Modifier
+                    .width(2.5.dp)
+                    .height((13 * h).dp)
+                    .clip(RoundedCornerShape(1.dp))
+                    .background(color),
+            )
         }
-        exoPlayer.setMediaItem(clipped)
-        exoPlayer.repeatMode = Player.REPEAT_MODE_ONE
-        exoPlayer.prepare()
-        exoPlayer.play()
+    }
+}
+
+@Composable
+private fun StoryMusicTrimmerView(
+    active: MusicTrack,
+    totalDurMs: Long,
+    clipDurationSec: Int,
+    clipStartFraction: Float,
+    playbackPositionMs: Long,
+    isPlaying: Boolean,
+    editTitle: String,
+    editArtist: String,
+    saveToVistaLibrary: Boolean,
+    onTitleChange: (String) -> Unit,
+    onArtistChange: (String) -> Unit,
+    onSaveToLibraryChange: (Boolean) -> Unit,
+    onBackToSelection: () -> Unit,
+    onDurationCycle: () -> Unit,
+    onTogglePlay: () -> Unit,
+    onFractionChange: (Float) -> Unit,
+    onFractionChangeFinished: () -> Unit,
+    onConfirmSelection: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val windowMs = (clipDurationSec * 1_000L).coerceAtMost(totalDurMs)
+    val maxStartMs = (totalDurMs - windowMs).coerceAtLeast(0L)
+    val computedStartMs = (clipStartFraction * maxStartMs).roundToInt()
+    val computedEndMs = (computedStartMs + windowMs.toInt()).coerceAtMost(totalDurMs.toInt())
+
+    Column(
+        modifier = modifier.verticalScroll(rememberScrollState()),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        // Top Bar: Back ("تغییر قطعه") | Center Drag Handle | Done ("انجام شد")
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(onClick = onBackToSelection)
+                    .padding(horizontal = 6.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "بازگشت به لیست",
+                    tint = Color.White,
+                    modifier = Modifier.size(19.dp),
+                )
+                Text(
+                    text = "تغییر قطعه",
+                    color = Color.White,
+                    fontSize = 13.5.sp,
+                    fontWeight = FontWeight.Medium,
+                )
+            }
+
+            Box(
+                modifier = Modifier
+                    .width(36.dp)
+                    .height(4.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(Color.White.copy(alpha = 0.25f)),
+            )
+
+            Text(
+                text = "انجام شد",
+                color = Color(0xFF60A5FA),
+                fontSize = 14.5.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(onClick = onConfirmSelection)
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
+            )
+        }
+
+        Spacer(Modifier.height(4.dp))
+
+        // Center Album Art (rounded square)
+        Box(
+            modifier = Modifier
+                .size(76.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .background(Color.White.copy(alpha = 0.08f))
+                .border(1.5.dp, Color.White.copy(alpha = 0.25f), RoundedCornerShape(16.dp)),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (!active.coverUrl.isNullOrBlank()) {
+                AsyncImage(
+                    model = active.coverUrl,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                )
+            } else {
+                Icon(
+                    imageVector = Icons.Default.MusicNote,
+                    contentDescription = null,
+                    tint = VistaBrandColors.Pink,
+                    modifier = Modifier.size(36.dp),
+                )
+            }
+        }
+
+        // Title and Artist
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.padding(horizontal = 16.dp),
+        ) {
+            Text(
+                text = if (active.isLocalDeviceFile && editTitle.isNotBlank()) editTitle else active.title.ifBlank { "موزیک انتخابی" },
+                fontSize = 17.5.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.White,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = if (active.isLocalDeviceFile && editArtist.isNotBlank()) editArtist else active.artist.ifBlank { "ناشناس" },
+                fontSize = 13.5.sp,
+                color = Color.White.copy(alpha = 0.65f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+            )
+        }
+
+        Spacer(Modifier.height(6.dp))
+
+        // Trimmer Controls Row: [Duration Circle]  ---------[Thumb]---------  [White Play/Pause Circle]
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            // Duration Circle Badge (cycling 15 -> 30 -> 45 -> 60)
+            Box(
+                modifier = Modifier
+                    .size(38.dp)
+                    .clip(CircleShape)
+                    .border(1.2.dp, Color.White.copy(alpha = 0.35f), CircleShape)
+                    .background(Color.White.copy(alpha = 0.08f))
+                    .clickable(onClick = onDurationCycle),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = clipDurationSec.toString().toPersianDigits(),
+                    color = Color.White,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+
+            // Timeline Track with Chorus Dots and Moving White Thumb
+            val windowFraction = if (totalDurMs > 0L) {
+                (clipDurationSec * 1000f / totalDurMs).coerceIn(0.06f, 1f)
+            } else 0.25f
+            val maxStartFrac = (1f - windowFraction).coerceAtLeast(0.001f)
+            val startRatio = (clipStartFraction * maxStartFrac).coerceIn(0f, 1f)
+            val currentTimelineFrac = rememberUpdatedState(clipStartFraction)
+
+            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                BoxWithConstraints(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(26.dp)
+                        .pointerInput(maxStartFrac, windowFraction) {
+                            var accumulated = currentTimelineFrac.value
+                            detectDragGestures(
+                                onDragStart = { offset ->
+                                    accumulated = currentTimelineFrac.value
+                                    val tapFrac = (offset.x / size.width.toFloat()).coerceIn(0f, 1f)
+                                    accumulated = ((tapFrac - windowFraction / 2f) / maxStartFrac).coerceIn(0f, 1f)
+                                    onFractionChange(accumulated)
+                                },
+                                onDrag = { change, dragAmount ->
+                                    change.consume()
+                                    val delta = dragAmount.x / (size.width.toFloat() * maxStartFrac)
+                                    accumulated = (accumulated + delta).coerceIn(0f, 1f)
+                                    onFractionChange(accumulated)
+                                },
+                                onDragEnd = { onFractionChangeFinished() },
+                                onDragCancel = { onFractionChangeFinished() },
+                            )
+                        },
+                    contentAlignment = Alignment.CenterStart,
+                ) {
+                    val trackWidth = maxWidth
+
+                    // Background Track Line
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(3.dp)
+                            .clip(RoundedCornerShape(1.5.dp))
+                            .background(Color.White.copy(alpha = 0.18f)),
+                    )
+
+                    // Chorus highlight dots
+                    listOf(0.24f, 0.48f, 0.74f).forEach { dotPos ->
+                        val dotX = trackWidth * dotPos - 3.5.dp
+                        Box(
+                            modifier = Modifier
+                                .offset(x = dotX.coerceAtLeast(0.dp))
+                                .size(7.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFFFF2570))
+                                .clickable {
+                                    val newFrac = ((dotPos - windowFraction / 2f) / maxStartFrac).coerceIn(0f, 1f)
+                                    onFractionChange(newFrac)
+                                    onFractionChangeFinished()
+                                },
+                        )
+                    }
+
+                    // White Pill Thumb
+                    val thumbOffset = ((trackWidth - 18.dp) * startRatio).coerceIn(0.dp, trackWidth - 18.dp)
+                    Box(
+                        modifier = Modifier
+                            .offset(x = thumbOffset)
+                            .width(18.dp)
+                            .height(7.dp)
+                            .clip(RoundedCornerShape(3.5.dp))
+                            .background(Color.White),
+                    )
+                }
+            }
+
+            // Circular Play/Stop Action Button
+            Box(
+                modifier = Modifier
+                    .size(42.dp)
+                    .clip(CircleShape)
+                    .background(Color.White)
+                    .clickable(onClick = onTogglePlay),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (isPlaying) {
+                    Box(
+                        modifier = Modifier
+                            .size(13.dp)
+                            .clip(RoundedCornerShape(2.dp))
+                            .background(Color(0xFF1B1B1E)),
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.PlayArrow,
+                        contentDescription = "پخش",
+                        tint = Color(0xFF1B1B1E),
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
+            }
+        }
+
+        // Waveform Audio Scrubber
+        InteractiveWaveformScrubber(
+            track = active,
+            totalDurationMs = totalDurMs,
+            clipDurationSec = clipDurationSec,
+            clipStartFraction = clipStartFraction,
+            playbackPositionMs = playbackPositionMs,
+            isPlaying = isPlaying,
+            onFractionChange = onFractionChange,
+            onFractionChangeFinished = onFractionChangeFinished,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 4.dp),
+        )
+
+        // Time Range Persian Indicator
+        Text(
+            text = "بخش انتخابی: ${formatMillisPersian(computedStartMs.toLong())} تا ${formatMillisPersian(computedEndMs.toLong())}",
+            color = Color.White.copy(alpha = 0.7f),
+            fontSize = 11.5.sp,
+            fontWeight = FontWeight.Medium,
+        )
+
+        // Local File Edit Fields
+        if (active.isLocalDeviceFile) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedTextField(
+                    value = editTitle,
+                    onValueChange = onTitleChange,
+                    placeholder = { Text("نام آهنگ", fontSize = 11.sp) },
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = Color.White.copy(alpha = 0.06f),
+                        unfocusedContainerColor = Color.White.copy(alpha = 0.04f),
+                        focusedBorderColor = VistaBrandColors.Pink,
+                        unfocusedBorderColor = Color.White.copy(alpha = 0.12f),
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                    ),
+                    modifier = Modifier.weight(1f),
+                )
+                OutlinedTextField(
+                    value = editArtist,
+                    onValueChange = onArtistChange,
+                    placeholder = { Text("نام خواننده", fontSize = 11.sp) },
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = Color.White.copy(alpha = 0.06f),
+                        unfocusedContainerColor = Color.White.copy(alpha = 0.04f),
+                        focusedBorderColor = VistaBrandColors.Pink,
+                        unfocusedBorderColor = Color.White.copy(alpha = 0.12f),
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                    ),
+                    modifier = Modifier.weight(1f),
+                )
+            }
+
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .clickable { onSaveToLibraryChange(!saveToVistaLibrary) }
+                    .padding(vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(18.dp)
+                        .clip(RoundedCornerShape(5.dp))
+                        .background(
+                            if (saveToVistaLibrary) VistaBrandColors.Pink
+                            else Color.White.copy(alpha = 0.1f),
+                        )
+                        .border(1.dp, Color.White.copy(alpha = 0.25f), RoundedCornerShape(5.dp)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (saveToVistaLibrary) {
+                        Icon(
+                            imageVector = Icons.Default.Check,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(13.dp),
+                        )
+                    }
+                }
+                Text(
+                    text = "ذخیره در «موزیک‌های من» برای استفاده‌های بعدی",
+                    color = Color.White.copy(alpha = 0.8f),
+                    fontSize = 11.5.sp,
+                )
+            }
+        }
+
+        // Primary Bottom Action Button
+        Button(
+            onClick = onConfirmSelection,
+            shape = RoundedCornerShape(16.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = VistaBrandColors.Pink,
+                contentColor = Color.White,
+            ),
+            modifier = Modifier.fillMaxWidth(),
+            contentPadding = PaddingValues(vertical = 12.dp),
+        ) {
+            Text(
+                text = "افزودن موزیک به استوری",
+                fontWeight = FontWeight.ExtraBold,
+                fontSize = 14.sp,
+            )
+        }
+    }
+}
+
+@Composable
+private fun InteractiveWaveformScrubber(
+    track: MusicTrack,
+    totalDurationMs: Long,
+    clipDurationSec: Int,
+    clipStartFraction: Float,
+    playbackPositionMs: Long,
+    isPlaying: Boolean,
+    onFractionChange: (Float) -> Unit,
+    onFractionChangeFinished: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val haptic = LocalHapticFeedback.current
+    val currentClipStartFraction = rememberUpdatedState(clipStartFraction)
+    val windowFraction = if (totalDurationMs > 0L) {
+        (clipDurationSec * 1000f / totalDurationMs).coerceIn(0.06f, 1f)
+    } else 0.25f
+
+    val barCount = 44
+    val seed = remember(track.id) { (track.id.hashCode() xor track.title.hashCode()).toFloat() }
+    val barHeights = remember(seed) {
+        List(barCount) { i ->
+            val norm = i / (barCount - 1f)
+            val envelope = kotlin.math.sin(norm * Math.PI).toFloat().coerceAtLeast(0.35f)
+            val variation = kotlin.math.sin(i * 0.72f + seed) * kotlin.math.cos(i * 0.38f + 1.2f)
+            (0.24f + 0.76f * envelope * (0.55f + 0.45f * kotlin.math.abs(variation).toFloat())).coerceIn(0.2f, 1f)
+        }
+    }
+
+    val maxStartFrac = (1f - windowFraction).coerceAtLeast(0.001f)
+    val startRatio = (clipStartFraction * maxStartFrac).coerceIn(0f, 1f)
+    val endRatio = (startRatio + windowFraction).coerceIn(0f, 1f)
+
+    val storyAccentGradient = Brush.horizontalGradient(
+        listOf(
+            Color(0xFFFFD200),
+            Color(0xFFFF3D00),
+            Color(0xFFD300C5),
+            Color(0xFF7B00FF),
+        ),
+    )
+
+    // Direction-safe: strictly Left-to-Right layout so audio flows 00:00 (Left) to End (Right)
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+        BoxWithConstraints(
+            modifier = modifier
+                .fillMaxWidth()
+                .height(68.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .background(Color(0xFF10121D))
+                .pointerInput(totalDurationMs, windowFraction, maxStartFrac) {
+                    var accumulatedFraction = currentClipStartFraction.value
+                    detectDragGestures(
+                        onDragStart = { offset ->
+                            accumulatedFraction = currentClipStartFraction.value
+                            val tapXFrac = (offset.x / size.width.toFloat()).coerceIn(0f, 1f)
+                            val curStart = accumulatedFraction * maxStartFrac
+                            val curEnd = curStart + windowFraction
+                            // Center window on tap if outside
+                            if (tapXFrac < curStart || tapXFrac > curEnd) {
+                                accumulatedFraction = ((tapXFrac - windowFraction / 2f) / maxStartFrac).coerceIn(0f, 1f)
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                onFractionChange(accumulatedFraction)
+                            }
+                        },
+                        onDrag = { change, dragAmount ->
+                            change.consume()
+                            val deltaFrac = dragAmount.x / (size.width.toFloat() * maxStartFrac)
+                            val updated = (accumulatedFraction + deltaFrac).coerceIn(0f, 1f)
+                            if (kotlin.math.abs(updated - accumulatedFraction) > 0.005f) {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            }
+                            accumulatedFraction = updated
+                            onFractionChange(updated)
+                        },
+                        onDragEnd = {
+                            onFractionChangeFinished()
+                        },
+                        onDragCancel = {
+                            onFractionChangeFinished()
+                        },
+                    )
+                }
+                .padding(horizontal = 6.dp, vertical = 6.dp),
+        ) {
+            val availableWidth = maxWidth
+
+            // 1. Draw Waveform Bars (LTR: index 0 is left, barCount-1 is right)
+            Row(
+                modifier = Modifier.fillMaxSize(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                barHeights.forEachIndexed { index, h ->
+                    val barProgress = index.toFloat() / (barCount - 1f)
+                    val inWindow = barProgress in startRatio..endRatio
+                    val hasChorusDot = !inWindow && (index == 10 || index == 22 || index == 33)
+
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(horizontal = 1.dp)
+                            .fillMaxHeight(),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .fillMaxHeight(h)
+                                .clip(RoundedCornerShape(2.dp))
+                                .background(
+                                    if (inWindow) Color.White
+                                    else Color.White.copy(alpha = 0.28f),
+                                ),
+                        )
+                        if (hasChorusDot) {
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.BottomCenter)
+                                    .size(3.5.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFFFF2570)),
+                            )
+                        }
+                    }
+                }
+            }
+
+            // 2. Selection Window Frame Overlay (Strictly LTR: left = startRatio * availableWidth)
+            val windowLeft = availableWidth * startRatio
+            val windowWidth = (availableWidth * windowFraction).coerceAtMost(availableWidth - windowLeft)
+
+            Box(
+                modifier = Modifier
+                    .offset(x = windowLeft)
+                    .width(windowWidth)
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(12.dp))
+                    .border(
+                        3.dp,
+                        storyAccentGradient,
+                        RoundedCornerShape(12.dp),
+                    ),
+            ) {
+                // Left handle grip
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.CenterStart)
+                        .padding(start = 2.dp)
+                        .width(3.5.dp)
+                        .height(26.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(Color.White),
+                )
+                // Right handle grip
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .padding(end = 2.dp)
+                        .width(3.5.dp)
+                        .height(26.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(Color.White),
+                )
+            }
+
+            // 3. Playback Needle (strictly kept inside the selection window)
+            if (isPlaying && totalDurationMs > 0L) {
+                val needleFraction = (playbackPositionMs.toFloat() / totalDurationMs.toFloat()).coerceIn(startRatio, endRatio)
+                val needleOffset = (availableWidth * needleFraction).coerceIn(0.dp, availableWidth - 2.5.dp)
+                Box(
+                    modifier = Modifier
+                        .offset(x = needleOffset)
+                        .width(2.5.dp)
+                        .fillMaxHeight(0.85f)
+                        .align(Alignment.CenterStart)
+                        .clip(RoundedCornerShape(1.dp))
+                        .background(Color.White),
+                )
+            }
+        }
     }
 }
 
@@ -1053,6 +1646,24 @@ private suspend fun extractAudioTrackFromUri(context: Context, uri: Uri): MusicT
         }
     }
 
+    // Persist transient SAF audio stream into permanent local file
+    val safeBaseName = fileDisplayName.ifBlank { "audio_${System.currentTimeMillis()}" }
+        .replace(Regex("[^a-zA-Z0-9._-]"), "_")
+    val uploadsDir = File(context.cacheDir, "story_uploads").apply { mkdirs() }
+    val localAudioFile = File(uploadsDir, "picked_${System.currentTimeMillis()}_${safeBaseName}.mp3")
+
+    var finalAudioUri: Uri = uri
+    runCatching {
+        context.contentResolver.openInputStream(uri)?.use { inStream ->
+            localAudioFile.outputStream().use { outStream ->
+                inStream.copyTo(outStream)
+            }
+        }
+        if (localAudioFile.exists() && localAudioFile.length() > 0L) {
+            finalAudioUri = Uri.fromFile(localAudioFile)
+        }
+    }
+
     var metaTitle = ""
     var metaArtist = ""
     var durationMs = 0L
@@ -1060,7 +1671,11 @@ private suspend fun extractAudioTrackFromUri(context: Context, uri: Uri): MusicT
 
     val retriever = MediaMetadataRetriever()
     try {
-        retriever.setDataSource(context, uri)
+        if (localAudioFile.exists() && localAudioFile.length() > 0L) {
+            retriever.setDataSource(localAudioFile.absolutePath)
+        } else {
+            retriever.setDataSource(context, uri)
+        }
         metaTitle = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)?.trim().orEmpty()
         metaArtist = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)?.trim().orEmpty()
         durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
@@ -1069,16 +1684,27 @@ private suspend fun extractAudioTrackFromUri(context: Context, uri: Uri): MusicT
             val coverDir = File(context.cacheDir, "camera").apply { mkdirs() }
             val coverFile = File(coverDir, "audio_cover_${System.currentTimeMillis()}.jpg")
             coverFile.writeBytes(picBytes)
-            embeddedCoverUri = FileProvider.getUriForFile(
-                context,
-                "${context.packageName}.files",
-                coverFile,
-            ).toString()
+            embeddedCoverUri = runCatching {
+                FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.files",
+                    coverFile,
+                ).toString()
+            }.getOrElse {
+                Uri.fromFile(coverFile).toString()
+            }
         }
     } catch (_: Exception) {
         // Ignore corrupt ID3 frames
     } finally {
         runCatching { retriever.release() }
+    }
+
+    if (durationMs <= 0L) {
+        val exactMs = ir.coffevista.vista_native.features.feed.music.AudioTrimEngine.getExactAudioDurationMs(context, finalAudioUri)
+        if (exactMs > 0L) {
+            durationMs = exactMs
+        }
     }
 
     MusicTrack(
@@ -1091,7 +1717,7 @@ private suspend fun extractAudioTrackFromUri(context: Context, uri: Uri): MusicT
             metaArtist
         },
         coverUrl = embeddedCoverUri,
-        musicUrl = uri.toString(),
+        musicUrl = finalAudioUri.toString(),
         createdAt = "",
         playCount = 0,
         username = "",

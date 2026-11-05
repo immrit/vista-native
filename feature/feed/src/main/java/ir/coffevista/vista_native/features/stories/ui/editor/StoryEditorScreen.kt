@@ -190,7 +190,7 @@ fun StoryEditorScreen(
     val haptics = remember(view) { StoryHaptics(view) }
     val context = LocalContext.current
 
-    // Loaded Bitmap & Extracted Dual-Color Dominant Gradient (Telegram StoryEntry parity)
+    // Loaded Bitmap & Extracted Dual-Color Dominant Gradient
     var loadedMediaBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var dominantColors by remember { mutableStateOf(StoryDominantColors()) }
 
@@ -266,58 +266,79 @@ fun StoryEditorScreen(
 
     val lifecycleOwner = LocalLifecycleOwner.current
 
-    val exoPlayer = remember(uiState.mediaUri, uiState.isVideo) {
+    var exoPlayer by remember { mutableStateOf<ExoPlayer?>(null) }
+    DisposableEffect(uiState.mediaUri, uiState.isVideo) {
         val uri = uiState.mediaUri
-        if (uiState.isVideo && uri != null) {
-            ExoPlayer.Builder(context).build().apply {
-                setMediaItem(MediaItem.fromUri(uri))
-                repeatMode = Player.REPEAT_MODE_ONE
-                prepare()
-                playWhenReady = true
-            }
+        val player = if (uiState.isVideo && uri != null) {
+            runCatching {
+                ExoPlayer.Builder(context).build().apply {
+                    setMediaItem(MediaItem.fromUri(uri))
+                    repeatMode = Player.REPEAT_MODE_ONE
+                    prepare()
+                    playWhenReady = true
+                }
+            }.getOrNull()
         } else null
+        exoPlayer = player
+        onDispose {
+            runCatching { player?.stop() }
+            runCatching { player?.release() }
+            if (exoPlayer == player) {
+                exoPlayer = null
+            }
+        }
     }
 
     // Mute original video audio when story music is attached so tracks never clash
     LaunchedEffect(exoPlayer, uiState.musicTrack) {
-        exoPlayer?.volume = if (uiState.musicTrack != null) 0f else 1f
-    }
-
-    DisposableEffect(exoPlayer) {
-        onDispose {
-            exoPlayer?.release()
-        }
+        runCatching { exoPlayer?.volume = if (uiState.musicTrack != null) 0f else 1f }
     }
 
     // Live Editor Canvas Music Preview (with trimmed chorus loop)
     val activeMusicUrl = uiState.musicTrack?.musicUrl?.takeIf { it.isNotBlank() && uiState.mediaUri != null }
-    val editorMusicPlayer = remember(activeMusicUrl, uiState.musicStartMs, uiState.musicEndMs) {
-        if (activeMusicUrl != null) {
-            ExoPlayer.Builder(context).build().apply {
-                val clipBuilder = MediaItem.Builder().setUri(activeMusicUrl)
-                if (uiState.musicStartMs > 0 || uiState.musicEndMs > uiState.musicStartMs) {
-                    clipBuilder.setClippingConfiguration(
-                        MediaItem.ClippingConfiguration.Builder()
-                            .setStartPositionMs(uiState.musicStartMs.toLong().coerceAtLeast(0L))
-                            .apply {
-                                if (uiState.musicEndMs > uiState.musicStartMs) {
-                                    setEndPositionMs(uiState.musicEndMs.toLong())
+    var editorMusicPlayer by remember { mutableStateOf<ExoPlayer?>(null) }
+
+    DisposableEffect(activeMusicUrl, uiState.musicStartMs, uiState.musicEndMs) {
+        val player = if (activeMusicUrl != null) {
+            runCatching {
+                ExoPlayer.Builder(context).build().apply {
+                    val clipBuilder = MediaItem.Builder().setUri(activeMusicUrl)
+                    if (uiState.musicStartMs > 0 || uiState.musicEndMs > uiState.musicStartMs) {
+                        clipBuilder.setClippingConfiguration(
+                            MediaItem.ClippingConfiguration.Builder()
+                                .setStartPositionMs(uiState.musicStartMs.toLong().coerceAtLeast(0L))
+                                .apply {
+                                    if (uiState.musicEndMs > uiState.musicStartMs) {
+                                        setEndPositionMs(uiState.musicEndMs.toLong())
+                                    }
                                 }
-                            }
-                            .build(),
-                    )
+                                .build(),
+                        )
+                    }
+                    setMediaItem(clipBuilder.build())
+                    repeatMode = Player.REPEAT_MODE_ONE
+                    prepare()
+                    playWhenReady = !showMusicPickerSheet && !uiState.isUploading && !uiState.isSuccess
                 }
-                setMediaItem(clipBuilder.build())
-                repeatMode = Player.REPEAT_MODE_ONE
-                prepare()
-                playWhenReady = !showMusicPickerSheet && !uiState.isUploading && !uiState.isSuccess
-            }
+            }.getOrNull()
         } else null
+
+        editorMusicPlayer = player
+
+        onDispose {
+            runCatching { player?.stop() }
+            runCatching { player?.release() }
+            if (editorMusicPlayer == player) {
+                editorMusicPlayer = null
+            }
+        }
     }
 
     val shouldPlayCanvasMusic = !showMusicPickerSheet && !uiState.isUploading && !uiState.isSuccess
     LaunchedEffect(editorMusicPlayer, shouldPlayCanvasMusic) {
-        editorMusicPlayer?.playWhenReady = shouldPlayCanvasMusic
+        runCatching {
+            editorMusicPlayer?.playWhenReady = shouldPlayCanvasMusic
+        }
     }
 
     val latestShouldPlayMusic by rememberUpdatedState(shouldPlayCanvasMusic)
@@ -325,14 +346,14 @@ fun StoryEditorScreen(
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_PAUSE -> {
-                    exoPlayer?.playWhenReady = false
-                    editorMusicPlayer?.playWhenReady = false
+                    runCatching { exoPlayer?.playWhenReady = false }
+                    runCatching { editorMusicPlayer?.playWhenReady = false }
                 }
                 Lifecycle.Event.ON_RESUME -> {
                     if (!uiState.isUploading && !uiState.isSuccess) {
-                        exoPlayer?.playWhenReady = true
+                        runCatching { exoPlayer?.playWhenReady = true }
                     }
-                    editorMusicPlayer?.playWhenReady = latestShouldPlayMusic
+                    runCatching { editorMusicPlayer?.playWhenReady = latestShouldPlayMusic }
                 }
                 else -> Unit
             }
@@ -340,11 +361,10 @@ fun StoryEditorScreen(
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
-            editorMusicPlayer?.release()
         }
     }
 
-    // Secondary Photo-on-Photo Cutout Picker (Telegram PhotoPaintView parity)
+    // Secondary Photo-on-Photo Cutout Picker
     val photoCutoutPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia(),
     ) { uri ->
@@ -396,7 +416,7 @@ fun StoryEditorScreen(
             modifier = modifier.fillMaxSize(),
         ) { padding ->
             if (uiState.mediaUri == null) {
-                // PILLAR 1: Live Hardware CameraX Studio + Instagram Swipe-Up Gallery Drawer
+                // PILLAR 1: Live Hardware CameraX Studio + Swipe-Up Gallery Drawer
                 StoryCameraStudio(
                     onMediaUriSelected = { uri, isVid ->
                         viewModel.onMediaSelected(uri, isVideo = isVid)
@@ -852,7 +872,7 @@ fun StoryEditorScreen(
                                     )
                                 }
 
-                                // Telegram Interactive Widget & Sticker Drawer
+                                // Interactive Widget & Sticker Drawer
                                 StudioCircleIconButton(
                                     icon = Icons.Default.EmojiEmotions,
                                     contentDescription = "ویجت و استیکر",
@@ -1006,8 +1026,12 @@ fun StoryEditorScreen(
 
                             // Primary Publish CTA Button
                             Button(
-                                onClick = viewModel::publishStory,
-                                enabled = uiState.canPublish,
+                                onClick = {
+                                    if (!uiState.isUploading) {
+                                        viewModel.publishStory()
+                                    }
+                                },
+                                enabled = uiState.canPublish && !uiState.isUploading,
                                 shape = RoundedCornerShape(24.dp),
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = Color.White,
@@ -1017,53 +1041,36 @@ fun StoryEditorScreen(
                                 ),
                                 contentPadding = PaddingValues(horizontal = 20.dp, vertical = 11.dp),
                             ) {
-                                Text(
-                                    text = "انتشار استوری",
-                                    fontWeight = FontWeight.ExtraBold,
-                                    fontSize = 13.sp,
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.Send,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(16.dp),
-                                )
+                                if (uiState.isUploading) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(16.dp),
+                                        color = Color(0xFF0E1018),
+                                        strokeWidth = 2.dp,
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "در حال آماده‌سازی…",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp,
+                                    )
+                                } else {
+                                    Text(
+                                        text = "انتشار استوری",
+                                        fontWeight = FontWeight.ExtraBold,
+                                        fontSize = 13.sp,
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.Send,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp),
+                                    )
+                                }
                             }
                         }
                     }
 
-                    // Upload Progress Modal Overlay
-                    if (uiState.isUploading) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(Color.Black.copy(alpha = 0.55f))
-                                .clickable(enabled = false) {},
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Column(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(22.dp))
-                                    .background(Color(0xF2151722))
-                                    .border(1.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(22.dp))
-                                    .padding(horizontal = 28.dp, vertical = 24.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                            ) {
-                                CircularProgressIndicator(
-                                    progress = { uiState.uploadProgress.coerceIn(0.05f, 1f) },
-                                    color = VistaBrandColors.Indigo,
-                                    trackColor = Color.White.copy(alpha = 0.15f),
-                                )
-                                Spacer(modifier = Modifier.height(14.dp))
-                                Text(
-                                    text = uiState.uploadStatus ?: "در حال انتشار استوری…",
-                                    color = Color.White,
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Bold,
-                                )
-                            }
-                        }
-                    }
+
                 }
             }
 
@@ -1101,9 +1108,9 @@ fun StoryEditorScreen(
                 )
             }
 
-            // PILLAR 5: Telegram EmojiBottomSheet Glassmorphic Widget & Sticker Drawer
+            // PILLAR 5: Interactive Glassmorphic Widget & Sticker Drawer
             if (showStickerSheet) {
-                TelegramEmojiWidgetBottomSheet(
+                StoryEmojiWidgetBottomSheet(
                     onDismiss = { showStickerSheet = false },
                     onSelectLocation = {
                         showStickerSheet = false
@@ -1581,16 +1588,62 @@ fun StoryEditorScreen(
                                             RoundedCornerShape(14.dp),
                                         )
                                         .clickable { viewModel.toggleCloseFriend(user.id) }
-                                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                                        .padding(horizontal = 12.dp, vertical = 9.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                 ) {
-                                    Text(
-                                        text = "@${user.username}",
-                                        color = Color.White,
-                                        fontWeight = FontWeight.SemiBold,
-                                        fontSize = 14.sp,
-                                    )
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                    ) {
+                                        if (!user.avatarUrl.isNullOrBlank()) {
+                                            AsyncImage(
+                                                model = user.avatarUrl,
+                                                contentDescription = null,
+                                                modifier = Modifier
+                                                    .size(34.dp)
+                                                    .clip(CircleShape),
+                                                contentScale = ContentScale.Crop,
+                                            )
+                                        } else {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(34.dp)
+                                                    .clip(CircleShape)
+                                                    .background(Color.White.copy(alpha = 0.12f)),
+                                                contentAlignment = Alignment.Center,
+                                            ) {
+                                                Text(
+                                                    text = user.username.take(1).uppercase().ifBlank { "?" },
+                                                    color = Color.White,
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 13.sp,
+                                                )
+                                            }
+                                        }
+                                        Column {
+                                            if (!user.fullName.isNullOrBlank()) {
+                                                Text(
+                                                    text = user.fullName,
+                                                    color = Color.White,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    fontSize = 13.sp,
+                                                )
+                                                Text(
+                                                    text = "@${user.username}",
+                                                    color = Color.White.copy(alpha = 0.6f),
+                                                    fontSize = 11.sp,
+                                                )
+                                            } else {
+                                                Text(
+                                                    text = "@${user.username}",
+                                                    color = Color.White,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    fontSize = 13.sp,
+                                                )
+                                            }
+                                        }
+                                    }
                                     if (selected) {
                                         Icon(
                                             imageVector = Icons.Default.Check,
@@ -1809,7 +1862,7 @@ private fun StudioQuickChip(
 }
 
 // =============================================================================================
-// PILLAR 5: TELEGRAM EMOJIBOTTOMSHEET GLASSMORPHIC BENTO WIDGET & STICKER DRAWER
+// PILLAR 5: GLASSMORPHIC BENTO WIDGET & STICKER DRAWER
 // =============================================================================================
 
 private data class StoryWidgetCardSpec(
@@ -1823,7 +1876,7 @@ private data class StoryWidgetCardSpec(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun TelegramEmojiWidgetBottomSheet(
+private fun StoryEmojiWidgetBottomSheet(
     onDismiss: () -> Unit,
     onSelectLocation: () -> Unit,
     onSelectReaction: () -> Unit,

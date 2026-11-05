@@ -23,4 +23,9 @@ message AppPreferences {
   string chat_entry_mode = 17;
   string emoji_style = 18;
   bool flutter_media_settings_migrated = 19;
+  bool autoplay_post_music = 20;
+  bool auto_download_wifi = 21;
+  bool auto_download_cellular = 22;
+  bool auto_download_roaming = 23;
+  string keep_media_period = 24;
 }

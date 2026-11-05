@@ -3,6 +3,8 @@ package ir.coffevista.vista_native.features.chat.presentation.conversations
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import ir.coffevista.vista_native.core.model.note.ProfileNoteBridge
+import ir.coffevista.vista_native.core.model.note.SharedProfileNote
 import ir.coffevista.vista_native.features.chat.domain.model.Conversation
 import ir.coffevista.vista_native.features.chat.domain.model.peerIdentityKey
 import ir.coffevista.vista_native.features.chat.domain.model.BlockStatus
@@ -68,6 +70,31 @@ class ConversationsViewModel @Inject constructor(
                     )
                 }
                 if (reconnected) refresh()
+            }
+        }
+        viewModelScope.launch {
+            ProfileNoteBridge.ownNote.collectLatest { sharedNote ->
+                mutableState.update { current ->
+                    val updatedNotes = if (sharedNote != null) {
+                        val existingIndex = current.profileNotes.indexOfFirst { it.isMine }
+                        val domainNote = ProfileNote(
+                            id = "own_note_${sharedNote.userId}",
+                            userId = sharedNote.userId,
+                            content = sharedNote.content,
+                            createdAtEpochMillis = System.currentTimeMillis(),
+                            expiresAtEpochMillis = System.currentTimeMillis() + 86400000L,
+                            isMine = true,
+                        )
+                        if (existingIndex >= 0) {
+                            current.profileNotes.toMutableList().apply { set(existingIndex, domainNote) }
+                        } else {
+                            listOf(domainNote) + current.profileNotes.filterNot { it.isMine }
+                        }
+                    } else {
+                        current.profileNotes.filterNot { it.isMine }
+                    }
+                    current.copy(profileNotes = updatedNotes)
+                }
             }
         }
         refresh()
@@ -309,6 +336,14 @@ class ConversationsViewModel @Inject constructor(
             when (val result = repository.upsertOwnProfileNote(content)) {
                 is ChatResult.Success -> {
                     mutableState.update { it.copy(isNoteSaving = false, noteError = null) }
+                    ProfileNoteBridge.updateOwnNote(
+                        SharedProfileNote(
+                            userId = result.value.userId,
+                            content = result.value.content,
+                            createdAt = result.value.createdAtEpochMillis.toString(),
+                            expiresAt = result.value.expiresAtEpochMillis.toString(),
+                        )
+                    )
                     onComplete(true)
                 }
                 is ChatResult.Failure -> {
@@ -326,6 +361,7 @@ class ConversationsViewModel @Inject constructor(
             when (val result = repository.deleteOwnProfileNote()) {
                 is ChatResult.Success -> {
                     mutableState.update { it.copy(isNoteSaving = false, noteError = null) }
+                    ProfileNoteBridge.updateOwnNote(null)
                     onComplete(true)
                 }
                 is ChatResult.Failure -> {

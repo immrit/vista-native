@@ -1,15 +1,6 @@
 package ir.coffevista.vista_native.features.stories.data
 
-import ir.coffevista.vista_native.features.stories.domain.ActiveStoriesResponseDto
-import ir.coffevista.vista_native.features.stories.domain.CreateStoryRequestDto
-import ir.coffevista.vista_native.features.stories.domain.Story
-import ir.coffevista.vista_native.features.stories.domain.StoryMediaType
-import ir.coffevista.vista_native.features.stories.domain.StoryReactRequestDto
-import ir.coffevista.vista_native.features.stories.domain.StoryReplyRequestDto
-import ir.coffevista.vista_native.features.stories.domain.StoryUser
-import ir.coffevista.vista_native.features.stories.domain.StoryViewsResponseDto
-import ir.coffevista.vista_native.features.stories.domain.StoryVoteRequestDto
-import ir.coffevista.vista_native.features.stories.domain.UserStoriesResponseDto
+import ir.coffevista.vista_native.features.stories.domain.*
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -99,6 +90,20 @@ class StoryRepositoryTest {
         override suspend fun votePoll(storyId: String, elementId: String, request: StoryVoteRequestDto) {
             lastVoteOption = request.legacyOptionId ?: request.optionIndex.toString()
         }
+
+        override suspend fun reportStory(storyId: String, request: StoryReportRequestDto) = Unit
+        override suspend fun getReplyAccess(storyId: String): StoryReplyAccessDto = StoryReplyAccessDto()
+        override suspend fun answerQuestion(storyId: String, elementId: String, request: StoryQuestionAnswerRequestDto) = Unit
+        override suspend fun getQuestionAnswers(storyId: String): StoryQuestionAnswersResponseDto = StoryQuestionAnswersResponseDto()
+        override suspend fun getStorySettings(): StorySettingsDto = StorySettingsDto()
+        override suspend fun updateStorySettings(request: StorySettingsDto) = Unit
+        override suspend fun getUserHighlights(userId: String): UserHighlightsResponseDto = UserHighlightsResponseDto()
+        override suspend fun getHighlightCount(userId: String): HighlightCountResponseDto = HighlightCountResponseDto()
+        override suspend fun createHighlight(request: CreateHighlightRequestDto): HighlightDto = HighlightDto(id = "new_hl", title = request.title)
+        override suspend fun updateHighlight(highlightId: String, request: UpdateHighlightRequestDto): HighlightDto = HighlightDto(id = highlightId, title = request.title.orEmpty())
+        override suspend fun deleteHighlight(highlightId: String) = Unit
+        override suspend fun getStoryWeatherContext(lat: Double?, lon: Double?, city: String?): StoryWeatherContextDto = StoryWeatherContextDto()
+        override suspend fun getStoryPlacesContext(lat: Double?, lon: Double?, query: String?): StoryPlacesResponseDto = StoryPlacesResponseDto()
     }
 
     private lateinit var fakeApi: FakeStoryApi
@@ -241,5 +246,39 @@ class StoryRepositoryTest {
         val sortedStoriesB = sortedUsers[1].stories
         assertEquals("s_old", sortedStoriesB[0].id)
         assertEquals("s_new", sortedStoriesB[1].id)
+    }
+
+    @Test
+    fun `FollowingStoryUsersResponseDto decodes successfully when profiles contain user_id without id`() {
+        val jsonStr = """
+            {
+                "profiles": [
+                    {
+                        "user_id": "usr_9988",
+                        "username": "sara_art",
+                        "full_name": "سارا رضایی",
+                        "avatar_url": "https://example.com/sara.jpg",
+                        "is_verified": true,
+                        "verification_type": "blue"
+                    }
+                ],
+                "total": 1
+            }
+        """.trimIndent()
+
+        val json = kotlinx.serialization.json.Json {
+            ignoreUnknownKeys = true
+            isLenient = true
+        }
+
+        val decoded = json.decodeFromString<ir.coffevista.vista_native.features.stories.domain.FollowingStoryUsersResponseDto>(jsonStr)
+        assertEquals(1, decoded.allUsers.size)
+        val user = decoded.allUsers[0]
+        assertEquals("usr_9988", user.id)
+        assertEquals("usr_9988", user.userId)
+        assertEquals("sara_art", user.username)
+        assertEquals("سارا رضایی", user.fullName)
+        assertTrue(user.isVerified)
+        assertEquals(ir.coffevista.vista_native.features.stories.domain.StoryVerificationType.Blue, user.verificationType)
     }
 }

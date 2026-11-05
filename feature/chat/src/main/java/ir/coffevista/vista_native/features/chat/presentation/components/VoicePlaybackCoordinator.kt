@@ -5,7 +5,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * Telegram-style singleton coordinator for voice message playback:
+ * Centralized coordinator for voice message playback:
  * 1. Single-active playback: playing one voice automatically pauses any other.
  * 2. Playback speed memory: remembers 1.0x / 1.5x / 2.0x globally across messages.
  * 3. Sequential autoplay: automatically triggers playback of the next voice in conversation.

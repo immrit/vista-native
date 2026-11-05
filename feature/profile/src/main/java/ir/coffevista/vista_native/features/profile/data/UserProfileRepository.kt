@@ -28,6 +28,29 @@ interface UserProfileRepository {
 
     suspend fun getUserHighlights(profileUserId: String): List<ProfileHighlightDto> = emptyList()
 
+    suspend fun createHighlight(
+        title: String,
+        coverUrl: String? = null,
+        storyIds: List<String> = emptyList(),
+    ): Result<ProfileHighlightDto> = Result.failure(UnsupportedOperationException())
+
+    suspend fun updateHighlight(
+        highlightId: String,
+        title: String? = null,
+        coverUrl: String? = null,
+        storyIds: List<String>? = null,
+    ): Result<ProfileHighlightDto> = Result.failure(UnsupportedOperationException())
+
+    suspend fun deleteHighlight(highlightId: String): Result<Unit> = Result.failure(UnsupportedOperationException())
+
+    suspend fun getOwnNote(): Result<ProfileNoteDto?> = Result.success(null)
+
+    suspend fun upsertNote(content: String): Result<ProfileNoteDto> = Result.failure(UnsupportedOperationException())
+
+    suspend fun deleteNote(): Result<Unit> = Result.success(Unit)
+
+    suspend fun getBatchNotes(userIds: List<String>): Result<Map<String, ProfileNoteDto>> = Result.success(emptyMap())
+
     suspend fun reportProfile(
         profileId: String,
         reason: String,

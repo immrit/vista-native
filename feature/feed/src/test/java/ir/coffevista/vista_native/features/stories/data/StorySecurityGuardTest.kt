@@ -42,8 +42,8 @@ class StorySecurityGuardTest {
     @Test
     fun `extractDisplayHost correctly strips www and returns clean host`() {
         assertEquals("coffevista.ir", StorySecurityGuard.extractDisplayHost("https://www.coffevista.ir/post/123"))
-        assertEquals("t.me", StorySecurityGuard.extractDisplayHost("https://t.me/channel"))
-        assertEquals("github.com", StorySecurityGuard.extractDisplayHost("github.com/DrKLO/Telegram"))
+        assertEquals("example.com", StorySecurityGuard.extractDisplayHost("https://example.com/channel"))
+        assertEquals("github.com", StorySecurityGuard.extractDisplayHost("github.com/coffevista/vista_native"))
         assertEquals("", StorySecurityGuard.extractDisplayHost("javascript:void(0)"))
     }
 
@@ -68,6 +68,8 @@ class StorySecurityGuardTest {
     fun `isSafeCanonicalPath blocks path traversal into private app data dir while allowing cache`() {
         val appData = "/data/user/0/ir.coffevista.vista_native"
         val cacheAllowed = listOf(
+            "/data/user/0/ir.coffevista.vista_native/cache/story_shares",
+            "/data/user/0/ir.coffevista.vista_native/cache/story_uploads",
             "/data/user/0/ir.coffevista.vista_native/cache/camera",
             "/data/user/0/ir.coffevista.vista_native/cache/incoming_share",
         )

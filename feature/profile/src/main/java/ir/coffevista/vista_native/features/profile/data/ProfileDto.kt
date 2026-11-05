@@ -66,6 +66,43 @@ data class ProfileHighlightDto(
 
 @Keep
 @Serializable
+data class CreateProfileHighlightRequestDto(
+    val title: String,
+    @SerialName("cover_url") val coverUrl: String? = null,
+    @SerialName("story_ids") val storyIds: List<String> = emptyList(),
+)
+
+@Keep
+@Serializable
+data class UpdateProfileHighlightRequestDto(
+    val title: String? = null,
+    @SerialName("cover_url") val coverUrl: String? = null,
+    @SerialName("story_ids") val storyIds: List<String>? = null,
+)
+
+@Keep
+@Serializable
+data class ProfileNoteDto(
+    @SerialName("user_id") val userId: String = "",
+    val content: String = "",
+    @SerialName("created_at") val createdAt: String? = null,
+    @SerialName("expires_at") val expiresAt: String? = null,
+)
+
+@Keep
+@Serializable
+data class UpsertNoteRequestDto(
+    val content: String,
+)
+
+@Keep
+@Serializable
+data class BatchNotesRequestDto(
+    @SerialName("user_ids") val userIds: List<String>,
+)
+
+@Keep
+@Serializable
 data class ProfileHighlightsResponseDto(
     val highlights: List<ProfileHighlightDto> = emptyList(),
 )

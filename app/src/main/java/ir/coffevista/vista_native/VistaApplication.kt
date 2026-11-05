@@ -1,10 +1,13 @@
 package ir.coffevista.vista_native
 
 import android.app.Application
+import android.os.Build
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
 import coil.ImageLoader
 import coil.ImageLoaderFactory
+import coil.decode.GifDecoder
+import coil.decode.ImageDecoderDecoder
 import dagger.hilt.android.HiltAndroidApp
 import ir.coffevista.vista_native.core.network.ExternalMedia
 import javax.inject.Inject
@@ -45,6 +48,13 @@ class VistaApplication : Application(), Configuration.Provider, ImageLoaderFacto
 
     override fun newImageLoader(): ImageLoader = ImageLoader.Builder(this)
         .okHttpClient(externalMediaClient)
+        .components {
+            if (Build.VERSION.SDK_INT >= 28) {
+                add(ImageDecoderDecoder.Factory())
+            } else {
+                add(GifDecoder.Factory())
+            }
+        }
         .crossfade(true)
         .build()
 }

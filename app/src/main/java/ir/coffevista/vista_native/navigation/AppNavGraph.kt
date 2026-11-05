@@ -14,6 +14,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import ir.coffevista.vista_native.features.stories.domain.StoryUser
@@ -541,7 +542,7 @@ fun VistaApp(
                                 onAppealClick = onAppealClick,
                             )
                         },
-                        storyPlayer = { initialUserIndex, onClose, onOpenProfile, onOpenLink ->
+                        storyPlayer = { initialUserIndex, onClose, onOpenProfile, onOpenLink, onOpenHashtag ->
                             ir.coffevista.vista_native.features.stories.ui.player.StoryPlayerScreen(
                                 initialUserIndex = initialUserIndex,
                                 onClose = onClose,
@@ -565,7 +566,7 @@ fun VistaApp(
                                 onOpenLink = onOpenLink,
                                 onOpenHashtag = { tag ->
                                     onClose()
-                                    navController.navigate(ShellRoutes.hashtag(tag))
+                                    onOpenHashtag(tag)
                                 },
                             )
                         },
@@ -646,6 +647,7 @@ fun VistaApp(
                             val storyPlayerViewModel = hiltViewModel<StoryPlayerViewModel>()
                             val storyRepo = storyPlayerViewModel.repository
                             val coroutineScope = rememberCoroutineScope()
+                            val context = LocalContext.current
                             var activeHighlightUser by remember { mutableStateOf<StoryUser?>(null) }
 
                             LaunchedEffect(signedIn.context.userId) {
@@ -696,6 +698,8 @@ fun VistaApp(
                                                 avatarUrl = highlight.coverUrl,
                                                 stories = stories,
                                             )
+                                        } else {
+                                            android.widget.Toast.makeText(context, "این هایلایت فاقد استوری است", android.widget.Toast.LENGTH_SHORT).show()
                                         }
                                     }
                                 },
@@ -864,6 +868,7 @@ fun VistaApp(
                             val storyPlayerViewModel = hiltViewModel<StoryPlayerViewModel>()
                             val storyRepo = storyPlayerViewModel.repository
                             val coroutineScope = rememberCoroutineScope()
+                            val context = LocalContext.current
                             var activeHighlightUser by remember { mutableStateOf<StoryUser?>(null) }
 
                             LaunchedEffect(userId) {
@@ -910,6 +915,8 @@ fun VistaApp(
                                                 avatarUrl = highlight.coverUrl,
                                                 stories = stories,
                                             )
+                                        } else {
+                                            android.widget.Toast.makeText(context, "این هایلایت فاقد استوری است", android.widget.Toast.LENGTH_SHORT).show()
                                         }
                                     }
                                 },

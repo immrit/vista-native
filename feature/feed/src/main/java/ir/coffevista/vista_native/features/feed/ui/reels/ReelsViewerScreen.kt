@@ -128,12 +128,17 @@ class ReelsViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(ReelsUiState())
     val uiState: StateFlow<ReelsUiState> = _uiState.asStateFlow()
 
-    init {
-        loadReels()
+    private var activeJob: kotlinx.coroutines.Job? = null
+    private var isConfiguredWithPost = false
+
+    fun initDefaultReels() {
+        if (isConfiguredWithPost || activeJob != null) return
+        loadExploreReels()
     }
 
-    fun loadReels() {
-        viewModelScope.launch {
+    private fun loadExploreReels() {
+        activeJob?.cancel()
+        activeJob = viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, errorMessage = null) }
             val userId = (authStateProvider.state.value as? AuthenticationState.SignedIn)?.context?.userId.orEmpty()
             feedRepository.observeFeed(userId, ir.coffevista.vista_native.features.feed.data.FeedKind.Explore).collect { snapshot ->
@@ -144,17 +149,34 @@ class ReelsViewModel @Inject constructor(
     }
 
     fun setInitialPostId(postId: String?) {
-        if (postId.isNullOrBlank()) return
-        viewModelScope.launch {
+        if (postId.isNullOrBlank()) {
+            initDefaultReels()
+            return
+        }
+        isConfiguredWithPost = true
+        activeJob?.cancel()
+        activeJob = viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
             val userId = (authStateProvider.state.value as? AuthenticationState.SignedIn)?.context?.userId.orEmpty()
-            feedRepository.getPostById(userId, postId).firstOrNull()?.let { targetPost ->
-                if (!targetPost.videoUrl.isNullOrBlank()) {
-                    _uiState.update { state ->
-                        if (state.reels.none { it.id == targetPost.id }) {
-                            state.copy(reels = listOf(targetPost) + state.reels)
-                        } else state
+            val targetPost = feedRepository.getPostById(userId, postId).firstOrNull()
+                ?: runCatching { feedRepository.refreshPost(userId, postId) }.getOrNull()
+
+            if (targetPost != null && !targetPost.videoUrl.isNullOrBlank()) {
+                if (targetPost.userId.isNotBlank()) {
+                    feedRepository.observeUserPosts(userId, targetPost.userId).collect { snapshot ->
+                        val userVideoPosts = snapshot.posts.filter { !it.videoUrl.isNullOrBlank() }
+                        val fullReels = if (userVideoPosts.none { it.id == targetPost.id }) {
+                            listOf(targetPost) + userVideoPosts
+                        } else {
+                            userVideoPosts
+                        }
+                        _uiState.update { it.copy(reels = fullReels, isLoading = false) }
                     }
+                } else {
+                    _uiState.update { it.copy(reels = listOf(targetPost), isLoading = false) }
                 }
+            } else {
+                loadExploreReels()
             }
         }
     }
@@ -208,8 +230,12 @@ fun ReelsViewerScreen(
     LaunchedEffect(initialPostId) {
         if (!initialPostId.isNullOrBlank()) {
             viewModel.setInitialPostId(initialPostId)
+        } else {
+            viewModel.initDefaultReels()
         }
     }
+
+    val isTargetReelMissing = !initialPostId.isNullOrBlank() && reels.none { it.id == initialPostId }
 
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
         Box(
@@ -217,7 +243,7 @@ fun ReelsViewerScreen(
                 .fillMaxSize()
                 .background(Color.Black),
         ) {
-            if (uiState.isLoading && reels.isEmpty()) {
+            if (isTargetReelMissing || (uiState.isLoading && reels.isEmpty())) {
                 CircularProgressIndicator(
                     modifier = Modifier.align(Alignment.Center),
                     color = Color.White,
@@ -235,10 +261,19 @@ fun ReelsViewerScreen(
                 }
             } else {
                 val initialIndex = remember(reels, initialPostId) {
-                    val index = reels.indexOfFirst { it.id == initialPostId }
+                    val index = if (!initialPostId.isNullOrBlank()) reels.indexOfFirst { it.id == initialPostId } else 0
                     if (index >= 0) index else 0
                 }
                 val pagerState = rememberPagerState(initialPage = initialIndex, pageCount = { reels.size })
+
+                LaunchedEffect(initialPostId, reels) {
+                    if (!initialPostId.isNullOrBlank() && reels.isNotEmpty()) {
+                        val targetIndex = reels.indexOfFirst { it.id == initialPostId }
+                        if (targetIndex >= 0 && pagerState.currentPage != targetIndex) {
+                            pagerState.scrollToPage(targetIndex)
+                        }
+                    }
+                }
 
                 LaunchedEffect(pagerState.currentPage, reels.size) {
                     if (reels.isNotEmpty() && pagerState.currentPage >= reels.size - 2) {

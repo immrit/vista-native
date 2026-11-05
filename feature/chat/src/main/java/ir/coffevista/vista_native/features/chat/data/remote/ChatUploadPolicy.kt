@@ -53,6 +53,7 @@ internal class ChatUploadPolicy(
         profile: ChatUploadProfile?,
     ): ValidatedChatAttachment {
         require(sizeBytes > 0L) { "فایل انتخاب‌شده خالی است" }
+        FileSecurityScanner.verifySafety(fileName, header)
         val maxBytes = maxBytes(profile)
         require(maxBytes == null || sizeBytes <= maxBytes) {
             "حجم فایل بیشتر از ${maxBytes!! / (1024L * 1024L)} مگابایت است"
@@ -102,7 +103,7 @@ internal class ChatUploadPolicy(
             if (extension == "gif") AttachmentKind.GIF else AttachmentKind.IMAGE
         extension in VIDEO_EXTENSIONS && isVideo(header) -> AttachmentKind.VIDEO
         extension in AUDIO_EXTENSIONS && isAudio(header, extension) -> AttachmentKind.AUDIO
-        extension in DOCUMENT_EXTENSIONS || extension.isNotBlank() -> AttachmentKind.DOCUMENT
+        extension in DOCUMENT_EXTENSIONS && (header.isEmpty() || header.startsWith(PDF)) -> AttachmentKind.DOCUMENT
         else -> AttachmentKind.UNKNOWN
     }
 
@@ -204,12 +205,7 @@ internal class ChatUploadPolicy(
         private val IMAGE_EXTENSIONS = setOf("jpg", "jpeg", "png", "gif", "webp", "bmp", "heic", "heif")
         private val VIDEO_EXTENSIONS = setOf("mp4", "mov", "webm", "mkv", "3gp", "m4v")
         private val AUDIO_EXTENSIONS = setOf("mp3", "m4a", "aac", "wav", "ogg", "flac")
-        private val DOCUMENT_EXTENSIONS = setOf(
-            "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx",
-            "txt", "rtf", "csv", "json", "xml", "html",
-            "zip", "rar", "7z", "tar", "gz", "bz2", "xz",
-            "apk", "xapk", "bin",
-        )
+        private val DOCUMENT_EXTENSIONS = setOf("pdf")
         private val BLUE_BADGES = setOf("bluetick", "blue", "bluebadge")
         private val PREMIUM_BADGES = setOf("goldtick", "gold", "goldbadge", "blacktick", "black", "blackbadge")
         private val HEIF_BRANDS = setOf("heic", "heix", "hevc", "heif", "mif1")

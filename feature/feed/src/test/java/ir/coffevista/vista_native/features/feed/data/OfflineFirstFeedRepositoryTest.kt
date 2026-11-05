@@ -376,6 +376,8 @@ private class FakeFeedApi : FeedApi {
     override suspend fun presignUpload(request: PostPresignRequestDto): PostPresignResponseDto = error("unused")
     override suspend fun deleteUpload(request: DeleteUploadRequestDto): DeleteUploadResponseDto = DeleteUploadResponseDto(true)
     override suspend fun createPost(request: CreatePostRequestDto): FeedPostDto = error("unused")
+    override suspend fun follow(request: FollowActionRequestDto) = retrofit2.Response.success(FollowActionResponseDto("following"))
+    override suspend fun unfollow(request: FollowActionRequestDto) = retrofit2.Response.success(FollowActionResponseDto("none"))
 }
 
 private class FakeFeedDao : FeedDao {
@@ -459,6 +461,12 @@ private class FakeFeedDao : FeedDao {
         postId: String,
     ): Flow<FeedPostEntity?> = flowOf(postsByAccount[accountId]?.get(postId))
 
+    override fun observeAnyPostById(postId: String): Flow<FeedPostEntity?> =
+        flowOf(postsByAccount.values.firstNotNullOfOrNull { it[postId] })
+
+    override suspend fun findAnyPostById(postId: String): FeedPostEntity? =
+        postsByAccount.values.firstNotNullOfOrNull { it[postId] }
+
     override suspend fun updateLikeState(postId: String, isLiked: Boolean, likeCount: Long) {
         postsByAccount.values.forEach { map ->
             map[postId]?.let { post ->
@@ -487,6 +495,7 @@ private class FakeFeedDao : FeedDao {
     }
 
     override suspend fun updatePostFields(postId: String, content: String?, hideLikeCount: Boolean?, hideCommentCount: Boolean?) = Unit
+    override suspend fun updateAuthorFollowStatus(authorId: String, followStatus: String) = Unit
     override suspend fun deletePostEverywhere(postId: String) {
         postsByAccount.values.forEach { it.remove(postId) }
         postsByAccount.keys.forEach(::emitPosts)

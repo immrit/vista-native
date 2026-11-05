@@ -53,8 +53,22 @@ class FeedViewModelTest {
                 override suspend fun trackView(storyId: String) = Unit
                 override suspend fun getStoryViews(storyId: String, limit: Int, offset: Int) = ir.coffevista.vista_native.features.stories.domain.StoryViewsResponseDto()
                 override suspend fun reactToStory(storyId: String, request: ir.coffevista.vista_native.features.stories.domain.StoryReactRequestDto) = Unit
+                override suspend fun removeStoryReaction(storyId: String) = Unit
                 override suspend fun replyToStory(storyId: String, request: ir.coffevista.vista_native.features.stories.domain.StoryReplyRequestDto) = Unit
                 override suspend fun votePoll(storyId: String, elementId: String, request: ir.coffevista.vista_native.features.stories.domain.StoryVoteRequestDto) = Unit
+                override suspend fun reportStory(storyId: String, request: ir.coffevista.vista_native.features.stories.domain.StoryReportRequestDto) = Unit
+                override suspend fun getReplyAccess(storyId: String) = ir.coffevista.vista_native.features.stories.domain.StoryReplyAccessDto()
+                override suspend fun answerQuestion(storyId: String, elementId: String, request: ir.coffevista.vista_native.features.stories.domain.StoryQuestionAnswerRequestDto) = Unit
+                override suspend fun getQuestionAnswers(storyId: String) = ir.coffevista.vista_native.features.stories.domain.StoryQuestionAnswersResponseDto()
+                override suspend fun getStorySettings() = ir.coffevista.vista_native.features.stories.domain.StorySettingsDto()
+                override suspend fun updateStorySettings(request: ir.coffevista.vista_native.features.stories.domain.StorySettingsDto) = Unit
+                override suspend fun getUserHighlights(userId: String) = ir.coffevista.vista_native.features.stories.domain.UserHighlightsResponseDto()
+                override suspend fun getHighlightCount(userId: String) = ir.coffevista.vista_native.features.stories.domain.HighlightCountResponseDto()
+                override suspend fun createHighlight(request: ir.coffevista.vista_native.features.stories.domain.CreateHighlightRequestDto) = error("unused")
+                override suspend fun updateHighlight(highlightId: String, request: ir.coffevista.vista_native.features.stories.domain.UpdateHighlightRequestDto) = error("unused")
+                override suspend fun deleteHighlight(highlightId: String) = Unit
+                override suspend fun getStoryWeatherContext(lat: Double?, lon: Double?, city: String?) = ir.coffevista.vista_native.features.stories.domain.StoryWeatherContextDto()
+                override suspend fun getStoryPlacesContext(lat: Double?, lon: Double?, query: String?) = ir.coffevista.vista_native.features.stories.domain.StoryPlacesResponseDto()
             },
             dispatcher,
         )
@@ -318,6 +332,7 @@ private class FakeFeedRepository : FeedRepository {
     override suspend fun reportPost(postId: String, reportedUserId: String, reason: String, additionalDetails: String?) = Unit
     override suspend fun submitAppeal(postId: String, reason: String) = Unit
     override suspend fun trackFeedEvent(postId: String, eventType: String) = Unit
+    override suspend fun updateAuthorFollowStatus(authorId: String, followStatus: String) = Unit
 
     fun emit(accountId: String, posts: List<FeedPost>, hasMore: Boolean) {
         snapshots.getOrPut(accountId) {

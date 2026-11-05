@@ -213,7 +213,7 @@ internal fun StoryTextEditorOverlay(
             }
         }
 
-        // Top Floating Studio Bar (Telegram / Instagram clean layout)
+        // Top Floating Studio Bar (Clean layout)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -329,7 +329,7 @@ internal fun StoryTextEditorOverlay(
             }
         }
 
-        // Telegram Vertical Wedge Font-Size Slider on Screen Edge (expands width on drag)
+        // Vertical Wedge Font-Size Slider on Screen Edge (expands width on drag)
         val sliderWidth by animateDpAsState(
             targetValue = if (isDraggingVerticalSlider) 30.dp else 16.dp,
             label = "vertical_slider_width",

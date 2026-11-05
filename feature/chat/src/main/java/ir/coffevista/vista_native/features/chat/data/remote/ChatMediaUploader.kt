@@ -124,7 +124,7 @@ class ChatMediaUploader(
     }
 
     private fun readHeader(uri: Uri): ByteArray = openStream(resolver, uri)?.use { input ->
-        val buffer = ByteArray(16)
+        val buffer = ByteArray(4096)
         val read = input.read(buffer)
         if (read <= 0) byteArrayOf() else buffer.copyOf(read)
     } ?: throw IOException("فایل انتخاب‌شده قابل خواندن نیست")

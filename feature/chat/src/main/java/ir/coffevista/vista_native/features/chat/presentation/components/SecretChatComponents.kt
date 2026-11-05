@@ -64,18 +64,18 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.security.MessageDigest
 
-val TelegramSecretGreen = Color(0xFF4FAE63)
-val TelegramSecretGreenDark = Color(0xFF2E7D32)
-val TelegramSecretBadgeBg = Color(0x1F4FAE63)
+val SecretChatGreen = Color(0xFF4FAE63)
+val SecretChatGreenDark = Color(0xFF2E7D32)
+val SecretChatBadgeBg = Color(0x1F4FAE63)
 
-private val TELEGRAM_KEY_EMOJIS = listOf(
+private val SECRET_KEY_EMOJIS = listOf(
     "🔒", "🛡️", "⚡", "💎", "🚀", "🌟", "🗝️", "🔥",
     "🍀", "🪐", "🎯", "🔮", "👑", "🌊", "🌙", "☀️",
     "🦊", "🦋", "🌸", "⭐", "⚓", "🛸", "🏆", "🎨",
     "🎸", "🎪", "🏝️", "🕊️", "🦁", "🐬", "🌺", "🌈"
 )
 
-private val TELEGRAM_MATRIX_PALETTE = listOf(
+private val SECRET_MATRIX_PALETTE = listOf(
     Color(0xFF4FAE63),
     Color(0xFF81C784),
     Color(0xFF2E7D32),
@@ -87,7 +87,7 @@ fun deriveSecretKeyEmojis(seed: String?): List<String> {
     val digest = MessageDigest.getInstance("SHA-256").digest(seed.toByteArray(Charsets.UTF_8))
     return (0..3).map { i ->
         val byteVal = (digest[i].toInt() and 0xFF)
-        TELEGRAM_KEY_EMOJIS[byteVal % TELEGRAM_KEY_EMOJIS.size]
+        SECRET_KEY_EMOJIS[byteVal % SECRET_KEY_EMOJIS.size]
     }
 }
 
@@ -109,7 +109,7 @@ fun SecretChatIntroCard(
 ) {
     val isDark = isSystemInDarkTheme()
     val cardBg = if (isDark) Color(0xFF1A222D) else Color(0xFFF4F7F5)
-    val borderCol = TelegramSecretGreen.copy(alpha = if (isDark) 0.35f else 0.25f)
+    val borderCol = SecretChatGreen.copy(alpha = if (isDark) 0.35f else 0.25f)
 
     Surface(
         modifier = modifier
@@ -132,19 +132,19 @@ fun SecretChatIntroCard(
                     .background(
                         Brush.radialGradient(
                             listOf(
-                                TelegramSecretGreen.copy(alpha = 0.30f),
-                                TelegramSecretGreen.copy(alpha = 0.08f),
+                                SecretChatGreen.copy(alpha = 0.30f),
+                                SecretChatGreen.copy(alpha = 0.08f),
                                 Color.Transparent,
                             )
                         )
                     )
-                    .border(1.5.dp, TelegramSecretGreen.copy(alpha = 0.6f), CircleShape),
+                    .border(1.5.dp, SecretChatGreen.copy(alpha = 0.6f), CircleShape),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
                     imageVector = Icons.Default.Lock,
                     contentDescription = null,
-                    tint = TelegramSecretGreen,
+                    tint = SecretChatGreen,
                     modifier = Modifier.size(34.dp),
                 )
             }
@@ -208,9 +208,9 @@ fun SecretChatIntroCard(
                     onClick = onSetTimer,
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(12.dp),
-                    border = BorderStroke(1.dp, TelegramSecretGreen.copy(alpha = 0.5f)),
+                    border = BorderStroke(1.dp, SecretChatGreen.copy(alpha = 0.5f)),
                     colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = TelegramSecretGreen,
+                        contentColor = SecretChatGreen,
                     ),
                 ) {
                     Icon(Icons.Default.Timer, contentDescription = null, modifier = Modifier.size(17.dp))
@@ -223,8 +223,8 @@ fun SecretChatIntroCard(
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.filledTonalButtonColors(
-                        containerColor = TelegramSecretGreen.copy(alpha = 0.18f),
-                        contentColor = TelegramSecretGreen,
+                        containerColor = SecretChatGreen.copy(alpha = 0.18f),
+                        contentColor = SecretChatGreen,
                     ),
                 ) {
                     Icon(Icons.Default.Security, contentDescription = null, modifier = Modifier.size(17.dp))
@@ -250,13 +250,13 @@ private fun SecurityPillarRow(
             modifier = Modifier
                 .size(36.dp)
                 .clip(CircleShape)
-                .background(TelegramSecretBadgeBg),
+                .background(SecretChatBadgeBg),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                tint = TelegramSecretGreen,
+                tint = SecretChatGreen,
                 modifier = Modifier.size(18.dp),
             )
         }
@@ -282,7 +282,7 @@ private fun SecurityPillarRow(
 }
 
 @Composable
-fun TelegramEncryptionKeyDialog(
+fun SecretChatEncryptionKeyDialog(
     safetyNumber: String?,
     peerName: String,
     isLoading: Boolean,
@@ -307,13 +307,13 @@ fun TelegramEncryptionKeyDialog(
                         modifier = Modifier
                             .size(36.dp)
                             .clip(CircleShape)
-                            .background(TelegramSecretBadgeBg),
+                            .background(SecretChatBadgeBg),
                         contentAlignment = Alignment.Center,
                     ) {
                         Icon(
                             imageVector = Icons.Default.Security,
                             contentDescription = null,
-                            tint = TelegramSecretGreen,
+                            tint = SecretChatGreen,
                             modifier = Modifier.size(20.dp),
                         )
                     }
@@ -328,7 +328,7 @@ fun TelegramEncryptionKeyDialog(
                         Text(
                             text = "تأیید هویت سرتاسری (E2EE)",
                             style = MaterialTheme.typography.bodySmall,
-                            color = TelegramSecretGreen,
+                            color = SecretChatGreen,
                             fontSize = 11.sp,
                         )
                     }
@@ -344,7 +344,7 @@ fun TelegramEncryptionKeyDialog(
                     if (isLoading) {
                         Spacer(Modifier.height(24.dp))
                         CircularProgressIndicator(
-                            color = TelegramSecretGreen,
+                            color = SecretChatGreen,
                             modifier = Modifier.size(36.dp),
                         )
                         Spacer(Modifier.height(12.dp))
@@ -355,13 +355,13 @@ fun TelegramEncryptionKeyDialog(
                         )
                         Spacer(Modifier.height(24.dp))
                     } else if (!safetyNumber.isNullOrBlank()) {
-                        // 1. Telegram Identicon Matrix (8x8 visual cryptographic grid)
+                        // 1. Identicon Matrix (8x8 visual cryptographic grid)
                         Box(
                             modifier = Modifier
                                 .size(120.dp)
                                 .clip(RoundedCornerShape(16.dp))
                                 .background(if (isDark) Color(0xFF141920) else Color(0xFFE8ECE9))
-                                .border(1.dp, TelegramSecretGreen.copy(alpha = 0.4f), RoundedCornerShape(16.dp))
+                                .border(1.dp, SecretChatGreen.copy(alpha = 0.4f), RoundedCornerShape(16.dp))
                                 .padding(8.dp),
                             contentAlignment = Alignment.Center,
                         ) {
@@ -371,14 +371,14 @@ fun TelegramEncryptionKeyDialog(
                                 for (row in 0 until 8) {
                                     Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
                                         for (col in 0 until 8) {
-                                            // Symmetrical pattern like Telegram
+                                            // Symmetrical pattern
                                             val symCol = if (col < 4) col else (7 - col)
                                             val colorIndex = matrix[(row * 4 + symCol) % matrix.size]
                                             Box(
                                                 modifier = Modifier
                                                     .size(10.dp)
                                                     .clip(RoundedCornerShape(2.5.dp))
-                                                    .background(TELEGRAM_MATRIX_PALETTE[colorIndex]),
+                                                    .background(SECRET_MATRIX_PALETTE[colorIndex]),
                                             )
                                         }
                                     }
@@ -388,11 +388,11 @@ fun TelegramEncryptionKeyDialog(
 
                         Spacer(Modifier.height(14.dp))
 
-                        // 2. 4 Telegram visual key emojis
+                        // 2. 4 visual key emojis
                         Surface(
                             shape = RoundedCornerShape(14.dp),
-                            color = TelegramSecretGreen.copy(alpha = if (isDark) 0.15f else 0.10f),
-                            border = BorderStroke(1.dp, TelegramSecretGreen.copy(alpha = 0.35f)),
+                            color = SecretChatGreen.copy(alpha = if (isDark) 0.15f else 0.10f),
+                            border = BorderStroke(1.dp, SecretChatGreen.copy(alpha = 0.35f)),
                         ) {
                             Row(
                                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
@@ -460,8 +460,8 @@ fun TelegramEncryptionKeyDialog(
                             Toast.makeText(context, "کد امنیتی کپی شد", Toast.LENGTH_SHORT).show()
                         },
                         colors = ButtonDefaults.filledTonalButtonColors(
-                            containerColor = TelegramSecretGreen.copy(alpha = 0.2f),
-                            contentColor = TelegramSecretGreen,
+                            containerColor = SecretChatGreen.copy(alpha = 0.2f),
+                            contentColor = SecretChatGreen,
                         ),
                         shape = RoundedCornerShape(10.dp),
                     ) {
@@ -481,7 +481,7 @@ fun TelegramEncryptionKeyDialog(
 }
 
 @Composable
-fun TelegramAutoDeleteDialog(
+fun SecretChatAutoDeleteDialog(
     currentSeconds: Int,
     onDismiss: () -> Unit,
     onSelect: (Int) -> Unit,
@@ -509,10 +509,10 @@ fun TelegramAutoDeleteDialog(
                         modifier = Modifier
                             .size(36.dp)
                             .clip(CircleShape)
-                            .background(TelegramSecretBadgeBg),
+                            .background(SecretChatBadgeBg),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Icon(Icons.Default.Timer, contentDescription = null, tint = TelegramSecretGreen, modifier = Modifier.size(20.dp))
+                        Icon(Icons.Default.Timer, contentDescription = null, tint = SecretChatGreen, modifier = Modifier.size(20.dp))
                     }
                     Spacer(Modifier.width(10.dp))
                     Text("تایمر نابودی خودکار پیام‌ها", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, fontSize = 16.sp)
@@ -538,7 +538,7 @@ fun TelegramAutoDeleteDialog(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(10.dp))
-                                .background(if (selected) TelegramSecretBadgeBg else Color.Transparent)
+                                .background(if (selected) SecretChatBadgeBg else Color.Transparent)
                                 .clickable { onSelect(seconds) }
                                 .padding(horizontal = 10.dp, vertical = 7.dp),
                             verticalAlignment = Alignment.CenterVertically,
@@ -548,14 +548,14 @@ fun TelegramAutoDeleteDialog(
                                 text = label,
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-                                color = if (selected) TelegramSecretGreen else MaterialTheme.colorScheme.onSurface,
+                                color = if (selected) SecretChatGreen else MaterialTheme.colorScheme.onSurface,
                                 fontSize = 14.sp,
                             )
                             RadioButton(
                                 selected = selected,
                                 onClick = { onSelect(seconds) },
                                 colors = RadioButtonDefaults.colors(
-                                    selectedColor = TelegramSecretGreen,
+                                    selectedColor = SecretChatGreen,
                                 ),
                             )
                         }

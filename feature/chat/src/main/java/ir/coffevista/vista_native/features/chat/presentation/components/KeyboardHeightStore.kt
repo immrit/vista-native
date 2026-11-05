@@ -6,7 +6,7 @@ import kotlin.math.abs
 
 /**
  * Stores and retrieves the measured software keyboard height.
- * Telegram-grade: persists across app restarts, adapts dynamically to portrait vs landscape,
+ * Production-grade: persists across app restarts, adapts dynamically to portrait vs landscape,
  * and falls back to responsive defaults if the software keyboard has not yet been opened.
  */
 object KeyboardHeightStore {

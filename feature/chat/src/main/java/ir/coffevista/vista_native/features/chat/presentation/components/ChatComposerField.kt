@@ -72,7 +72,6 @@ class ChatComposerController {
     }
 }
 
-typealias TelegramComposerController = ChatComposerController
 /**
  * فیلد ورودی پیام با کارایی بالا، پشتیبانی کامل از متن فارسی/RTL و تعامل بدون تأخیر
  */

@@ -41,6 +41,10 @@ data class FeedPostDto(
     val videoUrl: String? = null,
     @SerialName("music_url")
     val musicUrl: String? = null,
+    @SerialName("music_start_ms")
+    val musicStartMs: Int? = null,
+    @SerialName("music_end_ms")
+    val musicEndMs: Int? = null,
     @SerialName("aspect_ratio")
     val aspectRatio: String? = null,
     @SerialName("music_title")
@@ -124,7 +128,16 @@ internal fun FeedPostDto.asEntity(
     imageUrl = imageUrl.resolvedCdnUrl(),
     imageUrls = imageUrls.mapNotNull { it.resolvedCdnUrl() },
     videoUrl = videoUrl.resolvedCdnUrl(),
-    musicUrl = musicUrl.resolvedCdnUrl(),
+    musicUrl = run {
+        val url = musicUrl.resolvedCdnUrl() ?: return@run null
+        val start = musicStartMs ?: 0
+        val end = musicEndMs ?: 0
+        if ((start > 0 || end > start) && !url.contains("#t=")) {
+            "$url#t=$start,$end"
+        } else {
+            url
+        }
+    },
     aspectRatio = aspectRatio,
     musicTitle = musicTitle,
     tags = tags,
@@ -252,4 +265,14 @@ data class DeleteUploadRequestDto(
 @Serializable
 data class DeleteUploadResponseDto(
     @SerialName("success") val success: Boolean = true,
+)
+
+@Serializable
+data class FollowActionRequestDto(
+    @SerialName("target_user_id") val targetUserId: String,
+)
+
+@Serializable
+data class FollowActionResponseDto(
+    @SerialName("status") val status: String? = null,
 )

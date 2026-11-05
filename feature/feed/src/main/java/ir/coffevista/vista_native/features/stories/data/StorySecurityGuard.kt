@@ -75,8 +75,13 @@ object StorySecurityGuard {
         }.getOrDefault(context.applicationInfo.dataDir.orEmpty())
 
         val allowedDirs = listOfNotNull(
+            runCatching { context.cacheDir.canonicalPath }.getOrNull(),
+            runCatching { context.externalCacheDir?.canonicalPath }.getOrNull(),
+            runCatching { File(context.cacheDir, "story_shares").canonicalPath }.getOrNull(),
+            runCatching { File(context.cacheDir, "story_uploads").canonicalPath }.getOrNull(),
             runCatching { File(context.cacheDir, "camera").canonicalPath }.getOrNull(),
             runCatching { File(context.cacheDir, "incoming_share").canonicalPath }.getOrNull(),
+            runCatching { File(context.cacheDir, "shared_incoming").canonicalPath }.getOrNull(),
         )
 
         if (scheme == "file") {

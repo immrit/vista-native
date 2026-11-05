@@ -90,7 +90,7 @@ internal fun BoxScope.StoryTrashDropZone(
                     .border(2.dp, borderColor, CircleShape),
                 contentAlignment = Alignment.Center,
             ) {
-                // Custom animated trash bin with opening lid (Telegram EntityView trash icon parity)
+                // Custom animated trash bin with opening lid
                 Canvas(modifier = Modifier.size(26.dp)) {
                     val w = size.width
                     val h = size.height

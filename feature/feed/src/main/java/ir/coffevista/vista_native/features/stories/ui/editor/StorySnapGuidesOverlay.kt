@@ -30,7 +30,7 @@ internal fun StorySnapGuidesOverlay(
         !guides.marginBottomLocked
     ) return
 
-    val centerGuideColor = Color(0xFF29B6F6) // Telegram cyan alignment line
+    val centerGuideColor = Color(0xFF29B6F6) // Accent cyan alignment line
     val angleGuideColor = Color(0xFFFFD600)
     val safeZoneColor = Color(0x75FFFFFF)
     val dashEffect = PathEffect.dashPathEffect(floatArrayOf(14f, 10f), 0f)

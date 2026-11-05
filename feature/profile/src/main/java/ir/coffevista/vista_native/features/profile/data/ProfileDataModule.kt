@@ -178,6 +178,31 @@ object ProfileDataModule {
                 userId: String,
             ): retrofit2.Response<ProfileHighlightsResponseDto> = remote.getUserHighlights(userId)
 
+            override suspend fun createHighlight(
+                request: CreateProfileHighlightRequestDto,
+            ): retrofit2.Response<ProfileHighlightDto> = remote.createHighlight(request)
+
+            override suspend fun updateHighlight(
+                highlightId: String,
+                request: UpdateProfileHighlightRequestDto,
+            ): retrofit2.Response<ProfileHighlightDto> = remote.updateHighlight(highlightId, request)
+
+            override suspend fun deleteHighlight(
+                highlightId: String,
+            ): retrofit2.Response<Unit> = remote.deleteHighlight(highlightId)
+
+            override suspend fun getOwnNote(): retrofit2.Response<ProfileNoteDto?> = remote.getOwnNote()
+
+            override suspend fun upsertNote(
+                request: UpsertNoteRequestDto,
+            ): retrofit2.Response<ProfileNoteDto> = remote.upsertNote(request)
+
+            override suspend fun deleteNote(): retrofit2.Response<Unit> = remote.deleteNote()
+
+            override suspend fun getBatchNotes(
+                request: BatchNotesRequestDto,
+            ): retrofit2.Response<Map<String, ProfileNoteDto>> = remote.getBatchNotes(request)
+
             override suspend fun reportProfile(
                 request: ReportProfileRequestDto,
             ): retrofit2.Response<Unit> = remote.reportProfile(request)

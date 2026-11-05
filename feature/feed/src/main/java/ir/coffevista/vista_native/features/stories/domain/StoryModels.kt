@@ -127,15 +127,55 @@ data class Story(
 
 @Serializable
 data class StoryUser(
-    val id: String,
-    val username: String,
+    @SerialName("id") val rawId: String = "",
+    @SerialName("user_id") val rawUserId: String = "",
+    val username: String = "",
+    @SerialName("full_name") val fullName: String? = null,
     @SerialName("avatar_url") val avatarUrl: String? = null,
     @SerialName("is_verified") val isVerified: Boolean = false,
     @SerialName("is_premium") val isPremium: Boolean = false,
-    @SerialName("verification_type") val verificationType: StoryVerificationType = StoryVerificationType.None,
+    @SerialName("verification_type") val verificationTypeRaw: String? = null,
     val stories: List<Story> = emptyList(),
     @SerialName("last_story_at") val lastStoryAt: String? = null,
 ) {
+    val id: String get() = rawId.ifBlank { rawUserId }
+    val userId: String get() = rawUserId.ifBlank { rawId }
+
+    val verificationType: StoryVerificationType
+        get() = when (verificationTypeRaw?.lowercase()?.trim()) {
+            "blue" -> StoryVerificationType.Blue
+            "gold" -> StoryVerificationType.Gold
+            "black" -> StoryVerificationType.Black
+            else -> StoryVerificationType.None
+        }
+
+    constructor(
+        id: String,
+        username: String = "",
+        avatarUrl: String? = null,
+        isVerified: Boolean = false,
+        isPremium: Boolean = false,
+        verificationType: StoryVerificationType = StoryVerificationType.None,
+        stories: List<Story> = emptyList(),
+        lastStoryAt: String? = null,
+    ) : this(
+        rawId = id,
+        rawUserId = id,
+        username = username,
+        fullName = null,
+        avatarUrl = avatarUrl,
+        isVerified = isVerified,
+        isPremium = isPremium,
+        verificationTypeRaw = when (verificationType) {
+            StoryVerificationType.Blue -> "blue"
+            StoryVerificationType.Gold -> "gold"
+            StoryVerificationType.Black -> "black"
+            StoryVerificationType.None -> "none"
+        },
+        stories = stories,
+        lastStoryAt = lastStoryAt,
+    )
+
     val allViewed: Boolean get() = stories.isNotEmpty() && stories.all { it.isViewed }
     val hasUnseenStories: Boolean get() = stories.any { !it.isViewed }
     val unseenCount: Int get() = stories.count { !it.isViewed }
@@ -204,8 +244,11 @@ data class UserStoriesResponseDto(
 
 @Serializable
 data class FollowingStoryUsersResponseDto(
-    val profiles: List<StoryUser> = emptyList(),
-)
+    @SerialName("profiles") val profiles: List<StoryUser> = emptyList(),
+    @SerialName("users") val usersLegacy: List<StoryUser> = emptyList(),
+) {
+    val allUsers: List<StoryUser> get() = profiles.ifEmpty { usersLegacy }
+}
 
 @Serializable
 data class CloseFriendsUpdateRequestDto(

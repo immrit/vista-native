@@ -341,7 +341,6 @@ interface ChatDao {
             SELECT 1 FROM chat_conversation AS c
             WHERE c.accountId = message.accountId
               AND (c.id = message.conversationId OR c.peerId = message.conversationId)
-              AND UPPER(c.type) = 'PRIVATE'
           )
         """,
     )
@@ -645,15 +644,17 @@ interface ChatDao {
         if (replacedClientId != null && replacedClientId != message.clientId) {
             deleteMessage(message.accountId, message.conversationId, replacedClientId)
         }
-        val current = conversationByType(message.accountId, message.conversationId, fallbackConversation.type)
-            ?: conversation(message.accountId, message.conversationId)?.takeIf { it.type.equals(fallbackConversation.type, ignoreCase = true) }
+        val current = conversation(message.accountId, message.conversationId)
+            ?: conversationByType(message.accountId, message.conversationId, fallbackConversation.type)
         val base = current ?: fallbackConversation
-        val resolvedTitle = if (base.title == "کاربر" && fallbackConversation.title != "کاربر") {
+        val resolvedTitle = if (base.title.isNotBlank() && base.title != "کاربر" && base.title != "user") {
+            base.title
+        } else if (fallbackConversation.title.isNotBlank() && fallbackConversation.title != "کاربر" && fallbackConversation.title != "user") {
             fallbackConversation.title
         } else {
             base.title
         }
-        val resolvedAvatar = base.avatarUrl ?: fallbackConversation.avatarUrl
+        val resolvedAvatar = (base.avatarUrl ?: fallbackConversation.avatarUrl)?.takeIf(String::isNotBlank)
         val nextLastMessageAt = maxOf(
             message.createdAtEpochMillis,
             mutationAtEpochMillis,

@@ -59,7 +59,7 @@ internal fun DrawScope.drawStoryStroke(stroke: StoryStroke) {
         lineTo(points.last().x, points.last().y)
     }
     if (stroke.brush == StoryBrush.Neon) {
-        // Multi-pass Telegram neon glow shader: outer halo, mid glow, and bright white core
+        // Multi-pass neon glow shader: outer halo, mid glow, and bright white core
         drawPath(
             path = path,
             color = color.copy(alpha = 0.22f),

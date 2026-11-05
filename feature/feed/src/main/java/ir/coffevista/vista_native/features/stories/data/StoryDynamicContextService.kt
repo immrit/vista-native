@@ -203,7 +203,7 @@ class StoryDynamicContextService @Inject constructor(
 
     /**
      * Resolves multi-granularity real-world place suggestions (neighborhood, street, POI, city)
-     * around the user's current coordinates (Telegram LocationMarker / Instagram Places UX).
+     * around the user's current coordinates.
      */
     suspend fun resolveCurrentPlaces(lat: Double, lon: Double): List<StoryPlaceSuggestion> =
         withContext(Dispatchers.IO) {

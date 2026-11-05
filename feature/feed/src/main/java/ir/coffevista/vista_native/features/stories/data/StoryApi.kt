@@ -89,7 +89,7 @@ interface StoryApi {
     @DELETE("v1/stories/{storyId}/reaction")
     suspend fun removeStoryReaction(
         @Path("storyId") storyId: String,
-    ) {}
+    )
 
     @POST("v1/stories/{storyId}/reply")
     suspend fun replyToStory(
@@ -108,70 +108,70 @@ interface StoryApi {
     suspend fun reportStory(
         @Path("storyId") storyId: String,
         @Body request: StoryReportRequestDto,
-    ) {}
+    )
 
     @GET("v1/stories/{storyId}/reply-access")
     suspend fun getReplyAccess(
         @Path("storyId") storyId: String,
-    ): StoryReplyAccessDto = StoryReplyAccessDto()
+    ): StoryReplyAccessDto
 
     @POST("v1/stories/{storyId}/question/{elementId}/answer")
     suspend fun answerQuestion(
         @Path("storyId") storyId: String,
         @Path("elementId") elementId: String,
         @Body request: StoryQuestionAnswerRequestDto,
-    ) {}
+    )
 
     @GET("v1/stories/{storyId}/questions/answers")
     suspend fun getQuestionAnswers(
         @Path("storyId") storyId: String,
-    ): StoryQuestionAnswersResponseDto = StoryQuestionAnswersResponseDto()
+    ): StoryQuestionAnswersResponseDto
 
     @GET("v1/me/story-settings")
-    suspend fun getStorySettings(): StorySettingsDto = StorySettingsDto()
+    suspend fun getStorySettings(): StorySettingsDto
 
     @PATCH("v1/me/story-settings")
     suspend fun updateStorySettings(
         @Body request: StorySettingsDto,
-    ) {}
+    )
 
     @GET("v1/highlights/users/{userId}")
     suspend fun getUserHighlights(
         @Path("userId") userId: String,
-    ): UserHighlightsResponseDto = UserHighlightsResponseDto()
+    ): UserHighlightsResponseDto
 
     @GET("v1/highlights/users/{userId}/count")
     suspend fun getHighlightCount(
         @Path("userId") userId: String,
-    ): HighlightCountResponseDto = HighlightCountResponseDto()
+    ): HighlightCountResponseDto
 
     @POST("v1/highlights")
     suspend fun createHighlight(
         @Body request: CreateHighlightRequestDto,
-    ): HighlightDto = HighlightDto(id = "new_hl", title = request.title)
+    ): HighlightDto
 
     @PATCH("v1/highlights/{highlightId}")
     suspend fun updateHighlight(
         @Path("highlightId") highlightId: String,
         @Body request: UpdateHighlightRequestDto,
-    ): HighlightDto = HighlightDto(id = highlightId, title = request.title.orEmpty())
+    ): HighlightDto
 
     @DELETE("v1/highlights/{highlightId}")
     suspend fun deleteHighlight(
         @Path("highlightId") highlightId: String,
-    ) {}
+    )
 
     @GET("v1/stories/context/weather")
     suspend fun getStoryWeatherContext(
         @Query("lat") lat: Double? = null,
         @Query("lon") lon: Double? = null,
         @Query("city") city: String? = null,
-    ): StoryWeatherContextDto = StoryWeatherContextDto()
+    ): StoryWeatherContextDto
 
     @GET("v1/stories/context/places")
     suspend fun getStoryPlacesContext(
         @Query("lat") lat: Double? = null,
         @Query("lon") lon: Double? = null,
         @Query("q") query: String? = null,
-    ): StoryPlacesResponseDto = StoryPlacesResponseDto()
+    ): StoryPlacesResponseDto
 }

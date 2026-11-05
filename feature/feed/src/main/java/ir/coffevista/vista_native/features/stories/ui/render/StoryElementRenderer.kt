@@ -127,7 +127,11 @@ internal fun StoryElementContent(
     val variant = effectiveVariant(element)
     val interactive = actions != null
     when (element.type) {
-        "text" -> StoryRichText(spec = element.toTextSpec())
+        "text" -> StoryRichText(
+            spec = element.toTextSpec(),
+            onHashtagClick = if (interactive) actions?.onHashtagClick else null,
+            onMentionClick = if (interactive) actions?.onMentionClick else null,
+        )
 
         "poll" -> element.poll?.let { poll ->
             StoryPollWidget(

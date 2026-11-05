@@ -30,6 +30,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -37,7 +38,10 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.foundation.text.ClickableText
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
@@ -73,6 +77,7 @@ fun SharedPostCard(
     isMine: Boolean,
     modifier: Modifier = Modifier,
     onViewPost: (String) -> Unit = {},
+    onHashtagClick: (String) -> Unit = {},
 ) {
     val isDarkTheme = isSystemInDarkTheme()
     val primaryTextColor = if (isMine) Color.White else MaterialTheme.colorScheme.onSurface
@@ -202,18 +207,72 @@ fun SharedPostCard(
 
         // --- محتوای متنی پست ---
         if (post.content.isNotBlank()) {
-            Text(
-                text = post.content,
-                color = primaryTextColor,
-                fontSize = 13.sp,
-                lineHeight = 19.sp,
-                maxLines = 4,
-                overflow = TextOverflow.Ellipsis,
-                style = TextStyle(textDirection = TextDirection.Rtl),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 10.dp, vertical = 2.dp),
-            )
+            val hasEntities = remember(post.content) { post.content.contains('#') || post.content.contains('@') }
+            if (hasEntities) {
+                val entityStyle = SpanStyle(
+                    color = if (isMine) Color(0xFFBBDEFB) else VistaBrandColors.Indigo,
+                    fontWeight = FontWeight.Bold,
+                )
+                val annotated = remember(post.content) {
+                    buildAnnotatedString {
+                        val pattern = Regex("""(?<![^\s\n])@([\u0600-\u06FF\w_]+)|#([\u0600-\u06FF\w_]+)""")
+                        var cursor = 0
+                        pattern.findAll(post.content).forEach { match ->
+                            if (match.range.first > cursor) {
+                                append(post.content.substring(cursor, match.range.first))
+                            }
+                            val start = length
+                            append(match.value)
+                            addStyle(entityStyle, start, length)
+                            if (match.value.startsWith("#")) {
+                                addStringAnnotation("HASHTAG", match.value.removePrefix("#"), start, length)
+                            } else if (match.value.startsWith("@")) {
+                                addStringAnnotation("MENTION", match.value.removePrefix("@"), start, length)
+                            }
+                            cursor = match.range.last + 1
+                        }
+                        if (cursor < post.content.length) {
+                            append(post.content.substring(cursor))
+                        }
+                    }
+                }
+                @Suppress("DEPRECATION")
+                ClickableText(
+                    text = annotated,
+                    style = TextStyle(
+                        color = primaryTextColor,
+                        fontSize = 13.sp,
+                        lineHeight = 19.sp,
+                        textDirection = TextDirection.Rtl,
+                    ),
+                    maxLines = 4,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 10.dp, vertical = 2.dp),
+                    onClick = { offset ->
+                        val hashtag = annotated.getStringAnnotations("HASHTAG", offset, offset).firstOrNull()
+                        if (hashtag != null) {
+                            onHashtagClick(hashtag.item)
+                            return@ClickableText
+                        }
+                        onViewPost(post.postId)
+                    },
+                )
+            } else {
+                Text(
+                    text = post.content,
+                    color = primaryTextColor,
+                    fontSize = 13.sp,
+                    lineHeight = 19.sp,
+                    maxLines = 4,
+                    overflow = TextOverflow.Ellipsis,
+                    style = TextStyle(textDirection = TextDirection.Rtl),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 10.dp, vertical = 2.dp),
+                )
+            }
         }
 
         // --- هشتگ‌ها ---
@@ -232,6 +291,7 @@ fun SharedPostCard(
                         color = if (isMine) Color(0xFFBBDEFB) else VistaBrandColors.Indigo,
                         fontSize = 11.5.sp,
                         fontWeight = FontWeight.Medium,
+                        modifier = Modifier.clickable { onHashtagClick(tag.removePrefix("#")) },
                     )
                 }
             }

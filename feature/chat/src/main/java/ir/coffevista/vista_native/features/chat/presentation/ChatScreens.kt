@@ -1,5 +1,8 @@
 package ir.coffevista.vista_native.features.chat.presentation
 
+import ir.coffevista.vista_native.features.chat.presentation.components.OwnNoteEditorSheet
+import ir.coffevista.vista_native.features.chat.presentation.components.PeerNoteReplySheet
+import ir.coffevista.vista_native.features.chat.presentation.components.ProfileNotesTray
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -26,6 +29,9 @@ import ir.coffevista.vista_native.features.chat.presentation.components.ChatAtta
 import ir.coffevista.vista_native.features.chat.presentation.components.ChatAttachmentReviewSheet
 import ir.coffevista.vista_native.features.chat.presentation.components.ChatLinkPreviewCard
 import ir.coffevista.vista_native.features.chat.presentation.components.ChatTextBubbleLayout
+import ir.coffevista.vista_native.features.chat.presentation.components.SingleEmojiDetector
+import ir.coffevista.vista_native.features.chat.presentation.components.dragSelectMessages
+import ir.coffevista.vista_native.features.chat.presentation.components.VistaAnimatedEmojiBubble
 import ir.coffevista.vista_native.features.chat.presentation.components.PinnedMessagesBar
 import ir.coffevista.vista_native.features.chat.presentation.components.SharedPostCard
 import ir.coffevista.vista_native.features.chat.domain.model.SharedPostParser
@@ -34,6 +40,7 @@ import ir.coffevista.vista_native.features.chat.presentation.components.extractF
 import androidx.compose.material.icons.outlined.AutoStories
 import androidx.compose.material.icons.outlined.EditNote
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.border
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
@@ -85,6 +92,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.layout.windowInsetsBottomHeight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -128,13 +136,12 @@ import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.EmojiEmotions
 import androidx.compose.material.icons.filled.Keyboard
-import ir.coffevista.vista_native.features.chat.presentation.components.TelegramEmojiText
-import ir.coffevista.vista_native.features.chat.presentation.components.TelegramEmoji
-import ir.coffevista.vista_native.features.chat.presentation.components.TelegramEmojiParser
+import ir.coffevista.vista_native.core.designsystem.component.VistaEmojiText
+import ir.coffevista.vista_native.core.designsystem.component.VistaEmoji
 import ir.coffevista.vista_native.features.chat.presentation.components.EmojiCursorHelper
 import ir.coffevista.vista_native.features.chat.presentation.components.ChatComposerField
 import ir.coffevista.vista_native.features.chat.presentation.components.ChatComposerController
-import ir.coffevista.vista_native.features.chat.presentation.components.TelegramXMediaPanel
+import ir.coffevista.vista_native.features.chat.presentation.components.ChatMediaPickerPanel
 import ir.coffevista.vista_native.features.chat.presentation.components.KeyboardHeightStore
 import ir.coffevista.vista_native.features.chat.presentation.components.MessageContextMenu
 import ir.coffevista.vista_native.features.chat.presentation.components.MessageContextCapabilities
@@ -213,6 +220,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -285,6 +293,7 @@ import ir.coffevista.vista_native.features.chat.R as ChatR
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaBrandColors
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaSpacing
 import ir.coffevista.vista_native.features.chat.domain.model.Conversation
+import ir.coffevista.vista_native.features.chat.data.remote.IranMediaProxy
 import ir.coffevista.vista_native.features.chat.domain.model.ConversationType
 import ir.coffevista.vista_native.features.chat.domain.model.DownloadState
 import ir.coffevista.vista_native.features.chat.domain.model.DownloadTask
@@ -307,10 +316,10 @@ import ir.coffevista.vista_native.features.chat.presentation.conversations.Conve
 import ir.coffevista.vista_native.features.chat.presentation.messages.MessagesUiState
 import ir.coffevista.vista_native.features.chat.presentation.messages.MessagesViewModel
 import ir.coffevista.vista_native.features.chat.presentation.components.SecretChatIntroCard
-import ir.coffevista.vista_native.features.chat.presentation.components.TelegramEncryptionKeyDialog
-import ir.coffevista.vista_native.features.chat.presentation.components.TelegramAutoDeleteDialog
-import ir.coffevista.vista_native.features.chat.presentation.components.TelegramSecretGreen
-import ir.coffevista.vista_native.features.chat.presentation.components.TelegramSecretBadgeBg
+import ir.coffevista.vista_native.features.chat.presentation.components.SecretChatEncryptionKeyDialog
+import ir.coffevista.vista_native.features.chat.presentation.components.SecretChatAutoDeleteDialog
+import ir.coffevista.vista_native.features.chat.presentation.components.SecretChatGreen
+import ir.coffevista.vista_native.features.chat.presentation.components.SecretChatBadgeBg
 import java.text.SimpleDateFormat
 import java.io.File
 import java.util.Calendar
@@ -327,6 +336,7 @@ fun ConversationListRoute(
     onNewSecretChat: () -> Unit = onNewMessage,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val context = androidx.compose.ui.platform.LocalContext.current
     ConversationListScreen(
         state = state,
         onRefresh = viewModel::refresh,
@@ -751,273 +761,6 @@ fun ConversationListScreen(
     }
 }
 
-@Composable
-private fun ProfileNotesTray(
-    notes: List<ProfileNote>,
-    conversations: List<Conversation>,
-    isLoading: Boolean,
-    onOpenOwnNote: () -> Unit,
-    onOpenPeerNote: (ProfileNote, Conversation) -> Unit,
-) {
-    val own = remember(notes) { notes.firstOrNull { it.isMine && !it.isExpired() } }
-    val peerNotes = remember(notes, conversations) {
-        val privateConvsByPeer = HashMap<String, Conversation>(conversations.size)
-        conversations.forEach { conv ->
-            if (conv.type == ConversationType.PRIVATE) {
-                conv.peerId?.trim()?.takeIf(String::isNotEmpty)?.let { pid ->
-                    val lower = pid.lowercase()
-                    privateConvsByPeer.putIfAbsent(lower, conv)
-                    privateConvsByPeer.putIfAbsent(lower.replace("-", ""), conv)
-                }
-            }
-        }
-        notes.asSequence()
-            .filter { !it.isMine && !it.isExpired() && it.userId.isNotBlank() }
-            .distinctBy { it.userId }
-            .mapNotNull { note ->
-                val cleanNoteUserId = note.userId.trim().lowercase()
-                val conv = privateConvsByPeer[cleanNoteUserId]
-                    ?: privateConvsByPeer[cleanNoteUserId.replace("-", "")]
-                conv?.let { note to it }
-            }
-            .toList()
-    }
-    LazyRow(
-        modifier = Modifier.fillMaxWidth().height(120.dp),
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-    ) {
-        item(key = "own-note") {
-            ProfileNoteItem(
-                text = own?.content,
-                label = if (own == null) "یادداشت" else "یادداشت شما",
-                avatarUrl = null,
-                loading = isLoading,
-                onClick = onOpenOwnNote,
-            )
-        }
-        items(peerNotes, key = { "peer-note-${it.first.userId}" }) { (note, conversation) ->
-            ProfileNoteItem(
-                text = note.content,
-                label = conversation.title,
-                avatarUrl = conversation.avatarUrl,
-                loading = false,
-                onClick = { onOpenPeerNote(note, conversation) },
-            )
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun PeerNoteReplySheet(
-    note: ProfileNote,
-    conversation: Conversation,
-    sending: Boolean,
-    error: String?,
-    onDismiss: () -> Unit,
-    onSend: (String) -> Unit,
-) {
-    var reply by remember(note.id) { mutableStateOf("") }
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
-            Column(
-                Modifier.fillMaxWidth().imePadding().padding(horizontal = 18.dp, vertical = 8.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                val fallback = painterResource(R.drawable.vista_default_avatar)
-                AsyncImage(
-                    model = conversation.avatarUrl,
-                    contentDescription = null,
-                    placeholder = fallback,
-                    error = fallback,
-                    fallback = fallback,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.size(56.dp).clip(CircleShape),
-                )
-                Spacer(Modifier.height(8.dp))
-                Text(conversation.title, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    note.content,
-                    modifier = Modifier
-                        .widthIn(max = 280.dp)
-                        .clip(RoundedCornerShape(18.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
-                        .padding(horizontal = 18.dp, vertical = 12.dp),
-                    textAlign = TextAlign.Center,
-                )
-                Spacer(Modifier.height(16.dp))
-                OutlinedTextField(
-                    value = reply,
-                    onValueChange = { reply = it.take(16_000) },
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = !sending,
-                    singleLine = false,
-                    maxLines = 5,
-                    label = { Text("پاسخ شما به این یادداشت...") },
-                    leadingIcon = { Icon(Icons.AutoMirrored.Filled.Reply, contentDescription = null) },
-                )
-                if (error != null) Text(error, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
-                Spacer(Modifier.height(12.dp))
-                Button(
-                    onClick = { onSend(reply.trim()) },
-                    enabled = reply.isNotBlank() && !sending,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    if (sending) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                    else Text("ارسال پاسخ")
-                }
-                TextButton(onClick = onDismiss, enabled = !sending) { Text("انصراف") }
-                Spacer(Modifier.height(12.dp))
-            }
-        }
-    }
-}
-
-@Composable
-private fun ProfileNoteItem(
-    text: String?,
-    label: String,
-    avatarUrl: String?,
-    loading: Boolean,
-    onClick: () -> Unit,
-) {
-    Column(
-        modifier = Modifier.width(72.dp).clickable(role = Role.Button, onClick = onClick),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Box(Modifier.height(82.dp).fillMaxWidth()) {
-            ChatAvatarImage(
-                model = avatarUrl,
-                contentDescription = null,
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .size(64.dp)
-                    .border(
-                        width = 1.dp,
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f),
-                        shape = CircleShape,
-                    )
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
-            )
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .widthIn(max = 65.dp)
-                    .shadow(4.dp, RoundedCornerShape(12.dp))
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.94f))
-                    .border(
-                        width = 0.5.dp,
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f),
-                        shape = RoundedCornerShape(12.dp),
-                    )
-                    .padding(horizontal = 10.dp, vertical = 6.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                when {
-                    loading -> CircularProgressIndicator(Modifier.size(12.dp), strokeWidth = 1.5.dp)
-                    text.isNullOrBlank() -> Icon(
-                        Icons.Default.Add,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    else -> Text(
-                        text,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        textAlign = TextAlign.Center,
-                        fontSize = 10.sp,
-                        lineHeight = 12.sp,
-                    )
-                }
-            }
-        }
-        Spacer(Modifier.height(6.dp))
-        Text(
-            label,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            fontSize = 10.5.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun OwnNoteEditorSheet(
-    current: ProfileNote?,
-    saving: Boolean,
-    error: String?,
-    onDismiss: () -> Unit,
-    onSave: (String) -> Unit,
-    onDelete: () -> Unit,
-) {
-    var content by remember(current?.id) { mutableStateOf(current?.content.orEmpty()) }
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
-            Column(
-                modifier = Modifier.fillMaxWidth().imePadding().padding(horizontal = 16.dp, vertical = 8.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Text("یادداشت جدید", fontSize = 17.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.height(18.dp))
-                Box(
-                    modifier = Modifier
-                        .widthIn(min = 80.dp, max = 220.dp)
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        content.ifBlank { "یه چیزی بنویس..." },
-                        textAlign = TextAlign.Center,
-                        color = if (content.isBlank()) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
-                    )
-                }
-                Spacer(Modifier.height(16.dp))
-                OutlinedTextField(
-                    value = content,
-                    onValueChange = { if (it.length <= 60) content = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("یادداشت شما") },
-                    minLines = 2,
-                    maxLines = 4,
-                    enabled = !saving,
-                    supportingText = { Text("${content.length}/60") },
-                )
-                if (error != null) {
-                    Text(error, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
-                }
-                Spacer(Modifier.height(12.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    Button(
-                        onClick = { onSave(content.trim()) },
-                        enabled = !saving && content.isNotBlank(),
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        if (saving) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                        else Text("اشتراک")
-                    }
-                    if (current != null) {
-                        TextButton(onClick = onDelete, enabled = !saving) { Text("حذف") }
-                    }
-                    TextButton(onClick = onDismiss, enabled = !saving) { Text("لغو") }
-                }
-                Spacer(Modifier.height(20.dp))
-            }
-        }
-    }
-}
-
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ConversationRow(
@@ -1251,7 +994,7 @@ private fun ConversationRow(
                             MutedGlyph(MaterialTheme.colorScheme.onSurfaceVariant)
                             Spacer(Modifier.width(4.dp))
                         }
-                        TelegramEmojiText(
+                        VistaEmojiText(
                             text = conversation.title.ifBlank { "کاربر" },
                             modifier = Modifier.weight(1f),
                             style = TextStyle(
@@ -1296,7 +1039,7 @@ private fun ConversationRow(
                             InboxMessageStatusMark(conversation.lastMessageStatus)
                             Spacer(Modifier.width(4.dp))
                         }
-                        TelegramEmojiText(
+                        VistaEmojiText(
                             text = if (typing) {
                                 "در حال نوشتن..."
                             } else {
@@ -1681,6 +1424,7 @@ fun MessageDetailRoute(
     onStartSecretChat: (Conversation) -> Unit = {},
     onOpenPost: (String) -> Unit = {},
 ) {
+    val context = LocalContext.current
     val state by viewModel.state.collectAsStateWithLifecycle()
     LaunchedEffect(conversationId) { viewModel.bind(conversationId) }
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -1708,7 +1452,15 @@ fun MessageDetailRoute(
         initialSharedText = initialSharedText,
         initialSharedUris = initialSharedUris,
         onInitialSharedContentConsumed = onInitialSharedContentConsumed,
-        title = state.conversation?.title?.takeIf(String::isNotBlank) ?: title,
+        title = run {
+            val convTitle = state.conversation?.title?.trim()
+            when {
+                !convTitle.isNullOrEmpty() && convTitle != "کاربر" && convTitle != "user" -> convTitle
+                title.isNotBlank() && title != "پیام‌ها" && title != "گفتگوی محرمانه" && title != "کاربر" -> title
+                !convTitle.isNullOrEmpty() -> convTitle
+                else -> title
+            }
+        },
         onBack = onBack,
         onRefresh = viewModel::refresh,
         onLoadOlder = viewModel::loadOlder,
@@ -1716,6 +1468,9 @@ fun MessageDetailRoute(
         onSendReply = viewModel::sendReply,
         onSendGif = viewModel::sendGif,
         onLoadGifs = viewModel::loadTrendingGifs,
+        onToggleSaveGif = viewModel::toggleSaveGif,
+        onImportDeviceGif = { uri -> viewModel.importAndSendCustomGif(uri, context.contentResolver) },
+        isGifSaved = viewModel::isGifSaved,
         onSearchGifs = viewModel::searchGifs,
         onRetry = viewModel::retry,
         onCancelTransfer = viewModel::cancelTransfer,
@@ -1773,6 +1528,9 @@ fun MessageDetailScreen(
     onSendReply: (String, Message, () -> Unit) -> Unit = { _, _, _ -> },
     onSendGif: (String) -> Unit = {},
     onLoadGifs: (Boolean) -> Unit = {},
+    onToggleSaveGif: (String) -> Unit = {},
+    onImportDeviceGif: (Uri) -> Unit = {},
+    isGifSaved: (String) -> Boolean = { false },
     onSearchGifs: (String) -> Unit = {},
     onRetry: (Message) -> Unit,
     onCancelTransfer: (Message) -> Unit = {},
@@ -2202,6 +1960,39 @@ fun MessageDetailScreen(
                         }
                     }
                 }
+                val latestRenderItems by rememberUpdatedState(displayedRenderItems)
+                val latestInteraction by rememberUpdatedState(messageInteraction)
+                var dragBaseKeys by remember { mutableStateOf(emptyList<String>()) }
+                val dragSelectModifier = Modifier.dragSelectMessages(
+                    isSelecting = { latestInteraction is MessageInteractionState.Selecting },
+                    hitTest = { position ->
+                        val info = listState.layoutInfo
+                        val viewportHeight = info.viewportSize.height
+                        // The list is reversed: item offsets are measured from the bottom.
+                        info.visibleItemsInfo.firstOrNull { item ->
+                            val top = viewportHeight - item.offset - item.size
+                            position.y >= top && position.y < top + item.size
+                        }?.index
+                    },
+                    onDragStart = { _ ->
+                        dragBaseKeys = (latestInteraction as? MessageInteractionState.Selecting)
+                            ?.messageKeys.orEmpty()
+                    },
+                    onRangeChanged = { anchor, current ->
+                        val keys = (minOf(anchor, current)..maxOf(anchor, current))
+                            .mapNotNull { latestRenderItems.getOrNull(it) }
+                            .flatMap { it.messages }
+                            .filter { it.content != MessageContent.Deleted }
+                            .map(Message::stableKey)
+                        val merged = (dragBaseKeys + keys).distinct()
+                        if (merged.isNotEmpty()) {
+                            messageInteraction = MessageInteractionState.Selecting(merged)
+                        }
+                    },
+                    scrollBy = { delta -> listState.scrollBy(delta) },
+                    topEdgeInsetPx = with(density) { effectiveTopPadding.toPx() },
+                    edgeZonePx = with(density) { 72.dp.toPx() },
+                )
                 when {
                     state.isInitialLoading && state.messages.isEmpty() -> CircularProgressIndicator(Modifier.align(Alignment.Center))
                     state.error != null && state.messages.isEmpty() -> ErrorState(state.error, onRefresh)
@@ -2220,7 +2011,7 @@ fun MessageDetailScreen(
                         }
                     }
                     else -> LazyColumn(
-                        modifier = Modifier.fillMaxSize().testTag("chat-message-list"),
+                        modifier = Modifier.fillMaxSize().testTag("chat-message-list").then(dragSelectModifier),
                         state = listState,
                         reverseLayout = true,
                         contentPadding = PaddingValues(
@@ -2335,7 +2126,7 @@ fun MessageDetailScreen(
                                                                 verticalAlignment = Alignment.CenterVertically,
                                                                 horizontalArrangement = Arrangement.spacedBy(3.dp),
                                                             ) {
-                                                                TelegramEmoji(emoji = reaction.key, size = 13.dp)
+                                                                VistaEmoji(emoji = reaction.key, size = 13.dp)
                                                                 if (reaction.value.size > 1) {
                                                                     Text(
                                                                         reaction.value.size.toString().toPersianDigits(),
@@ -2571,44 +2362,6 @@ fun MessageDetailScreen(
                     onFilesSelected = { uris -> enqueueSelectedAttachments(uris, groupAsAlbum = false) }
                 )
             }
-            if (pendingAttachmentDrafts.isNotEmpty()) {
-                ChatAttachmentReviewSheet(
-                    drafts = pendingAttachmentDrafts,
-                    onDismiss = {
-                        pendingAttachmentDrafts = emptyList()
-                        pendingAttachmentsAsAlbum = false
-                    },
-                    onRemove = { index ->
-                        pendingAttachmentDrafts = pendingAttachmentDrafts.filterIndexed { itemIndex, _ ->
-                            itemIndex != index
-                        }
-                        if (pendingAttachmentDrafts.isEmpty()) pendingAttachmentsAsAlbum = false
-                    },
-                    onMove = { fromIndex, toIndex ->
-                        pendingAttachmentDrafts = reorderAttachmentDrafts(
-                            drafts = pendingAttachmentDrafts,
-                            fromIndex = fromIndex,
-                            toIndex = toIndex,
-                        )
-                    },
-                    onSend = { caption ->
-                        val drafts = pendingAttachmentDrafts
-                        val groupId = if (pendingAttachmentsAsAlbum && drafts.size > 1) {
-                            UUID.randomUUID().toString()
-                        } else {
-                            null
-                        }
-                        pendingAttachmentDrafts = emptyList()
-                        pendingAttachmentsAsAlbum = false
-                        prepareAttachmentDraftsForSend(
-                            drafts = drafts,
-                            groupAsAlbum = groupId != null,
-                            caption = caption,
-                            mediaGroupId = groupId,
-                        ).forEach(onAttachDraft)
-                    },
-                )
-            }
             val currentPanelHeight = composerPanelHeightDp.dp
 
             if (emojiPanelVisible) {
@@ -2618,11 +2371,12 @@ fun MessageDetailScreen(
                         .fillMaxWidth()
                         .height(panelHeight)
                 ) {
-                    TelegramXMediaPanel(
+                    ChatMediaPickerPanel(
                         modifier = Modifier
                             .fillMaxSize()
                             .navigationBarsPadding(),
                         gifs = state.gifs,
+                        savedGifs = state.savedGifs,
                         query = state.gifQuery,
                         isLoading = state.isLoadingGifs,
                         error = state.gifError,
@@ -2637,6 +2391,10 @@ fun MessageDetailScreen(
                         onGif = { gifUrl ->
                             emojiPanelVisible = false
                             onSendGif(gifUrl)
+                        },
+                        onImportDeviceGif = { uri ->
+                            emojiPanelVisible = false
+                            onImportDeviceGif(uri)
                         },
                         onSticker = { sticker ->
                             composerController.insertEmoji(sticker)
@@ -2825,8 +2583,28 @@ fun MessageDetailScreen(
                                     },
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
+                                val resolvedAvatar = state.conversation?.avatarUrl
+                                    ?: state.groupInfo?.imageUrl
+                                    ?: state.partnerProfile?.avatarUrl
+                                val resolvedHeaderTitle: String = when {
+                                    state.conversation?.type == ConversationType.GROUP -> {
+                                        state.groupInfo?.name?.takeIf(String::isNotBlank)
+                                            ?: state.conversation?.title?.takeIf { it.isNotBlank() && it != "کاربر" && it != "user" }
+                                            ?: title
+                                    }
+                                    state.conversation?.title?.takeIf { it.isNotBlank() && it != "کاربر" && it != "user" } != null -> {
+                                        state.conversation!!.title
+                                    }
+                                    state.partnerProfile?.fullName?.takeIf(String::isNotBlank) != null -> {
+                                        state.partnerProfile!!.fullName!!
+                                    }
+                                    state.partnerProfile?.username?.takeIf(String::isNotBlank) != null -> {
+                                        state.partnerProfile!!.username!!
+                                    }
+                                    else -> title
+                                }
                                 ChatAvatarImage(
-                                    model = state.conversation?.avatarUrl,
+                                    model = resolvedAvatar,
                                     contentDescription = null,
                                     modifier = Modifier.size(42.dp).clip(CircleShape),
                                 )
@@ -2840,13 +2618,13 @@ fun MessageDetailScreen(
                                             Icon(
                                                 Icons.Default.Lock,
                                                 contentDescription = null,
-                                                tint = TelegramSecretGreen,
+                                                tint = SecretChatGreen,
                                                 modifier = Modifier.size(15.dp),
                                             )
                                             Spacer(Modifier.width(4.dp))
                                         }
                                         Text(
-                                            title,
+                                            resolvedHeaderTitle,
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis,
                                             fontSize = 17.sp,
@@ -2864,7 +2642,7 @@ fun MessageDetailScreen(
                                             secretText,
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis,
-                                            color = TelegramSecretGreen,
+                                            color = SecretChatGreen,
                                             fontSize = 11.5.sp,
                                             fontWeight = FontWeight.SemiBold,
                                         )
@@ -2907,7 +2685,7 @@ fun MessageDetailScreen(
                                     Icon(
                                         Icons.Default.Timer,
                                         contentDescription = "تنظیم تایمر حذف خودکار",
-                                        tint = if (state.secretAutoDeleteSeconds > 0) TelegramSecretGreen else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        tint = if (state.secretAutoDeleteSeconds > 0) SecretChatGreen else MaterialTheme.colorScheme.onSurfaceVariant,
                                         modifier = Modifier.size(22.dp),
                                     )
                                 }
@@ -2918,7 +2696,7 @@ fun MessageDetailScreen(
                                     Icon(
                                         Icons.Default.Security,
                                         contentDescription = "کلید رمزنگاری محرمانه",
-                                        tint = TelegramSecretGreen,
+                                        tint = SecretChatGreen,
                                         modifier = Modifier.size(22.dp),
                                     )
                                 }
@@ -3045,7 +2823,7 @@ fun MessageDetailScreen(
 }
         SnackbarHost(snackbarHostState, Modifier.align(Alignment.BottomCenter))
         if (autoDeleteDialogVisible) {
-            TelegramAutoDeleteDialog(
+            SecretChatAutoDeleteDialog(
                 currentSeconds = state.secretAutoDeleteSeconds,
                 onDismiss = { autoDeleteDialogVisible = false },
                 onSelect = { seconds ->
@@ -3055,7 +2833,7 @@ fun MessageDetailScreen(
             )
         }
         if (safetyNumberDialogVisible) {
-            TelegramEncryptionKeyDialog(
+            SecretChatEncryptionKeyDialog(
                 safetyNumber = state.secretSafetyNumber,
                 peerName = state.conversation?.title ?: "مخاطب",
                 isLoading = state.isSafetyNumberLoading,
@@ -3307,6 +3085,52 @@ fun MessageDetailScreen(
             AttachmentViewer(attachment = attachment, onDismiss = { viewedAttachment = null })
         }
     }
+    if (pendingAttachmentDrafts.isNotEmpty()) {
+        ChatAttachmentReviewSheet(
+            drafts = pendingAttachmentDrafts,
+            recipientTitle = title,
+            onDismiss = {
+                pendingAttachmentDrafts = emptyList()
+                pendingAttachmentsAsAlbum = false
+            },
+            onRemove = { index ->
+                pendingAttachmentDrafts = pendingAttachmentDrafts.filterIndexed { itemIndex, _ ->
+                    itemIndex != index
+                }
+                if (pendingAttachmentDrafts.isEmpty()) pendingAttachmentsAsAlbum = false
+            },
+            onMove = { fromIndex, toIndex ->
+                pendingAttachmentDrafts = reorderAttachmentDrafts(
+                    drafts = pendingAttachmentDrafts,
+                    fromIndex = fromIndex,
+                    toIndex = toIndex,
+                )
+            },
+            onUpdateDraft = { index, updatedDraft ->
+                pendingAttachmentDrafts = pendingAttachmentDrafts.toMutableList().also { list ->
+                    if (index in list.indices) {
+                        list[index] = updatedDraft
+                    }
+                }
+            },
+            onSend = { caption ->
+                val drafts = pendingAttachmentDrafts
+                val groupId = if (pendingAttachmentsAsAlbum && drafts.size > 1) {
+                    UUID.randomUUID().toString()
+                } else {
+                    null
+                }
+                pendingAttachmentDrafts = emptyList()
+                pendingAttachmentsAsAlbum = false
+                prepareAttachmentDraftsForSend(
+                    drafts = drafts,
+                    groupAsAlbum = groupId != null,
+                    caption = caption,
+                    mediaGroupId = groupId,
+                ).forEach(onAttachDraft)
+            },
+        )
+    }
 }
 
 @Composable
@@ -3511,7 +3335,7 @@ private fun MediaAlbumBubble(
                             .padding(horizontal = 10.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.Bottom,
                     ) {
-                        TelegramEmojiText(
+                        VistaEmojiText(
                             text = caption,
                             modifier = Modifier.weight(1f),
                             style = TextStyle(
@@ -3883,6 +3707,16 @@ private fun MessageBubble(
         MessageContent.Deleted -> "این پیام حذف شده است"
         MessageContent.EncryptedUnavailable -> "🔒 پیام رمزگذاری‌شده"
     }
+    val singleEmoji = remember(text, message.attachment, message.isForwarded, message.replyToContent, sharedPost, isDeleted) {
+        SingleEmojiDetector.extractSingleEmoji(
+            text = text,
+            hasAttachment = message.attachment != null,
+            isForwarded = message.isForwarded,
+            hasReply = !message.replyToContent.isNullOrBlank(),
+            hasSharedPost = sharedPost != null,
+            isDeleted = isDeleted,
+        )
+    }
     val description = buildString {
         append(if (message.isMine) "پیام شما" else "پیام دریافتی")
         append("، ")
@@ -3911,6 +3745,22 @@ private fun MessageBubble(
                 alpha = entryProgress
                 translationY = (1f - entryProgress) * with(density) { 8.dp.toPx() }
             }
+            // The whole row (including the empty space beside the bubble) owns the
+            // selection gesture and highlight, so a long-press or tap anywhere on the
+            // line selects the message, like a full-width list row.
+            .background(
+                if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f) else Color.Transparent,
+            )
+            .combinedClickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = {
+                    if (selectionMode) onToggleSelection()
+                },
+                onLongClick = {
+                    if (!selectionMode && message.content != MessageContent.Deleted) onLongPress()
+                },
+            )
             .absolutePadding(
                 left = if (message.isMine) 12.dp else 6.dp,
                 right = if (message.isMine) 6.dp else 12.dp,
@@ -3930,15 +3780,23 @@ private fun MessageBubble(
                 bottomRight = if (cornerRounding.bottomRight) 18.dp else 6.dp,
             )
             val screenWidth = LocalConfiguration.current.screenWidthDp.dp
+            val isSingleEmoji = singleEmoji != null
             val base = Modifier
-                .widthIn(min = 60.dp, max = screenWidth * 0.82f)
-                .shadow(
-                    elevation = 1.dp,
-                    shape = shape,
-                    ambientColor = Color.Black.copy(alpha = 0.06f),
-                    spotColor = Color.Black.copy(alpha = 0.08f),
+                .then(
+                    if (isSingleEmoji) {
+                        Modifier.wrapContentSize()
+                    } else {
+                        Modifier
+                            .widthIn(min = 60.dp, max = screenWidth * 0.82f)
+                            .shadow(
+                                elevation = 1.dp,
+                                shape = shape,
+                                ambientColor = Color.Black.copy(alpha = 0.06f),
+                                spotColor = Color.Black.copy(alpha = 0.08f),
+                            )
+                            .clip(shape)
+                    }
                 )
-                .clip(shape)
                 .combinedClickable(
                     onClick = {
                         if (isDeleted) return@combinedClickable
@@ -4042,21 +3900,31 @@ private fun MessageBubble(
                         // Selection is rendered in a separate fixed rail below.  Never
                         // reserve its width inside the bubble: doing that shifts the
                         // text and makes selected outgoing messages visibly "jump".
-                        .then(if (message.isMine) {
-                            base.background(Brush.linearGradient(listOf(VistaBrandColors.Indigo, VistaBrandColors.VioletDeep)))
-                        } else {
-                            base.background(MaterialTheme.colorScheme.surfaceVariant)
-                        }).then(
-                        if (selected) Modifier.border(
-                            width = 2.dp,
-                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.72f),
-                            shape = shape,
-                        ) else Modifier
-                    )
+                        .then(
+                            if (isSingleEmoji) {
+                                base
+                            } else if (message.isMine) {
+                                base.background(Brush.linearGradient(listOf(VistaBrandColors.Indigo, VistaBrandColors.VioletDeep)))
+                            } else {
+                                base.background(MaterialTheme.colorScheme.surfaceVariant)
+                            }
+                        ).then(
+                            if (selected) Modifier.border(
+                                width = 2.dp,
+                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.72f),
+                                shape = if (isSingleEmoji) RoundedCornerShape(16.dp) else shape,
+                            ) else Modifier
+                        )
                         .onGloballyPositioned { coordinates ->
                             coordinatesHolder.coordinates = coordinates
                         }
-                        .padding(start = 12.dp, top = 8.dp, end = 12.dp, bottom = 6.dp),
+                        .then(
+                            if (isSingleEmoji) {
+                                Modifier.padding(0.dp)
+                            } else {
+                                Modifier.padding(start = 12.dp, top = 8.dp, end = 12.dp, bottom = 6.dp)
+                            }
+                        ),
                 ) {
                 if (!isDeleted && message.isForwarded) {
                     Row(
@@ -4180,7 +4048,7 @@ private fun MessageBubble(
                                 Icon(
                                     imageVector = Icons.Default.Timer,
                                     contentDescription = "تایمر خودکار",
-                                    tint = if (message.isMine) Color.White.copy(alpha = 0.85f) else TelegramSecretGreen,
+                                    tint = if (message.isMine) Color.White.copy(alpha = 0.85f) else SecretChatGreen,
                                     modifier = Modifier.size(11.dp),
                                 )
                                 Spacer(Modifier.width(2.5.dp))
@@ -4219,10 +4087,16 @@ private fun MessageBubble(
                             metaFooter()
                         }
                     }
+                } else if (singleEmoji != null) {
+                    VistaAnimatedEmojiBubble(
+                        emoji = singleEmoji,
+                        isMine = message.isMine,
+                        metaFooter = metaFooter,
+                    )
                 } else if (text.isNotBlank()) {
                     ChatTextBubbleLayout(
                         text = {
-                            TelegramEmojiText(
+                            VistaEmojiText(
                                 text = text,
                                 style = TextStyle(
                                     color = if (message.isMine) Color.White else MaterialTheme.colorScheme.onSurface,
@@ -4295,7 +4169,7 @@ private fun MessageBubble(
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(3.dp),
                                 ) {
-                                    TelegramEmoji(emoji = reaction.key, size = 13.dp)
+                                    VistaEmoji(emoji = reaction.key, size = 13.dp)
                                     Text(
                                         "${reaction.value.size}",
                                         fontSize = 11.sp,
@@ -5116,13 +4990,14 @@ private fun AttachmentBubble(
     onAttachmentClick: (ir.coffevista.vista_native.features.chat.domain.model.Attachment) -> Unit = {},
 ) {
     val foreground = if (message.isMine) Color.White else MaterialTheme.colorScheme.onSurface
-    val isDownloaded = message.isMine ||
+    val isGif = attachment.kind == AttachmentKind.GIF
+    val isDownloaded = isGif || message.isMine ||
         !attachment.localUri.isNullOrBlank() ||
         (downloadTask?.state == DownloadState.COMPLETE && !downloadTask.localUri.isNullOrBlank())
-    val isDownloading = downloadTask?.state == DownloadState.DOWNLOADING || downloadTask?.state == DownloadState.QUEUED
-    val isFailed = downloadTask?.state == DownloadState.FAILED || downloadTask?.state == DownloadState.CANCELLED
+    val isDownloading = !isGif && (downloadTask?.state == DownloadState.DOWNLOADING || downloadTask?.state == DownloadState.QUEUED)
+    val isFailed = !isGif && (downloadTask?.state == DownloadState.FAILED || downloadTask?.state == DownloadState.CANCELLED)
     val effectiveLocalUri = downloadTask?.localUri?.takeIf { it.isNotBlank() } ?: attachment.localUri
-    val mediaModel = effectiveLocalUri ?: attachment.remoteUrl
+    val mediaModel = effectiveLocalUri?.takeIf { it.isNotBlank() } ?: attachment.remoteUrl
 
     val isActiveUpload = attachment.transferState == TransferState.UPLOADING ||
         attachment.transferState == TransferState.QUEUED
@@ -5132,7 +5007,7 @@ private fun AttachmentBubble(
             AttachmentKind.IMAGE, AttachmentKind.GIF -> {
                 val imageBlurRadius by animateDpAsState(
                     targetValue = if (isDownloaded) 0.dp else 25.dp,
-                    label = "telegram_image_blur",
+                    label = "chat_image_blur",
                 )
                 Box(
                     modifier = Modifier
@@ -5237,7 +5112,7 @@ private fun AttachmentBubble(
             AttachmentKind.VIDEO -> {
                 val videoBlurRadius by animateDpAsState(
                     targetValue = if (isDownloaded) 0.dp else 25.dp,
-                    label = "telegram_video_blur",
+                    label = "chat_video_blur",
                 )
                 Box(
                     modifier = Modifier

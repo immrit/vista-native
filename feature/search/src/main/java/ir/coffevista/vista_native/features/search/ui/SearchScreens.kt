@@ -490,7 +490,7 @@ private fun LauncherContent(
                 }
             }
 
-            // Visual Explore Grid (Instagram 3-column layout)
+            // Visual Explore Grid (3-column layout)
             item {
                 SectionHeader(title = "کاوش در ویستا")
             }
@@ -727,7 +727,7 @@ private fun InitialContent(
             }
         }
 
-        // Instagram-style Visual Explore Grid
+        // Visual Explore Grid
         item {
             SectionHeader(title = "کاوش در ویستا")
         }

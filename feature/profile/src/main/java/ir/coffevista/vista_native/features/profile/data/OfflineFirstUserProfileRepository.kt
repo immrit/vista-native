@@ -7,6 +7,8 @@ import ir.coffevista.vista_native.core.database.profile.PublicProfileEntity
 import ir.coffevista.vista_native.core.network.BackendErrorParser
 import ir.coffevista.vista_native.core.network.ErrorClassifier
 import ir.coffevista.vista_native.core.network.RemoteFailure
+import ir.coffevista.vista_native.core.model.note.ProfileNoteBridge
+import ir.coffevista.vista_native.core.model.note.SharedProfileNote
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
@@ -211,6 +213,112 @@ class OfflineFirstUserProfileRepository @Inject constructor(
             }
         } catch (_: Exception) {
             emptyList()
+        }
+    }
+
+    override suspend fun createHighlight(
+        title: String,
+        coverUrl: String?,
+        storyIds: List<String>,
+    ): Result<ProfileHighlightDto> = runCatching {
+        val response = api.createHighlight(
+            CreateProfileHighlightRequestDto(
+                title = title,
+                coverUrl = coverUrl,
+                storyIds = storyIds,
+            )
+        )
+        if (response.isSuccessful && response.body() != null) {
+            response.body()!!
+        } else {
+            throw IllegalStateException(response.message())
+        }
+    }
+
+    override suspend fun updateHighlight(
+        highlightId: String,
+        title: String?,
+        coverUrl: String?,
+        storyIds: List<String>?,
+    ): Result<ProfileHighlightDto> = runCatching {
+        val response = api.updateHighlight(
+            highlightId = highlightId,
+            request = UpdateProfileHighlightRequestDto(
+                title = title,
+                coverUrl = coverUrl,
+                storyIds = storyIds,
+            )
+        )
+        if (response.isSuccessful && response.body() != null) {
+            response.body()!!
+        } else {
+            throw IllegalStateException(response.message())
+        }
+    }
+
+    override suspend fun deleteHighlight(highlightId: String): Result<Unit> = runCatching {
+        val response = api.deleteHighlight(highlightId)
+        if (!response.isSuccessful) {
+            throw IllegalStateException(response.message())
+        }
+    }
+
+    override suspend fun getOwnNote(): Result<ProfileNoteDto?> = runCatching {
+        val response = api.getOwnNote()
+        if (response.isSuccessful) {
+            val body = response.body()
+            ProfileNoteBridge.updateOwnNote(
+                body?.let {
+                    SharedProfileNote(
+                        userId = it.userId,
+                        content = it.content,
+                        createdAt = it.createdAt,
+                        expiresAt = it.expiresAt,
+                    )
+                }
+            )
+            body
+        } else if (response.code() == 404) {
+            ProfileNoteBridge.updateOwnNote(null)
+            null
+        } else {
+            throw IllegalStateException(response.message())
+        }
+    }
+
+    override suspend fun upsertNote(content: String): Result<ProfileNoteDto> = runCatching {
+        val response = api.upsertNote(UpsertNoteRequestDto(content = content))
+        if (response.isSuccessful && response.body() != null) {
+            val body = response.body()!!
+            ProfileNoteBridge.updateOwnNote(
+                SharedProfileNote(
+                    userId = body.userId,
+                    content = body.content,
+                    createdAt = body.createdAt,
+                    expiresAt = body.expiresAt,
+                )
+            )
+            body
+        } else {
+            throw IllegalStateException(response.message())
+        }
+    }
+
+    override suspend fun deleteNote(): Result<Unit> = runCatching {
+        val response = api.deleteNote()
+        if (!response.isSuccessful && response.code() != 404) {
+            throw IllegalStateException(response.message())
+        }
+        ProfileNoteBridge.updateOwnNote(null)
+    }
+
+    override suspend fun getBatchNotes(userIds: List<String>): Result<Map<String, ProfileNoteDto>> = runCatching {
+        if (userIds.isEmpty()) return@runCatching emptyMap()
+        val response = api.getBatchNotes(BatchNotesRequestDto(userIds = userIds))
+        if (response.isSuccessful && response.body() != null) {
+            response.body()!!
+        } else {
+            emptyMap()
         }
     }
 

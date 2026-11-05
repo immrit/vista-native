@@ -200,7 +200,12 @@ class PostMediaUploader @Inject constructor(
     ): UploadedMediaResult = withContext(Dispatchers.IO) {
         require(userId.isNotBlank()) { "شناسه کاربر نامعتبر است" }
         val trimmedAudio = if (endMs > startMs && endMs > 0) {
-            trimAudioFast(uri, startMs.toLong(), endMs.toLong())
+            ir.coffevista.vista_native.features.feed.music.AudioTrimEngine.trimAudio(
+                context = context,
+                audioUri = uri,
+                startMs = startMs.toLong(),
+                endMs = endMs.toLong(),
+            )
         } else null
 
         val (audioFile, extension, mimeType) = if (trimmedAudio != null) {
@@ -229,7 +234,8 @@ class PostMediaUploader @Inject constructor(
                 else -> "mp3"
             }
             val temp = File.createTempFile("post-audio-", ".$ext", cacheDir)
-            resolver.openInputStream(uri)?.use { input ->
+            val stream = openInputStream(uri)
+            stream?.use { input ->
                 temp.outputStream().use { output -> input.copyTo(output) }
             } ?: throw IOException("فایل صوتی قابل خواندن نیست")
             Triple(temp, ext, mime)
@@ -267,91 +273,21 @@ class PostMediaUploader @Inject constructor(
         }.getOrDefault(false)
     }
 
-    private fun trimAudioFast(
-        audioUri: Uri,
-        startMs: Long,
-        endMs: Long,
-    ): File? {
-        return runCatching {
-            val extractor = android.media.MediaExtractor()
-            val fd = resolver.openFileDescriptor(audioUri, "r") ?: return null
-            extractor.setDataSource(fd.fileDescriptor)
-            val trackCount = extractor.trackCount
-            var audioTrackIndex = -1
-            var audioFormat: android.media.MediaFormat? = null
 
-            for (i in 0 until trackCount) {
-                val format = extractor.getTrackFormat(i)
-                val mime = format.getString(android.media.MediaFormat.KEY_MIME) ?: continue
-                if (mime.startsWith("audio/")) {
-                    extractor.selectTrack(i)
-                    audioTrackIndex = i
-                    audioFormat = format
-                    break
-                }
-            }
-            if (audioTrackIndex < 0 || audioFormat == null) {
-                extractor.release()
-                fd.close()
-                return null
-            }
 
-            val outputFile = File.createTempFile("trimmed-audio-", ".m4a", cacheDir)
-            val muxer = android.media.MediaMuxer(outputFile.absolutePath, android.media.MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
-            val muxerTrack = muxer.addTrack(audioFormat)
-            muxer.start()
-
-            val startUs = startMs * 1000L
-            val endUs = endMs * 1000L
-            var bufferSize = 256 * 1024
-            if (audioFormat.containsKey(android.media.MediaFormat.KEY_MAX_INPUT_SIZE)) {
-                val sz = audioFormat.getInteger(android.media.MediaFormat.KEY_MAX_INPUT_SIZE)
-                if (sz > bufferSize) bufferSize = sz
-            }
-            val buffer = java.nio.ByteBuffer.allocate(bufferSize)
-            val bufferInfo = android.media.MediaCodec.BufferInfo()
-
-            try {
-                extractor.seekTo(startUs, android.media.MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
-                var basePtsUs = startUs
-                var isFirstSample = true
-
-                while (true) {
-                    bufferInfo.offset = 0
-                    bufferInfo.size = extractor.readSampleData(buffer, 0)
-                    if (bufferInfo.size < 0) break
-
-                    val sampleTrack = extractor.sampleTrackIndex
-                    val sampleTime = extractor.sampleTime
-
-                    if (sampleTrack == audioTrackIndex) {
-                        if (sampleTime > endUs) break
-                        if (sampleTime >= startUs) {
-                            if (isFirstSample) {
-                                basePtsUs = sampleTime
-                                isFirstSample = false
-                            }
-                            bufferInfo.presentationTimeUs = (sampleTime - basePtsUs).coerceAtLeast(0L)
-                            bufferInfo.flags = extractor.sampleFlags
-                            muxer.writeSampleData(muxerTrack, buffer, bufferInfo)
-                        }
-                    }
-                    extractor.advance()
-                }
-            } finally {
-                runCatching { muxer.stop() }
-                runCatching { muxer.release() }
-                extractor.release()
-                fd.close()
-            }
-
-            if (outputFile.exists() && outputFile.length() > 0L) outputFile else null
-        }.getOrNull()
+    private fun openInputStream(uri: Uri): java.io.InputStream? {
+        return if (uri.scheme.equals("file", ignoreCase = true)) {
+            val path = uri.path ?: uri.toString().removePrefix("file://")
+            val f = File(path)
+            if (f.exists()) f.inputStream() else resolver.openInputStream(uri)
+        } else {
+            resolver.openInputStream(uri)
+        }
     }
 
     private fun compressImageToJpeg(uri: Uri, maxBytes: Long): File {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        (resolver.openInputStream(uri) ?: throw IOException("فایل تصویر قابل خواندن نیست")).use {
+        (openInputStream(uri) ?: throw IOException("فایل تصویر قابل خواندن نیست")).use {
             BitmapFactory.decodeStream(it, null, bounds)
         }
 
@@ -369,13 +305,13 @@ class PostMediaUploader @Inject constructor(
         }
 
         val options = BitmapFactory.Options().apply { inSampleSize = sampleSize }
-        val rawBitmap = (resolver.openInputStream(uri) ?: throw IOException("فایل تصویر قابل خواندن نیست")).use {
+        val rawBitmap = (openInputStream(uri) ?: throw IOException("فایل تصویر قابل خواندن نیست")).use {
             BitmapFactory.decodeStream(it, null, options)
         } ?: throw IOException("دیکود تصویر ناموفق بود")
 
         val matrix = android.graphics.Matrix()
         runCatching {
-            resolver.openInputStream(uri)?.use { stream ->
+            openInputStream(uri)?.use { stream ->
                 val exif = android.media.ExifInterface(stream)
                 when (exif.getAttributeInt(android.media.ExifInterface.TAG_ORIENTATION, android.media.ExifInterface.ORIENTATION_NORMAL)) {
                     android.media.ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> matrix.postScale(-1f, 1f)

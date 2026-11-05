@@ -50,5 +50,14 @@ class EmojiCatalogTest {
 
         val emptyResults = EmojiCatalog.search("")
         assertTrue(emptyResults.isEmpty())
+
+        val danceResults = EmojiCatalog.search("dance")
+        assertTrue(danceResults.contains("🧑‍🩰"))
+
+        val tiredResults = EmojiCatalog.search("خسته")
+        assertTrue(tiredResults.contains("🫪"))
+
+        val musicResults = EmojiCatalog.search("موسیقی")
+        assertTrue(musicResults.contains("🪊") && musicResults.contains("🪎"))
     }
 }

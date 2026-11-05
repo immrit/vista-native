@@ -40,7 +40,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /**
- * مدیریت نگاشت شکلک‌ها به فایل‌های تصویری گرافیکی محلی ویستا (Apple/Telegram Style)
+ * مدیریت نگاشت شکلک‌ها به فایل‌های تصویری گرافیکی محلی ویستا
  */
 object VistaEmojiLookup {
     private val emojiToAsset = mutableMapOf<String, String>()
@@ -369,7 +369,7 @@ fun VistaEmoji(
 }
 
 /**
- * کامپوننت جامع رندر متن در سراسر اپلیکیشن با پشتیبانی از شکلک‌های بومی گرافیکی محلی ویستا (Apple/Telegram Style)
+ * کامپوننت جامع رندر متن در سراسر اپلیکیشن با پشتیبانی از شکلک‌های بومی گرافیکی محلی ویستا
  */
 @Composable
 fun VistaEmojiText(

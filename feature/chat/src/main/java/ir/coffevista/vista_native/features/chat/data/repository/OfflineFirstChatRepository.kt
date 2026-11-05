@@ -4,6 +4,8 @@ import android.content.Context
 import android.net.Uri
 import android.util.Base64
 import android.util.Log
+import ir.coffevista.vista_native.core.model.note.ProfileNoteBridge
+import ir.coffevista.vista_native.core.model.note.SharedProfileNote
 import ir.coffevista.vista_native.core.network.BackendErrorParser
 import ir.coffevista.vista_native.core.network.RemoteFailure
 import ir.coffevista.vista_native.features.chat.data.local.ChatDao
@@ -418,6 +420,14 @@ class OfflineFirstChatRepository(
             }
         }
         if (candidates.isEmpty() && !isSecret) {
+            val existingDirect = dao.conversation(account.accountId, normalizedPeerId)
+            if (existingDirect != null) {
+                if (existingDirect.type.equals(expectedType, ignoreCase = true)) {
+                    return existingDirect.toDomain(cipher)
+                }
+                // It is a GROUP, SECRET, or other conversation type; do not overwrite it with a dummy private chat.
+                return null
+            }
             val localMessages = dao.messages(account.accountId, normalizedPeerId)
             val plainMessages = localMessages.filter {
                 it.contentKind == "text" || (it.messageType != "exchange_key" && it.messageType != "exchange_key_reply" && !it.contentKind.contains("encrypted"))
@@ -425,12 +435,15 @@ class OfflineFirstChatRepository(
             if (plainMessages.isNotEmpty()) {
                 val latest = plainMessages.first()
                 val preview = latest.toDomain(cipher).inboxPreviewText()
+                val peerConv = dao.conversations(account.accountId).firstOrNull {
+                    it.peerId?.trim()?.lowercase() == normalizedPeerId && it.title != "کاربر" && it.title.isNotBlank()
+                }
                 val recovered = ConversationEntity(
                     accountId = account.accountId,
                     id = normalizedPeerId,
                     type = ConversationType.PRIVATE.name,
-                    title = "کاربر",
-                    avatarUrl = null,
+                    title = peerConv?.title ?: "کاربر",
+                    avatarUrl = peerConv?.avatarUrl,
                     peerId = normalizedPeerId,
                     lastMessageCiphertext = cipher.encrypt(
                         account.accountId,
@@ -511,6 +524,18 @@ class OfflineFirstChatRepository(
             } catch (error: HttpException) {
                 if (error.code() == 404) null else throw error
             }
+            if (own != null) {
+                ProfileNoteBridge.updateOwnNote(
+                    SharedProfileNote(
+                        userId = own.userId,
+                        content = own.content,
+                        createdAt = own.createdAt,
+                        expiresAt = own.expiresAt,
+                    )
+                )
+            } else {
+                ProfileNoteBridge.updateOwnNote(null)
+            }
             val peerIds = dao.conversations(account.accountId).asSequence()
                 .filter { it.type != ConversationType.GROUP.name }
                 .mapNotNull { it.peerId?.trim()?.takeIf(String::isNotEmpty) }
@@ -545,6 +570,14 @@ class OfflineFirstChatRepository(
             val entity = api.upsertOwnProfileNote(UpsertProfileNoteRequest(normalized))
                 .toNoteEntity(account.accountId, now(), isMine = true)
             dao.upsertProfileNotes(listOf(entity))
+            ProfileNoteBridge.updateOwnNote(
+                SharedProfileNote(
+                    userId = account.accountId,
+                    content = normalized,
+                    createdAt = entity.createdAtEpochMillis.toString(),
+                    expiresAt = entity.expiresAtEpochMillis.toString(),
+                )
+            )
             entity.toDomainNote()
         }
     }
@@ -555,6 +588,7 @@ class OfflineFirstChatRepository(
         return remoteCall {
             api.deleteOwnProfileNote()
             dao.deleteProfileNote(account.accountId, account.accountId)
+            ProfileNoteBridge.updateOwnNote(null)
         }
     }
 
@@ -911,7 +945,7 @@ class OfflineFirstChatRepository(
                     }.getOrNull()
                 }
                 val isEncrypted = plaintext != null && (e2eeService.isEncryptedPayload(plaintext) || entity.contentKind == "encrypted_unavailable")
-                if (isEncrypted && plaintext != null) {
+                if (isEncrypted) {
                     val candidateIds = listOfNotNull(entity.serverId, entity.clientId).distinct()
                     var decrypted: String? = null
 
@@ -1591,6 +1625,17 @@ class OfflineFirstChatRepository(
         }
         val normalizedUrl = url.trim()
         val parsed = runCatching { Uri.parse(normalizedUrl) }.getOrNull()
+        if (parsed?.scheme == "file" || parsed?.scheme == "content") {
+            val f = if (parsed.scheme == "file") java.io.File(parsed.path ?: "") else null
+            val draft = ir.coffevista.vista_native.features.chat.domain.model.ChatAttachmentDraft(
+                uri = normalizedUrl,
+                fileName = f?.name ?: "animation.gif",
+                mimeType = "image/gif",
+                sizeBytes = f?.length()?.takeIf { it > 0 } ?: 1024L,
+                kind = AttachmentKind.GIF,
+            )
+            return sendAttachment(conversationId, draft)
+        }
         if (parsed?.scheme != "https" || parsed.host.isNullOrBlank()) {
             return ChatResult.Failure("آدرس گیف معتبر نیست", retryable = false)
         }
@@ -2430,17 +2475,26 @@ class OfflineFirstChatRepository(
                 it.peerId?.trim()?.lowercase() == fallbackPeerId.trim().lowercase() && it.title != "کاربر" && it.title.isNotBlank()
             }
         } else null
-        val fallbackTitle = existingConv?.title?.takeIf { it != "کاربر" && it.isNotBlank() }
-            ?: peerConv?.title?.takeIf { it != "کاربر" && it.isNotBlank() }
-            ?: "کاربر"
-        val fallbackAvatar = existingConv?.avatarUrl ?: peerConv?.avatarUrl
         val isSecretChat = existingConv?.type == ConversationType.SECRET.name ||
             merged.content is MessageContent.EncryptedUnavailable ||
             merged.isSecretHandshakeFrame
+        val isGroupChat = existingConv?.type == ConversationType.GROUP.name ||
+            merged.conversationId.startsWith("group_") ||
+            merged.conversationId.contains("-group-")
+        val resolvedConvType = when {
+            existingConv?.type != null -> existingConv.type
+            isSecretChat -> ConversationType.SECRET.name
+            isGroupChat -> ConversationType.GROUP.name
+            else -> ConversationType.PRIVATE.name
+        }
+        val fallbackTitle = existingConv?.title?.takeIf { it != "کاربر" && it != "user" && it.isNotBlank() }
+            ?: peerConv?.title?.takeIf { it != "کاربر" && it != "user" && it.isNotBlank() }
+            ?: if (resolvedConvType == ConversationType.GROUP.name) "گروه" else "کاربر"
+        val fallbackAvatar = existingConv?.avatarUrl ?: peerConv?.avatarUrl
         val fallback = ConversationEntity(
             accountId = merged.accountId,
             id = merged.conversationId,
-            type = if (isSecretChat) ConversationType.SECRET.name else ConversationType.PRIVATE.name,
+            type = resolvedConvType,
             title = fallbackTitle,
             avatarUrl = fallbackAvatar,
             peerId = fallbackPeerId,
@@ -2588,6 +2642,14 @@ class OfflineFirstChatRepository(
                     ConversationType.PRIVATE.name
                 }
                 val existingEntity = dao.conversation(accountId, conversationId)
+                    ?: dao.conversations(accountId).firstOrNull { it.peerId == conversationId }
+                if (existingEntity != null && existingEntity.title.isNotBlank() && existingEntity.title != "کاربر" && existingEntity.title != "user") {
+                    return@mapNotNull existingEntity
+                }
+                val resolvedType = existingEntity?.type ?: conversationType
+                val resolvedTitle = existingEntity?.title?.takeIf { it.isNotBlank() && it != "کاربر" && it != "user" }
+                    ?: if (resolvedType == ConversationType.GROUP.name) "گروه" else "کاربر"
+                val resolvedAvatar = existingEntity?.avatarUrl
                 val finalId = if (conversationType == ConversationType.PRIVATE.name && existingEntity != null && existingEntity.type == ConversationType.SECRET.name) {
                     val newId = "private_$conversationId"
                     dao.migrateMessages(accountId, conversationId, newId)
@@ -2598,9 +2660,9 @@ class OfflineFirstChatRepository(
                 ConversationEntity(
                     accountId = accountId,
                     id = finalId,
-                    type = conversationType,
-                    title = "کاربر",
-                    avatarUrl = null,
+                    type = resolvedType,
+                    title = resolvedTitle,
+                    avatarUrl = resolvedAvatar,
                     peerId = messages.asSequence()
                         .map { it.senderId }
                         .firstOrNull { it.isNotBlank() && it != accountId } ?: conversationId,

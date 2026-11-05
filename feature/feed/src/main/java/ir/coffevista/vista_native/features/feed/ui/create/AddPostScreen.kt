@@ -147,7 +147,7 @@ fun AddPostScreen(
         onTrimmedVideoConsumed()
     }
 
-    // Like X / Threads the composer opens ready to type, unless it was opened with media.
+    // The composer opens ready to type, unless it was opened with media.
     LaunchedEffect(Unit) {
         if (preloadedMediaUris.isEmpty() && trimmedVideoPath == null) {
             runCatching { captionFocusRequester.requestFocus() }

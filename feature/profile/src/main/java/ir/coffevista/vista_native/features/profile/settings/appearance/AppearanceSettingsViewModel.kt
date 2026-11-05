@@ -53,4 +53,24 @@ class AppearanceSettingsViewModel @Inject constructor(
     fun setVideoDataSaver(value: Boolean) = viewModelScope.launch {
         store.update { it.copy(videoDataSaver = value) }
     }
+
+    fun setAutoplayPostMusic(value: Boolean) = viewModelScope.launch {
+        store.update { it.copy(autoplayPostMusic = value) }
+    }
+
+    fun setAutoDownloadWifi(value: Boolean) = viewModelScope.launch {
+        store.update { it.copy(autoDownloadWifi = value) }
+    }
+
+    fun setAutoDownloadCellular(value: Boolean) = viewModelScope.launch {
+        store.update { it.copy(autoDownloadCellular = value) }
+    }
+
+    fun setAutoDownloadRoaming(value: Boolean) = viewModelScope.launch {
+        store.update { it.copy(autoDownloadRoaming = value) }
+    }
+
+    fun setKeepMediaPeriod(value: String) = viewModelScope.launch {
+        store.update { it.copy(keepMediaPeriod = value) }
+    }
 }
