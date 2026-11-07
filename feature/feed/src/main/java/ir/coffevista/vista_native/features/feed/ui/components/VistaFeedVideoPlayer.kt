@@ -2,6 +2,7 @@ package ir.coffevista.vista_native.features.feed.ui.components
 
 import android.content.Context
 import android.net.Uri
+import android.view.LayoutInflater
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import androidx.annotation.OptIn
@@ -55,6 +56,8 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
+import ir.coffevista.vista_native.core.designsystem.glass.LocalVistaGlassState
+import ir.coffevista.vista_native.features.feed.R
 
 @OptIn(UnstableApi::class)
 @Composable
@@ -144,14 +147,16 @@ fun VistaFeedVideoPlayer(
     }
 
     var currentProgress by remember { mutableStateOf(0f) }
+    val glassState = LocalVistaGlassState.current
 
-    LaunchedEffect(isPlaying) {
+    LaunchedEffect(isPlaying, glassState) {
         while (isPlaying) {
             val duration = exoPlayer.duration
             if (duration > 0) {
                 currentProgress = (exoPlayer.currentPosition.toFloat() / duration.toFloat()).coerceIn(0f, 1f)
             }
-            kotlinx.coroutines.delay(100)
+            glassState?.invalidate()
+            kotlinx.coroutines.delay(66)
         }
     }
 
@@ -166,7 +171,11 @@ fun VistaFeedVideoPlayer(
     ) {
         AndroidView(
             factory = { ctx ->
-                PlayerView(ctx).apply {
+                (LayoutInflater.from(ctx).inflate(
+                    R.layout.vista_feed_texture_player_view,
+                    null,
+                    false,
+                ) as PlayerView).apply {
                     player = exoPlayer
                     useController = false
                     resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM

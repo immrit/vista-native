@@ -22,6 +22,11 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import ir.coffevista.vista_native.features.feed.ui.components.SoundCloudMusicBubble
 import ir.coffevista.vista_native.core.designsystem.component.LocalBottomBarVisibility
+import ir.coffevista.vista_native.core.designsystem.glass.VistaGlassScrollSync
+import ir.coffevista.vista_native.core.designsystem.glass.VistaGlassTokens
+import ir.coffevista.vista_native.core.designsystem.glass.rememberVistaGlassState
+import ir.coffevista.vista_native.core.designsystem.glass.vistaGlass
+import ir.coffevista.vista_native.core.designsystem.glass.vistaGlassSource
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaBrandColors
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -117,7 +122,9 @@ import androidx.compose.material3.TextButton
 import ir.coffevista.vista_native.features.feed.data.PostUploadState
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
+import ir.coffevista.vista_native.core.designsystem.glass.LocalVistaGlassState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -505,16 +512,22 @@ internal fun FeedScreenContent(
     }
 
     val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-    val topHeaderHeight = statusBarTop + 56.dp + 48.dp + 115.dp
+    val topHeaderHeight = statusBarTop + 56.dp + 48.dp
+    val feedGlassState = rememberVistaGlassState()
+    VistaGlassScrollSync(feedGlassState, listState)
+    val isDarkFeed = MaterialTheme.colorScheme.background.luminance() < 0.5f
 
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background),
     ) {
+        CompositionLocalProvider(LocalVistaGlassState provides feedGlassState) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                .vistaGlassSource(feedGlassState)
+                .background(MaterialTheme.colorScheme.background)
                 .nestedScroll(nestedScrollConnection),
         ) {
             when (val state = uiState) {
@@ -564,10 +577,40 @@ internal fun FeedScreenContent(
                         onTrackEvent = onTrackEvent,
                         autoplayPostMusic = autoplayPostMusic,
                         onFollowClick = onFollowClick,
-                        topPadding = topHeaderHeight + 8.dp,
+                        topPadding = topHeaderHeight,
+                        topHeaderItem = {
+                            Column(modifier = Modifier.fillMaxWidth()) {
+                                FeedStoryUploadBanner(
+                                    uploadState = storyUploadState,
+                                    onRetry = onRetryStoryUpload,
+                                    onCancel = onCancelStoryUpload,
+                                    onDismiss = onDismissStoryUpload,
+                                )
+                                ir.coffevista.vista_native.features.stories.ui.tray.StoryTray(
+                                    storyUsers = storyUsers,
+                                    currentUserId = viewerUserId.orEmpty(),
+                                    currentUserAvatar = currentUserAvatar,
+                                    onOpenStoryPlayer = onOpenStoryPlayer,
+                                    onCreateStory = onCreateStory,
+                                    isStoryUploading = storyUploadState.isUploading,
+                                    storyUploadProgress = storyUploadState.progress,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(115.dp),
+                                )
+                                HorizontalDivider(
+                                    thickness = 0.5.dp,
+                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f),
+                                )
+                            }
+                        },
                     )
                 }
             }
+        }
+        }
+
+        CompositionLocalProvider(LocalVistaGlassState provides feedGlassState) {
             androidx.compose.animation.AnimatedVisibility(
                 visible = isBarsVisible,
                 enter = scaleIn(animationSpec = spring(dampingRatio = Spring.DampingRatioLowBouncy)) + fadeIn(),
@@ -606,9 +649,20 @@ internal fun FeedScreenContent(
             modifier = Modifier.align(Alignment.TopCenter),
         ) {
             Surface(
-                color = MaterialTheme.colorScheme.background.copy(alpha = 0.98f),
-                shadowElevation = 3.dp,
-                modifier = Modifier.fillMaxWidth(),
+                color = Color.Transparent,
+                shadowElevation = 0.dp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .vistaGlass(
+                        state = feedGlassState,
+                        shape = androidx.compose.ui.graphics.RectangleShape,
+                        tint = MaterialTheme.colorScheme.surface,
+                        isDark = isDarkFeed,
+                        blurRadius = VistaGlassTokens.BarBlur,
+                        tintAlphaOverride = if (isDarkFeed) 0.74f else 0.77f,
+                        rimWidth = 0.dp,
+                        shadowElevation = 4.dp,
+                    ),
             ) {
                 Column(
                     modifier = Modifier
@@ -631,28 +685,6 @@ internal fun FeedScreenContent(
                         onRetry = onRetryUpload,
                         onCancel = onCancelUpload,
                         onDismiss = onDismissUpload,
-                    )
-                    FeedStoryUploadBanner(
-                        uploadState = storyUploadState,
-                        onRetry = onRetryStoryUpload,
-                        onCancel = onCancelStoryUpload,
-                        onDismiss = onDismissStoryUpload,
-                    )
-                    ir.coffevista.vista_native.features.stories.ui.tray.StoryTray(
-                        storyUsers = storyUsers,
-                        currentUserId = viewerUserId.orEmpty(),
-                        currentUserAvatar = currentUserAvatar,
-                        onOpenStoryPlayer = onOpenStoryPlayer,
-                        onCreateStory = onCreateStory,
-                        isStoryUploading = storyUploadState.isUploading,
-                        storyUploadProgress = storyUploadState.progress,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(115.dp),
-                    )
-                    HorizontalDivider(
-                        thickness = 0.5.dp,
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
                     )
                 }
             }
@@ -685,7 +717,6 @@ private fun FeedAppBar(
         modifier = Modifier
             .fillMaxWidth()
             .height(56.dp)
-            .background(MaterialTheme.colorScheme.background)
             .testTag(FeedTestTags.AppBar),
         contentAlignment = Alignment.Center,
     ) {
@@ -753,7 +784,7 @@ private fun FeedTabs(
     )
     TabRow(
         selectedTabIndex = tabs.indexOfFirst { it.first == selectedKind },
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = Color.Transparent,
         contentColor = MaterialTheme.colorScheme.onBackground,
         indicator = { positions ->
             val index = tabs.indexOfFirst { it.first == selectedKind }
@@ -770,7 +801,7 @@ private fun FeedTabs(
         divider = {
             HorizontalDivider(
                 thickness = 0.5.dp,
-                color = MaterialTheme.colorScheme.outlineVariant,
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
             )
         },
         modifier = Modifier.testTag(FeedTestTags.Tabs),
@@ -834,6 +865,7 @@ internal fun FeedContent(
     autoplayPostMusic: Boolean = true,
     onFollowClick: (String) -> Unit = {},
     topPadding: androidx.compose.ui.unit.Dp = 8.dp,
+    topHeaderItem: (@Composable () -> Unit)? = null,
 ) {
     val navigationBarInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val viewedPostIds = remember { mutableSetOf<String>() }
@@ -867,7 +899,14 @@ internal fun FeedContent(
             val viewportCenter = (layoutInfo.viewportStartOffset + layoutInfo.viewportEndOffset) / 2
             val visibleItems = layoutInfo.visibleItemsInfo
             visibleItems
-                .filter { it.key is String && it.key != "offline-banner" && it.key != "empty" && it.key != "append-loading" }
+                .filter {
+                    it.key is String &&
+                        it.key != "story-tray" &&
+                        it.key != "offline-banner" &&
+                        it.key != "empty" &&
+                        it.key != "append-loading" &&
+                        it.key != "append-error"
+                }
                 .minByOrNull { item ->
                     val itemCenter = item.offset + item.size / 2
                     kotlin.math.abs(itemCenter - viewportCenter)
@@ -923,6 +962,15 @@ internal fun FeedContent(
 
             visibleItems.mapNotNull { itemInfo ->
                 val postId = itemInfo.key as? String ?: return@mapNotNull null
+                if (
+                    postId == "story-tray" ||
+                    postId == "offline-banner" ||
+                    postId == "empty" ||
+                    postId == "append-loading" ||
+                    postId == "append-error"
+                ) {
+                    return@mapNotNull null
+                }
                 val itemTop = itemInfo.offset
                 val itemBottom = itemTop + itemInfo.size
                 val visibleTop = maxOf(viewportStart, itemTop)
@@ -983,6 +1031,11 @@ internal fun FeedContent(
             .testTag(FeedTestTags.List),
         contentPadding = PaddingValues(top = topPadding, bottom = 110.dp + navigationBarInset),
     ) {
+        if (topHeaderItem != null) {
+            item(key = "story-tray") {
+                topHeaderItem()
+            }
+        }
         if (state.isOffline || state.isStale) {
             item(key = "offline-banner") {
                 OfflineBanner()

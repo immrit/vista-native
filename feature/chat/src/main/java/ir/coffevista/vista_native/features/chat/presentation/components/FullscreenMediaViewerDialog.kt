@@ -48,7 +48,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.graphicsLayer
+import ir.coffevista.vista_native.core.designsystem.glass.VistaGlassState
+import ir.coffevista.vista_native.core.designsystem.glass.VistaGlassTokens
+import ir.coffevista.vista_native.core.designsystem.glass.rememberVistaGlassState
+import ir.coffevista.vista_native.core.designsystem.glass.vistaGlass
+import ir.coffevista.vista_native.core.designsystem.glass.vistaGlassSource
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -93,6 +99,7 @@ fun FullscreenMediaViewerDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
+        val mediaGlassState = rememberVistaGlassState()
         Box(
             modifier = modifier
                 .fillMaxSize()
@@ -100,7 +107,9 @@ fun FullscreenMediaViewerDialog(
         ) {
             HorizontalPager(
                 state = pagerState,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .vistaGlassSource(mediaGlassState),
                 userScrollEnabled = currentItemScale <= 1.05f,
             ) { page ->
                 val item = mediaItems[page]
@@ -108,6 +117,7 @@ fun FullscreenMediaViewerDialog(
                     FullscreenVideoPlayer(
                         videoUrl = item.url,
                         isCurrentPage = pagerState.currentPage == page,
+                        glassState = mediaGlassState,
                     )
                 } else {
                     ZoomablePhotoView(
@@ -128,7 +138,15 @@ fun FullscreenMediaViewerDialog(
                 modifier = Modifier
                     .fillMaxWidth()
                     .align(Alignment.TopCenter)
-                    .background(Color.Black.copy(alpha = 0.5f))
+                    .vistaGlass(
+                        state = mediaGlassState,
+                        shape = RectangleShape,
+                        tint = Color(0xFF0A0E14),
+                        isDark = true,
+                        blurRadius = VistaGlassTokens.BarBlur,
+                        tintAlphaOverride = 0.56f,
+                        rimWidth = 0.dp,
+                    )
                     .padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -259,6 +277,7 @@ private fun ZoomablePhotoView(
 private fun FullscreenVideoPlayer(
     videoUrl: String,
     isCurrentPage: Boolean,
+    glassState: VistaGlassState? = null,
 ) {
     val context = LocalContext.current
     var isPlaying by remember { mutableStateOf(true) }
@@ -331,7 +350,21 @@ private fun FullscreenVideoPlayer(
             modifier = Modifier
                 .fillMaxWidth()
                 .align(Alignment.BottomCenter)
-                .background(Color.Black.copy(alpha = 0.6f))
+                .then(
+                    if (glassState != null) {
+                        Modifier.vistaGlass(
+                            state = glassState,
+                            shape = RectangleShape,
+                            tint = Color(0xFF0A0E14),
+                            isDark = true,
+                            blurRadius = VistaGlassTokens.BarBlur,
+                            tintAlphaOverride = 0.60f,
+                            rimWidth = 0.dp,
+                        )
+                    } else {
+                        Modifier.background(Color.Black.copy(alpha = 0.6f))
+                    },
+                )
                 .padding(horizontal = 16.dp, vertical = 12.dp),
         ) {
             Slider(

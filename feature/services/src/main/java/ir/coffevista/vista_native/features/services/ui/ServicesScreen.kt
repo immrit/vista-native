@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
@@ -43,7 +44,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
+import ir.coffevista.vista_native.core.designsystem.glass.VistaGlassScrollSync
+import ir.coffevista.vista_native.core.designsystem.glass.VistaGlassTokens
+import ir.coffevista.vista_native.core.designsystem.glass.rememberVistaGlassState
+import ir.coffevista.vista_native.core.designsystem.glass.vistaGlass
+import ir.coffevista.vista_native.core.designsystem.glass.vistaGlassSource
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -155,11 +163,25 @@ fun ServicesScreen(
     }
 
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+        val servicesGlassState = rememberVistaGlassState()
+        val servicesListState = rememberLazyListState()
+        VistaGlassScrollSync(servicesGlassState, servicesListState)
+        val isDarkServices = MaterialTheme.colorScheme.background.luminance() < 0.5f
+
         Scaffold(
             modifier = modifier.fillMaxSize(),
             containerColor = MaterialTheme.colorScheme.background,
             topBar = {
                 TopAppBar(
+                    modifier = Modifier.vistaGlass(
+                        state = servicesGlassState,
+                        shape = RectangleShape,
+                        tint = MaterialTheme.colorScheme.surface,
+                        isDark = isDarkServices,
+                        blurRadius = VistaGlassTokens.BarBlur,
+                        rimWidth = 0.dp,
+                        shadowElevation = 4.dp,
+                    ),
                     title = {
                         Text(
                             text = "سرویس‌ها",
@@ -188,7 +210,7 @@ fun ServicesScreen(
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.background,
+                        containerColor = Color.Transparent,
                     ),
                 )
             },
@@ -198,18 +220,25 @@ fun ServicesScreen(
                 onRefresh = viewModel::refresh,
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(innerPadding),
+                    .vistaGlassSource(servicesGlassState)
+                    .background(MaterialTheme.colorScheme.background),
             ) {
                 val maintenance = (state.hubState as? ServicesHubUiState.Success)?.data?.maintenance
                 if (maintenance != null && maintenance.isEnabled) {
-                    ServicesMaintenanceView(
-                        maintenance = maintenance,
-                        onRetry = viewModel::refresh,
-                    )
+                    Box(modifier = Modifier.padding(innerPadding)) {
+                        ServicesMaintenanceView(
+                            maintenance = maintenance,
+                            onRetry = viewModel::refresh,
+                        )
+                    }
                 } else {
                     LazyColumn(
+                        state = servicesListState,
                         modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(bottom = 120.dp),
+                        contentPadding = PaddingValues(
+                            top = innerPadding.calculateTopPadding(),
+                            bottom = 120.dp,
+                        ),
                     ) {
                     // 1. Dynamic Banners ("برای شما")
                     when (val hub = state.hubState) {

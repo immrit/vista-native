@@ -42,6 +42,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.isSystemInDarkTheme
+import ir.coffevista.vista_native.core.designsystem.glass.VistaGlassState
+import ir.coffevista.vista_native.core.designsystem.glass.vistaGlass
 import ir.coffevista.vista_native.features.chat.domain.model.Message
 import ir.coffevista.vista_native.features.chat.domain.model.MessageContent
 import ir.coffevista.vista_native.features.chat.domain.model.SharedPostParser
@@ -55,6 +58,7 @@ fun PinnedMessagesBar(
     onMessageClick: (Message) -> Unit,
     onUnpinClick: ((Message) -> Unit)? = null,
     modifier: Modifier = Modifier,
+    glassState: VistaGlassState? = null,
 ) {
     if (pinnedMessages.isEmpty()) return
 
@@ -89,7 +93,20 @@ fun PinnedMessagesBar(
         modifier = modifier
             .fillMaxWidth()
             .height(48.dp)
-            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.96f))
+            .then(
+                if (glassState != null) {
+                    Modifier.vistaGlass(
+                        state = glassState,
+                        shape = androidx.compose.ui.graphics.RectangleShape,
+                        tint = MaterialTheme.colorScheme.surface,
+                        isDark = isSystemInDarkTheme(),
+                        drawHighlight = false,
+                        rimWidth = 0.dp,
+                    )
+                } else {
+                    Modifier.background(MaterialTheme.colorScheme.surface.copy(alpha = 0.96f))
+                },
+            )
             .clickable(
                 role = Role.Button,
                 onClick = {

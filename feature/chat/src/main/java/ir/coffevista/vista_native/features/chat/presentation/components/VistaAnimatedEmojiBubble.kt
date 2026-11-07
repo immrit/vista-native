@@ -32,6 +32,7 @@ import androidx.compose.ui.platform.LocalContext
 import com.airbnb.lottie.compose.LottieAnimation
 import com.airbnb.lottie.compose.LottieCompositionSpec
 import com.airbnb.lottie.compose.rememberLottieComposition
+import androidx.compose.ui.AbsoluteAlignment
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -234,7 +235,7 @@ private fun LottieEmojiBubble(
 
         Box(
             modifier = Modifier
-                .align(if (isMine) Alignment.BottomEnd else Alignment.BottomStart)
+                .align(AbsoluteAlignment.BottomRight)
                 .clip(RoundedCornerShape(10.dp))
                 .background(Color.Black.copy(alpha = 0.45f))
                 .padding(horizontal = 6.dp, vertical = 2.dp),
@@ -571,7 +572,7 @@ private fun EffectEmojiBubble(
         // Floating semi-transparent corner metadata capsule
         Box(
             modifier = Modifier
-                .align(if (isMine) Alignment.BottomEnd else Alignment.BottomStart)
+                .align(AbsoluteAlignment.BottomRight)
                 .clip(RoundedCornerShape(10.dp))
                 .background(Color.Black.copy(alpha = 0.45f))
                 .padding(horizontal = 6.dp, vertical = 2.dp),

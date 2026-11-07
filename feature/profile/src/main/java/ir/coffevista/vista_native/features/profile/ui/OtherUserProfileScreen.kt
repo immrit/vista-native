@@ -8,8 +8,19 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.background
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.luminance
+import ir.coffevista.vista_native.core.designsystem.glass.VistaGlassScrollSync
+import ir.coffevista.vista_native.core.designsystem.glass.VistaGlassTokens
+import ir.coffevista.vista_native.core.designsystem.glass.rememberVistaGlassState
+import ir.coffevista.vista_native.core.designsystem.glass.vistaGlass
+import ir.coffevista.vista_native.core.designsystem.glass.vistaGlassSource
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -148,27 +159,33 @@ internal fun OtherUserProfileContent(
     var showReportUserDialog by remember { mutableStateOf(false) }
     var isReportingUser by remember { mutableStateOf(false) }
     var premiumPromptFeature by remember { mutableStateOf<String?>(null) }
+    var showAccountDetails by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
 
-    Column(
+    val otherProfileGlassState = rememberVistaGlassState()
+    val otherProfileListState = rememberLazyListState()
+    VistaGlassScrollSync(otherProfileGlassState, otherProfileListState)
+    val isDarkOtherProfile = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    val topBarHeight = statusBarTop + 56.dp
+
+    Box(
         modifier = modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .statusBarsPadding(),
+            .background(MaterialTheme.colorScheme.background),
     ) {
-        OtherProfileAppBar(
-            username = state.profile?.username,
-            verified = state.profile?.isVerified == true,
-            verificationType = state.profile?.verificationType,
-            onBack = { onAction(OtherUserProfileAction.BackClicked) },
-            onMoreClick = { showOptionsSheet = true },
-        )
-        Box(Modifier.fillMaxSize()) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .vistaGlassSource(otherProfileGlassState)
+                .background(MaterialTheme.colorScheme.background),
+        ) {
             when {
                 state.userNotFound -> VistaEmptyState(
                     title = "کاربر یافت نشد",
                     message = "این نمایه در دسترس نیست.",
                     modifier = Modifier
                         .fillMaxSize()
+                        .padding(top = topBarHeight)
                         .testTag(OtherProfileTestTags.NotFound),
                 )
                 state.profile == null && state.initialError != null -> VistaErrorState(
@@ -177,12 +194,14 @@ internal fun OtherUserProfileContent(
                     onRetry = { onAction(OtherUserProfileAction.Retry) },
                     modifier = Modifier
                         .fillMaxSize()
+                        .padding(top = topBarHeight)
                         .testTag(OtherProfileTestTags.Error),
                 )
-                state.profile == null && state.isInitialLoading -> OtherProfileLoading()
+                state.profile == null && state.isInitialLoading -> Box(Modifier.padding(top = topBarHeight)) {
+                    OtherProfileLoading()
+                }
                 state.profile != null -> {
                     var selectedTab by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableIntStateOf(0) }
-                    var showAccountDetails by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
 
                     if (showAccountDetails) {
                         val profile = state.profile
@@ -206,6 +225,8 @@ internal fun OtherUserProfileContent(
                             val profile = state.profile
                             ProfileParityList(
                                 header = profile.headerModel(),
+                                topContentPadding = topBarHeight,
+                                listState = otherProfileListState,
                                 postsState = postsState.copy(
                                     isOffline = postsState.isOffline || state.isStale,
                                 ),
@@ -268,6 +289,7 @@ internal fun OtherUserProfileContent(
                                 Text(
                                     text = "نمایش نسخه ذخیره‌شده",
                                     modifier = Modifier
+                                        .padding(top = topBarHeight)
                                         .fillMaxWidth()
                                         .background(androidx.compose.ui.graphics.Color(0xFFEF6C00))
                                         .padding(horizontal = 16.dp, vertical = 10.dp)
@@ -280,8 +302,35 @@ internal fun OtherUserProfileContent(
                     }
                 }
             }
+        }
 
-            if (showOptionsSheet && state.profile != null) {
+        if (!showAccountDetails) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.TopCenter)
+                    .vistaGlass(
+                        state = otherProfileGlassState,
+                        shape = RectangleShape,
+                        tint = MaterialTheme.colorScheme.surface,
+                        isDark = isDarkOtherProfile,
+                        blurRadius = VistaGlassTokens.BarBlur,
+                        rimWidth = 0.dp,
+                        shadowElevation = 3.dp,
+                    )
+                    .statusBarsPadding(),
+            ) {
+                OtherProfileAppBar(
+                    username = state.profile?.username,
+                    verified = state.profile?.isVerified == true,
+                    verificationType = state.profile?.verificationType,
+                    onBack = { onAction(OtherUserProfileAction.BackClicked) },
+                    onMoreClick = { showOptionsSheet = true },
+                )
+            }
+        }
+
+        if (showOptionsSheet && state.profile != null) {
                 ProfileOptionsBottomSheet(
                     onDismiss = { showOptionsSheet = false },
                     onShare = {
@@ -383,7 +432,6 @@ internal fun OtherUserProfileContent(
                     },
                 )
             }
-        }
     }
 }
 
@@ -451,7 +499,7 @@ private fun OtherProfileAppBar(
         HorizontalDivider(
             modifier = Modifier.align(Alignment.BottomCenter),
             thickness = .5.dp,
-            color = MaterialTheme.colorScheme.outlineVariant,
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
         )
     }
 }

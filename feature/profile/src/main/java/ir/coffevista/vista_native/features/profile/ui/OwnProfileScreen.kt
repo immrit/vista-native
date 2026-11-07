@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.widthIn
 import ir.coffevista.vista_native.core.model.note.ProfileNotePrompts
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import ir.coffevista.vista_native.core.designsystem.glass.VistaGlassScrollSync
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.ui.text.style.TextDirection
 import android.widget.Toast
@@ -73,6 +75,15 @@ import ir.coffevista.vista_native.core.designsystem.component.VistaEditPostDialo
 import ir.coffevista.vista_native.core.designsystem.component.VistaErrorState
 import ir.coffevista.vista_native.core.designsystem.component.VistaPremiumPromptDialog
 import ir.coffevista.vista_native.core.designsystem.component.VistaReportReasonDialog
+import ir.coffevista.vista_native.core.designsystem.glass.VistaGlassTokens
+import ir.coffevista.vista_native.core.designsystem.glass.rememberVistaGlassState
+import ir.coffevista.vista_native.core.designsystem.glass.vistaGlass
+import ir.coffevista.vista_native.core.designsystem.glass.vistaGlassSource
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.luminance
 import ir.coffevista.vista_native.features.profile.R
 import ir.coffevista.vista_native.features.profile.data.ProfileHighlightDto
 
@@ -162,32 +173,34 @@ fun OwnProfileScreen(
                 modifier = modifier,
             )
         } else {
-            Box(modifier = modifier.fillMaxSize()) {
-                Column(
+            val profileGlassState = rememberVistaGlassState()
+            val profileListState = rememberLazyListState()
+            VistaGlassScrollSync(profileGlassState, profileListState)
+            val isDarkProfile = MaterialTheme.colorScheme.background.luminance() < 0.5f
+            val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+            val profileTopBarHeight = statusBarTop + 56.dp
+            Box(
+                modifier = modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.background),
+            ) {
+                Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(MaterialTheme.colorScheme.background)
-                        .statusBarsPadding(),
+                        .vistaGlassSource(profileGlassState)
+                        .background(MaterialTheme.colorScheme.background),
                 ) {
-                    OwnProfileAppBar(
-                        username = currentUsername,
-                        verified = (uiState as? OwnProfileUiState.Content)?.profile?.isVerified == true,
-                        verificationType = (uiState as? OwnProfileUiState.Content)?.profile?.verificationType,
-                        role = (uiState as? OwnProfileUiState.Content)?.profile?.accountType,
-                        onSettingsClick = {
-                            onSettingsClick?.invoke()
-                        },
-                        onOptionsClick = {
-                            showOptionsSheet = true
-                        },
-                    )
                     when (val state = uiState) {
-                        OwnProfileUiState.Loading -> ProfileLoadingSkeleton()
+                        OwnProfileUiState.Loading -> Box(Modifier.padding(top = profileTopBarHeight)) {
+                            ProfileLoadingSkeleton()
+                        }
                         is OwnProfileUiState.Error -> VistaErrorState(
                             title = "خطا در دریافت اطلاعات",
                             message = state.error.messageFa,
                             onRetry = { viewModel.handleAction(OwnProfileAction.Retry) },
-                            modifier = Modifier.fillMaxSize(),
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(top = profileTopBarHeight),
                         )
                         is OwnProfileUiState.Content -> PullToRefreshBox(
                             isRefreshing = state.isRefreshing || postsState.isRefreshing,
@@ -222,6 +235,8 @@ fun OwnProfileScreen(
 
                             ProfileParityList(
                                 header = headerModel,
+                                topContentPadding = profileTopBarHeight,
+                                listState = profileListState,
                                 postsState = postsState,
                                 privatePosts = false,
                                 selectedTab = selectedTab,
@@ -286,6 +301,35 @@ fun OwnProfileScreen(
                             )
                         }
                     }
+                }
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .align(Alignment.TopCenter)
+                        .vistaGlass(
+                            state = profileGlassState,
+                            shape = RectangleShape,
+                            tint = MaterialTheme.colorScheme.surface,
+                            isDark = isDarkProfile,
+                            blurRadius = VistaGlassTokens.BarBlur,
+                            rimWidth = 0.dp,
+                            shadowElevation = 3.dp,
+                        )
+                        .statusBarsPadding(),
+                ) {
+                    OwnProfileAppBar(
+                        username = currentUsername,
+                        verified = (uiState as? OwnProfileUiState.Content)?.profile?.isVerified == true,
+                        verificationType = (uiState as? OwnProfileUiState.Content)?.profile?.verificationType,
+                        role = (uiState as? OwnProfileUiState.Content)?.profile?.accountType,
+                        onSettingsClick = {
+                            onSettingsClick?.invoke()
+                        },
+                        onOptionsClick = {
+                            showOptionsSheet = true
+                        },
+                    )
                 }
 
                 // Highlight Management Dialogs & Bottom Sheet

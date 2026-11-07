@@ -46,6 +46,9 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import ir.coffevista.vista_native.core.designsystem.glass.LocalVistaGlassState
+import ir.coffevista.vista_native.core.designsystem.glass.VistaGlassTokens
+import ir.coffevista.vista_native.core.designsystem.glass.vistaGlass
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaBrandColors
 import ir.coffevista.vista_native.features.chat.domain.model.AttachmentKind
 import ir.coffevista.vista_native.features.chat.domain.model.ChatAttachmentDraft
@@ -271,6 +274,13 @@ fun VoiceRecorderDock(
     }
 
     val lockProgress = (-dragOffsetY / lockThresholdPx).coerceIn(0f, 1f)
+    val glassState = LocalVistaGlassState.current
+    val dockBaseTint = when {
+        isCancelingState && isDark -> Color(0xFF381414)
+        isCancelingState -> Color(0xFFFFEBEE)
+        isDark -> MaterialTheme.colorScheme.surfaceVariant
+        else -> Color.White
+    }
 
     Box(
         modifier = modifier,
@@ -287,16 +297,24 @@ fun VoiceRecorderDock(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(48.dp)
-                    .clip(RoundedCornerShape(24.dp))
-                    .background(
-                        when {
-                            isCancelingState && isDark -> Color(0xFF381414)
-                            isCancelingState -> Color(0xFFFFEBEE)
-                            isDark -> MaterialTheme.colorScheme.surfaceVariant
-                            else -> Color.White.copy(alpha = 0.98f)
-                        }
+                    .then(
+                        if (glassState != null) {
+                            Modifier.vistaGlass(
+                                state = glassState,
+                                shape = RoundedCornerShape(24.dp),
+                                tint = dockBaseTint,
+                                isDark = isDark,
+                                blurRadius = VistaGlassTokens.PillBlur,
+                                rimWidth = 0.6.dp,
+                                shadowElevation = 4.dp,
+                            )
+                        } else {
+                            Modifier
+                                .shadow(if (isDark) 0.dp else 4.dp, RoundedCornerShape(24.dp))
+                                .background(dockBaseTint.copy(alpha = 0.96f))
+                        },
                     )
-                    .shadow(if (isDark) 0.dp else 4.dp, RoundedCornerShape(24.dp))
+                    .clip(RoundedCornerShape(24.dp))
                     .padding(horizontal = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -428,17 +446,30 @@ fun VoiceRecorderDock(
 
         // کپسول شناور قفل به سمت بالا (در حال نگه‌داشتن دکمه)
         if (interaction.phase == VoiceCapturePhase.HOLDING) {
+            val lockTint = if (isDark) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface
             Column(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .offset(y = (-70).dp)
                     .width(46.dp)
-                    .clip(RoundedCornerShape(23.dp))
-                    .background(
-                        if (isDark) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.96f)
-                        else MaterialTheme.colorScheme.surface.copy(alpha = 0.96f)
+                    .then(
+                        if (glassState != null) {
+                            Modifier.vistaGlass(
+                                state = glassState,
+                                shape = RoundedCornerShape(23.dp),
+                                tint = lockTint,
+                                isDark = isDark,
+                                blurRadius = VistaGlassTokens.PillBlur,
+                                rimWidth = 0.8.dp,
+                                shadowElevation = 8.dp,
+                            )
+                        } else {
+                            Modifier
+                                .shadow(8.dp, RoundedCornerShape(23.dp))
+                                .background(lockTint.copy(alpha = 0.96f))
+                        },
                     )
-                    .shadow(8.dp, RoundedCornerShape(23.dp))
+                    .clip(RoundedCornerShape(23.dp))
                     .padding(vertical = 8.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {

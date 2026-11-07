@@ -22,6 +22,14 @@ import ir.coffevista.vista_native.features.chat.presentation.components.VoiceRec
 import ir.coffevista.vista_native.features.chat.presentation.components.SwipeToReplyLayout
 import ir.coffevista.vista_native.features.chat.presentation.components.VoicePlayerBubble
 import ir.coffevista.vista_native.core.designsystem.component.VistaBadgeDefaults
+import ir.coffevista.vista_native.core.designsystem.glass.vistaGlassSource
+import ir.coffevista.vista_native.core.designsystem.glass.vistaGlass
+import ir.coffevista.vista_native.core.designsystem.glass.rememberVistaGlassState
+import ir.coffevista.vista_native.core.designsystem.glass.LocalVistaGlassState
+import ir.coffevista.vista_native.core.designsystem.glass.VistaGlassScrollSync
+import ir.coffevista.vista_native.core.designsystem.glass.VistaGlassTokens
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.layout.onSizeChanged
 import ir.coffevista.vista_native.core.designsystem.component.VistaNotificationBadge
 import ir.coffevista.vista_native.features.chat.presentation.components.FullscreenMediaViewerDialog
 import ir.coffevista.vista_native.features.chat.presentation.components.MediaViewerItem
@@ -428,6 +436,10 @@ fun ConversationListScreen(
     val regularConversations = (nonRequestConversations.filter { it.isPinned } +
         nonRequestConversations.filterNot { it.isPinned })
         .distinctBy { it.peerIdentityKey() }
+    val conversationsGlassState = rememberVistaGlassState()
+    val conversationsListState = rememberLazyListState()
+    VistaGlassScrollSync(conversationsGlassState, conversationsListState)
+    val isDarkConversations = MaterialTheme.colorScheme.background.luminance() < 0.5f
     Box(modifier = Modifier.fillMaxSize()) {
         Scaffold(
         modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
@@ -472,6 +484,18 @@ fun ConversationListScreen(
                     },
                 )
             } else TopAppBar(
+                modifier = Modifier.vistaGlass(
+                    state = conversationsGlassState,
+                    shape = androidx.compose.ui.graphics.RectangleShape,
+                    tint = MaterialTheme.colorScheme.surface,
+                    isDark = isDarkConversations,
+                    blurRadius = VistaGlassTokens.BarBlur,
+                    rimWidth = 0.dp,
+                    shadowElevation = 3.dp,
+                ),
+                colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color.Transparent,
+                ),
                 title = {
                     if (searchVisible) {
                         BasicTextField(
@@ -546,20 +570,34 @@ fun ConversationListScreen(
             )
         },
     ) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding)) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .vistaGlassSource(conversationsGlassState)
+                .background(MaterialTheme.colorScheme.background),
+        ) {
             when {
-                state.isInitialLoading && state.conversations.isEmpty() -> LoadingConversationList()
-                state.error != null && state.conversations.isEmpty() -> ErrorState(state.error, onRefresh)
-                visibleConversations.isEmpty() -> EmptyConversationState(
-                    searchActive = searchQuery.isNotBlank(),
-                    archived = state.includeArchived,
-                )
+                state.isInitialLoading && state.conversations.isEmpty() -> Box(Modifier.fillMaxSize().padding(padding)) { LoadingConversationList() }
+                state.error != null && state.conversations.isEmpty() -> Box(Modifier.fillMaxSize().padding(padding)) { ErrorState(state.error, onRefresh) }
+                visibleConversations.isEmpty() -> Box(Modifier.fillMaxSize().padding(padding)) {
+                    EmptyConversationState(
+                        searchActive = searchQuery.isNotBlank(),
+                        archived = state.includeArchived,
+                    )
+                }
                 else -> PullToRefreshBox(
                     isRefreshing = state.isRefreshing,
                     onRefresh = onRefresh,
                     modifier = Modifier.fillMaxSize(),
                 ) {
-                    LazyColumn(Modifier.fillMaxSize()) {
+                    LazyColumn(
+                        state = conversationsListState,
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(
+                            top = padding.calculateTopPadding(),
+                            bottom = padding.calculateBottomPadding() + 96.dp,
+                        ),
+                    ) {
                         if (!state.includeArchived && searchQuery.isBlank()) {
                             item(key = "profile-notes") {
                                 Box(Modifier.padding(vertical = 8.dp)) {
@@ -651,20 +689,22 @@ fun ConversationListScreen(
         }
         }
         if (!searchVisible && !state.includeArchived) {
-            ir.coffevista.vista_native.core.designsystem.component.VistaFloatingActionButton(
-                onClick = onNewMessage,
-                contentDescription = "پیام جدید",
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .offset(y = -45.dp)
-                    .padding(end = 16.dp),
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Edit,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(24.dp),
-                )
+            CompositionLocalProvider(LocalVistaGlassState provides conversationsGlassState) {
+                ir.coffevista.vista_native.core.designsystem.component.VistaFloatingActionButton(
+                    onClick = onNewMessage,
+                    contentDescription = "پیام جدید",
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .offset(y = -45.dp)
+                        .padding(end = 16.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Edit,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(24.dp),
+                    )
+                }
             }
         }
     }
@@ -1869,11 +1909,45 @@ fun MessageDetailScreen(
     var headerHeightDp by remember { mutableStateOf(0.dp) }
     val statusBarTopDp = with(density) { WindowInsets.statusBars.getTop(density).toDp() }
     val effectiveTopPadding = if (headerHeightDp > 0.dp) headerHeightDp else (statusBarTopDp + 56.dp)
+    val chatGlassState = rememberVistaGlassState()
+    VistaGlassScrollSync(chatGlassState, listState)
+    var composerHeightDp by remember { mutableStateOf(72.dp) }
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(if (isDarkTheme) Color(0xFF101419) else Color(0xFFDFE5E9)),
     ) {
+        val displayedMessages = state.messages
+        val displayedRenderItems = remember(displayedMessages) {
+            buildMessageRenderItems(displayedMessages).distinctBy { it.stableKey }
+        }
+        val unreadWindow = remember(state.messages) { unreadMessageWindow(state.messages) }
+        val floatingDateEpochMillis by remember(displayedRenderItems, listState) {
+            derivedStateOf {
+                val visibleIndices = listState.layoutInfo.visibleItemsInfo.map { it.index }
+                visibleMessageDateEpochMillis(
+                    renderItems = displayedRenderItems,
+                    visibleIndices = visibleIndices.ifEmpty { listOf(listState.firstVisibleItemIndex) },
+                )
+            }
+        }
+        var floatingDateVisible by remember(state.conversationId) { mutableStateOf(false) }
+        LaunchedEffect(
+            listState.isScrollInProgress,
+            floatingDateEpochMillis,
+            searchVisible,
+        ) {
+            if (searchVisible || floatingDateEpochMillis == null) {
+                floatingDateVisible = false
+            } else {
+                floatingDateVisible = true
+                if (!listState.isScrollInProgress) {
+                    kotlinx.coroutines.delay(2_000)
+                    floatingDateVisible = false
+                }
+            }
+        }
+        Box(modifier = Modifier.fillMaxSize().vistaGlassSource(chatGlassState)) {
         Image(
             painter = painterResource(
                 if (isDarkTheme) ChatR.drawable.vista_custom_bg_dark
@@ -1889,14 +1963,9 @@ fun MessageDetailScreen(
             modifier = Modifier.fillMaxSize(),
         )
 
-        Column(
-            modifier = Modifier
-                .fillMaxSize(),
-        ) {
             Box(
                 Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
+                    .fillMaxSize()
                     .pointerInput(emojiPanelVisible) {
                         if (emojiPanelVisible) {
                             detectTapGestures {
@@ -1914,10 +1983,6 @@ fun MessageDetailScreen(
                         composerController.closeKeyboard()
                     }
                 }
-                val displayedMessages = state.messages
-                val displayedRenderItems = remember(displayedMessages) {
-                    buildMessageRenderItems(displayedMessages).distinctBy { it.stableKey }
-                }
                 LaunchedEffect(searchVisible, searchResultIndex, state.searchResults) {
                     if (searchVisible && state.searchResults.isNotEmpty()) {
                         val targetMessage = state.searchResults.getOrNull(searchResultIndex)
@@ -1931,34 +1996,8 @@ fun MessageDetailScreen(
                         }
                     }
                 }
-                val unreadWindow = remember(state.messages) { unreadMessageWindow(state.messages) }
                 val groupMemberById = remember(state.groupMembers) {
                     state.groupMembers.associateBy(GroupMember::userId)
-                }
-                val floatingDateEpochMillis by remember(displayedRenderItems, listState) {
-                    derivedStateOf {
-                        val visibleIndices = listState.layoutInfo.visibleItemsInfo.map { it.index }
-                        visibleMessageDateEpochMillis(
-                            renderItems = displayedRenderItems,
-                            visibleIndices = visibleIndices.ifEmpty { listOf(listState.firstVisibleItemIndex) },
-                        )
-                    }
-                }
-                var floatingDateVisible by remember(state.conversationId) { mutableStateOf(false) }
-                LaunchedEffect(
-                    listState.isScrollInProgress,
-                    floatingDateEpochMillis,
-                    searchVisible,
-                ) {
-                    if (searchVisible || floatingDateEpochMillis == null) {
-                        floatingDateVisible = false
-                    } else {
-                        floatingDateVisible = true
-                        if (!listState.isScrollInProgress) {
-                            kotlinx.coroutines.delay(2_000)
-                            floatingDateVisible = false
-                        }
-                    }
                 }
                 val latestRenderItems by rememberUpdatedState(displayedRenderItems)
                 val latestInteraction by rememberUpdatedState(messageInteraction)
@@ -2018,7 +2057,7 @@ fun MessageDetailScreen(
                             start = 6.dp,
                             end = 6.dp,
                             top = effectiveTopPadding + 6.dp,
-                            bottom = 6.dp,
+                            bottom = composerHeightDp + 6.dp,
                         ),
                     ) {
                         itemsIndexed(
@@ -2096,6 +2135,13 @@ fun MessageDetailScreen(
                                                     onLongPress = {
                                                         if (messageInteraction is MessageInteractionState.Idle) {
                                                             openMessageContext(message.stableKey, null)
+                                                        }
+                                                    },
+                                                    onOpenContextMenu = { bubbleBounds ->
+                                                        if (messageInteraction is MessageInteractionState.Idle &&
+                                                            message.content != MessageContent.Deleted
+                                                        ) {
+                                                            openMessageContext(message.stableKey, bubbleBounds)
                                                         }
                                                     },
                                                     onRetry = onRetry,
@@ -2224,7 +2270,10 @@ fun MessageDetailScreen(
                         }
                     }
                 }
+            }
+        }
 
+        CompositionLocalProvider(LocalVistaGlassState provides chatGlassState) {
                 FloatingMessageDateOverlay(
                     visible = floatingDateVisible && !searchVisible,
                     epochMillis = floatingDateEpochMillis,
@@ -2262,7 +2311,7 @@ fun MessageDetailScreen(
                             animationSpec = tween(140),
                             targetScale = 0.5f,
                         ) + androidx.compose.animation.fadeOut(tween(140)),
-                        modifier = Modifier.padding(end = 12.dp, bottom = 12.dp),
+                        modifier = Modifier.padding(end = 12.dp, bottom = 12.dp + composerHeightDp),
                     ) {
                         Box(
                             contentAlignment = Alignment.TopEnd,
@@ -2270,9 +2319,16 @@ fun MessageDetailScreen(
                             Box(
                                 modifier = Modifier
                                     .size(42.dp)
-                                    .shadow(6.dp, CircleShape)
+                                    .vistaGlass(
+                                        state = chatGlassState,
+                                        shape = CircleShape,
+                                        tint = MaterialTheme.colorScheme.surface,
+                                        isDark = isDarkTheme,
+                                        blurRadius = VistaGlassTokens.PillBlur,
+                                        rimWidth = 0.8.dp,
+                                        shadowElevation = 6.dp,
+                                    )
                                     .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.surface)
                                     .clickable(role = Role.Button, onClick = {
                                         coroutineScope.launch { listState.animateScrollToItem(0) }
                                     })
@@ -2307,10 +2363,14 @@ fun MessageDetailScreen(
                         }
                     }
                 }
-            }
-
             Column(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .onSizeChanged { size ->
+                        val h = with(density) { size.height.toDp() }
+                        if (h != composerHeightDp) composerHeightDp = h
+                    },
             ) {
             ChatComposerBar(
                 conversationId = state.conversationId,
@@ -2432,8 +2492,18 @@ fun MessageDetailScreen(
                 },
         ) {
             Surface(
-                modifier = Modifier.fillMaxWidth(),
-                color = topBarBgColor.copy(alpha = topBarGlassAlpha),
+                modifier = Modifier.fillMaxWidth().then(
+                    if (inSelectionMode) Modifier else Modifier.vistaGlass(
+                        state = chatGlassState,
+                        shape = androidx.compose.ui.graphics.RectangleShape,
+                        tint = topBarBgColor,
+                        isDark = isDarkTheme,
+                        blurRadius = VistaGlassTokens.BarBlur,
+                        drawHighlight = false,
+                        rimWidth = 0.dp,
+                    ),
+                ),
+                color = if (inSelectionMode) topBarBgColor.copy(alpha = topBarGlassAlpha) else Color.Transparent,
                 shadowElevation = 0.dp,
             ) {
                 Box(modifier = Modifier.fillMaxWidth()) {
@@ -2779,6 +2849,7 @@ fun MessageDetailScreen(
 
                 if (state.pinnedMessages.isNotEmpty()) {
                     PinnedMessagesBar(
+                        glassState = chatGlassState,
                         pinnedMessages = state.pinnedMessages,
                         onMessageClick = { pinned ->
                             val index = renderItemIndexForMessage(
@@ -2911,6 +2982,7 @@ fun MessageDetailScreen(
             return@let
         }
         MessageContextMenu(
+            glassState = chatGlassState,
             message = message,
             bubbleBounds = contextInteraction.bubbleBounds,
             capabilities = MessageContextCapabilities(
@@ -3206,6 +3278,7 @@ private fun MediaAlbumBubble(
     selected: Boolean,
     onToggleSelection: () -> Unit,
     onLongPress: () -> Unit,
+    onOpenContextMenu: (Rect?) -> Unit = {},
     onRetry: (Message) -> Unit,
     onCancelTransfer: (Message) -> Unit,
     onStartDownload: (Message) -> Unit,
@@ -3217,6 +3290,7 @@ private fun MediaAlbumBubble(
     val visibleMessages = messages.take(10)
     if (visibleMessages.size < 2) return
     val primary = visibleMessages.first()
+    val coordinatesHolder = remember(primary.stableKey) { LayoutCoordinatesHolder() }
     val caption = visibleMessages.firstNotNullOfOrNull { message ->
         (message.content as? MessageContent.Text)?.value?.trim()?.takeIf(String::isNotEmpty)
     }
@@ -3224,6 +3298,20 @@ private fun MediaAlbumBubble(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .combinedClickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = {
+                    if (selectionMode) {
+                        onToggleSelection()
+                    } else {
+                        onOpenContextMenu(coordinatesHolder.coordinates?.takeIf { it.isAttached }?.boundsInWindow())
+                    }
+                },
+                onLongClick = {
+                    if (!selectionMode) onLongPress()
+                },
+            )
             .absolutePadding(
                 left = if (primary.isMine) 12.dp else 6.dp,
                 right = if (primary.isMine) 6.dp else 12.dp,
@@ -3284,6 +3372,9 @@ private fun MediaAlbumBubble(
                     )
                     .widthIn(min = 140.dp, max = screenWidth * 0.74f)
                     .fillMaxWidth()
+                    .onGloballyPositioned { coordinates ->
+                        coordinatesHolder.coordinates = coordinates
+                    }
                     .then(
                         if (selected) {
                             Modifier.border(
@@ -3755,7 +3846,11 @@ private fun MessageBubble(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
                 onClick = {
-                    if (selectionMode) onToggleSelection()
+                    if (selectionMode) {
+                        onToggleSelection()
+                    } else if (!isDeleted) {
+                        onOpenContextMenu(coordinatesHolder.coordinates?.takeIf { it.isAttached }?.boundsInWindow())
+                    }
                 },
                 onLongClick = {
                     if (!selectionMode && message.content != MessageContent.Deleted) onLongPress()
@@ -4043,7 +4138,19 @@ private fun MessageBubble(
 
                 val metaFooter: @Composable () -> Unit = {
                     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                            ) {
+                                if (selectionMode) {
+                                    onToggleSelection()
+                                } else if (!isDeleted) {
+                                    onOpenContextMenu(coordinatesHolder.coordinates?.takeIf { it.isAttached }?.boundsInWindow())
+                                }
+                            },
+                        ) {
                             if (isSecretConversation && secretAutoDeleteSeconds > 0) {
                                 Icon(
                                     imageVector = Icons.Default.Timer,
@@ -4083,7 +4190,7 @@ private fun MessageBubble(
                             onViewPost = onOpenPost,
                         )
                         Spacer(Modifier.height(4.dp))
-                        Box(Modifier.align(if (isRtlMessage) Alignment.Start else Alignment.End)) {
+                        Box(Modifier.align(AbsoluteAlignment.Right)) {
                             metaFooter()
                         }
                     }
@@ -4117,7 +4224,7 @@ private fun MessageBubble(
                         layoutDirection = if (isRtlMessage) LayoutDirection.Rtl else LayoutDirection.Ltr,
                     )
                 } else {
-                    Box(Modifier.align(if (isRtlMessage) Alignment.Start else Alignment.End)) {
+                    Box(Modifier.align(AbsoluteAlignment.Right)) {
                         metaFooter()
                     }
                 }
@@ -4200,14 +4307,26 @@ private fun ComposerContextBanner(
             .padding(horizontal = 8.dp, vertical = 3.dp)
             .shadow(3.dp, RoundedCornerShape(18.dp))
             .clip(RoundedCornerShape(18.dp))
-            .background(
-                if (isDark) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.95f)
-                else Color.White.copy(alpha = 0.96f),
-            )
-            .border(
-                0.5.dp,
-                if (isDark) Color(0x22FFFFFF) else Color(0x18000000),
-                RoundedCornerShape(18.dp),
+            .then(
+                LocalVistaGlassState.current?.let { gs ->
+                    Modifier.vistaGlass(
+                        state = gs,
+                        shape = RoundedCornerShape(18.dp),
+                        tint = if (isDark) MaterialTheme.colorScheme.surfaceVariant else Color.White,
+                        isDark = isDark,
+                        blurRadius = VistaGlassTokens.PillBlur,
+                        rimWidth = 0.6.dp,
+                    )
+                } ?: Modifier
+                    .background(
+                        if (isDark) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.95f)
+                        else Color.White.copy(alpha = 0.96f),
+                    )
+                    .border(
+                        0.5.dp,
+                        if (isDark) Color(0x22FFFFFF) else Color(0x18000000),
+                        RoundedCornerShape(18.dp),
+                    ),
             )
             .padding(horizontal = 12.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -5876,20 +5995,36 @@ private fun Composer(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
+                val composerGlass = LocalVistaGlassState.current
                 Row(
                     Modifier
                         .weight(1f)
-                        .shadow(4.dp, RoundedCornerShape(24.dp))
+                        .then(
+                            if (composerGlass != null) {
+                                Modifier.vistaGlass(
+                                    state = composerGlass,
+                                    shape = RoundedCornerShape(24.dp),
+                                    tint = if (isSystemInDarkTheme()) MaterialTheme.colorScheme.surfaceVariant else Color.White,
+                                    isDark = isSystemInDarkTheme(),
+                                    blurRadius = VistaGlassTokens.BarBlur,
+                                    rimWidth = 0.6.dp,
+                                    shadowElevation = 4.dp,
+                                )
+                            } else {
+                                Modifier
+                                    .shadow(4.dp, RoundedCornerShape(24.dp))
+                                    .background(
+                                        if (isSystemInDarkTheme()) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.94f)
+                                        else Color.White.copy(alpha = 0.94f),
+                                    )
+                                    .border(
+                                        0.5.dp,
+                                        if (isSystemInDarkTheme()) Color(0x20FFFFFF) else Color(0x15000000),
+                                        RoundedCornerShape(24.dp),
+                                    )
+                            },
+                        )
                         .clip(RoundedCornerShape(24.dp))
-                        .background(
-                            if (isSystemInDarkTheme()) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.94f)
-                            else Color.White.copy(alpha = 0.94f),
-                        )
-                        .border(
-                            0.5.dp,
-                            if (isSystemInDarkTheme()) Color(0x20FFFFFF) else Color(0x15000000),
-                            RoundedCornerShape(24.dp),
-                        )
                         .padding(horizontal = 6.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -6012,7 +6147,18 @@ private fun FloatingMessageDateChip(epochMillis: Long) {
         modifier = Modifier
             .shadow(4.dp, RoundedCornerShape(18.dp))
             .clip(RoundedCornerShape(18.dp))
-            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.92f))
+            .then(
+                LocalVistaGlassState.current?.let { gs ->
+                    Modifier.vistaGlass(
+                        state = gs,
+                        shape = RoundedCornerShape(18.dp),
+                        tint = MaterialTheme.colorScheme.surface,
+                        isDark = isSystemInDarkTheme(),
+                        blurRadius = VistaGlassTokens.PillBlur,
+                        rimWidth = 0.6.dp,
+                    )
+                } ?: Modifier.background(MaterialTheme.colorScheme.surface.copy(alpha = 0.92f)),
+            )
             .padding(horizontal = 14.dp, vertical = 6.dp)
             .semantics { contentDescription = "تاریخ گفتگو: " + localDayLabel(epochMillis) },
     )

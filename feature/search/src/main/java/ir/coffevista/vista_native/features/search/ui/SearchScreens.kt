@@ -40,8 +40,11 @@ import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import ir.coffevista.vista_native.core.designsystem.glass.VistaGlassScrollSync
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -69,6 +72,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.luminance
+import ir.coffevista.vista_native.core.designsystem.glass.VistaGlassTokens
+import ir.coffevista.vista_native.core.designsystem.glass.rememberVistaGlassState
+import ir.coffevista.vista_native.core.designsystem.glass.vistaGlass
+import ir.coffevista.vista_native.core.designsystem.glass.vistaGlassSource
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -103,7 +111,11 @@ fun SearchLauncherScreen(
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    Column(
+    val searchGlassState = rememberVistaGlassState()
+    val launcherListState = rememberLazyListState()
+    VistaGlassScrollSync(searchGlassState, launcherListState)
+    val isDarkSearch = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    Box(
         modifier = modifier
             .fillMaxSize()
             .safeDrawingPadding()
@@ -112,12 +124,38 @@ fun SearchLauncherScreen(
     ) {
         Box(
             modifier = Modifier
+                .fillMaxSize()
+                .vistaGlassSource(searchGlassState)
+                .background(MaterialTheme.colorScheme.background),
+        ) {
+            LauncherContent(
+                state = state,
+                listState = launcherListState,
+                onHashtag = {
+                    viewModel.selectHashtag(it)
+                    onOpenWorkspace()
+                },
+                onPost = onPostClick,
+                onLoadMoreExplore = viewModel::loadMoreExplore,
+                onRefresh = viewModel::refreshTrending,
+            )
+        }
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
                 .padding(start = 16.dp, top = 12.dp, end = 16.dp, bottom = 8.dp)
                 .fillMaxWidth()
                 .height(56.dp)
+                .vistaGlass(
+                    state = searchGlassState,
+                    shape = SearchFieldShape,
+                    tint = MaterialTheme.colorScheme.surface,
+                    isDark = isDarkSearch,
+                    blurRadius = VistaGlassTokens.PillBlur,
+                    rimWidth = 0.8.dp,
+                    shadowElevation = 6.dp,
+                )
                 .clip(SearchFieldShape)
-                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.45f))
-                .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.75f), SearchFieldShape)
                 .clickable(
                     role = Role.Button,
                     indication = null,
@@ -152,16 +190,6 @@ fun SearchLauncherScreen(
                 }
             }
         }
-        LauncherContent(
-            state = state,
-            onHashtag = {
-                viewModel.selectHashtag(it)
-                onOpenWorkspace()
-            },
-            onPost = onPostClick,
-            onLoadMoreExplore = viewModel::loadMoreExplore,
-            onRefresh = viewModel::refreshTrending,
-        )
     }
 }
 
@@ -435,6 +463,7 @@ private fun SearchField(
 @Composable
 private fun LauncherContent(
     state: SearchUiState,
+    listState: LazyListState = rememberLazyListState(),
     onHashtag: (String) -> Unit,
     onPost: (SearchPost) -> Unit,
     onLoadMoreExplore: () -> Unit,
@@ -446,8 +475,9 @@ private fun LauncherContent(
         modifier = Modifier.fillMaxSize(),
     ) {
         LazyColumn(
+            state = listState,
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 96.dp),
+            contentPadding = PaddingValues(start = 16.dp, top = 76.dp, end = 16.dp, bottom = 96.dp),
         ) {
             item {
                 SectionHeader(title = "ترندهای امروز")

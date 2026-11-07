@@ -26,6 +26,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import ir.coffevista.vista_native.core.designsystem.glass.VistaWindowBlurEffect
+import ir.coffevista.vista_native.core.designsystem.glass.rememberVistaGlassBlurSupported
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaLayout
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaSpacing
 
@@ -102,9 +104,16 @@ fun VistaDialog(
     onDismiss: () -> Unit,
 ) {
     if (visible) {
+        val blurSupported = rememberVistaGlassBlurSupported()
         AlertDialog(
             onDismissRequest = onDismiss,
-            title = { Text(title) },
+            containerColor = MaterialTheme.colorScheme.surface.copy(
+                alpha = if (blurSupported) 0.84f else 0.97f,
+            ),
+            title = {
+                VistaWindowBlurEffect()
+                Text(title)
+            },
             text = { Text(message) },
             confirmButton = {
                 VistaButton(onClick = onConfirm, variant = VistaButtonVariant.Destructive) {
@@ -129,7 +138,14 @@ fun VistaBottomSheet(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     if (visible) {
-        ModalBottomSheet(onDismissRequest = onDismiss) {
+        val blurSupported = rememberVistaGlassBlurSupported()
+        ModalBottomSheet(
+            onDismissRequest = onDismiss,
+            containerColor = MaterialTheme.colorScheme.surface.copy(
+                alpha = if (blurSupported) 0.84f else 0.97f,
+            ),
+        ) {
+            VistaWindowBlurEffect()
             Column(
                 modifier = Modifier
                     .fillMaxWidth()

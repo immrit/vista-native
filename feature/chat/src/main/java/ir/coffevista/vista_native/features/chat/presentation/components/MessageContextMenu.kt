@@ -84,6 +84,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import ir.coffevista.vista_native.core.designsystem.component.VistaEmoji
+import ir.coffevista.vista_native.core.designsystem.glass.LocalVistaGlassState
+import ir.coffevista.vista_native.core.designsystem.glass.VistaGlassState
+import ir.coffevista.vista_native.core.designsystem.glass.VistaGlassTokens
+import ir.coffevista.vista_native.core.designsystem.glass.vistaGlass
 import ir.coffevista.vista_native.features.chat.domain.model.Message
 import ir.coffevista.vista_native.features.chat.domain.model.AttachmentKind
 import androidx.compose.material.icons.filled.BookmarkBorder
@@ -112,7 +116,9 @@ internal fun MessageContextMenu(
     onInfo: () -> Unit = {},
     onToggleSaveGif: (() -> Unit)? = null,
     isGifSaved: Boolean = false,
+    glassState: VistaGlassState? = LocalVistaGlassState.current,
 ) {
+    val isDark = isSystemInDarkTheme()
     val quickReactions = remember { listOf("❤️", "👍", "🔥", "👎", "😂", "🎉", "🙏") }
     val policy = remember(message, capabilities) { message.contextActionPolicy(capabilities) }
     val density = LocalDensity.current
@@ -169,21 +175,11 @@ internal fun MessageContextMenu(
                 // رسم پس‌زمینه مات و روزنه حباب پیام در لایه گرافیکی مستقل
                 .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
                 .drawWithContent {
-                    // ۱. ابتدا لایه مات سراسری کشیده می‌شود
+                    // ۱. ابتدا لایه تیره سراسری (Scrim) کشیده می‌شود
                     drawRect(colors.scrim.copy(alpha = colors.scrim.alpha * scrimProgress))
 
-                    // ۲. سپس هاله نورانی و روزنه شفاف دقیقاً در محل فیزیکی حباب پیام پانچ می‌شود
+                    // ۲. سپس روزنه شفاف دقیقاً در محل فیزیکی حباب پیام پانچ می‌شود
                     overlayAnchor?.let { bounds ->
-                        val halo = focusedBubbleCornerRadiusPx * 0.16f
-                        drawRoundRect(
-                            color = Color.White.copy(alpha = 0.22f * scrimProgress),
-                            topLeft = Offset(bounds.left - halo, bounds.top - halo),
-                            size = Size(bounds.width + halo * 2f, bounds.height + halo * 2f),
-                            cornerRadius = CornerRadius(
-                                focusedBubbleCornerRadiusPx + halo,
-                                focusedBubbleCornerRadiusPx + halo,
-                            ),
-                        )
                         drawRoundRect(
                             color = Color.Transparent,
                             topLeft = Offset(bounds.left, bounds.top),
@@ -196,7 +192,7 @@ internal fun MessageContextMenu(
                         )
                     }
 
-                    // ۳. در نهایت، نوار واکنش‌ها و کارت منو روی لایه کشیده می‌شوند (هرگز پاک نمی‌شوند)
+                    // ۳. در نهایت، نوار واکنش‌ها و کارت منوی شیشه‌ای روی لایه کشیده می‌شوند
                     drawContent()
                 }
                 .clickable(
@@ -244,13 +240,13 @@ internal fun MessageContextMenu(
                                 bottom = insetPadding.calculateBottomPadding().toPx(),
                             ),
                             isMine = message.isMine,
-                            menuWidth = 195.dp.toPx(),
+                            menuWidth = 204.dp.toPx(),
                             menuHeight = menuSizePx.height.takeIf { it > 0 }?.toFloat()
-                                ?: (policy.visibleActionCount * 40 + 16).dp.toPx(),
+                                ?: (policy.visibleActionCount * 42 + 16).dp.toPx(),
                             reactionsWidth = reactionsSizePx.width.takeIf { it > 0 }?.toFloat()
-                                ?: 300.dp.toPx(),
+                                ?: 304.dp.toPx(),
                             reactionsHeight = reactionsSizePx.height.takeIf { it > 0 }?.toFloat()
-                                ?: 44.dp.toPx(),
+                                ?: 46.dp.toPx(),
                             showReactions = policy.canReact,
                             edgeGap = 12.dp.toPx(),
                             elementGap = 8.dp.toPx(),
@@ -259,10 +255,10 @@ internal fun MessageContextMenu(
                 }
 
                     if (policy.canReact) Surface(
-                        shape = RoundedCornerShape(23.dp),
-                        color = colors.surface,
-                        shadowElevation = 8.dp,
-                        tonalElevation = 4.dp,
+                        shape = RoundedCornerShape(24.dp),
+                        color = if (glassState != null) Color.Transparent else colors.surface,
+                        shadowElevation = if (glassState != null) 0.dp else 8.dp,
+                        tonalElevation = if (glassState != null) 0.dp else 4.dp,
                         modifier = Modifier
                             .offset {
                                 IntOffset(
@@ -270,28 +266,41 @@ internal fun MessageContextMenu(
                                     placement.reactions.y.roundToInt(),
                                 )
                             }
+                            .zIndex(1f)
+                            .onSizeChanged { reactionsSizePx = it }
                             .graphicsLayer {
                                 alpha = reactionProgress
                                 scaleX = 0.86f + reactionProgress * 0.14f
                                 scaleY = 0.86f + reactionProgress * 0.14f
                                 transformOrigin = menuTransformOrigin
                             }
-                            // The reactions capsule is intentionally above the
-                            // command card even when constrained placement puts
-                            // the two surfaces close together.
-                            .zIndex(1f)
-                            .onSizeChanged { reactionsSizePx = it }
+                            .then(
+                                if (glassState != null) {
+                                    Modifier.vistaGlass(
+                                        state = glassState,
+                                        shape = RoundedCornerShape(24.dp),
+                                        tint = colors.surface,
+                                        isDark = isDark,
+                                        blurRadius = VistaGlassTokens.PopupBlur,
+                                        tintAlphaOverride = if (isDark) 0.86f else 0.90f,
+                                        rimWidth = 0.8.dp,
+                                        shadowElevation = 10.dp,
+                                    )
+                                } else {
+                                    Modifier
+                                },
+                            )
                             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {},
                     ) {
                         Row(
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                            horizontalArrangement = Arrangement.spacedBy(3.dp),
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             quickReactions.forEach { emoji ->
                                 Box(
                                     modifier = Modifier
-                                        .size(33.dp)
+                                        .size(35.dp)
                                         .clip(CircleShape)
                                         .semantics { contentDescription = "واکنش $emoji" }
                                         .clickable(role = Role.Button) { onReact(emoji) },
@@ -299,7 +308,7 @@ internal fun MessageContextMenu(
                                 ) {
                                     VistaEmoji(
                                         emoji = emoji,
-                                        size = 21.dp,
+                                        size = 23.dp,
                                     )
                                 }
                             }
@@ -308,10 +317,10 @@ internal fun MessageContextMenu(
 
                     // ۲. کارت دستورات پیام (Action Menu Card)
                     Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = colors.surface,
-                        shadowElevation = 10.dp,
-                        tonalElevation = 6.dp,
+                        shape = RoundedCornerShape(16.dp),
+                        color = if (glassState != null) Color.Transparent else colors.surface,
+                        shadowElevation = if (glassState != null) 0.dp else 10.dp,
+                        tonalElevation = if (glassState != null) 0.dp else 6.dp,
                         modifier = Modifier
                             .offset {
                                 IntOffset(
@@ -319,15 +328,32 @@ internal fun MessageContextMenu(
                                     placement.menu.y.roundToInt(),
                                 )
                             }
+                            .zIndex(0f)
+                            .width(204.dp)
+                            .onSizeChanged { menuSizePx = it }
                             .graphicsLayer {
                                 alpha = menuProgress
                                 scaleX = 0.92f + menuProgress * 0.08f
                                 scaleY = 0.92f + menuProgress * 0.08f
                                 transformOrigin = menuTransformOrigin
                             }
-                            .zIndex(0f)
-                            .onSizeChanged { menuSizePx = it }
-                            .width(195.dp)
+                            .then(
+                                if (glassState != null) {
+                                    Modifier.vistaGlass(
+                                        state = glassState,
+                                        shape = RoundedCornerShape(16.dp),
+                                        tint = colors.surface,
+                                        isDark = isDark,
+                                        blurRadius = VistaGlassTokens.PopupBlur,
+                                        tintAlphaOverride = if (isDark) 0.88f else 0.91f,
+                                        rimWidth = 0.8.dp,
+                                        enableRefraction = false,
+                                        shadowElevation = 12.dp,
+                                    )
+                                } else {
+                                    Modifier
+                                },
+                            )
                             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {},
                     ) {
                         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
@@ -418,12 +444,12 @@ private fun messageContextMenuColors(): MessageContextMenuColors {
     val isDark = isSystemInDarkTheme()
     val scheme = MaterialTheme.colorScheme
     return MessageContextMenuColors(
-        surface = if (isDark) Color(0xFF252525) else Color.White,
-        text = if (isDark) Color.White else Color(0xFF1E293B),
-        icon = if (isDark) Color.White.copy(alpha = 0.70f) else Color.Black.copy(alpha = 0.54f),
-        divider = if (isDark) Color.White.copy(alpha = 0.12f) else Color(0xFFE2E8F0),
+        surface = if (isDark) Color(0xFF1E2631) else Color(0xFFFDFEFF),
+        text = if (isDark) Color(0xFFF8FAFC) else Color(0xFF0F172A),
+        icon = if (isDark) Color.White.copy(alpha = 0.78f) else Color(0xFF334155),
+        divider = if (isDark) Color.White.copy(alpha = 0.10f) else Color(0xFFCBD5E1).copy(alpha = 0.65f),
         delete = scheme.error,
-        scrim = scheme.scrim.copy(alpha = 0.45f),
+        scrim = Color.Black.copy(alpha = if (isDark) 0.44f else 0.28f),
     )
 }
 
@@ -522,7 +548,7 @@ private fun MessageContextMenuActions(
         }
         if (policy.canDelete && policy.visibleActionCount > 1) {
             HorizontalDivider(
-                modifier = Modifier.padding(vertical = 3.dp, horizontal = 10.dp),
+                modifier = Modifier.padding(vertical = 4.dp, horizontal = 14.dp),
                 thickness = 0.5.dp,
                 color = dividerColor,
             )
@@ -554,22 +580,22 @@ private fun MessageContextMenuItem(
             .fillMaxWidth()
             .semantics { contentDescription = label }
             .clickable(role = Role.Button, onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 10.dp),
+            .padding(horizontal = 16.dp, vertical = 11.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Text(
-            text = label,
-            color = textColor,
-            fontSize = 14.sp,
-            fontWeight = if (isDestructive) FontWeight.Medium else FontWeight.Normal,
-            maxLines = 1,
-        )
         Icon(
             imageVector = icon,
             contentDescription = null,
             tint = iconColor,
-            modifier = Modifier.size(19.dp),
+            modifier = Modifier.size(20.dp),
+        )
+        Text(
+            text = label,
+            color = textColor,
+            fontSize = 14.sp,
+            fontWeight = if (isDestructive) FontWeight.SemiBold else FontWeight.Medium,
+            maxLines = 1,
         )
     }
 }

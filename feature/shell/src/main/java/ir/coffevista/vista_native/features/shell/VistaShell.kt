@@ -111,6 +111,12 @@ import ir.coffevista.vista_native.core.designsystem.component.VistaMediaCard
 import ir.coffevista.vista_native.core.designsystem.component.VistaNotificationBadge
 import ir.coffevista.vista_native.core.designsystem.component.VistaSurface
 import ir.coffevista.vista_native.core.designsystem.component.VistaTextField
+import ir.coffevista.vista_native.core.designsystem.glass.VistaGlassState
+import ir.coffevista.vista_native.core.designsystem.glass.VistaGlassTokens
+import ir.coffevista.vista_native.core.designsystem.glass.rememberVistaGlassBlurSupported
+import ir.coffevista.vista_native.core.designsystem.glass.rememberVistaGlassState
+import ir.coffevista.vista_native.core.designsystem.glass.vistaGlass
+import ir.coffevista.vista_native.core.designsystem.glass.vistaGlassSource
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaLayout
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaSpacing
 import ir.coffevista.vista_native.core.model.session.AuthenticatedContext
@@ -266,6 +272,7 @@ fun VistaShell(
     }
 
     val homeTabClickFlow = remember { kotlinx.coroutines.flow.MutableSharedFlow<Unit>(extraBufferCapacity = 1) }
+    val glassState = rememberVistaGlassState()
 
     CompositionLocalProvider(
         LocalBottomBarVisibility provides { isBottomIslandVisible = it },
@@ -299,7 +306,10 @@ fun VistaShell(
                     animationSpec = tween(320, easing = FastOutSlowInEasing)
                 ) + fadeOut(animationSpec = tween(180))
             },
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .vistaGlassSource(glassState)
+                .background(MaterialTheme.colorScheme.background),
         ) {
             navigation(route = ShellRoutes.FeedGraph, startDestination = ShellRoutes.FeedRoot) {
                 composable(ShellRoutes.FeedRoot) {
@@ -922,6 +932,7 @@ fun VistaShell(
         ) {
             VistaBottomIsland(
                 selectedTab = selectedTab,
+                glassState = glassState,
                 chatBadgeCount = content.chatBadgeCount,
                 onSelect = { tab ->
                     if (tab == ShellTab.Feed) {
@@ -970,6 +981,7 @@ private fun VistaShellSystemBars() {
 @Composable
 private fun VistaBottomIsland(
     selectedTab: ShellTab,
+    glassState: VistaGlassState,
     chatBadgeCount: Int,
     onSelect: (ShellTab) -> Unit,
     modifier: Modifier = Modifier,
@@ -982,6 +994,10 @@ private fun VistaBottomIsland(
         ).toDp()
     }
     val background = MaterialTheme.colorScheme.background
+    val blurSupported = rememberVistaGlassBlurSupported()
+    // With real backdrop blur the content must stay visible beneath the capsule, so the legacy
+    // opaque fade is toned down; without blur the original fade keeps the bar legible.
+    val fadeScale = if (blurSupported) 0.68f else 1f
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -989,9 +1005,9 @@ private fun VistaBottomIsland(
             .background(
                 Brush.verticalGradient(
                     0f to Color.Transparent,
-                    .35f to background.copy(alpha = .55f),
-                    .65f to background.copy(alpha = .88f),
-                    1f to background,
+                    0.58f to Color.Transparent,
+                    0.82f to background.copy(alpha = 0.62f * fadeScale),
+                    1f to background.copy(alpha = 0.92f * fadeScale),
                 ),
             ),
         contentAlignment = Alignment.BottomCenter,
@@ -1002,23 +1018,19 @@ private fun VistaBottomIsland(
                 .padding(start = 16.dp, end = 16.dp, bottom = 28.dp + bottomInset)
                 .fillMaxWidth()
                 .height(64.dp)
-                .shadow(
-                    elevation = 14.dp,
+                .vistaGlass(
+                    state = glassState,
                     shape = RoundedCornerShape(32.dp),
-                    ambientColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
-                    spotColor = Color.Black.copy(alpha = 0.16f),
+                    tint = MaterialTheme.colorScheme.surface,
+                    isDark = !isLight,
+                    blurRadius = VistaGlassTokens.BarBlur,
+                    tintAlphaOverride = if (!isLight) 0.64f else 0.66f,
+                    rimWidth = 1.dp,
+                    shadowElevation = 14.dp,
                 ),
             shape = RoundedCornerShape(32.dp),
-            color = MaterialTheme.colorScheme.surface.copy(alpha = if (isLight) .90f else .85f),
-            border = BorderStroke(
-                width = 1.dp,
-                brush = Brush.verticalGradient(
-                    listOf(
-                        Color.White.copy(alpha = if (isLight) 0.65f else 0.22f),
-                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
-                    ),
-                ),
-            ),
+            color = Color.Transparent,
+            shadowElevation = 0.dp,
         ) {
             Row(
                 modifier = Modifier
@@ -1032,12 +1044,17 @@ private fun VistaBottomIsland(
                     val activeColor = MaterialTheme.colorScheme.primary
                     val inactiveColor = MaterialTheme.colorScheme.onSurfaceVariant
                     val tabScale by animateFloatAsState(
-                        targetValue = if (selected) 1.14f else 1.0f,
+                        targetValue = if (selected) 1.12f else 1.0f,
                         animationSpec = spring(
                             dampingRatio = Spring.DampingRatioMediumBouncy,
                             stiffness = Spring.StiffnessMediumLow,
                         ),
                         label = "tab_scale_${tab.name}",
+                    )
+                    val pillAlpha by animateFloatAsState(
+                        targetValue = if (selected) 1f else 0f,
+                        animationSpec = tween(durationMillis = 220),
+                        label = "tab_pill_${tab.name}",
                     )
                     val tabIconColor by animateColorAsState(
                         targetValue = if (selected) activeColor else inactiveColor,
@@ -1060,10 +1077,20 @@ private fun VistaBottomIsland(
                                     role = Role.Tab
                                     this.selected = selected
                                 },
-                            shape = RoundedCornerShape(14.dp),
-                            color = if (selected) activeColor else {
-                                MaterialTheme.colorScheme.surfaceVariant
+                            shape = RoundedCornerShape(16.dp),
+                            color = if (selected) {
+                                activeColor
+                            } else {
+                                MaterialTheme.colorScheme.onSurface.copy(alpha = if (isLight) 0.06f else 0.10f)
                             },
+                            border = BorderStroke(
+                                width = 0.6.dp,
+                                color = if (selected) {
+                                    Color.White.copy(alpha = 0.35f)
+                                } else {
+                                    Color.White.copy(alpha = if (isLight) 0.45f else 0.14f)
+                                },
+                            ),
                             contentColor = if (selected) {
                                 MaterialTheme.colorScheme.onPrimary
                             } else {
@@ -1091,8 +1118,13 @@ private fun VistaBottomIsland(
                                     scaleX = tabScale
                                     scaleY = tabScale
                                 }
-                                .size(54.dp)
-                                .clip(CircleShape)
+                                .width(60.dp)
+                                .height(48.dp)
+                                .clip(RoundedCornerShape(24.dp))
+                                .background(
+                                    activeColor.copy(alpha = (if (isLight) 0.12f else 0.20f) * pillAlpha),
+                                    RoundedCornerShape(24.dp),
+                                )
                                 .clickable(
                                     interactionSource = remember { MutableInteractionSource() },
                                     indication = ripple(bounded = true),
