@@ -35,6 +35,7 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.shape.CircleShape
@@ -116,6 +117,7 @@ import ir.coffevista.vista_native.core.designsystem.glass.VistaGlassTokens
 import ir.coffevista.vista_native.core.designsystem.glass.rememberVistaGlassBlurSupported
 import ir.coffevista.vista_native.core.designsystem.glass.rememberVistaGlassState
 import ir.coffevista.vista_native.core.designsystem.glass.vistaGlass
+import ir.coffevista.vista_native.core.designsystem.glass.vistaGlassHalo
 import ir.coffevista.vista_native.core.designsystem.glass.vistaGlassSource
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaLayout
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaSpacing
@@ -998,44 +1000,45 @@ private fun VistaBottomIsland(
     // With real backdrop blur the content must stay visible beneath the capsule, so the legacy
     // opaque fade is toned down; without blur the original fade keeps the bar legible.
     val fadeScale = if (blurSupported) 0.68f else 1f
+    val isLight = MaterialTheme.colorScheme.background.luminance() > 0.5f
+    val isDark = !isLight
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(110.dp + bottomInset)
-            .background(
-                Brush.verticalGradient(
-                    0f to Color.Transparent,
-                    0.58f to Color.Transparent,
-                    0.82f to background.copy(alpha = 0.62f * fadeScale),
-                    1f to background.copy(alpha = 0.92f * fadeScale),
-                ),
+            .height(72.dp + bottomInset)
+            .vistaGlassHalo(
+                state = glassState,
+                isDark = isDark,
+                blurRadius = 22.dp,
+                startOffsetFraction = 0.16f,
+                maxAlpha = if (isDark) 0.54f else 0.58f,
             ),
         contentAlignment = Alignment.BottomCenter,
     ) {
-        val isLight = MaterialTheme.colorScheme.background.luminance() > 0.5f
         Surface(
             modifier = Modifier
-                .padding(start = 16.dp, end = 16.dp, bottom = 28.dp + bottomInset)
+                .padding(start = 20.dp, end = 20.dp, bottom = 14.dp + bottomInset)
                 .fillMaxWidth()
-                .height(64.dp)
+                .height(58.dp)
                 .vistaGlass(
                     state = glassState,
-                    shape = RoundedCornerShape(32.dp),
-                    tint = MaterialTheme.colorScheme.surface,
+                    shape = RoundedCornerShape(29.dp),
+                    tint = if (!isLight) Color(0xFF1C242F) else MaterialTheme.colorScheme.surface,
                     isDark = !isLight,
                     blurRadius = VistaGlassTokens.BarBlur,
-                    tintAlphaOverride = if (!isLight) 0.64f else 0.66f,
-                    rimWidth = 1.dp,
-                    shadowElevation = 14.dp,
+                    tintAlphaOverride = if (!isLight) 0.82f else 0.85f,
+                    drawHighlight = false,
+                    rimWidth = 0.6.dp,
+                    shadowElevation = 8.dp,
                 ),
-            shape = RoundedCornerShape(32.dp),
+            shape = RoundedCornerShape(29.dp),
             color = Color.Transparent,
             shadowElevation = 0.dp,
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                    .padding(horizontal = 6.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceAround,
             ) {
@@ -1044,117 +1047,71 @@ private fun VistaBottomIsland(
                     val activeColor = MaterialTheme.colorScheme.primary
                     val inactiveColor = MaterialTheme.colorScheme.onSurfaceVariant
                     val tabScale by animateFloatAsState(
-                        targetValue = if (selected) 1.12f else 1.0f,
+                        targetValue = if (selected) 1.05f else 1.0f,
                         animationSpec = spring(
                             dampingRatio = Spring.DampingRatioMediumBouncy,
-                            stiffness = Spring.StiffnessMediumLow,
+                            stiffness = Spring.StiffnessMedium,
                         ),
                         label = "tab_scale_${tab.name}",
                     )
                     val pillAlpha by animateFloatAsState(
                         targetValue = if (selected) 1f else 0f,
-                        animationSpec = tween(durationMillis = 220),
+                        animationSpec = tween(durationMillis = 200),
                         label = "tab_pill_${tab.name}",
                     )
                     val tabIconColor by animateColorAsState(
                         targetValue = if (selected) activeColor else inactiveColor,
-                        animationSpec = tween(durationMillis = 200),
+                        animationSpec = tween(durationMillis = 180),
                         label = "tab_color_${tab.name}",
                     )
-                    if (tab == ShellTab.Services) {
-                        Surface(
-                            onClick = { onSelect(tab) },
-                            modifier = Modifier
-                                .testTag("shell-tab-${tab.name.lowercase()}")
-                                .graphicsLayer {
-                                    scaleX = tabScale
-                                    scaleY = tabScale
-                                }
-                                .width(64.dp)
-                                .height(48.dp)
-                                .semantics {
-                                    contentDescription = tab.labelFa
-                                    role = Role.Tab
-                                    this.selected = selected
-                                },
-                            shape = RoundedCornerShape(16.dp),
-                            color = if (selected) {
-                                activeColor
-                            } else {
-                                MaterialTheme.colorScheme.onSurface.copy(alpha = if (isLight) 0.06f else 0.10f)
-                            },
-                            border = BorderStroke(
+                    Box(
+                        modifier = Modifier
+                            .testTag("shell-tab-${tab.name.lowercase()}")
+                            .graphicsLayer {
+                                scaleX = tabScale
+                                scaleY = tabScale
+                            }
+                            .width(58.dp)
+                            .height(44.dp)
+                            .clip(RoundedCornerShape(22.dp))
+                            .background(
+                                activeColor.copy(alpha = (if (isLight) 0.12f else 0.20f) * pillAlpha),
+                                RoundedCornerShape(22.dp),
+                            )
+                            .border(
                                 width = 0.6.dp,
-                                color = if (selected) {
-                                    Color.White.copy(alpha = 0.35f)
-                                } else {
-                                    Color.White.copy(alpha = if (isLight) 0.45f else 0.14f)
-                                },
-                            ),
-                            contentColor = if (selected) {
-                                MaterialTheme.colorScheme.onPrimary
-                            } else {
-                                inactiveColor
+                                color = activeColor.copy(alpha = (if (isLight) 0.20f else 0.32f) * pillAlpha),
+                                shape = RoundedCornerShape(22.dp),
+                            )
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = ripple(bounded = true),
+                                onClick = { onSelect(tab) },
+                            )
+                            .semantics {
+                                contentDescription = tab.labelFa
+                                role = Role.Tab
+                                this.selected = selected
                             },
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                VistaNavigationIcon(
-                                    tab = tab,
-                                    selected = selected,
-                                    color = if (selected) {
-                                        MaterialTheme.colorScheme.onPrimary
-                                    } else {
-                                        inactiveColor
-                                    },
-                                    modifier = Modifier.size(28.dp),
-                                )
-                            }
-                        }
-                    } else {
-                        Box(
-                            modifier = Modifier
-                                .testTag("shell-tab-${tab.name.lowercase()}")
-                                .graphicsLayer {
-                                    scaleX = tabScale
-                                    scaleY = tabScale
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        VistaBadgedBox(
+                            badge = {
+                                if (tab == ShellTab.Chat && chatBadgeCount > 0) {
+                                    VistaNotificationBadge(
+                                        count = chatBadgeCount,
+                                        borderColor = MaterialTheme.colorScheme.surface,
+                                        modifier = Modifier.testTag("shell-chat-badge"),
+                                    )
                                 }
-                                .width(60.dp)
-                                .height(48.dp)
-                                .clip(RoundedCornerShape(24.dp))
-                                .background(
-                                    activeColor.copy(alpha = (if (isLight) 0.12f else 0.20f) * pillAlpha),
-                                    RoundedCornerShape(24.dp),
-                                )
-                                .clickable(
-                                    interactionSource = remember { MutableInteractionSource() },
-                                    indication = ripple(bounded = true),
-                                    onClick = { onSelect(tab) },
-                                )
-                                .semantics {
-                                    contentDescription = tab.labelFa
-                                    role = Role.Tab
-                                    this.selected = selected
-                                },
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            VistaBadgedBox(
-                                badge = {
-                                    if (tab == ShellTab.Chat && chatBadgeCount > 0) {
-                                        VistaNotificationBadge(
-                                            count = chatBadgeCount,
-                                            borderColor = MaterialTheme.colorScheme.surface,
-                                            modifier = Modifier.testTag("shell-chat-badge"),
-                                        )
-                                    }
-                                }
-                            ) {
-                                VistaNavigationIcon(
-                                    tab = tab,
-                                    selected = selected,
-                                    color = tabIconColor,
-                                    modifier = Modifier.size(28.dp),
-                                )
                             }
+                        ) {
+                            VistaNavigationIcon(
+                                tab = tab,
+                                selected = selected,
+                                color = tabIconColor,
+                                modifier = Modifier.size(25.dp),
+                            )
                         }
                     }
                 }

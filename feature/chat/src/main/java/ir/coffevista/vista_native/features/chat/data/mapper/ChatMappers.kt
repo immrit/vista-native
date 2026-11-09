@@ -166,6 +166,9 @@ private fun ConversationDto.conversationPreview(): String? {
     if (raw != null && raw.looksLikeCiphertextPreview()) {
         return "پیام جدید"
     }
+    if (raw != null && raw.startsWith("wf:")) {
+        return "🎤 پیام صوتی"
+    }
     return chatMessageTypePreview(lastMessageType, secret = false) ?: raw
 }
 
@@ -198,6 +201,8 @@ internal suspend fun ConversationEntity.toDomain(cipher: ChatContentCipher): Con
         val decrypted = runCatching { cipher.decrypt(accountId, id, "conversation-preview", it) }.getOrNull()
         if (decrypted != null && decrypted.looksLikeCiphertextPreview()) {
             "پیام جدید"
+        } else if (decrypted != null && decrypted.startsWith("wf:")) {
+            "🎤 پیام صوتی"
         } else {
             decrypted
         }
@@ -223,6 +228,7 @@ internal fun MessageDto.toDomain(accountId: String): Message {
             MessageContent.EncryptedUnavailable
         messageType.equals("sharedPost", true) || messageType.equals("storyReply", true) ->
             MessageContent.Structured(messageType, content)
+        content.startsWith("wf:") -> MessageContent.Text("")
         else -> MessageContent.Text(content)
     }
     val resolvedUrl = listOf(mediaUrl, attachmentUrl, audioUrl)
@@ -237,7 +243,7 @@ internal fun MessageDto.toDomain(accountId: String): Message {
             durationSeconds = duration,
             audioTitle = audioTitle,
             audioArtist = audioArtist,
-            audioAlbum = audioAlbum,
+            audioAlbum = audioAlbum ?: if (content.startsWith("wf:")) content else null,
             mediaGroupId = mediaGroupId,
         )
     }
@@ -356,6 +362,8 @@ internal suspend fun MessageEntity.toDomain(cipher: ChatContentCipher): Message 
         "encrypted_unavailable" -> MessageContent.EncryptedUnavailable
         else -> if (contentKind.startsWith("structured:")) {
             MessageContent.Structured(contentKind.removePrefix("structured:"), plaintext.orEmpty())
+        } else if (plaintext?.startsWith("wf:") == true) {
+            MessageContent.Text("")
         } else {
             plaintext?.let(MessageContent::Text) ?: MessageContent.EncryptedUnavailable
         }

@@ -8,6 +8,9 @@ import android.media.MediaRecorder
 import android.os.Build
 import android.os.SystemClock
 import java.util.Locale
+import androidx.compose.ui.layout.layout
+import kotlin.math.pow
+import kotlin.math.sin
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
@@ -85,7 +88,8 @@ fun VoiceRecorderDock(
     var dragOffsetY by remember { mutableFloatStateOf(0f) }
     var isCancelingState by remember { mutableStateOf(false) }
 
-    val waveformAmplitudes = remember { mutableStateListOf<Float>() }
+    val liveWaveformAmplitudes = remember { mutableStateListOf<Float>() }
+    val allRecordedAmplitudes = remember { mutableListOf<Float>() }
 
     var mediaRecorder by remember { mutableStateOf<MediaRecorder?>(null) }
     var recordingFile by remember { mutableStateOf<File?>(null) }
@@ -143,7 +147,8 @@ fun VoiceRecorderDock(
             recordingFile?.let { runCatching { it.delete() } }
         }
         recordingFile = null
-        waveformAmplitudes.clear()
+        liveWaveformAmplitudes.clear()
+        allRecordedAmplitudes.clear()
         durationSeconds = 0
         dragOffsetX = 0f
         dragOffsetY = 0f
@@ -160,6 +165,8 @@ fun VoiceRecorderDock(
         if (interaction.isActive) return
         interaction = VoiceCapturePolicy.begin(interaction)
         onActiveStateChange(true)
+        liveWaveformAmplitudes.clear()
+        allRecordedAmplitudes.clear()
         val session = interaction.session
         val dir = File(context.cacheDir, "chat-voice").apply { mkdirs() }
         val file = File(dir, "voice_${UUID.randomUUID()}.m4a")
@@ -221,11 +228,20 @@ fun VoiceRecorderDock(
                     durationSeconds = (elapsedMs / 1000).toInt()
 
                     val maxAmp = runCatching { recorder.maxAmplitude }.getOrDefault(0)
-                    val normalized = (maxAmp / 32767f).coerceIn(0.12f, 1f)
-                    if (waveformAmplitudes.size >= 48) {
-                        waveformAmplitudes.removeAt(0)
+                    val rawFraction = (maxAmp.toFloat() / 32767f).coerceIn(0f, 1f)
+                    val amplitude = if (rawFraction > 0.002f) {
+                        rawFraction.toDouble().pow(0.32).toFloat().coerceIn(0.12f, 1f)
+                    } else {
+                        val microFlutter = (sin(elapsedMs / 70.0).toFloat() * 0.04f).coerceAtLeast(0f)
+                        (0.10f + microFlutter).coerceIn(0.08f, 0.16f)
                     }
-                    waveformAmplitudes.add(normalized)
+
+                    allRecordedAmplitudes.add(amplitude)
+
+                    if (liveWaveformAmplitudes.size >= 22) {
+                        liveWaveformAmplitudes.removeAt(0)
+                    }
+                    liveWaveformAmplitudes.add(amplitude)
                 }
             }
         } catch (e: Exception) {
@@ -252,7 +268,23 @@ fun VoiceRecorderDock(
         abandonAudioFocus()
 
         if (file != null && file.exists() && file.length() > 0 && elapsedMs >= 700) {
-            val encodedWaveform = waveformAmplitudes.joinToString(",") {
+            val processedAmplitudes = if (allRecordedAmplitudes.size >= 10) {
+                val peak = allRecordedAmplitudes.maxOrNull() ?: 0f
+                val min = allRecordedAmplitudes.minOrNull() ?: 0f
+                val range = peak - min
+                if (peak > 0.18f && range > 0.08f) {
+                    val factor = (0.90f / peak).coerceIn(1f, 3.5f)
+                    allRecordedAmplitudes.map { (it * factor).coerceIn(0.12f, 0.98f) }
+                } else {
+                    synthesizeSpeechCadence(allRecordedAmplitudes.size)
+                }
+            } else {
+                synthesizeSpeechCadence(28)
+            }
+
+            val targetCount = 36
+            val downsampled = downsampleWaveform(processedAmplitudes, targetCount)
+            val encodedWaveform = downsampled.joinToString(",") {
                 String.format(Locale.US, "%.2f", it)
             }
             val draft = ChatAttachmentDraft(
@@ -262,7 +294,8 @@ fun VoiceRecorderDock(
                 sizeBytes = file.length(),
                 kind = AttachmentKind.VOICE,
                 durationSeconds = duration,
-                caption = if (encodedWaveform.isNotBlank()) "wf:$encodedWaveform" else "",
+                caption = "",
+                waveform = if (encodedWaveform.isNotBlank()) "wf:$encodedWaveform" else null,
             )
             onSendVoice(draft)
         }
@@ -275,15 +308,9 @@ fun VoiceRecorderDock(
 
     val lockProgress = (-dragOffsetY / lockThresholdPx).coerceIn(0f, 1f)
     val glassState = LocalVistaGlassState.current
-    val dockBaseTint = when {
-        isCancelingState && isDark -> Color(0xFF381414)
-        isCancelingState -> Color(0xFFFFEBEE)
-        isDark -> MaterialTheme.colorScheme.surfaceVariant
-        else -> Color.White
-    }
 
     Box(
-        modifier = modifier,
+        modifier = modifier.height(46.dp),
         contentAlignment = Alignment.CenterEnd
     ) {
         // نوار ضبط صدای فعال (در حالت نگه‌داشتن یا قفل‌شده)
@@ -296,26 +323,18 @@ fun VoiceRecorderDock(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(48.dp)
+                    .height(46.dp)
                     .then(
-                        if (glassState != null) {
-                            Modifier.vistaGlass(
-                                state = glassState,
-                                shape = RoundedCornerShape(24.dp),
-                                tint = dockBaseTint,
-                                isDark = isDark,
-                                blurRadius = VistaGlassTokens.PillBlur,
-                                rimWidth = 0.6.dp,
-                                shadowElevation = 4.dp,
+                        if (isCancelingState) {
+                            Modifier.background(
+                                Color(0xFFE53935).copy(alpha = if (isDark) 0.16f else 0.10f),
+                                RoundedCornerShape(23.dp),
                             )
                         } else {
                             Modifier
-                                .shadow(if (isDark) 0.dp else 4.dp, RoundedCornerShape(24.dp))
-                                .background(dockBaseTint.copy(alpha = 0.96f))
                         },
                     )
-                    .clip(RoundedCornerShape(24.dp))
-                    .padding(horizontal = 8.dp),
+                    .padding(start = 10.dp, end = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 // دکمه لغو / سطل زباله (در حالت قفل‌شده)
@@ -335,7 +354,7 @@ fun VoiceRecorderDock(
                         )
                     }
                 } else {
-                    Spacer(Modifier.width(8.dp))
+                    Spacer(Modifier.width(6.dp))
                 }
 
                 // نقطه چشمک‌زن قرمز
@@ -355,11 +374,11 @@ fun VoiceRecorderDock(
                 Text(
                     text = String.format("%02d:%02d", mins, secs),
                     fontWeight = FontWeight.Bold,
-                    color = if (isCancelingState) Color(0xFFE53935) else MaterialTheme.colorScheme.onSurface,
+                    color = if (isCancelingState) Color(0xFFE53935) else if (isDark) Color(0xFFF1F5F9) else Color(0xFF1E2732),
                     fontSize = 14.sp
                 )
 
-                Spacer(Modifier.width(12.dp))
+                Spacer(Modifier.width(10.dp))
 
                 // نمایش فرم‌موج صوتی زنده یا راهنمای کشیدن برای لغو
                 Box(
@@ -369,6 +388,16 @@ fun VoiceRecorderDock(
                     contentAlignment = Alignment.CenterStart
                 ) {
                     if (interaction.phase == VoiceCapturePhase.LOCKED) {
+                        val liveTransition = rememberInfiniteTransition(label = "liveEqualizer")
+                        val wavePhase by liveTransition.animateFloat(
+                            initialValue = 0f,
+                            targetValue = 6.283f,
+                            animationSpec = infiniteRepeatable(
+                                animation = tween(1400, easing = LinearEasing),
+                                repeatMode = RepeatMode.Restart,
+                            ),
+                            label = "wavePhase",
+                        )
                         // میله‌های زنده فرکانس صوتی
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -377,14 +406,20 @@ fun VoiceRecorderDock(
                         ) {
                             val count = 22
                             for (i in 0 until count) {
-                                val amp = waveformAmplitudes.getOrNull(i) ?: 0.12f
-                                val h = (5 + (amp * 22)).dp
+                                val liveAmp = liveWaveformAmplitudes.getOrNull(i) ?: 0f
+                                val amp = if (liveAmp > 0.18f) {
+                                    liveAmp
+                                } else {
+                                    val sine = sin(wavePhase + (i * 0.45f)).toFloat()
+                                    (0.22f + (sine * 0.12f)).coerceIn(0.12f, 0.45f)
+                                }
+                                val h = (4 + (amp * 22)).dp
                                 Box(
                                     modifier = Modifier
                                         .width(3.dp)
                                         .height(h)
                                         .clip(RoundedCornerShape(1.5.dp))
-                                        .background(VistaBrandColors.VioletDeep)
+                                        .background(Color(0xFF2EA6FF))
                                 )
                             }
                         }
@@ -405,7 +440,7 @@ fun VoiceRecorderDock(
                             }
                             Text(
                                 text = cancelText,
-                                color = if (isCancelingState) Color(0xFFE53935) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
+                                color = if (isCancelingState) Color(0xFFE53935) else if (isDark) Color(0xFF7D8B99) else Color(0xFF707579),
                                 fontSize = 13.sp,
                                 fontWeight = if (isCancelingState) FontWeight.Bold else FontWeight.Medium,
                             )
@@ -417,13 +452,10 @@ fun VoiceRecorderDock(
                 if (interaction.phase == VoiceCapturePhase.LOCKED) {
                     Box(
                         modifier = Modifier
+                            .padding(end = 4.dp)
                             .size(38.dp)
                             .clip(CircleShape)
-                            .background(
-                                Brush.linearGradient(
-                                    listOf(VistaBrandColors.Indigo, VistaBrandColors.VioletDeep)
-                                )
-                            )
+                            .background(Color(0xFF2EA6FF))
                             .clickable {
                                 view.performHapticFeedback(android.view.HapticFeedbackConstants.CONFIRM)
                                 finishAndSend()
@@ -439,89 +471,101 @@ fun VoiceRecorderDock(
                     }
                 } else {
                     // فضای خالی برای قرارگیری دکمه ضبط میکروفون
-                    Spacer(Modifier.size(48.dp))
+                    Spacer(Modifier.size(42.dp))
                 }
             }
         }
 
         // کپسول شناور قفل به سمت بالا (در حال نگه‌داشتن دکمه)
         if (interaction.phase == VoiceCapturePhase.HOLDING) {
-            val lockTint = if (isDark) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface
-            Column(
+            val lockTint = if (isDark) Color(0xFF1E2732) else Color.White
+            Box(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .offset(y = (-70).dp)
-                    .width(46.dp)
-                    .then(
-                        if (glassState != null) {
-                            Modifier.vistaGlass(
-                                state = glassState,
-                                shape = RoundedCornerShape(23.dp),
-                                tint = lockTint,
-                                isDark = isDark,
-                                blurRadius = VistaGlassTokens.PillBlur,
-                                rimWidth = 0.8.dp,
-                                shadowElevation = 8.dp,
-                            )
-                        } else {
-                            Modifier
-                                .shadow(8.dp, RoundedCornerShape(23.dp))
-                                .background(lockTint.copy(alpha = 0.96f))
-                        },
-                    )
-                    .clip(RoundedCornerShape(23.dp))
-                    .padding(vertical = 8.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+                    .layout { measurable, constraints ->
+                        val placeable = measurable.measure(constraints)
+                        // Layout size is 0x0 so it never affects parent container measurement or causes composer expansion!
+                        layout(0, 0) {
+                            placeable.placeRelative(0, 0)
+                        }
+                    }
+                    .offset(y = (-64).dp, x = (-4).dp)
             ) {
-                Box(
-                    modifier = Modifier.size(34.dp),
-                    contentAlignment = Alignment.Center
+                Column(
+                    modifier = Modifier
+                        .width(42.dp)
+                        .then(
+                            if (glassState != null) {
+                                Modifier.vistaGlass(
+                                    state = glassState,
+                                    shape = RoundedCornerShape(21.dp),
+                                    tint = lockTint,
+                                    isDark = isDark,
+                                    blurRadius = VistaGlassTokens.PillBlur,
+                                    rimWidth = 0.6.dp,
+                                    shadowElevation = 6.dp,
+                                )
+                            } else {
+                                Modifier
+                                    .shadow(6.dp, RoundedCornerShape(21.dp))
+                                    .background(lockTint.copy(alpha = 0.96f))
+                            },
+                        )
+                        .clip(RoundedCornerShape(21.dp))
+                        .padding(vertical = 8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    CircularProgressIndicator(
-                        progress = { lockProgress },
-                        strokeWidth = 2.5.dp,
-                        color = VistaBrandColors.VioletDeep,
-                        trackColor = Color.LightGray.copy(alpha = 0.35f),
-                        modifier = Modifier.fillMaxSize()
-                    )
+                    Box(
+                        modifier = Modifier.size(32.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator(
+                            progress = { lockProgress },
+                            strokeWidth = 2.dp,
+                            color = Color(0xFF2EA6FF),
+                            trackColor = Color.LightGray.copy(alpha = 0.35f),
+                            modifier = Modifier.fillMaxSize()
+                        )
+                        Icon(
+                            imageVector = Icons.Default.Lock,
+                            contentDescription = "قفل ضبط",
+                            tint = if (lockProgress > 0.65f) Color(0xFF2EA6FF) else Color.Gray,
+                            modifier = Modifier.size(15.dp)
+                        )
+                    }
+                    Spacer(Modifier.height(4.dp))
                     Icon(
-                        imageVector = Icons.Default.Lock,
-                        contentDescription = "قفل ضبط",
-                        tint = if (lockProgress > 0.65f) VistaBrandColors.VioletDeep else Color.Gray,
-                        modifier = Modifier.size(16.dp)
+                        imageVector = Icons.Default.KeyboardArrowUp,
+                        contentDescription = null,
+                        tint = Color.Gray.copy(alpha = 0.65f),
+                        modifier = Modifier
+                            .size(16.dp)
+                            .graphicsLayer { translationY = -lockProgress * 8 }
                     )
                 }
-                Spacer(Modifier.height(4.dp))
-                Icon(
-                    imageVector = Icons.Default.KeyboardArrowUp,
-                    contentDescription = null,
-                    tint = Color.Gray.copy(alpha = 0.65f),
-                    modifier = Modifier
-                        .size(16.dp)
-                        .graphicsLayer { translationY = -lockProgress * 8 }
-                )
             }
         }
 
         // دکمه دایره‌ای میکروفون
         if (interaction.phase != VoiceCapturePhase.LOCKED) {
             val scaleAnim by animateFloatAsState(
-                targetValue = if (interaction.phase == VoiceCapturePhase.HOLDING) 1.22f else 1f,
+                targetValue = if (interaction.phase == VoiceCapturePhase.HOLDING) 1.06f else 1f,
                 animationSpec = spring(dampingRatio = 0.65f, stiffness = 420f),
                 label = "micScale"
             )
 
             Box(
                 modifier = Modifier
-                    .size(48.dp)
+                    .padding(end = 4.dp)
+                    .size(38.dp)
                     .scale(scaleAnim)
-                    .shadow(if (interaction.phase == VoiceCapturePhase.HOLDING) 6.dp else 4.dp, CircleShape)
+                    .shadow(if (interaction.phase == VoiceCapturePhase.HOLDING) 4.dp else 2.dp, CircleShape)
                     .clip(CircleShape)
                     .background(
                         if (interaction.phase == VoiceCapturePhase.HOLDING)
-                            Brush.linearGradient(listOf(Color(0xFFE53935), Color(0xFFC62828)))
+                            Color(0xFFE53935)
                         else
-                            Brush.linearGradient(listOf(VistaBrandColors.Indigo, VistaBrandColors.VioletDeep))
+                            Color(0xFF2EA6FF)
                     )
                     .pointerInput(hasRecordPermission) {
                         awaitEachGesture {
@@ -593,9 +637,39 @@ fun VoiceRecorderDock(
                     imageVector = Icons.Default.Mic,
                     contentDescription = "نگه‌داشتن برای ضبط صدا",
                     tint = Color.White,
-                    modifier = Modifier.size(22.dp)
+                    modifier = Modifier.size(20.dp)
                 )
             }
         }
+    }
+}
+
+private fun synthesizeSpeechCadence(count: Int): List<Float> {
+    val size = count.coerceIn(24, 64)
+    val random = java.util.Random(System.currentTimeMillis())
+    return List(size) { idx ->
+        val phase = idx % 7
+        val base = when (phase) {
+            0 -> 0.18f
+            1 -> 0.42f
+            2 -> 0.88f
+            3 -> 0.65f
+            4 -> 0.82f
+            5 -> 0.38f
+            else -> 0.16f
+        }
+        val jitter = (random.nextFloat() * 0.18f) - 0.09f
+        (base + jitter).coerceIn(0.14f, 0.95f)
+    }
+}
+
+private fun downsampleWaveform(samples: List<Float>, targetCount: Int): List<Float> {
+    if (samples.size <= targetCount) return samples
+    val step = samples.size.toFloat() / targetCount.toFloat()
+    return List(targetCount) { i ->
+        val startIdx = (i * step).toInt().coerceIn(0, samples.lastIndex)
+        val endIdx = ((i + 1) * step).toInt().coerceIn(startIdx + 1, samples.size)
+        val slice = samples.subList(startIdx, endIdx)
+        slice.maxOrNull() ?: 0.15f
     }
 }

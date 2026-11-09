@@ -338,6 +338,7 @@ data class ChatAttachmentDraft(
     val durationSeconds: Int? = null,
     val caption: String = "",
     val mediaGroupId: String? = null,
+    val waveform: String? = null,
 )
 
 @Immutable

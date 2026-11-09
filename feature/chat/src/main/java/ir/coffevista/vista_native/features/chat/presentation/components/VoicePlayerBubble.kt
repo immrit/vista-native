@@ -383,7 +383,35 @@ fun VoicePlayerBubble(
                     },
                 contentAlignment = Alignment.CenterStart,
             ) {
-                val totalBars = 26
+                val resolvedAmplitudes = remember(waveformAmplitudes, messageId) {
+                    val isFlat = waveformAmplitudes.isEmpty() ||
+                        ((waveformAmplitudes.maxOrNull() ?: 0f) - (waveformAmplitudes.minOrNull() ?: 0f) < 0.08f)
+                    if (!isFlat) {
+                        val min = waveformAmplitudes.minOrNull() ?: 0f
+                        val max = waveformAmplitudes.maxOrNull() ?: 1f
+                        val range = (max - min).coerceAtLeast(0.01f)
+                        waveformAmplitudes.map { ((it - min) / range * 0.74f + 0.16f).coerceIn(0.12f, 1f) }
+                    } else {
+                        val seed = (messageId?.hashCode() ?: audioUrl.hashCode()).let { if (it == 0) 42 else it }
+                        val random = java.util.Random(seed.toLong())
+                        val count = 28
+                        List(count) { idx ->
+                            val phase = idx % 7
+                            val base = when (phase) {
+                                0 -> 0.18f
+                                1 -> 0.45f
+                                2 -> 0.88f
+                                3 -> 0.65f
+                                4 -> 0.82f
+                                5 -> 0.38f
+                                else -> 0.16f
+                            }
+                            val jitter = (random.nextFloat() * 0.16f) - 0.08f
+                            (base + jitter).coerceIn(0.14f, 0.95f)
+                        }
+                    }
+                }
+                val totalBars = 28
                 val barWidth = 2.5.dp
 
                 Row(
@@ -394,19 +422,15 @@ fun VoicePlayerBubble(
                     for (i in 0 until totalBars) {
                         val barFraction = (i.toFloat() + 0.5f) / totalBars.toFloat()
                         val isFilled = readyToPlay && barFraction <= progress
-                        val amp = if (waveformAmplitudes.isNotEmpty()) {
-                            val sampleIndex = ((i.toFloat() / totalBars.toFloat()) * waveformAmplitudes.size).toInt().coerceIn(0, waveformAmplitudes.lastIndex)
-                            waveformAmplitudes[sampleIndex].coerceIn(0.12f, 1f)
-                        } else {
-                            ((i * 11 + 3) % 7 + 2) / 8.5f
-                        }
-                        val barHeight = (6 + (amp * 18)).dp
+                        val sampleIndex = ((i.toFloat() / totalBars.toFloat()) * resolvedAmplitudes.size).toInt().coerceIn(0, resolvedAmplitudes.lastIndex)
+                        val amp = resolvedAmplitudes[sampleIndex]
+                        val barHeight = (4f + (amp * 20f)).dp
 
                         Box(
                             modifier = Modifier
                                 .width(barWidth)
                                 .height(barHeight)
-                                .clip(RoundedCornerShape(1.dp))
+                                .clip(RoundedCornerShape(1.2.dp))
                                 .background(if (isFilled) activeColor else inactiveColor),
                         )
                     }

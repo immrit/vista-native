@@ -11,6 +11,8 @@ import android.text.Editable
 import android.text.TextWatcher
 import android.widget.EditText
 import android.text.InputType
+import android.util.TypedValue
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -84,7 +86,7 @@ fun ChatComposerField(
     modifier: Modifier = Modifier,
     isEmojiPanelOpen: Boolean = false,
     focusRequester: FocusRequester? = null,
-    hint: String = "پیام...",
+    hint: String = "پیام",
     maxLines: Int = 6,
 ) {
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -200,8 +202,9 @@ fun ChatComposerField(
     CompositionLocalProvider(
         LocalLayoutDirection provides if (isRtlParagraph) LayoutDirection.Rtl else LayoutDirection.Ltr,
     ) {
-        val textColor = MaterialTheme.colorScheme.onSurface.toArgb()
-        val hintColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f).toArgb()
+        val isDark = isSystemInDarkTheme()
+        val textColor = (if (isDark) androidx.compose.ui.graphics.Color(0xFFF1F5F9) else androidx.compose.ui.graphics.Color(0xFF1E2732)).toArgb()
+        val hintColor = (if (isDark) androidx.compose.ui.graphics.Color(0xFF7D8B99) else androidx.compose.ui.graphics.Color(0xFF8A959E)).toArgb()
         AndroidView(
             factory = { context ->
                 // Override focusSearch to prevent ANR: when EditText inside a LazyColumn
@@ -212,6 +215,7 @@ fun ChatComposerField(
                     override fun focusSearch(direction: Int): android.view.View = this
                 }.apply {
                     editTextRef[0] = this
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
                     setOnTouchListener { _, event ->
                         if (event.action == android.view.MotionEvent.ACTION_UP && latestIsEmojiPanelOpen.value) {
                             latestOnFocusText.value()
@@ -257,6 +261,7 @@ fun ChatComposerField(
                 },
             update = { editText ->
                 editText.hint = hint
+                editText.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
                 editText.textDirection = if (isRtlParagraph) android.view.View.TEXT_DIRECTION_RTL else android.view.View.TEXT_DIRECTION_LTR
                 editText.setTextColor(textColor)
                 editText.setHintTextColor(hintColor)

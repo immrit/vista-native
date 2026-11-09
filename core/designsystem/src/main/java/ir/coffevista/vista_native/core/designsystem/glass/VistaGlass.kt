@@ -29,6 +29,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.BlurEffect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.ClipOp
@@ -79,7 +80,9 @@ import kotlin.math.roundToInt
  *    hardware `RenderEffect` pipeline (Gaussian Blur + Vibrancy Saturation Boost + AGSL Meniscus
  *    Lens Refraction & OLED Anti-Banding on API 33+), and finishes with adaptive chromatic tint,
  *    inner convex sheen, and a 4-stop diagonal Fresnel specular rim border.
- * 3. Below API 31, on low-RAM devices, or in battery-saver mode, runtime shaders are bypassed in
+ * 3. A *glass halo* ([vistaGlassHalo]) creates a soft, feathered backdrop blur behind floating
+ *    dock elements (such as bottom navigation and chat composer).
+ * 4. Below API 31, on low-RAM devices, or in battery-saver mode, runtime shaders are bypassed in
  *    favor of a calibrated high-contrast translucent acrylic surface.
  */
 @Stable
@@ -171,14 +174,14 @@ private fun Context.isLowRamDevice(): Boolean =
 
 /** Design tokens for Telegram-grade Liquid Glass surfaces. */
 object VistaGlassTokens {
-    val BarBlur: Dp = 24.dp
-    val PillBlur: Dp = 20.dp
+    val BarBlur: Dp = 28.dp
+    val PillBlur: Dp = 26.dp
     val PopupBlur: Dp = 32.dp
-    const val TintAlphaBlurredLight = 0.68f
-    const val TintAlphaBlurredDark = 0.66f
-    const val TintAlphaFallback = 0.92f
-    const val VibrancySaturationLight = 1.38f
-    const val VibrancySaturationDark = 1.50f
+    const val TintAlphaBlurredLight = 0.82f
+    const val TintAlphaBlurredDark = 0.80f
+    const val TintAlphaFallback = 0.94f
+    const val VibrancySaturationLight = 1.25f
+    const val VibrancySaturationDark = 1.30f
 }
 
 /** Marks the content that glass surfaces should see through (list, wallpaper, nav host...). */
@@ -206,7 +209,7 @@ fun Modifier.vistaGlassSource(state: VistaGlassState): Modifier =
  * @param blurRadius optical Gaussian blur radius.
  * @param tintAlphaOverride optional custom tint opacity when blur is active.
  * @param drawHighlight paint the soft inner convex specular sheen.
- * @param rimWidth width of the 4-stop Fresnel light-refracting rim; use `0.dp` to disable.
+ * @param rimWidth width of the hairline light-refracting rim; use `0.dp` to disable.
  * @param enableRefraction enables AGSL meniscus lens refraction on rounded shapes (API 33+).
  */
 @Composable
@@ -217,8 +220,8 @@ fun Modifier.vistaGlass(
     isDark: Boolean,
     blurRadius: Dp = VistaGlassTokens.BarBlur,
     tintAlphaOverride: Float? = null,
-    drawHighlight: Boolean = true,
-    rimWidth: Dp = 1.dp,
+    drawHighlight: Boolean = false,
+    rimWidth: Dp = 0.6.dp,
     enableRefraction: Boolean = shape !== RectangleShape,
     shadowElevation: Dp = 0.dp,
 ): Modifier {
@@ -298,23 +301,27 @@ fun Modifier.vistaGlass(
             val tintColor = tint.copy(alpha = tintAlpha)
             val highlightBrush = if (drawHighlight) {
                 Brush.verticalGradient(
-                    0f to Color.White.copy(alpha = if (isDark) 0.16f else 0.44f),
-                    0.38f to Color.White.copy(alpha = if (isDark) 0.04f else 0.10f),
-                    0.78f to Color.Transparent,
-                    1f to Color.White.copy(alpha = if (isDark) 0.06f else 0.18f),
+                    0f to Color.White.copy(alpha = if (isDark) 0.04f else 0.10f),
+                    0.45f to Color.White.copy(alpha = if (isDark) 0.01f else 0.03f),
+                    1f to Color.Transparent,
                 )
             } else {
                 null
             }
             val rimBrush = if (rimPx > 0f) {
-                Brush.linearGradient(
-                    0f to Color.White.copy(alpha = if (isDark) 0.42f else 0.88f),
-                    0.35f to Color.White.copy(alpha = if (isDark) 0.16f else 0.44f),
-                    0.68f to Color.White.copy(alpha = if (isDark) 0.05f else 0.18f),
-                    1f to Color.White.copy(alpha = if (isDark) 0.26f else 0.62f),
-                    start = Offset.Zero,
-                    end = Offset(size.width, size.height),
-                )
+                if (isDark) {
+                    Brush.verticalGradient(
+                        0f to Color.White.copy(alpha = 0.12f),
+                        0.5f to Color.White.copy(alpha = 0.05f),
+                        1f to Color.White.copy(alpha = 0.02f),
+                    )
+                } else {
+                    Brush.verticalGradient(
+                        0f to Color.Black.copy(alpha = 0.07f),
+                        0.5f to Color.Black.copy(alpha = 0.03f),
+                        1f to Color.Black.copy(alpha = 0.06f),
+                    )
+                }
             } else {
                 null
             }
@@ -380,6 +387,140 @@ fun Modifier.vistaGlass(
                         brush = rimBrush,
                         style = rimStroke,
                     )
+                }
+            }
+        }
+}
+
+/**
+ * Paints a soft, optical frosted-glass blur halo behind floating dock elements
+ * (such as the main bottom navigation island or chat composer enter view).
+ *
+ * Starts very softly from slightly lower down (not from the top point), and progressively
+ * deepens and expands all the way down to the bottom of the screen.
+ *
+ * @param state the [VistaGlassState] recording the scrolling content underneath.
+ * @param isDark selects halo tint and opacity.
+ * @param tint base color of the halo.
+ * @param blurRadius Gaussian blur radius for the backdrop.
+ * @param startOffsetFraction vertical fraction from top where halo starts appearing (e.g. 0.16f).
+ * @param maxAlpha target maximum opacity of the halo surface at the bottom.
+ */
+@Composable
+fun Modifier.vistaGlassHalo(
+    state: VistaGlassState,
+    isDark: Boolean,
+    tint: Color = if (isDark) Color(0xFF141C24) else Color(0xFFF7F9FA),
+    blurRadius: Dp = 20.dp,
+    startOffsetFraction: Float = 0.16f,
+    maxAlpha: Float = if (isDark) 0.54f else 0.58f,
+): Modifier {
+    val blurSupported = rememberVistaGlassBlurSupported()
+    val blurLayer = rememberGraphicsLayer()
+    var origin by remember { mutableStateOf(Offset.Zero) }
+    val density = LocalDensity.current
+    val blurPx = with(density) { blurRadius.toPx() }
+    val saturation = if (isDark) 1.25f else 1.20f
+
+    return this
+        .onGloballyPositioned { origin = it.positionInWindow() }
+        .drawWithCache {
+            val canBlur = blurSupported && size.width >= 2f && size.height >= 2f && blurPx >= 0.5f
+            val downsample = if (canBlur && blurPx >= 8f) 0.50f else 1.0f
+            val invDownsample = 1f / downsample
+            val scaledW = size.width * downsample
+            val scaledH = size.height * downsample
+            val scaledBlurPx = blurPx * downsample
+            val overscan = if (canBlur) min(scaledBlurPx, 16f).roundToInt() else 0
+            val recW = (scaledW.roundToInt() + overscan * 2).coerceAtLeast(1)
+            val recH = (scaledH.roundToInt() + overscan * 2).coerceAtLeast(1)
+
+            if (canBlur) {
+                blurLayer.renderEffect = buildLiquidGlassRenderEffect(
+                    blurPx = scaledBlurPx,
+                    saturation = saturation,
+                    agslShader = null,
+                    width = scaledW,
+                    height = scaledH,
+                    overscan = overscan.toFloat(),
+                    cornerRadiusPx = 0f,
+                    isDark = isDark,
+                )
+            }
+
+            val s0 = startOffsetFraction.coerceIn(0f, 0.45f)
+            val span = (1f - s0).coerceAtLeast(0.01f)
+
+            // Ultra-soft cubic ramp starting from slightly lower down and steadily increasing to the bottom
+            val alphaGradient = Brush.verticalGradient(
+                0f to Color.Transparent,
+                s0 to Color.Transparent,
+                (s0 + span * 0.16f) to Color.Black.copy(alpha = 0.02f),
+                (s0 + span * 0.32f) to Color.Black.copy(alpha = 0.08f),
+                (s0 + span * 0.50f) to Color.Black.copy(alpha = 0.24f),
+                (s0 + span * 0.70f) to Color.Black.copy(alpha = 0.54f),
+                (s0 + span * 0.88f) to Color.Black.copy(alpha = 0.82f),
+                1f to Color.Black,
+            )
+
+            val fallbackBrush = Brush.verticalGradient(
+                0f to Color.Transparent,
+                s0 to Color.Transparent,
+                (s0 + span * 0.16f) to tint.copy(alpha = maxAlpha * 0.02f),
+                (s0 + span * 0.32f) to tint.copy(alpha = maxAlpha * 0.08f),
+                (s0 + span * 0.50f) to tint.copy(alpha = maxAlpha * 0.26f),
+                (s0 + span * 0.70f) to tint.copy(alpha = maxAlpha * 0.56f),
+                (s0 + span * 0.88f) to tint.copy(alpha = maxAlpha * 0.84f),
+                1f to tint.copy(alpha = maxAlpha),
+            )
+
+            val tintColor = tint.copy(alpha = maxAlpha)
+            var lastRecordedTick = Int.MIN_VALUE
+            var lastRecordedDelta = Offset.Unspecified
+
+            onDrawBehind {
+                val tick = state.invalidationTick
+                if (canBlur) {
+                    val delta = origin - state.sourceOrigin
+                    if (lastRecordedTick != tick || lastRecordedDelta != delta) {
+                        lastRecordedTick = tick
+                        lastRecordedDelta = delta
+                        blurLayer.record(
+                            density = this,
+                            layoutDirection = layoutDirection,
+                            size = IntSize(recW, recH),
+                        ) {
+                            translate(
+                                left = overscan.toFloat(),
+                                top = overscan.toFloat(),
+                            ) {
+                                scale(downsample, downsample, Offset.Zero) {
+                                    translate(
+                                        left = -delta.x,
+                                        top = -delta.y,
+                                    ) {
+                                        drawLayer(state.layer)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    drawIntoCanvas { canvas ->
+                        canvas.nativeCanvas.saveLayer(0f, 0f, size.width, size.height, null)
+                    }
+                    scale(invDownsample, invDownsample, Offset.Zero) {
+                        translate(left = -overscan.toFloat(), top = -overscan.toFloat()) {
+                            drawLayer(blurLayer)
+                        }
+                    }
+                    drawRect(tintColor)
+                    drawRect(brush = alphaGradient, blendMode = BlendMode.DstIn)
+                    drawIntoCanvas { canvas ->
+                        canvas.nativeCanvas.restore()
+                    }
+                } else {
+                    drawRect(fallbackBrush)
                 }
             }
         }
@@ -461,8 +602,8 @@ private fun buildLiquidGlassRenderEffect(
         ) {
             return runCatching {
                 val minDim = min(width, height)
-                val bevelPx = min(cornerRadiusPx * 0.58f, minDim * 0.34f).coerceIn(4f, 18f)
-                val refractPx = (bevelPx * 0.38f).coerceIn(1.6f, 6.5f)
+                val bevelPx = min(cornerRadiusPx * 0.45f, minDim * 0.25f).coerceIn(3f, 14f)
+                val refractPx = (bevelPx * 0.22f).coerceIn(1.0f, 3.5f)
                 agslShader.setFloatUniform(
                     "uRect",
                     overscan + width * 0.5f,
@@ -494,11 +635,10 @@ private fun createLiquidGlassAgslShaderOrNull(): RuntimeShader? = runCatching {
 }.getOrNull()
 
 /**
- * AGSL Liquid Glass v2 Shader:
- * 1. Exact Rounded-Box SDF Meniscus Lens Refraction (Snell's Law convex edge bend).
- * 2. Subtle Chromatic Micro-Dispersion strictly on the curved bevel (0 in the flat interior).
- * 3. Directional 3D Grazing Specular Lip + Opposite Caustic Bounce along the outer rim.
- * 4. Sub-bit Interleaved Gradient Noise (IGN) to eliminate 8-bit OLED colour banding.
+ * AGSL Liquid Glass v3 Shader:
+ * 1. Exact Rounded-Box SDF Meniscus Lens Refraction (optical curved edge bend).
+ * 2. Pure Snell edge deflection without artificial white specular glow or chromatic fringe.
+ * 3. Sub-bit Interleaved Gradient Noise (IGN) to eliminate 8-bit OLED colour banding.
  */
 private const val LIQUID_GLASS_AGSL = """
 uniform shader content;
@@ -526,18 +666,7 @@ half4 main(float2 fragCoord) {
             : ((q.x > q.y) ? float2(signP.x, 0.0) : float2(0.0, signP.y));
 
         float2 offset = grad * (curve * uLens.z);
-        half colR = content.eval(fragCoord - offset * 1.14).r;
-        half4 colG = content.eval(fragCoord - offset);
-        half colB = content.eval(fragCoord - offset * 0.86).b;
-        col = half4(colR, colG.g, colB, colG.a);
-
-        // 3D physical glass specular lip & opposite caustic rim bounce
-        float lip = smoothstep(2.6, 0.0, edgeDist);
-        float topSpec = max(dot(grad, float2(-0.58, -0.81)), 0.0);
-        float botCaustic = max(dot(grad, float2(0.58, 0.81)), 0.0);
-        float specStrength = (uLens.w > 0.5) ? 0.16 : 0.28;
-        float specGlow = lip * (topSpec * topSpec * specStrength + botCaustic * botCaustic * botCaustic * (specStrength * 0.55));
-        col.rgb += half3(specGlow);
+        col = content.eval(fragCoord - offset);
     } else {
         col = content.eval(fragCoord);
     }

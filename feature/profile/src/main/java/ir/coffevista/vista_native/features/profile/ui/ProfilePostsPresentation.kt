@@ -39,3 +39,29 @@ data class ProfilePostsPresentationState(
     val viewerIsBlueTick: Boolean = false,
     val viewerHasPremiumEdit: Boolean = false,
 )
+
+fun ProfilePostUiModel.toFeedPost(): ir.coffevista.vista_native.features.feed.data.FeedPost =
+    ir.coffevista.vista_native.features.feed.data.FeedPost(
+        id = id,
+        userId = userId,
+        content = content,
+        imageUrl = imageUrl,
+        imageUrls = imageUrls,
+        videoUrl = videoUrl,
+        musicUrl = musicUrl,
+        aspectRatio = aspectRatio?.toString(),
+        musicTitle = musicTitle,
+        tags = emptyList(),
+        likeCount = likeCount,
+        commentCount = commentCount,
+        isLiked = isLiked,
+        isSaved = isSaved,
+        hideLikeCount = hideLikeCount,
+        hideCommentCount = hideCommentCount,
+        authorUsername = authorUsername,
+        authorFullName = authorFullName,
+        authorAvatarUrl = authorAvatarUrl,
+        authorIsVerified = authorIsVerified,
+        authorVerificationType = authorVerificationType,
+        createdAt = createdAt,
+    )

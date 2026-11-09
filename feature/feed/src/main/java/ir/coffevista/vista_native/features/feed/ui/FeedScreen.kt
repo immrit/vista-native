@@ -21,6 +21,9 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import ir.coffevista.vista_native.features.feed.ui.components.SoundCloudMusicBubble
+import ir.coffevista.vista_native.core.designsystem.component.isBackgroundMusicPost
+import ir.coffevista.vista_native.core.designsystem.component.resolveMusicRange
+import ir.coffevista.vista_native.core.designsystem.component.PostHeaderTimeOrMusicBadge
 import ir.coffevista.vista_native.core.designsystem.component.LocalBottomBarVisibility
 import ir.coffevista.vista_native.core.designsystem.glass.VistaGlassScrollSync
 import ir.coffevista.vista_native.core.designsystem.glass.VistaGlassTokens
@@ -916,11 +919,12 @@ internal fun FeedContent(
             .collect { centerPostId ->
                 val post = state.posts.firstOrNull { it.id == centerPostId }
                 val musicUrl = post?.musicUrl?.trim()
-                if (!musicUrl.isNullOrBlank()) {
+                if (!musicUrl.isNullOrBlank() && isBackgroundMusicPost(musicUrl)) {
                     if (activeMusicPostId != centerPostId) {
                         activeMusicPostId = centerPostId
-                        val startMs = post.musicStartMs
-                        val endMs = post.musicEndMs
+                        val range = resolveMusicRange(musicUrl)
+                        val startMs = if (post.musicStartMs > 0) post.musicStartMs else range.first
+                        val endMs = post.musicEndMs ?: range.second
                         val cleanUri = musicUrl.substringBefore('#')
                         val mediaItem = MediaItem.Builder()
                             .setUri(cleanUri)
@@ -1134,64 +1138,6 @@ internal fun FeedContent(
     }
 }
 
-@Composable
-private fun PostHeaderTimeOrMusicBadge(
-    createdAt: String,
-    musicTitle: String?,
-    modifier: Modifier = Modifier,
-) {
-    var showMusic by remember { mutableStateOf(false) }
-
-    LaunchedEffect(Unit) {
-        while (isActive) {
-            delay(3000L)
-            showMusic = !showMusic
-        }
-    }
-
-    AnimatedContent(
-        targetState = showMusic,
-        transitionSpec = {
-            (slideInVertically { height -> height } + fadeIn())
-                .togetherWith(slideOutVertically { height -> -height } + fadeOut())
-        },
-        label = "post-time-music-slide",
-        modifier = modifier,
-    ) { isMusic ->
-        if (isMusic) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(VistaBrandColors.Indigo.copy(alpha = 0.12f))
-                    .padding(horizontal = 6.dp, vertical = 2.dp),
-            ) {
-                Icon(
-                    imageVector = Icons.Default.MusicNote,
-                    contentDescription = null,
-                    tint = VistaBrandColors.Indigo,
-                    modifier = Modifier.size(12.dp),
-                )
-                Spacer(Modifier.width(3.dp))
-                val title = musicTitle?.takeIf(String::isNotBlank) ?: "موسیقی پست"
-                Text(
-                    text = title,
-                    color = VistaBrandColors.Indigo,
-                    fontSize = 11.5.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        } else {
-            Text(
-                text = relativeTime(createdAt),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 13.sp,
-            )
-        }
-    }
-}
 
 @Composable
 fun VistaFeedPostCard(
@@ -1248,7 +1194,7 @@ fun VistaFeedPostCard(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         VistaEmojiText(
                             text = post.authorUsername?.takeIf { it.isNotBlank() } ?: post.authorFullName,
-                            modifier = Modifier.weight(1f, fill = false),
+                            modifier = Modifier.weight(1.2f, fill = false),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             style = TextStyle(
@@ -1270,14 +1216,18 @@ fun VistaFeedPostCard(
                         )
                         if (!post.musicUrl.isNullOrBlank()) {
                             PostHeaderTimeOrMusicBadge(
-                                createdAt = post.createdAt,
-                                musicTitle = post.musicTitle,
+                                timeLabel = relativeTime(post.createdAt),
+                                musicTitle = resolveMusicTitle(post),
+                                musicUrl = post.musicUrl,
+                                modifier = Modifier.weight(1f, fill = false),
+                                badgeColor = VistaBrandColors.Indigo,
                             )
                         } else {
                             Text(
                                 text = relativeTime(post.createdAt),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontSize = 13.sp,
+                                maxLines = 1,
                             )
                         }
                     }
@@ -1370,6 +1320,7 @@ fun VistaFeedPostCard(
                 .padding(horizontal = 16.dp, vertical = 6.dp)
                 .then(if (verticalMenu) Modifier.testTag(PostDetailTestTags.Media) else Modifier),
         )
+        PostMusicBubble(post)
         Spacer(Modifier.height(4.dp))
         PostActionRow(
             post = post,
@@ -1669,7 +1620,7 @@ internal fun resolveMusicRange(musicUrl: String): Pair<Long, Long?> {
 @Composable
 private fun PostMusicBubble(post: FeedPost) {
     val musicUrl = post.musicUrl?.trim().orEmpty()
-    if (musicUrl.isEmpty()) return
+    if (musicUrl.isEmpty() || isBackgroundMusicPost(musicUrl)) return
 
     SoundCloudMusicBubble(
         musicUrl = musicUrl,

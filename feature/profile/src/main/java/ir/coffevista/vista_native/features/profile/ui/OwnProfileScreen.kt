@@ -1,5 +1,6 @@
 package ir.coffevista.vista_native.features.profile.ui
 
+import android.net.Uri
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.foundation.border
@@ -112,6 +113,8 @@ fun OwnProfileScreen(
     onOpenQrScanner: (() -> Unit)? = null,
     onNavigateToPricing: (() -> Unit)? = null,
     onHighlightClick: ((ProfileHighlightDto) -> Unit)? = null,
+    onNavigateToStoryEditor: ((Uri) -> Unit)? = null,
+    onSendDirectMessage: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -127,6 +130,7 @@ fun OwnProfileScreen(
     var highlightToEdit by remember { mutableStateOf<ProfileHighlightDto?>(null) }
     var highlightToDelete by remember { mutableStateOf<ProfileHighlightDto?>(null) }
     var showNoteInputSheet by remember { mutableStateOf(false) }
+    var showShareForPost by remember { mutableStateOf<ir.coffevista.vista_native.features.feed.data.FeedPost?>(null) }
     var editPostTarget by remember { mutableStateOf<ProfilePostUiModel?>(null) }
     var isEditingPost by remember { mutableStateOf(false) }
     var reportPostTarget by remember { mutableStateOf<ProfilePostUiModel?>(null) }
@@ -245,6 +249,7 @@ fun OwnProfileScreen(
                                 onReelClick = onReelClick,
                                 onLikeClick = onLikeClick,
                                 onSaveClick = onSaveClick,
+                                onShareClick = { post -> showShareForPost = post.toFeedPost() },
                                 onEditPost = { post -> editPostTarget = post },
                                 onDeletePost = onDeletePost,
                                 onReportPost = { post -> reportPostTarget = post },
@@ -556,6 +561,16 @@ fun OwnProfileScreen(
                             premiumPromptFeature = null
                             onNavigateToPricing?.invoke()
                         },
+                    )
+                }
+
+                showShareForPost?.let { post ->
+                    ir.coffevista.vista_native.features.feed.ui.PostShareBottomSheet(
+                        post = post,
+                        onDismiss = { showShareForPost = null },
+                        onShared = {},
+                        onSendDirectMessage = onSendDirectMessage?.let { callback -> { _ -> callback() } },
+                        onNavigateToStoryEditor = onNavigateToStoryEditor,
                     )
                 }
             }

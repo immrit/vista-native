@@ -155,34 +155,21 @@ fun VistaFloatingActionButton(
                         .vistaGlass(
                             state = glassState,
                             shape = CircleShape,
-                            tint = VistaBrandColors.Indigo,
+                            tint = MaterialTheme.colorScheme.primary,
                             isDark = isDark,
                             blurRadius = VistaGlassTokens.PillBlur,
-                            tintAlphaOverride = 0.72f,
-                            rimWidth = 1.dp,
-                            shadowElevation = 10.dp,
+                            tintAlphaOverride = 0.88f,
+                            drawHighlight = false,
+                            rimWidth = 0.6.dp,
+                            shadowElevation = 8.dp,
                         )
                         .clip(CircleShape)
-                        .background(
-                            Brush.linearGradient(
-                                listOf(
-                                    VistaBrandColors.Indigo.copy(alpha = 0.36f),
-                                    VistaBrandColors.VioletDeep.copy(alpha = 0.52f),
-                                )
-                            )
-                        )
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.88f))
                 } else {
                     Modifier
-                        .shadow(8.dp, CircleShape)
+                        .shadow(6.dp, CircleShape)
                         .clip(CircleShape)
-                        .background(
-                            Brush.linearGradient(
-                                listOf(
-                                    VistaBrandColors.Indigo,
-                                    VistaBrandColors.VioletDeep,
-                                )
-                            )
-                        )
+                        .background(MaterialTheme.colorScheme.primary)
                 }
             )
             .clickable(

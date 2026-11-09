@@ -46,6 +46,7 @@ class PostUploadWorker @AssistedInject constructor(
             val musicTitle = inputData.getString(KEY_MUSIC_TITLE)
             var musicStartMs = inputData.getInt(KEY_MUSIC_START_MS, 0)
             var musicEndMs = inputData.getInt(KEY_MUSIC_END_MS, 0)
+            val isMusicBackground = inputData.getBoolean(KEY_IS_MUSIC_BACKGROUND, false)
             val hideLikeCount = inputData.getBoolean(KEY_HIDE_LIKE_COUNT, false)
             val hideCommentCount = inputData.getBoolean(KEY_HIDE_COMMENT_COUNT, false)
             val commentsDisabled = inputData.getBoolean(KEY_COMMENTS_DISABLED, false)
@@ -143,11 +144,15 @@ class PostUploadWorker @AssistedInject constructor(
 
             updateProgressState(0.9f, "در حال انتشار پست…")
 
-            val effectiveMusicUrl = if (!finalMusicUrl.isNullOrBlank() && (musicStartMs > 0 || musicEndMs > musicStartMs)) {
+            val effectiveMusicUrl = if (!finalMusicUrl.isNullOrBlank()) {
                 val cleanUrl = finalMusicUrl.substringBefore('#')
-                "$cleanUrl#t=$musicStartMs,$musicEndMs"
+                val hasTiming = musicStartMs > 0 || musicEndMs > musicStartMs
+                val timingFragment = if (hasTiming) "t=$musicStartMs,$musicEndMs" else ""
+                val bgFragment = if (isMusicBackground) "bg=1" else ""
+                val combinedFragment = listOf(timingFragment, bgFragment).filter { it.isNotEmpty() }.joinToString("&")
+                if (combinedFragment.isNotEmpty()) "$cleanUrl#$combinedFragment" else cleanUrl
             } else {
-                finalMusicUrl
+                null
             }
 
             val createReq = CreatePostRequestDto(
@@ -288,6 +293,7 @@ class PostUploadWorker @AssistedInject constructor(
         const val KEY_MUSIC_TITLE = "music_title"
         const val KEY_MUSIC_START_MS = "music_start_ms"
         const val KEY_MUSIC_END_MS = "music_end_ms"
+        const val KEY_IS_MUSIC_BACKGROUND = "is_music_background"
         const val KEY_HIDE_LIKE_COUNT = "hide_like_count"
         const val KEY_HIDE_COMMENT_COUNT = "hide_comment_count"
         const val KEY_COMMENTS_DISABLED = "comments_disabled"

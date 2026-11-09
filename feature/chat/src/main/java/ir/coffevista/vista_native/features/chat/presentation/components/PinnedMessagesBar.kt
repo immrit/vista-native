@@ -1,5 +1,7 @@
 package ir.coffevista.vista_native.features.chat.presentation.components
 
+import ir.coffevista.vista_native.features.chat.domain.model.AttachmentKind
+
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -76,17 +78,18 @@ fun PinnedMessagesBar(
         is MessageContent.Text -> {
             SharedPostParser.tryParse(content.value)?.let { post ->
                 "پست ${post.authorName}: ${post.content.ifBlank { "رسانه پیوست" }}"
-            } ?: content.value
+            } ?: if (content.value.startsWith("wf:") || currentMessage.attachment?.kind == AttachmentKind.VOICE) "🎤 پیام صوتی" else content.value
         }
         is MessageContent.Structured -> {
             SharedPostParser.tryParse(content.payload)?.let { post ->
                 "پست ${post.authorName}: ${post.content.ifBlank { "رسانه پیوست" }}"
-            } ?: content.payload
+            } ?: if (content.payload.startsWith("wf:") || currentMessage.attachment?.kind == AttachmentKind.VOICE) "🎤 پیام صوتی" else content.payload
         }
         MessageContent.Deleted -> "پیام حذف شده"
         MessageContent.EncryptedUnavailable -> "پیام رمزگذاری‌شده"
     }.ifBlank {
-        currentMessage.attachment?.fileName ?: "رسانه پیوست"
+        if (currentMessage.attachment?.kind == AttachmentKind.VOICE) "🎤 پیام صوتی"
+        else currentMessage.attachment?.fileName ?: "رسانه پیوست"
     }
 
     Row(

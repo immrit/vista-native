@@ -1187,6 +1187,7 @@ class OfflineFirstChatRepository(
                     // restart can validate and reconcile the current key pair.
                     // The transcript query excludes these transport frames.
                     MessageContent.Text(dto.content)
+                contentText.startsWith("wf:") -> MessageContent.Text("")
                 else -> MessageContent.Text(contentText)
             },
             replyToContent = replyText?.takeUnless {
@@ -1570,7 +1571,7 @@ class OfflineFirstChatRepository(
             clientId = clientId,
             serverId = null,
             senderId = account.accountId,
-            content = MessageContent.Text(caption),
+            content = MessageContent.Text(if (caption.startsWith("wf:")) "" else caption),
             createdAtEpochMillis = createdAt,
             status = MessageStatus.PENDING,
             attachment = Attachment(
@@ -1580,7 +1581,7 @@ class OfflineFirstChatRepository(
                 mimeType = validatedDraft.mimeType,
                 sizeBytes = validatedDraft.sizeBytes,
                 durationSeconds = validatedDraft.durationSeconds,
-                audioAlbum = if (validatedDraft.kind == AttachmentKind.VOICE && caption.startsWith("wf:")) caption else null,
+                audioAlbum = validatedDraft.waveform ?: if (validatedDraft.kind == AttachmentKind.VOICE && caption.startsWith("wf:")) caption else null,
                 progress = 0f,
                 mediaGroupId = validatedDraft.mediaGroupId,
                 transferState = TransferState.QUEUED,
@@ -1974,8 +1975,11 @@ class OfflineFirstChatRepository(
                 ?: throw IllegalStateException("کلید مخاطب برای رسانه محرمانه آماده نیست")
             val keyPair = e2eeService.getOrGenerateKeyPair(local.accountId)
             val shared = e2eeService.computeSharedSecret(keyPair.privateKey, peerPub)
+            val waveformToSend = draft.waveform
+                ?: if (draft.kind == AttachmentKind.VOICE && draft.caption.startsWith("wf:")) draft.caption else null
+            val safeCaption = if (draft.caption.startsWith("wf:")) "" else draft.caption
             e2eeService.encryptMessage(
-                draft.caption,
+                safeCaption,
                 shared,
                 ir.coffevista.vista_native.features.chat.data.security.ChatE2EEService.messageBinding(
                     local.conversationId,
@@ -1984,8 +1988,10 @@ class OfflineFirstChatRepository(
                 ),
             )
         } else {
-            draft.caption
+            if (draft.caption.startsWith("wf:")) "" else draft.caption
         }
+        val waveformToSend = draft.waveform
+            ?: if (draft.kind == AttachmentKind.VOICE && draft.caption.startsWith("wf:")) draft.caption else null
         val dto = api.sendMessage(
             local.conversationId,
             SendMessageRequest(
@@ -1997,7 +2003,7 @@ class OfflineFirstChatRepository(
                 attachmentMimeType = draft.mimeType,
                 attachmentSizeBytes = draft.sizeBytes,
                 duration = draft.durationSeconds,
-                audioAlbum = if (draft.kind == AttachmentKind.VOICE && draft.caption.startsWith("wf:")) draft.caption else null,
+                audioAlbum = waveformToSend,
                 mediaGroupId = draft.mediaGroupId,
             ),
         )
@@ -2006,7 +2012,7 @@ class OfflineFirstChatRepository(
         val merged = MessageMergeReducer.merge(local, server, MergeSource.REST).copy(
             attachment = server.attachment?.copy(
                 localUri = draft.uri,
-                audioAlbum = server.attachment.audioAlbum ?: if (draft.kind == AttachmentKind.VOICE && draft.caption.startsWith("wf:")) draft.caption else null,
+                audioAlbum = server.attachment.audioAlbum ?: waveformToSend,
                 progress = 1f,
                 transferState = TransferState.COMPLETE,
             ),

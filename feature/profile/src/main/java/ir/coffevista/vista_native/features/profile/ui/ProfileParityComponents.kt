@@ -6,6 +6,13 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.foundation.layout.offset
 import ir.coffevista.vista_native.features.profile.data.ProfileNoteDto
 import ir.coffevista.vista_native.features.profile.ui.components.SoundCloudMusicBubble
+import ir.coffevista.vista_native.core.designsystem.component.isBackgroundMusicPost
+import ir.coffevista.vista_native.core.designsystem.component.resolveMusicRange
+import ir.coffevista.vista_native.core.designsystem.component.PostHeaderTimeOrMusicBadge
+import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.foundation.pager.HorizontalPager
@@ -202,6 +209,81 @@ internal fun ProfileParityList(
             .distinctUntilChanged()
             .filter { it }
             .collect { onLoadMore() }
+    }
+
+    val context = LocalContext.current
+    val backgroundMusicPlayer = remember {
+        ExoPlayer.Builder(context).build().apply {
+            repeatMode = Player.REPEAT_MODE_ONE
+        }
+    }
+    DisposableEffect(backgroundMusicPlayer) {
+        onDispose {
+            backgroundMusicPlayer.stop()
+            backgroundMusicPlayer.release()
+        }
+    }
+
+    var activeMusicPostId by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(listState, postsState.posts, selectedTab) {
+        if (selectedTab != 0) {
+            activeMusicPostId = null
+            if (backgroundMusicPlayer.isPlaying) {
+                backgroundMusicPlayer.pause()
+            }
+            return@LaunchedEffect
+        }
+        snapshotFlow {
+            val layoutInfo = listState.layoutInfo
+            val viewportCenter = (layoutInfo.viewportStartOffset + layoutInfo.viewportEndOffset) / 2
+            val visibleItems = layoutInfo.visibleItemsInfo
+            visibleItems
+                .filter { it.key is String && it.key != "profile-header" && it.key != "posts-empty" }
+                .minByOrNull { item ->
+                    val itemCenter = item.offset + item.size / 2
+                    kotlin.math.abs(itemCenter - viewportCenter)
+                }?.key as? String
+        }
+            .distinctUntilChanged()
+            .collect { centerPostId ->
+                val post = postsState.posts.firstOrNull { it.id == centerPostId }
+                val musicUrl = post?.musicUrl?.trim()
+                if (!musicUrl.isNullOrBlank() && isBackgroundMusicPost(musicUrl)) {
+                    if (activeMusicPostId != centerPostId) {
+                        activeMusicPostId = centerPostId
+                        val range = resolveMusicRange(musicUrl)
+                        val startMs = range.first
+                        val endMs = range.second
+                        val cleanUri = musicUrl.substringBefore('#')
+                        val mediaItem = MediaItem.Builder()
+                            .setUri(cleanUri)
+                            .apply {
+                                if (startMs > 0 || endMs != null) {
+                                    setClippingConfiguration(
+                                        MediaItem.ClippingConfiguration.Builder()
+                                            .setStartPositionMs(startMs)
+                                            .apply {
+                                                if (endMs != null && endMs > startMs) {
+                                                    setEndPositionMs(endMs)
+                                                }
+                                            }
+                                            .build()
+                                    )
+                                }
+                            }
+                            .build()
+                        backgroundMusicPlayer.setMediaItem(mediaItem)
+                        backgroundMusicPlayer.prepare()
+                        backgroundMusicPlayer.playWhenReady = true
+                    }
+                } else {
+                    if (activeMusicPostId != null) {
+                        activeMusicPostId = null
+                        backgroundMusicPlayer.pause()
+                    }
+                }
+            }
     }
 
     LazyColumn(
@@ -1007,6 +1089,7 @@ internal fun ProfilePostCard(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = post.authorFullName.ifBlank { post.authorUsername ?: "" },
+                        modifier = Modifier.weight(1.2f, fill = false),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         fontSize = 15.sp,
@@ -1023,11 +1106,26 @@ internal fun ProfilePostCard(
                         )
                     }
                     Text(
-                        text = " • ${profileRelativeTime(post.createdAt)}",
-                        modifier = Modifier.padding(start = 4.dp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        text = "•",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                         fontSize = 13.sp,
+                        modifier = Modifier.padding(horizontal = 6.dp),
                     )
+                    if (!post.musicUrl.isNullOrBlank()) {
+                        PostHeaderTimeOrMusicBadge(
+                            timeLabel = profileRelativeTime(post.createdAt),
+                            musicTitle = post.musicTitle,
+                            musicUrl = post.musicUrl,
+                            modifier = Modifier.weight(1f, fill = false),
+                        )
+                    } else {
+                        Text(
+                            text = profileRelativeTime(post.createdAt),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 13.sp,
+                            maxLines = 1,
+                        )
+                    }
                 }
             }
         }
@@ -1171,7 +1269,7 @@ internal fun ProfilePostCard(
             }
         }
 
-        if (!post.musicUrl.isNullOrBlank()) {
+        if (!post.musicUrl.isNullOrBlank() && !isBackgroundMusicPost(post.musicUrl)) {
             SoundCloudMusicBubble(
                 musicUrl = post.musicUrl,
                 musicTitle = post.musicTitle ?: "موسیقی پست",
@@ -1228,21 +1326,10 @@ internal fun ProfilePostCard(
             Spacer(Modifier.width(14.dp))
             Image(
                 painter = painterResource(DesignSystemR.drawable.vista_post_send),
-                contentDescription = "ارسال",
+                contentDescription = "اشتراک‌گذاری",
                 modifier = Modifier
                     .size(19.dp)
-                    .clickable {
-                        if (onShareClick != {}) {
-                            onShareClick()
-                        } else {
-                            val shareIntent = Intent().apply {
-                                action = Intent.ACTION_SEND
-                                putExtra(Intent.EXTRA_TEXT, "https://coffevista.ir/p/${post.id}")
-                                type = "text/plain"
-                            }
-                            context.startActivity(Intent.createChooser(shareIntent, "اشتراک‌گذاری پست"))
-                        }
-                    },
+                    .clickable(onClick = onShareClick),
                 colorFilter = ColorFilter.tint(actionTint),
             )
             Spacer(Modifier.weight(1f))
@@ -1262,6 +1349,23 @@ internal fun ProfilePostCard(
                     expanded = showMenu,
                     onDismissRequest = { showMenu = false },
                 ) {
+                    DropdownMenuItem(
+                        text = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Image(
+                                    painter = painterResource(DesignSystemR.drawable.ic_share_social),
+                                    contentDescription = null,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text("اشتراک‌گذاری پست")
+                            }
+                        },
+                        onClick = {
+                            showMenu = false
+                            onShareClick()
+                        },
+                    )
                     if (!isOwnPost) {
                         DropdownMenuItem(
                             text = {

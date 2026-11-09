@@ -680,6 +680,9 @@ fun VistaApp(
                                     postsViewModel.updateEngagementVisibility(post.id, hideLike, hideComment)
                                 },
                                 onNavigateToPricing = { navController.navigate(ShellRoutes.PricingPage) },
+                                onNavigateToStoryEditor = { uri ->
+                                    navController.navigate(ShellRoutes.storyCreate(uri.toString()))
+                                },
                                 onHighlightClick = { highlight ->
                                     coroutineScope.launch {
                                         val hlResult = storyRepo.getUserHighlights(signedIn.context.userId)
@@ -897,6 +900,9 @@ fun VistaApp(
                                     postsViewModel.updateEngagementVisibility(post.id, hideLike, hideComment)
                                 },
                                 onNavigateToPricing = { navController.navigate(ShellRoutes.PricingPage) },
+                                onNavigateToStoryEditor = { uri ->
+                                    navController.navigate(ShellRoutes.storyCreate(uri.toString()))
+                                },
                                 onHighlightClick = { highlight ->
                                     coroutineScope.launch {
                                         val hlResult = storyRepo.getUserHighlights(userId)

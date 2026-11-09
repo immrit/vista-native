@@ -24,6 +24,7 @@ import ir.coffevista.vista_native.features.chat.presentation.components.VoicePla
 import ir.coffevista.vista_native.core.designsystem.component.VistaBadgeDefaults
 import ir.coffevista.vista_native.core.designsystem.glass.vistaGlassSource
 import ir.coffevista.vista_native.core.designsystem.glass.vistaGlass
+import ir.coffevista.vista_native.core.designsystem.glass.vistaGlassHalo
 import ir.coffevista.vista_native.core.designsystem.glass.rememberVistaGlassState
 import ir.coffevista.vista_native.core.designsystem.glass.LocalVistaGlassState
 import ir.coffevista.vista_native.core.designsystem.glass.VistaGlassScrollSync
@@ -56,7 +57,6 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
-import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -1974,15 +1974,6 @@ fun MessageDetailScreen(
                         }
                     },
             ) {
-                val isDragged by listState.interactionSource.collectIsDraggedAsState()
-                LaunchedEffect(isDragged) {
-                    if (isDragged) {
-                        if (emojiPanelVisible) {
-                            emojiPanelVisible = false
-                        }
-                        composerController.closeKeyboard()
-                    }
-                }
                 LaunchedEffect(searchVisible, searchResultIndex, state.searchResults) {
                     if (searchVisible && state.searchResults.isNotEmpty()) {
                         val targetMessage = state.searchResults.getOrNull(searchResultIndex)
@@ -2363,15 +2354,31 @@ fun MessageDetailScreen(
                         }
                     }
                 }
-            Column(
+            Box(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .onSizeChanged { size ->
-                        val h = with(density) { size.height.toDp() }
-                        if (h != composerHeightDp) composerHeightDp = h
-                    },
+                    .fillMaxWidth(),
+                contentAlignment = Alignment.BottomCenter,
             ) {
+                Box(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .vistaGlassHalo(
+                            state = chatGlassState,
+                            isDark = isDarkTheme,
+                            blurRadius = 20.dp,
+                            startOffsetFraction = 0.18f,
+                            maxAlpha = if (isDarkTheme) 0.54f else 0.58f,
+                        ),
+                )
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .onSizeChanged { size ->
+                            val h = with(density) { size.height.toDp() }
+                            if (h != composerHeightDp) composerHeightDp = h
+                        },
+                ) {
             ChatComposerBar(
                 conversationId = state.conversationId,
                 title = title,
@@ -2466,19 +2473,20 @@ fun MessageDetailScreen(
             } else {
                 Spacer(Modifier.height(navBottomDp))
             }
+                }
             }
         }
 
         val inSelectionMode = selectedMessageKeys.isNotEmpty()
         val topBarBgColor = when {
             inSelectionMode -> MaterialTheme.colorScheme.primary
-            isDarkTheme -> Color(0xFF17212B)
+            isDarkTheme -> Color(0xFF1C242F)
             else -> Color(0xFFFFFFFF)
         }
         val topBarGlassAlpha = when {
             inSelectionMode -> 0.95f
-            isDarkTheme -> 0.85f
-            else -> 0.88f
+            isDarkTheme -> 0.82f
+            else -> 0.86f
         }
         Column(
             modifier = Modifier
@@ -2499,6 +2507,7 @@ fun MessageDetailScreen(
                         tint = topBarBgColor,
                         isDark = isDarkTheme,
                         blurRadius = VistaGlassTokens.BarBlur,
+                        tintAlphaOverride = topBarGlassAlpha,
                         drawHighlight = false,
                         rimWidth = 0.dp,
                     ),
@@ -2506,26 +2515,11 @@ fun MessageDetailScreen(
                 color = if (inSelectionMode) topBarBgColor.copy(alpha = topBarGlassAlpha) else Color.Transparent,
                 shadowElevation = 0.dp,
             ) {
-                Box(modifier = Modifier.fillMaxWidth()) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .matchParentSize()
-                            .background(
-                                Brush.verticalGradient(
-                                    listOf(
-                                        if (isDarkTheme) Color(0x20FFFFFF) else Color(0x45FFFFFF),
-                                        if (isDarkTheme) Color(0x08FFFFFF) else Color(0x15FFFFFF),
-                                        Color.Transparent,
-                                    ),
-                                ),
-                            ),
-                    )
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .windowInsetsPadding(WindowInsets.statusBars.only(WindowInsetsSides.Top)),
-                    ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .windowInsetsPadding(WindowInsets.statusBars.only(WindowInsetsSides.Top)),
+                ) {
                 if (selectedMessageKeys.isNotEmpty()) {
                     val selectedMessages = state.messages.filter { it.stableKey in selectedMessageKeys }
                     val secret = state.conversation?.type == ConversationType.SECRET
@@ -2868,30 +2862,14 @@ fun MessageDetailScreen(
                     color = if (inSelectionMode) {
                         Color.Transparent
                     } else if (isDarkTheme) {
-                        Color(0x28FFFFFF)
+                        Color(0x18FFFFFF)
                     } else {
-                        Color(0x18000000)
+                        Color(0x12000000)
                     },
                 )
             }
         }
     }
-    val featherColor = if (isDarkTheme) Color(0xFF17212B) else Color(0xFFFFFFFF)
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(8.dp)
-            .background(
-                Brush.verticalGradient(
-                    listOf(
-                        featherColor.copy(alpha = if (isDarkTheme) 0.35f else 0.40f),
-                        featherColor.copy(alpha = if (isDarkTheme) 0.12f else 0.15f),
-                        Color.Transparent,
-                    ),
-                ),
-            ),
-    )
-}
         SnackbarHost(snackbarHostState, Modifier.align(Alignment.BottomCenter))
         if (autoDeleteDialogVisible) {
             SecretChatAutoDeleteDialog(
@@ -3793,8 +3771,8 @@ private fun MessageBubble(
         }
     }
     val text = when (val content = message.content) {
-        is MessageContent.Text -> if (sharedPost != null) "" else content.value
-        is MessageContent.Structured -> if (sharedPost != null) "" else content.payload
+        is MessageContent.Text -> if (sharedPost != null || content.value.startsWith("wf:")) "" else content.value
+        is MessageContent.Structured -> if (sharedPost != null || content.payload.startsWith("wf:")) "" else content.payload
         MessageContent.Deleted -> "این پیام حذف شده است"
         MessageContent.EncryptedUnavailable -> "🔒 پیام رمزگذاری‌شده"
     }
@@ -5016,11 +4994,13 @@ internal fun Message.previewText(): String = when (val value = content) {
     is MessageContent.Text -> {
         val parsed = SharedPostParser.tryParse(value.value)
         if (parsed != null) "پست از ${parsed.authorName}: ${parsed.content.ifBlank { "رسانه" }}"
+        else if (value.value.startsWith("wf:") || attachment?.kind == AttachmentKind.VOICE) "🎤 پیام صوتی"
         else value.value.ifBlank { attachment?.fileName ?: "پیوست" }
     }
     is MessageContent.Structured -> {
         val parsed = SharedPostParser.tryParse(value.payload)
         if (parsed != null) "پست از ${parsed.authorName}: ${parsed.content.ifBlank { "رسانه" }}"
+        else if (value.payload.startsWith("wf:") || attachment?.kind == AttachmentKind.VOICE) "🎤 پیام صوتی"
         else value.payload
     }
     MessageContent.Deleted -> "این پیام حذف شده است"
@@ -5959,6 +5939,52 @@ private fun ChatComposerBar(
 }
 
 @Composable
+private fun TelegramSmileyIcon(
+    modifier: Modifier = Modifier,
+    tint: Color = Color(0xFF7D8B99),
+) {
+    Canvas(modifier = modifier.size(23.dp)) {
+        val strokeWidth = 1.8.dp.toPx()
+        val radius = (size.minDimension - strokeWidth) / 2f
+        val center = Offset(size.width / 2f, size.height / 2f)
+        // Outer circle outline
+        drawCircle(
+            color = tint,
+            radius = radius,
+            center = center,
+            style = Stroke(width = strokeWidth),
+        )
+        // Eyes
+        val eyeRadius = 1.3.dp.toPx()
+        val eyeOffsetY = -2.2.dp.toPx()
+        val eyeOffsetX = 4.2.dp.toPx()
+        drawCircle(
+            color = tint,
+            radius = eyeRadius,
+            center = Offset(center.x - eyeOffsetX, center.y + eyeOffsetY),
+        )
+        drawCircle(
+            color = tint,
+            radius = eyeRadius,
+            center = Offset(center.x + eyeOffsetX, center.y + eyeOffsetY),
+        )
+        // Smile curve
+        val smileWidth = 8.5.dp.toPx()
+        val smileHeight = 4.3.dp.toPx()
+        val smileTop = center.y + 0.6.dp.toPx()
+        val path = Path().apply {
+            moveTo(center.x - smileWidth / 2f, smileTop)
+            quadraticTo(center.x, smileTop + smileHeight, center.x + smileWidth / 2f, smileTop)
+        }
+        drawPath(
+            path = path,
+            color = tint,
+            style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
+        )
+    }
+}
+
+@Composable
 private fun Composer(
     value: TextFieldValue,
     isBlank: Boolean,
@@ -5979,143 +6005,181 @@ private fun Composer(
     val attachmentRotation = remember { Animatable(0f) }
     val composerScope = rememberCoroutineScope()
     var isVoiceActive by remember { mutableStateOf(false) }
+    val isDark = isSystemInDarkTheme()
+    val composerGlass = LocalVistaGlassState.current
+    val capsuleBg = if (isDark) Color(0xFF1E2732) else Color.White
+    val iconTint = if (isDark) Color(0xFF7D8B99) else Color(0xFF707579)
 
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .testTag("chat-composer-surface")
-                .padding(start = 6.dp, end = 6.dp, top = 2.dp, bottom = 8.dp),
+                .padding(start = 8.dp, end = 8.dp, top = 2.dp, bottom = 6.dp),
             contentAlignment = Alignment.CenterEnd,
         ) {
-            Row(
+            val isSingleLine = value.text.isBlank() || isVoiceActive
+            Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .graphicsLayer { alpha = if (isVoiceActive) 0f else 1f },
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                val composerGlass = LocalVistaGlassState.current
-                Row(
-                    Modifier
-                        .weight(1f)
-                        .then(
-                            if (composerGlass != null) {
-                                Modifier.vistaGlass(
-                                    state = composerGlass,
-                                    shape = RoundedCornerShape(24.dp),
-                                    tint = if (isSystemInDarkTheme()) MaterialTheme.colorScheme.surfaceVariant else Color.White,
-                                    isDark = isSystemInDarkTheme(),
-                                    blurRadius = VistaGlassTokens.BarBlur,
-                                    rimWidth = 0.6.dp,
-                                    shadowElevation = 4.dp,
+                    .then(
+                        if (isSingleLine) Modifier.height(46.dp)
+                        else Modifier.defaultMinSize(minHeight = 46.dp)
+                    )
+                    .then(
+                        if (composerGlass != null) {
+                            Modifier.vistaGlass(
+                                state = composerGlass,
+                                shape = RoundedCornerShape(23.dp),
+                                tint = capsuleBg,
+                                isDark = isDark,
+                                blurRadius = VistaGlassTokens.BarBlur,
+                                tintAlphaOverride = if (isDark) 0.84f else 0.88f,
+                                drawHighlight = false,
+                                rimWidth = 0.6.dp,
+                                shadowElevation = if (isDark) 2.dp else 4.dp,
+                            )
+                        } else {
+                            Modifier
+                                .shadow(if (isDark) 2.dp else 4.dp, RoundedCornerShape(23.dp))
+                                .background(capsuleBg.copy(alpha = 0.94f))
+                                .border(
+                                    0.55.dp,
+                                    if (isDark) Color(0x1AFFFFFF) else Color(0x12000000),
+                                    RoundedCornerShape(23.dp),
                                 )
-                            } else {
-                                Modifier
-                                    .shadow(4.dp, RoundedCornerShape(24.dp))
-                                    .background(
-                                        if (isSystemInDarkTheme()) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.94f)
-                                        else Color.White.copy(alpha = 0.94f),
-                                    )
-                                    .border(
-                                        0.5.dp,
-                                        if (isSystemInDarkTheme()) Color(0x20FFFFFF) else Color(0x15000000),
-                                        RoundedCornerShape(24.dp),
-                                    )
-                            },
-                        )
-                        .clip(RoundedCornerShape(24.dp))
-                        .padding(horizontal = 6.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                        },
+                    ),
+                shape = RoundedCornerShape(23.dp),
+                color = Color.Transparent,
+                shadowElevation = 0.dp,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .then(
+                            if (isSingleLine) Modifier.height(46.dp)
+                            else Modifier.defaultMinSize(minHeight = 46.dp)
+                        ),
+                    contentAlignment = Alignment.CenterEnd,
                 ) {
-                    AnimatedVisibility(
-                        visible = isBlank && attachmentsEnabled,
-                        enter = scaleIn(tween(200, easing = FastOutSlowInEasing)) + fadeIn(tween(160)),
-                        exit = scaleOut(tween(180, easing = FastOutSlowInEasing)) + fadeOut(tween(140)),
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .graphicsLayer { alpha = if (isVoiceActive) 0f else 1f }
+                            .padding(start = 4.dp, end = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
                         IconButton(
                             onClick = {
-                                composerScope.launch {
-                                    attachmentRotation.snapTo(0f)
-                                    attachmentRotation.animateTo(15f, tween(110, easing = FastOutSlowInEasing))
-                                    attachmentRotation.animateTo(0f, tween(110, easing = FastOutSlowInEasing))
+                                if (isEmojiPanelOpen) {
+                                    focusRequester.requestFocus()
                                 }
-                                onAttach()
+                                onEmoji()
                             },
                             modifier = Modifier
                                 .focusProperties { canFocus = false }
-                                .size(34.dp)
-                                .graphicsLayer { rotationZ = attachmentRotation.value },
+                                .size(38.dp)
+                                .zIndex(1f),
                         ) {
-                            Icon(Icons.Default.AttachFile, contentDescription = "پیوست فایل", modifier = Modifier.size(22.dp))
+                            if (isEmojiPanelOpen) {
+                                Icon(
+                                    Icons.Default.Keyboard,
+                                    contentDescription = "صفحه‌کلید",
+                                    tint = iconTint,
+                                    modifier = Modifier.size(23.dp),
+                                )
+                            } else {
+                                TelegramSmileyIcon(tint = iconTint)
+                            }
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(horizontal = 4.dp),
+                            contentAlignment = Alignment.CenterStart,
+                        ) {
+                            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+                                ChatComposerField(
+                                    value = value,
+                                    onValueChange = onValueChange,
+                                    onFocusText = onFocusText,
+                                    controller = controller,
+                                    isEmojiPanelOpen = isEmojiPanelOpen,
+                                    focusRequester = focusRequester,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    hint = "پیام",
+                                    maxLines = 6,
+                                )
+                            }
+                        }
+
+                        AnimatedVisibility(
+                            visible = isBlank && attachmentsEnabled,
+                            enter = scaleIn(tween(180, easing = FastOutSlowInEasing)) + fadeIn(tween(150)),
+                            exit = scaleOut(tween(160, easing = FastOutSlowInEasing)) + fadeOut(tween(130)),
+                        ) {
+                            IconButton(
+                                onClick = {
+                                    composerScope.launch {
+                                        attachmentRotation.snapTo(0f)
+                                        attachmentRotation.animateTo(15f, tween(110, easing = FastOutSlowInEasing))
+                                        attachmentRotation.animateTo(0f, tween(110, easing = FastOutSlowInEasing))
+                                    }
+                                    onAttach()
+                                },
+                                modifier = Modifier
+                                    .focusProperties { canFocus = false }
+                                    .size(36.dp),
+                            ) {
+                                Icon(
+                                    Icons.Default.AttachFile,
+                                    contentDescription = "پیوست فایل",
+                                    tint = iconTint,
+                                    modifier = Modifier
+                                        .size(22.dp)
+                                        .graphicsLayer { rotationZ = -45f + attachmentRotation.value },
+                                )
+                            }
+                        }
+
+                        if (isNotBlank) {
+                            Box(
+                                modifier = Modifier
+                                    .padding(end = 4.dp)
+                                    .size(38.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFF2EA6FF))
+                                    .clickable {
+                                        onSend()
+                                        controller.openKeyboard()
+                                    }
+                                    .semantics { contentDescription = "ارسال پیام" },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(
+                                    Icons.AutoMirrored.Filled.Send,
+                                    contentDescription = null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                            }
+                        } else {
+                            Spacer(Modifier.size(42.dp))
                         }
                     }
-                    IconButton(
-                        onClick = {
-                            if (isEmojiPanelOpen) {
-                                focusRequester.requestFocus()
-                            }
-                            onEmoji()
-                        },
-                        modifier = Modifier
-                            .focusProperties { canFocus = false }
-                            .size(40.dp)
-                            .zIndex(1f),
-                    ) {
-                        Icon(
-                            if (isEmojiPanelOpen) Icons.Default.Keyboard else Icons.Default.EmojiEmotions,
-                            contentDescription = if (isEmojiPanelOpen) "صفحه‌کلید" else "شکلک‌ها",
-                            modifier = Modifier.size(23.dp),
+
+                    if (isBlank) {
+                        VoiceRecorderDock(
+                            modifier = Modifier.fillMaxWidth(),
+                            onSendVoice = onSendVoice,
+                            onPermissionRequired = onPermissionRequired,
+                            hasRecordPermission = hasRecordPermission,
+                            onActiveStateChange = { isVoiceActive = it },
                         )
                     }
-                    Box(Modifier.weight(1f)) {
-                        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
-                            ChatComposerField(
-                                value = value,
-                                onValueChange = onValueChange,
-                                onFocusText = onFocusText,
-                                controller = controller,
-                                isEmojiPanelOpen = isEmojiPanelOpen,
-                                focusRequester = focusRequester,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 4.dp),
-                                hint = "پیام...",
-                                maxLines = 6,
-                            )
-                        }
-                    }
                 }
-
-                if (isNotBlank) {
-                    IconButton(
-                        onClick = {
-                            onSend()
-                            controller.openKeyboard()
-                        },
-                        modifier = Modifier
-                            .focusProperties { canFocus = false }
-                            .size(48.dp)
-                            .shadow(4.dp, CircleShape)
-                            .clip(CircleShape)
-                            .background(Brush.linearGradient(listOf(VistaBrandColors.Indigo, VistaBrandColors.VioletDeep)))
-                            .semantics { contentDescription = "ارسال پیام" },
-                    ) {
-                        Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
-                    }
-                } else {
-                    Spacer(Modifier.size(48.dp))
-                }
-            }
-
-            if (isBlank) {
-                VoiceRecorderDock(
-                    modifier = Modifier.fillMaxWidth(),
-                    onSendVoice = onSendVoice,
-                    onPermissionRequired = onPermissionRequired,
-                    hasRecordPermission = hasRecordPermission,
-                    onActiveStateChange = { isVoiceActive = it },
-                )
             }
         }
     }

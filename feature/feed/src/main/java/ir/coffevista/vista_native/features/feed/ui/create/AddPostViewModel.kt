@@ -522,6 +522,7 @@ class AddPostViewModel @Inject constructor(
                     musicTitle = state.selectedMusicTitle,
                     musicStartMs = state.musicStartMs,
                     musicEndMs = state.musicEndMs,
+                    isMusicBackgroundMode = state.isMusicBackgroundMode,
                     hideLikeCount = state.hideLikeCount,
                     hideCommentCount = state.hideCommentCount,
                     commentsDisabled = state.commentsDisabled,
@@ -621,12 +622,23 @@ class AddPostViewModel @Inject constructor(
                     )
                 }
 
+                val startMsVal = effectiveMusicStartMs
+                val endMsVal = effectiveMusicEndMs
+                val encodedMusicUrl = if (!finalMusicUrl.isNullOrBlank()) {
+                    val cleanUrl = finalMusicUrl.substringBefore('#')
+                    val hasTiming = (startMsVal != null && startMsVal > 0) || (endMsVal != null && startMsVal != null && endMsVal > startMsVal)
+                    val timingFragment = if (hasTiming) "t=$startMsVal,$endMsVal" else ""
+                    val bgFragment = if (state.isMusicBackgroundMode) "bg=1" else ""
+                    val combinedFragment = listOf(timingFragment, bgFragment).filter { it.isNotEmpty() }.joinToString("&")
+                    if (combinedFragment.isNotEmpty()) "$cleanUrl#$combinedFragment" else cleanUrl
+                } else null
+
                 val createReq = CreatePostRequestDto(
                     content = state.content.trim().ifBlank { null },
                     imageUrl = finalImageUrls.firstOrNull() ?: finalThumbUrl,
                     imageUrls = finalImageUrls,
                     videoUrl = finalVideoUrl,
-                    musicUrl = finalMusicUrl,
+                    musicUrl = encodedMusicUrl,
                     musicTitle = state.selectedMusicTitle,
                     musicStartMs = effectiveMusicStartMs,
                     musicEndMs = effectiveMusicEndMs,

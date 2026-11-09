@@ -78,6 +78,7 @@ fun OtherUserProfileScreen(
     onOpenFollowers: ((userId: String, initialTab: Int) -> Unit)? = null,
     onNavigateToPricing: (() -> Unit)? = null,
     onHighlightClick: ((ir.coffevista.vista_native.features.profile.data.ProfileHighlightDto) -> Unit)? = null,
+    onNavigateToStoryEditor: ((android.net.Uri) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -117,6 +118,7 @@ fun OtherUserProfileScreen(
         onOpenFollowers = onOpenFollowers,
         onNavigateToPricing = onNavigateToPricing,
         onHighlightClick = onHighlightClick,
+        onNavigateToStoryEditor = onNavigateToStoryEditor,
         onAction = viewModel::onAction,
         modifier = modifier,
     )
@@ -146,12 +148,14 @@ internal fun OtherUserProfileContent(
     onOpenFollowers: ((userId: String, initialTab: Int) -> Unit)? = null,
     onNavigateToPricing: (() -> Unit)? = null,
     onHighlightClick: ((ir.coffevista.vista_native.features.profile.data.ProfileHighlightDto) -> Unit)? = null,
+    onNavigateToStoryEditor: ((android.net.Uri) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
     var showOptionsSheet by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
     var showShareSheet by remember { mutableStateOf(false) }
+    var showShareForPost by remember { mutableStateOf<ir.coffevista.vista_native.features.feed.data.FeedPost?>(null) }
     var editPostTarget by remember { mutableStateOf<ProfilePostUiModel?>(null) }
     var isEditingPost by remember { mutableStateOf(false) }
     var reportPostTarget by remember { mutableStateOf<ProfilePostUiModel?>(null) }
@@ -238,6 +242,7 @@ internal fun OtherUserProfileContent(
                                 onReelClick = onReelClick,
                                 onLikeClick = onLikeClick,
                                 onSaveClick = onSaveClick,
+                                onShareClick = { post -> showShareForPost = post.toFeedPost() },
                                 onEditPost = { post -> editPostTarget = post },
                                 onDeletePost = onDeletePost,
                                 onReportPost = { post -> reportPostTarget = post },
@@ -430,6 +435,16 @@ internal fun OtherUserProfileContent(
                         premiumPromptFeature = null
                         onNavigateToPricing?.invoke()
                     },
+                )
+            }
+
+            showShareForPost?.let { post ->
+                ir.coffevista.vista_native.features.feed.ui.PostShareBottomSheet(
+                    post = post,
+                    onDismiss = { showShareForPost = null },
+                    onShared = {},
+                    onSendDirectMessage = onMessage?.let { cb -> { _ -> cb() } },
+                    onNavigateToStoryEditor = onNavigateToStoryEditor,
                 )
             }
     }

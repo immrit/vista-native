@@ -26,11 +26,18 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.platform.LocalContext
+import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
+import androidx.media3.exoplayer.ExoPlayer
+import ir.coffevista.vista_native.core.designsystem.component.isBackgroundMusicPost
+import ir.coffevista.vista_native.core.designsystem.component.resolveMusicRange
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -372,6 +379,53 @@ private fun ReadOnlyPostDetail(
     onSubmitComment: (CommentDraft) -> Unit,
     onCancelReplyOrEdit: () -> Unit,
 ) {
+    val context = LocalContext.current
+    val backgroundMusicPlayer = remember {
+        ExoPlayer.Builder(context).build().apply {
+            repeatMode = Player.REPEAT_MODE_ONE
+        }
+    }
+    DisposableEffect(backgroundMusicPlayer) {
+        onDispose {
+            backgroundMusicPlayer.stop()
+            backgroundMusicPlayer.release()
+        }
+    }
+
+    val postMusicUrl = state.post.musicUrl?.trim()
+    LaunchedEffect(postMusicUrl) {
+        if (!postMusicUrl.isNullOrBlank() && isBackgroundMusicPost(postMusicUrl)) {
+            val range = resolveMusicRange(postMusicUrl)
+            val startMs = if (state.post.musicStartMs > 0) state.post.musicStartMs else range.first
+            val endMs = state.post.musicEndMs ?: range.second
+            val cleanUri = postMusicUrl.substringBefore('#')
+            val mediaItem = MediaItem.Builder()
+                .setUri(cleanUri)
+                .apply {
+                    if (startMs > 0 || endMs != null) {
+                        setClippingConfiguration(
+                            MediaItem.ClippingConfiguration.Builder()
+                                .setStartPositionMs(startMs)
+                                .apply {
+                                    if (endMs != null && endMs > startMs) {
+                                        setEndPositionMs(endMs)
+                                    }
+                                }
+                                .build()
+                        )
+                    }
+                }
+                .build()
+            backgroundMusicPlayer.setMediaItem(mediaItem)
+            backgroundMusicPlayer.prepare()
+            backgroundMusicPlayer.playWhenReady = true
+        } else {
+            if (backgroundMusicPlayer.isPlaying) {
+                backgroundMusicPlayer.pause()
+            }
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()

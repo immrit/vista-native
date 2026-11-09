@@ -36,6 +36,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Tune
+import ir.coffevista.vista_native.features.feed.ui.components.SoundCloudMusicBubble
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -469,16 +471,58 @@ fun AddPostScreen(
                             }
 
                             if (uiState.selectedMusicUri != null || uiState.selectedMusicTitle != null) {
-                                MusicAttachmentChip(
-                                    title = uiState.selectedMusicTitle ?: "موسیقی انتخاب‌شده",
-                                    rangeLabel = if (uiState.musicDurationMs > 0) {
-                                        "${TrimMath.formatTime(uiState.musicStartMs.toLong())} – ${TrimMath.formatTime(uiState.musicEndMs.toLong())}"
-                                    } else {
-                                        null
-                                    },
-                                    onTap = { showMusicTrimSheet = true },
-                                    onRemove = { viewModel.onMusicSelected(null, null) },
-                                )
+                                val musicUriString = uiState.selectedMusicUri?.toString().orEmpty()
+                                val rangeSubtitle = if (uiState.musicDurationMs > 0) {
+                                    "برش: ${TrimMath.formatTime(uiState.musicStartMs.toLong())} تا ${TrimMath.formatTime(uiState.musicEndMs.toLong())}"
+                                } else {
+                                    "موسیقی پست"
+                                }
+
+                                if (musicUriString.isNotBlank()) {
+                                    SoundCloudMusicBubble(
+                                        musicUrl = musicUriString,
+                                        musicTitle = uiState.selectedMusicTitle ?: "موسیقی پست",
+                                        subtitle = rangeSubtitle,
+                                        trailingAction = {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                IconButton(
+                                                    onClick = { showMusicTrimSheet = true },
+                                                    modifier = Modifier.size(34.dp),
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Tune,
+                                                        contentDescription = "تنظیم و برش موسیقی",
+                                                        tint = MaterialTheme.colorScheme.primary,
+                                                        modifier = Modifier.size(19.dp),
+                                                    )
+                                                }
+                                                IconButton(
+                                                    onClick = { viewModel.onMusicSelected(null, null) },
+                                                    modifier = Modifier.size(34.dp),
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Close,
+                                                        contentDescription = "حذف موسیقی",
+                                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                        modifier = Modifier.size(19.dp),
+                                                    )
+                                                }
+                                            }
+                                        },
+                                        modifier = Modifier.padding(vertical = 4.dp),
+                                    )
+                                } else {
+                                    MusicAttachmentChip(
+                                        title = uiState.selectedMusicTitle ?: "موسیقی انتخاب‌شده",
+                                        rangeLabel = if (uiState.musicDurationMs > 0) {
+                                            "${TrimMath.formatTime(uiState.musicStartMs.toLong())} – ${TrimMath.formatTime(uiState.musicEndMs.toLong())}"
+                                        } else {
+                                            null
+                                        },
+                                        onTap = { showMusicTrimSheet = true },
+                                        onRemove = { viewModel.onMusicSelected(null, null) },
+                                    )
+                                }
                             }
 
                             uiState.selectedLocation?.let { location ->
@@ -586,6 +630,26 @@ fun AddPostScreen(
                             )
 
                             Spacer(modifier = Modifier.height(10.dp))
+
+                            if (uiState.selectedMusicUri != null || uiState.selectedMusicTitle != null) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 6.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text("پخش در پس‌زمینه", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                                        Text("موسیقی هنگام مشاهده پست به صورت خودکار در پس‌زمینه پخش می‌شود", fontSize = 11.sp, color = Color.Gray)
+                                    }
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    ir.coffevista.vista_native.core.designsystem.component.VistaSwitch(
+                                        checked = uiState.isMusicBackgroundMode,
+                                        onCheckedChange = { viewModel.toggleMusicBackgroundMode(it) },
+                                    )
+                                }
+                            }
 
                             Row(
                                 modifier = Modifier
