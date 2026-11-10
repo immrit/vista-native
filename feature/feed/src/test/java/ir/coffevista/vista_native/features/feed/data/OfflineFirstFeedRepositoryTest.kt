@@ -252,6 +252,54 @@ class OfflineFirstFeedRepositoryTest {
         )
     }
 
+    @Test
+    fun trackDetailedFeedEventAndBehaviorEventsFlushWithRichFields() = runTest {
+        repository.trackDetailedFeedEvent(
+            postId = "post-99",
+            eventType = "skip",
+            dwellMs = 420L,
+            watchPct = 0.15f,
+            sourceSurface = "reels",
+        )
+        repository.trackBehaviorEvent(
+            BehaviorEventDto(
+                eventType = "music_play",
+                targetType = "post",
+                targetId = "post-99",
+                tags = listOf("tech"),
+                sourceSurface = "feed",
+            ),
+        )
+
+        repository.flushPendingEvents()
+
+        assertEquals(1, api.recordedFeedEvents.size)
+        val recordedFeed = api.recordedFeedEvents.single()
+        assertEquals("post-99", recordedFeed.postId)
+        assertEquals("skip", recordedFeed.eventType)
+        assertEquals(420L, recordedFeed.dwellMs)
+        assertEquals(0.15f, recordedFeed.watchPct)
+        assertEquals("reels", recordedFeed.sourceSurface)
+
+        assertEquals(1, api.recordedBehaviorBatches.size)
+        val recordedBehavior = api.recordedBehaviorBatches.single().events.single()
+        assertEquals("music_play", recordedBehavior.eventType)
+        assertEquals(listOf("tech"), recordedBehavior.tags)
+    }
+
+    @Test
+    fun markPostNotInterestedLocalDeletesPostAcrossFeeds() = runTest {
+        api.response = response("keep", "drop", hasMore = false)
+        repository.refreshFeed("account-a", FeedKind.Explore)
+
+        repository.markPostNotInterestedLocal("drop")
+
+        assertEquals(
+            listOf("keep"),
+            repository.observeFeed("account-a", FeedKind.Explore).first().posts.map(FeedPost::id),
+        )
+    }
+
     private fun response(
         vararg ids: String,
         hasMore: Boolean,
@@ -315,6 +363,8 @@ private class FakeFeedApi : FeedApi {
     var handler: (suspend (Int, Int) -> FeedResponseDto)? = null
     val calls = mutableListOf<Pair<Int, Int>>()
     val followingOffsets = mutableListOf<Int>()
+    val recordedFeedEvents = mutableListOf<FeedEventRequestDto>()
+    val recordedBehaviorBatches = mutableListOf<BehaviorEventsBatchRequestDto>()
 
     override suspend fun getExploreFeed(limit: Int, offset: Int): FeedResponseDto {
         calls += limit to offset
@@ -372,7 +422,12 @@ private class FakeFeedApi : FeedApi {
     override suspend fun deletePost(postId: String) = Unit
     override suspend fun reportPost(body: ReportPostRequestDto) = Unit
     override suspend fun submitAppeal(body: SubmitAppealRequestDto) = Unit
-    override suspend fun trackFeedEvent(body: FeedEventRequestDto) = Unit
+    override suspend fun trackFeedEvent(body: FeedEventRequestDto) {
+        recordedFeedEvents += body
+    }
+    override suspend fun trackBehaviorEvents(body: BehaviorEventsBatchRequestDto) {
+        recordedBehaviorBatches += body
+    }
     override suspend fun presignUpload(request: PostPresignRequestDto): PostPresignResponseDto = error("unused")
     override suspend fun deleteUpload(request: DeleteUploadRequestDto): DeleteUploadResponseDto = DeleteUploadResponseDto(true)
     override suspend fun createPost(request: CreatePostRequestDto): FeedPostDto = error("unused")

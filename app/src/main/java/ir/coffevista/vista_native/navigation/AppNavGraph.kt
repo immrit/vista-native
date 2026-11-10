@@ -100,6 +100,9 @@ import ir.coffevista.vista_native.features.services.data.ServicesRepository
 import ir.coffevista.vista_native.features.services.ui.ServicesScreen
 import ir.coffevista.vista_native.features.services.ui.contacts.ContactsScreen
 import ir.coffevista.vista_native.features.services.ui.game.GameLaunchScreen
+import ir.coffevista.vista_native.features.services.ui.web.DuelShareBridgeRequest
+import ir.coffevista.vista_native.features.services.ui.web.DuelShareBridgeResult
+import ir.coffevista.vista_native.features.services.ui.web.InAppWebScreen
 import ir.coffevista.vista_native.features.services.ui.topgroups.TopGroupsScreen
 import ir.coffevista.vista_native.features.services.ui.web.InAppWebScreen
 import ir.coffevista.vista_native.features.services.ui.nearby.NearbyScreen
@@ -1010,11 +1013,12 @@ fun VistaApp(
                                 onGroupClick = onGroupClick,
                             )
                         },
-                        servicesGameLaunch = { onBack, onLaunchSuccess ->
+                        servicesGameLaunch = { targetPath, onBack, onLaunchSuccess ->
                             GameLaunchScreen(
                                 repository = servicesRepository,
                                 onBack = onBack,
                                 onLaunchSuccess = onLaunchSuccess,
+                                targetPath = targetPath,
                             )
                         },
                         servicesNearby = { onBack, onOpenLikes, onOpenProfile, onOpenChat ->
@@ -1032,6 +1036,11 @@ fun VistaApp(
                             )
                         },
                         servicesWeb = { url, title, onBack ->
+                            val webScope = rememberCoroutineScope()
+                            val webContext = LocalContext.current
+                            var pendingDuelShare by remember {
+                                mutableStateOf<Pair<DuelShareBridgeRequest, (DuelShareBridgeResult) -> Unit>?>(null)
+                            }
                             InAppWebScreen(
                                 url = url,
                                 title = title,
@@ -1045,7 +1054,38 @@ fun VistaApp(
                                 appBarColor = androidx.compose.ui.graphics.Color(0xFF0A3D6B),
                                 appBarForegroundColor = androidx.compose.ui.graphics.Color.White,
                                 useBackButton = true,
+                                onShareDuelToChat = { req, callback ->
+                                    if (!req.conversationId.isNullOrBlank() || !req.targetUserId.isNullOrBlank()) {
+                                        webScope.launch {
+                                            val result = dispatchDirectDuelShare(
+                                                request = req,
+                                                currentUserId = signedIn.context.userId,
+                                                chatRepository = chatRepository,
+                                                context = webContext,
+                                            )
+                                            if (result.status == "sent") {
+                                                callback(result)
+                                            } else {
+                                                pendingDuelShare = req to callback
+                                            }
+                                        }
+                                    } else {
+                                        pendingDuelShare = req to callback
+                                    }
+                                },
                             )
+                            pendingDuelShare?.let { (shareReq, callback) ->
+                                GameInviteShareModal(
+                                    request = shareReq,
+                                    currentUserId = signedIn.context.userId,
+                                    chatRepository = chatRepository,
+                                    context = webContext,
+                                    onDismiss = { result ->
+                                        pendingDuelShare = null
+                                        callback(result)
+                                    },
+                                )
+                            }
                         },
                         chatRoot = { onConversationClick, onNewMessage ->
                             ConversationListRoute(

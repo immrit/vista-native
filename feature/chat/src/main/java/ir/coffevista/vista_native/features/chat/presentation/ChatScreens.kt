@@ -42,8 +42,13 @@ import ir.coffevista.vista_native.features.chat.presentation.components.SingleEm
 import ir.coffevista.vista_native.features.chat.presentation.components.dragSelectMessages
 import ir.coffevista.vista_native.features.chat.presentation.components.VistaAnimatedEmojiBubble
 import ir.coffevista.vista_native.features.chat.presentation.components.PinnedMessagesBar
+import ir.coffevista.vista_native.core.designsystem.navigation.LocalVistaInternalLinkNavigator
+import ir.coffevista.vista_native.features.chat.domain.model.DuelInviteParser
+import ir.coffevista.vista_native.features.chat.presentation.components.DuelInviteCard
+import ir.coffevista.vista_native.features.chat.presentation.components.DuelPreviewLoadStatus
 import ir.coffevista.vista_native.features.chat.presentation.components.SharedPostCard
 import ir.coffevista.vista_native.features.chat.domain.model.SharedPostParser
+import ir.coffevista.vista_native.features.chat.presentation.messages.DuelPreviewUiState
 import ir.coffevista.vista_native.features.chat.presentation.components.UnreadMessagesDivider
 import ir.coffevista.vista_native.features.chat.presentation.components.extractFirstUrl
 import androidx.compose.material.icons.outlined.AutoStories
@@ -1548,6 +1553,8 @@ fun MessageDetailRoute(
         onComputeSafetyNumber = viewModel::computeSafetyNumber,
         onClearError = viewModel::clearError,
         onOpenPost = onOpenPost,
+        duelPreviews = state.duelPreviews,
+        onRequestDuelPreview = viewModel::loadDuelPreview,
     )
 }
 
@@ -1609,9 +1616,12 @@ fun MessageDetailScreen(
     onComputeSafetyNumber: ((String?) -> Unit) -> Unit = {},
     onClearError: () -> Unit = {},
     onOpenPost: (String) -> Unit = {},
+    duelPreviews: Map<String, DuelPreviewUiState> = emptyMap(),
+    onRequestDuelPreview: (String) -> Unit = {},
 ) = CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
     val context = LocalContext.current
     val localView = LocalView.current
+    val internalNavigator = LocalVistaInternalLinkNavigator.current
     val isSecretConversation = state.conversation?.type == ConversationType.SECRET
     val isDarkTheme = isSystemInDarkTheme()
     val isDebuggable = remember(context) {
@@ -2249,6 +2259,11 @@ fun MessageDetailScreen(
                                                     }
                                                 },
                                                 onOpenPost = onOpenPost,
+                                                duelPreviews = duelPreviews,
+                                                onRequestDuelPreview = onRequestDuelPreview,
+                                                onOpenGame = { targetPath ->
+                                                    internalNavigator?.openUrl("https://cafevista.ir$targetPath")
+                                                },
                                             )
                                         }
                                     }
@@ -2426,7 +2441,18 @@ fun MessageDetailScreen(
                 ChatAttachmentBottomSheet(
                     onDismiss = { attachmentSheetVisible = false },
                     onMediaSelected = { uris -> enqueueSelectedAttachments(uris, groupAsAlbum = true) },
-                    onFilesSelected = { uris -> enqueueSelectedAttachments(uris, groupAsAlbum = false) }
+                    onFilesSelected = { uris -> enqueueSelectedAttachments(uris, groupAsAlbum = false) },
+                    onDuelInviteSelected = state.conversation?.let { conv ->
+                        {
+                            val params = buildList {
+                                if (conv.type != ConversationType.GROUP && !conv.peerId.isNullOrBlank()) {
+                                    add("opponent=${java.net.URLEncoder.encode(conv.peerId, "UTF-8")}")
+                                }
+                                add("chatConvId=${java.net.URLEncoder.encode(conv.id, "UTF-8")}")
+                            }
+                            internalNavigator?.openUrl("https://cafevista.ir/game/duel/create?${params.joinToString("&")}")
+                        }
+                    },
                 )
             }
             val currentPanelHeight = composerPanelHeightDp.dp
@@ -3393,7 +3419,7 @@ private fun MediaAlbumBubble(
                 }
                 if (caption != null) {
                     Spacer(Modifier.height(4.dp))
-                    Row(
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(10.dp))
@@ -3402,24 +3428,25 @@ private fun MediaAlbumBubble(
                                 else MaterialTheme.colorScheme.surfaceVariant,
                             )
                             .padding(horizontal = 10.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.Bottom,
                     ) {
                         VistaEmojiText(
                             text = caption,
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.fillMaxWidth(),
                             style = TextStyle(
                                 color = if (primary.isMine) Color.White
                                 else MaterialTheme.colorScheme.onSurface,
-                                fontSize = 14.sp,
-                                lineHeight = 18.9.sp,
+                                fontSize = 15.sp,
+                                lineHeight = 20.sp,
                                 textDirection = resolveMessageTextDirection(caption),
                             ),
-                            emojiSize = 18.dp,
+                            emojiSize = 19.dp,
                             maxLines = 4,
                             overflow = TextOverflow.Ellipsis,
                         )
-                        Spacer(Modifier.width(8.dp))
-                        AlbumMessageMeta(message = primary)
+                        Spacer(Modifier.height(4.dp))
+                        Box(modifier = Modifier.align(AbsoluteAlignment.Right)) {
+                            AlbumMessageMeta(message = primary)
+                        }
                     }
                 }
             }
@@ -3760,10 +3787,21 @@ private fun MessageBubble(
     onAttachmentClick: (ir.coffevista.vista_native.features.chat.domain.model.Attachment) -> Unit,
     onJumpToRepliedMessage: () -> Unit = {},
     onOpenPost: (String) -> Unit = {},
+    duelPreviews: Map<String, DuelPreviewUiState> = emptyMap(),
+    onRequestDuelPreview: (String) -> Unit = {},
+    onOpenGame: (String) -> Unit = {},
 ) {
     val isDeleted = message.content == MessageContent.Deleted
-    val sharedPost = remember(message.content) {
+    val duelInvite = remember(message.content, message.transportType) {
         if (isDeleted) null
+        else when (val content = message.content) {
+            is MessageContent.Structured -> DuelInviteParser.tryParse(content.payload, message.transportType)
+            is MessageContent.Text -> DuelInviteParser.tryParse(content.value, message.transportType)
+            else -> null
+        }
+    }
+    val sharedPost = remember(message.content, duelInvite) {
+        if (isDeleted || duelInvite != null) null
         else when (val content = message.content) {
             is MessageContent.Structured -> SharedPostParser.tryParse(content.payload)
             is MessageContent.Text -> SharedPostParser.tryParse(content.value)
@@ -3771,18 +3809,18 @@ private fun MessageBubble(
         }
     }
     val text = when (val content = message.content) {
-        is MessageContent.Text -> if (sharedPost != null || content.value.startsWith("wf:")) "" else content.value
-        is MessageContent.Structured -> if (sharedPost != null || content.payload.startsWith("wf:")) "" else content.payload
+        is MessageContent.Text -> if (duelInvite != null || sharedPost != null || content.value.trimStart().startsWith("wf:")) "" else content.value
+        is MessageContent.Structured -> if (duelInvite != null || sharedPost != null || content.payload.trimStart().startsWith("wf:")) "" else content.payload
         MessageContent.Deleted -> "این پیام حذف شده است"
         MessageContent.EncryptedUnavailable -> "🔒 پیام رمزگذاری‌شده"
     }
-    val singleEmoji = remember(text, message.attachment, message.isForwarded, message.replyToContent, sharedPost, isDeleted) {
+    val singleEmoji = remember(text, message.attachment, message.isForwarded, message.replyToContent, sharedPost, duelInvite, isDeleted) {
         SingleEmojiDetector.extractSingleEmoji(
             text = text,
             hasAttachment = message.attachment != null,
             isForwarded = message.isForwarded,
             hasReply = !message.replyToContent.isNullOrBlank(),
-            hasSharedPost = sharedPost != null,
+            hasSharedPost = sharedPost != null || duelInvite != null,
             isDeleted = isDeleted,
         )
     }
@@ -3883,6 +3921,16 @@ private fun MessageBubble(
                             message.status == MessageStatus.FAILED ||
                                 attachment?.transferState == TransferState.FAILED ||
                                 attachment?.transferState == TransferState.CANCELLED -> onRetry(message)
+                            duelInvite != null -> {
+                                val previewEntry = duelPreviews[duelInvite.matchId]
+                                val preview = previewEntry?.preview
+                                val targetPath = if (preview != null && (preview.isParticipant || !preview.canJoin)) {
+                                    "/game/match/${duelInvite.matchId}"
+                                } else {
+                                    duelInvite.targetGamePath
+                                }
+                                onOpenGame(targetPath)
+                            }
                             sharedPost != null -> onOpenPost(sharedPost.postId)
                             task?.state == DownloadState.COMPLETE && !task.localUri.isNullOrBlank() && attachment != null ->
                                 onAttachmentClick(attachment.copy(localUri = task.localUri))
@@ -4082,9 +4130,11 @@ private fun MessageBubble(
                                 fontWeight = FontWeight.Bold,
                             )
                             val replyDisplayContent = remember(message.replyToContent) {
-                                SharedPostParser.tryParse(message.replyToContent)?.let { parsedPost ->
-                                    "پست از ${parsedPost.authorName}: ${parsedPost.content.ifBlank { "رسانه" }}"
-                                } ?: message.replyToContent
+                                DuelInviteParser.formatPreviewIfDuel(message.replyToContent)
+                                    ?: SharedPostParser.tryParse(message.replyToContent)?.let { parsedPost ->
+                                        "پست از ${parsedPost.authorName}: ${parsedPost.content.ifBlank { "رسانه" }}"
+                                    }
+                                    ?: message.replyToContent
                             }
                             Text(
                                 replyDisplayContent,
@@ -4160,8 +4210,24 @@ private fun MessageBubble(
                     }
                 }
 
-                if (sharedPost != null) {
-                    Column {
+                if (duelInvite != null) {
+                    val previewState = duelPreviews[duelInvite.matchId]
+                    Column(modifier = Modifier.align(AbsoluteAlignment.Right)) {
+                        DuelInviteCard(
+                            invite = duelInvite,
+                            isMine = message.isMine,
+                            preview = previewState?.preview,
+                            previewStatus = previewState?.status ?: DuelPreviewLoadStatus.IDLE,
+                            onRequestPreview = onRequestDuelPreview,
+                            onStartGame = onOpenGame,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Box(Modifier.align(AbsoluteAlignment.Right)) {
+                            metaFooter()
+                        }
+                    }
+                } else if (sharedPost != null) {
+                    Column(modifier = Modifier.align(AbsoluteAlignment.Right)) {
                         SharedPostCard(
                             post = sharedPost,
                             isMine = message.isMine,
@@ -4185,11 +4251,11 @@ private fun MessageBubble(
                                 text = text,
                                 style = TextStyle(
                                     color = if (message.isMine) Color.White else MaterialTheme.colorScheme.onSurface,
-                                    fontSize = 14.5.sp,
-                                    lineHeight = 21.75.sp,
+                                    fontSize = 16.sp,
+                                    lineHeight = 22.sp,
                                     textDirection = messageTextDir,
                                 ),
-                                emojiSize = 18.dp,
+                                emojiSize = 20.dp,
                                 highlightQuery = searchQuery,
                                 highlightColor = if (message.isMine) {
                                     Color.White.copy(alpha = 0.32f)
@@ -4199,6 +4265,7 @@ private fun MessageBubble(
                             )
                         },
                         footer = metaFooter,
+                        modifier = Modifier.align(AbsoluteAlignment.Right),
                         layoutDirection = if (isRtlMessage) LayoutDirection.Rtl else LayoutDirection.Ltr,
                     )
                 } else {
@@ -4206,7 +4273,9 @@ private fun MessageBubble(
                         metaFooter()
                     }
                 }
-                val previewUrl = remember(text) { if (!isDeleted && text.isNotBlank()) extractFirstUrl(text) else null }
+                val previewUrl = remember(text, duelInvite) {
+                    if (!isDeleted && duelInvite == null && text.isNotBlank()) extractFirstUrl(text) else null
+                }
                 if (previewUrl != null) {
                     Spacer(Modifier.height(6.dp))
                     ChatLinkPreviewCard(
@@ -4992,16 +5061,20 @@ private fun MessageInfoDialog(message: Message, onDismiss: () -> Unit) {
 
 internal fun Message.previewText(): String = when (val value = content) {
     is MessageContent.Text -> {
-        val parsed = SharedPostParser.tryParse(value.value)
-        if (parsed != null) "پست از ${parsed.authorName}: ${parsed.content.ifBlank { "رسانه" }}"
-        else if (value.value.startsWith("wf:") || attachment?.kind == AttachmentKind.VOICE) "🎤 پیام صوتی"
-        else value.value.ifBlank { attachment?.fileName ?: "پیوست" }
+        DuelInviteParser.formatPreviewIfDuel(value.value, transportType)
+            ?: SharedPostParser.tryParse(value.value)?.let { parsed ->
+                "پست از ${parsed.authorName}: ${parsed.content.ifBlank { "رسانه" }}"
+            }
+            ?: if (value.value.startsWith("wf:") || attachment?.kind == AttachmentKind.VOICE) "🎤 پیام صوتی"
+            else value.value.ifBlank { attachment?.fileName ?: "پیوست" }
     }
     is MessageContent.Structured -> {
-        val parsed = SharedPostParser.tryParse(value.payload)
-        if (parsed != null) "پست از ${parsed.authorName}: ${parsed.content.ifBlank { "رسانه" }}"
-        else if (value.payload.startsWith("wf:") || attachment?.kind == AttachmentKind.VOICE) "🎤 پیام صوتی"
-        else value.payload
+        DuelInviteParser.formatPreviewIfDuel(value.payload, transportType)
+            ?: SharedPostParser.tryParse(value.payload)?.let { parsed ->
+                "پست از ${parsed.authorName}: ${parsed.content.ifBlank { "رسانه" }}"
+            }
+            ?: if (value.payload.startsWith("wf:") || attachment?.kind == AttachmentKind.VOICE) "🎤 پیام صوتی"
+            else value.payload
     }
     MessageContent.Deleted -> "این پیام حذف شده است"
     MessageContent.EncryptedUnavailable -> "پیام رمزگذاری‌شده"
@@ -5943,7 +6016,7 @@ private fun TelegramSmileyIcon(
     modifier: Modifier = Modifier,
     tint: Color = Color(0xFF7D8B99),
 ) {
-    Canvas(modifier = modifier.size(23.dp)) {
+    Canvas(modifier = modifier.size(24.dp)) {
         val strokeWidth = 1.8.dp.toPx()
         val radius = (size.minDimension - strokeWidth) / 2f
         val center = Offset(size.width / 2f, size.height / 2f)
@@ -6313,6 +6386,7 @@ internal fun resolveMessageTextDirection(text: String): TextDirection {
         }
         offset += Character.charCount(codePoint)
     }
+    // No strong directional character (pure emoji or punctuation) defaults to LTR
     return TextDirection.Ltr
 }
 
@@ -6522,7 +6596,11 @@ private fun PartnerProfileSheet(
     var selectedTabIndex by remember { mutableIntStateOf(0) }
 
     val postMessages = state.messages.filter { message ->
-        message.content is MessageContent.Structured ||
+        when (val content = message.content) {
+            is MessageContent.Structured -> SharedPostParser.tryParse(content.payload) != null
+            is MessageContent.Text -> SharedPostParser.tryParse(content.value) != null
+            else -> false
+        } ||
             message.transportType.equals("sharedPost", true) ||
             message.transportType.equals("storyReply", true)
     }
@@ -7163,6 +7241,7 @@ private fun PartnerDetailsScreen(
                     }
                     if (selectedItems.isNotEmpty() && selectedTabIndex != 0) {
                         val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+                        val internalNavigator = ir.coffevista.vista_native.core.designsystem.navigation.LocalVistaInternalLinkNavigator.current
                         LazyColumn(Modifier.fillMaxSize()) {
                             items(selectedItems, key = { it.stableKey }) { message: Message ->
                                 Row(
@@ -7170,8 +7249,10 @@ private fun PartnerDetailsScreen(
                                         .fillMaxWidth()
                                         .clickable {
                                             if (selectedTabIndex == 2) {
-                                                extractFirstUrl((message.content as? MessageContent.Text)?.value.orEmpty())?.let {
-                                                    runCatching { uriHandler.openUri(it) }
+                                                extractFirstUrl((message.content as? MessageContent.Text)?.value.orEmpty())?.let { url ->
+                                                    if (internalNavigator?.openUrl(url) != true) {
+                                                        runCatching { uriHandler.openUri(url) }
+                                                    }
                                                 }
                                             } else {
                                                 message.attachment?.let(onAttachmentClick)

@@ -83,6 +83,9 @@ interface FeedApi {
     @retrofit2.http.POST("v1/feed/event")
     suspend fun trackFeedEvent(@retrofit2.http.Body body: FeedEventRequestDto)
 
+    @retrofit2.http.POST("v1/behavior/events")
+    suspend fun trackBehaviorEvents(@retrofit2.http.Body body: BehaviorEventsBatchRequestDto)
+
     @retrofit2.http.POST("v1/uploads/presign")
     suspend fun presignUpload(@retrofit2.http.Body request: PostPresignRequestDto): PostPresignResponseDto
 

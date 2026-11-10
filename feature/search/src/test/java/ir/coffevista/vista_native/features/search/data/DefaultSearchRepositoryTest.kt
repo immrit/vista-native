@@ -267,6 +267,10 @@ private class FakeSearchApi : SearchApi {
         limit: Int,
         offset: Int,
     ): Response<SearchPostsResponseDto> = Response.success(postsResponse)
+
+    override suspend fun trackBehaviorEvents(
+        body: SearchBehaviorBatchRequestDto,
+    ): Response<Unit> = Response.success(Unit)
 }
 
 private class FakeHistoryDao : SearchHistoryDao {

@@ -138,6 +138,32 @@ class DefaultSearchRepository(
 
     override suspend fun clearAccount(accountId: String) = clearHistory(accountId)
 
+    override suspend fun trackSearchBehavior(
+        eventType: String,
+        targetType: String?,
+        targetId: String?,
+        queryText: String?,
+        tags: List<String>,
+    ) {
+        if (eventType.isBlank()) return
+        runCatching {
+            api.trackBehaviorEvents(
+                SearchBehaviorBatchRequestDto(
+                    events = listOf(
+                        SearchBehaviorEventDto(
+                            eventType = eventType,
+                            targetType = targetType,
+                            targetId = targetId,
+                            queryText = queryText?.trim()?.takeIf(String::isNotEmpty),
+                            tags = tags,
+                            sourceSurface = "search",
+                        ),
+                    ),
+                ),
+            )
+        }
+    }
+
     private fun <T> Response<T>.bodyOrThrow(emptyCode: String): T {
         if (isSuccessful) {
             return body() ?: throw RemoteFailure(

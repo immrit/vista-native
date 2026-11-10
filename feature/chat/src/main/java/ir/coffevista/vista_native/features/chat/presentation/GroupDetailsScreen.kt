@@ -961,6 +961,7 @@ fun GroupDetailsScreen(
                         3 -> {
                             // Links Tab
                             val uriHandler = LocalUriHandler.current
+                            val internalNavigator = ir.coffevista.vista_native.core.designsystem.navigation.LocalVistaInternalLinkNavigator.current
                             if (linkMessages.isNotEmpty()) {
                                 LazyColumn(Modifier.fillMaxSize()) {
                                     items(linkMessages, key = { it.stableKey }) { msg ->
@@ -969,7 +970,7 @@ fun GroupDetailsScreen(
                                             Modifier
                                                 .fillMaxWidth()
                                                 .clickable {
-                                                    if (linkUrl != null) {
+                                                    if (linkUrl != null && internalNavigator?.openUrl(linkUrl) != true) {
                                                         runCatching { uriHandler.openUri(linkUrl) }
                                                     }
                                                 }

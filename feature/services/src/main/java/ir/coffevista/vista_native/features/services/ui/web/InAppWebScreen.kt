@@ -1,9 +1,11 @@
 package ir.coffevista.vista_native.features.services.ui.web
 
 import android.annotation.SuppressLint
+import android.content.Intent
 import android.graphics.Bitmap
 import android.net.http.SslError
 import android.webkit.CookieManager
+import android.webkit.JavascriptInterface
 import androidx.compose.material3.TextButton
 import android.webkit.SslErrorHandler
 import android.webkit.WebChromeClient
@@ -34,10 +36,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.LayoutDirection
@@ -48,8 +52,30 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material3.Icon
+import ir.coffevista.vista_native.core.model.navigation.VistaGameUrlHelper
+import ir.coffevista.vista_native.core.designsystem.navigation.LocalVistaInternalLinkNavigator
 import ir.coffevista.vista_native.core.designsystem.theme.VistaFontFamily
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaBrandColors
+import org.json.JSONObject
+
+data class DuelShareBridgeRequest(
+    val requestId: String,
+    val matchId: String,
+    val duelUrl: String,
+    val inviterName: String? = null,
+    val inviterAvatar: String? = null,
+    val entryFee: Long? = null,
+    val targetUserId: String? = null,
+    val conversationId: String? = null,
+)
+
+data class DuelShareBridgeResult(
+    val requestId: String,
+    val status: String,
+    val conversationId: String? = null,
+    val recipientName: String? = null,
+    val message: String? = null,
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @SuppressLint("SetJavaScriptEnabled")
@@ -63,8 +89,13 @@ fun InAppWebScreen(
     appBarColor: Color? = null,
     appBarForegroundColor: Color? = null,
     useBackButton: Boolean = false,
+    onShareDuelToChat: ((DuelShareBridgeRequest, (DuelShareBridgeResult) -> Unit) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
+    val hostContext = LocalContext.current
+    val internalNavigator = LocalVistaInternalLinkNavigator.current
+    val currentOnBack by rememberUpdatedState(onBack)
+    val currentOnShareDuel by rememberUpdatedState(onShareDuelToChat)
     var webViewInstance by remember { mutableStateOf<WebView?>(null) }
     var loadingProgress by remember { mutableFloatStateOf(0f) }
     var isLoading by remember { mutableStateOf(true) }
@@ -151,10 +182,95 @@ fun InAppWebScreen(
                             settings.domStorageEnabled = true
                             settings.loadWithOverviewMode = true
                             settings.useWideViewPort = true
-                            settings.javaScriptCanOpenWindowsAutomatically = true
+                            settings.allowFileAccess = false
+                            settings.allowContentAccess = false
+                            settings.setSupportMultipleWindows(false)
+                            settings.javaScriptCanOpenWindowsAutomatically = false
 
                             CookieManager.getInstance().setAcceptCookie(true)
                             CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
+
+                            if (allowedPathPrefix == "/game") {
+                                val bridge = object {
+                                    @JavascriptInterface
+                                    fun shareDuelToChat(payloadJson: String?) {
+                                        post {
+                                            if (!isTrustedGameOrigin(this@apply.url)) return@post
+                                            val req = parseDuelShareBridgeRequest(payloadJson)
+                                            if (req == null) {
+                                                dispatchBridgeResult(
+                                                    webView = this@apply,
+                                                    result = DuelShareBridgeResult(
+                                                        requestId = "",
+                                                        status = "error",
+                                                        message = "اطلاعات دوئل نامعتبر است",
+                                                    ),
+                                                )
+                                                return@post
+                                            }
+                                            val handler = currentOnShareDuel
+                                            if (handler == null) {
+                                                dispatchBridgeResult(
+                                                    webView = this@apply,
+                                                    result = DuelShareBridgeResult(
+                                                        requestId = req.requestId,
+                                                        status = "unsupported",
+                                                    ),
+                                                )
+                                                return@post
+                                            }
+                                            handler(req) { result ->
+                                                post {
+                                                    dispatchBridgeResult(this@apply, result)
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    @JavascriptInterface
+                                    fun shareExternal(payloadJson: String?) {
+                                        post {
+                                            if (!isTrustedGameOrigin(this@apply.url)) return@post
+                                            val parsed = runCatching { JSONObject(payloadJson.orEmpty()) }.getOrNull()
+                                                ?: return@post
+                                            val shareUrl = parsed.optString("url").trim()
+                                            val shareText = parsed.optString("text").trim()
+                                            val shareTitle = parsed.optString("title").trim().ifBlank { "ویستا کوییز" }
+                                            if (shareUrl.isBlank() && shareText.isBlank()) return@post
+                                            val combined = listOf(shareText, shareUrl).filter { it.isNotBlank() }.joinToString("\n")
+                                            val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                                                type = "text/plain"
+                                                putExtra(Intent.EXTRA_SUBJECT, shareTitle)
+                                                putExtra(Intent.EXTRA_TEXT, combined)
+                                            }
+                                            runCatching {
+                                                hostContext.startActivity(
+                                                    Intent.createChooser(sendIntent, "ارسال دعوت دوئل")
+                                                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    @JavascriptInterface
+                                    fun openConversation(conversationId: String?) {
+                                        post {
+                                            if (!isTrustedGameOrigin(this@apply.url)) return@post
+                                            val cleanId = conversationId?.trim()?.takeIf { it.isNotEmpty() } ?: return@post
+                                            internalNavigator?.openUrl("vista://chat/$cleanId")
+                                        }
+                                    }
+
+                                    @JavascriptInterface
+                                    fun closeGame() {
+                                        post {
+                                            if (!isTrustedGameOrigin(this@apply.url)) return@post
+                                            currentOnBack()
+                                        }
+                                    }
+                                }
+                                addJavascriptInterface(bridge, "VistaGameBridge")
+                            }
 
                             webChromeClient = object : WebChromeClient() {
                                 override fun onProgressChanged(view: WebView?, newProgress: Int) {
@@ -173,8 +289,26 @@ fun InAppWebScreen(
                                 }
 
                                 override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+                                    val requestedUrl = request?.url?.toString()
+                                    if (!requestedUrl.isNullOrBlank()) {
+                                        val isVistaCustomScheme = requestedUrl.startsWith("vista://", ignoreCase = true)
+                                        val isNonGameVistaLink =
+                                            !isNavigationAllowed(
+                                                url = requestedUrl,
+                                                restrictHost = restrictHost,
+                                                allowedPathPrefix = allowedPathPrefix,
+                                            ) &&
+                                                VistaGameUrlHelper.isVistaWebHost(
+                                                    runCatching { java.net.URI(requestedUrl).host }.getOrNull(),
+                                                )
+                                        if ((isVistaCustomScheme || isNonGameVistaLink) &&
+                                            internalNavigator?.openUrl(requestedUrl) == true
+                                        ) {
+                                            return true
+                                        }
+                                    }
                                     return !isNavigationAllowed(
-                                        url = request?.url?.toString(),
+                                        url = requestedUrl,
                                         restrictHost = restrictHost,
                                         allowedPathPrefix = allowedPathPrefix,
                                     )
@@ -281,4 +415,52 @@ internal fun isNavigationAllowed(
     val prefix = allowedPathPrefix?.takeIf { it.isNotBlank() } ?: return true
     val path = uri.path.orEmpty().ifBlank { "/" }
     return path == prefix || path.startsWith("$prefix/")
+}
+
+internal fun isTrustedGameOrigin(currentUrl: String?): Boolean {
+    val uri = runCatching { java.net.URI(currentUrl.orEmpty()) }.getOrNull() ?: return false
+    if (uri.scheme?.lowercase() != "https") return false
+    val host = uri.host?.lowercase() ?: return false
+    return host == "cafevista.ir" ||
+        host == "www.cafevista.ir" ||
+        host == "coffevista.ir" ||
+        host == "www.coffevista.ir"
+}
+
+internal fun parseDuelShareBridgeRequest(payloadJson: String?): DuelShareBridgeRequest? {
+    val obj = runCatching { JSONObject(payloadJson.orEmpty()) }.getOrNull() ?: return null
+    val matchId = obj.optString("matchId").trim()
+    if (!VistaGameUrlHelper.isValidUuid(matchId)) return null
+    val requestId = obj.optString("requestId").trim()
+    val duelUrl = obj.optString("duelUrl").trim().ifBlank { VistaGameUrlHelper.buildDuelWebUrl(matchId) }
+    val inviterName = obj.optString("inviterName").trim().takeIf { it.isNotEmpty() }
+    val inviterAvatar = obj.optString("inviterAvatar").trim().takeIf { it.isNotEmpty() }
+    val entryFee = if (obj.has("entryFee") && !obj.isNull("entryFee")) {
+        obj.optLong("entryFee", -1L).takeIf { it >= 0L }
+    } else null
+    val targetUserId = obj.optString("targetUserId").trim().takeIf { it.isNotEmpty() }
+    val conversationId = obj.optString("conversationId").trim().takeIf { it.isNotEmpty() }
+
+    return DuelShareBridgeRequest(
+        requestId = requestId,
+        matchId = matchId.lowercase(),
+        duelUrl = duelUrl,
+        inviterName = inviterName,
+        inviterAvatar = inviterAvatar,
+        entryFee = entryFee,
+        targetUserId = targetUserId,
+        conversationId = conversationId,
+    )
+}
+
+private fun dispatchBridgeResult(webView: WebView, result: DuelShareBridgeResult) {
+    val json = JSONObject().apply {
+        put("requestId", result.requestId)
+        put("status", result.status)
+        result.conversationId?.let { put("conversationId", it) }
+        result.recipientName?.let { put("recipientName", it) }
+        result.message?.let { put("message", it) }
+    }.toString()
+    val quoted = JSONObject.quote(json)
+    webView.evaluateJavascript("window.__vistaNativeBridgeReceive && window.__vistaNativeBridgeReceive($quoted)", null)
 }

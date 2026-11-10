@@ -24,6 +24,7 @@ class ShellContractTest {
         assertEquals(ShellTab.Feed, ShellDeferredKind.GROUP.targetTab())
         assertEquals(ShellTab.Profile, ShellDeferredKind.PROFILE.targetTab())
         assertEquals(ShellTab.Chat, ShellDeferredKind.CHAT.targetTab())
+        assertEquals(ShellTab.Services, ShellDeferredKind.GAME.targetTab())
     }
 
     @Test

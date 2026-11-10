@@ -20,12 +20,15 @@ import ir.coffevista.vista_native.features.chat.data.local.SavedGifStore
 import android.content.ContentResolver
 import android.net.Uri
 import ir.coffevista.vista_native.features.chat.domain.model.DownloadTask
+import ir.coffevista.vista_native.features.chat.domain.model.DuelInviteParser
+import ir.coffevista.vista_native.features.chat.domain.model.DuelPreview
 import ir.coffevista.vista_native.features.chat.domain.model.ModerationReason
 import ir.coffevista.vista_native.features.chat.domain.model.RealtimeConnectionState
 import ir.coffevista.vista_native.features.chat.domain.model.SharedPostParser
 import ir.coffevista.vista_native.features.chat.domain.repository.ChatRepository
 import ir.coffevista.vista_native.features.chat.domain.repository.ChatResult
 import ir.coffevista.vista_native.features.chat.domain.repository.GifCatalog
+import ir.coffevista.vista_native.features.chat.presentation.components.DuelPreviewLoadStatus
 import java.util.UUID
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -40,6 +43,11 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+
+data class DuelPreviewUiState(
+    val status: DuelPreviewLoadStatus = DuelPreviewLoadStatus.IDLE,
+    val preview: DuelPreview? = null,
+)
 
 data class MessagesUiState(
     val conversationId: String? = null,
@@ -81,6 +89,7 @@ data class MessagesUiState(
     val secretAutoDeleteSeconds: Int = 0,
     val secretSafetyNumber: String? = null,
     val isSafetyNumberLoading: Boolean = false,
+    val duelPreviews: Map<String, DuelPreviewUiState> = emptyMap(),
 ) {
     val isSecret: Boolean get() = conversation?.type == ConversationType.SECRET
 }
@@ -114,6 +123,7 @@ class MessagesViewModel @Inject constructor(
     private var autoDeleteEnabledAtEpochMillis: Long = 0L
     private val messageReadOrShownTimestamps = java.util.concurrent.ConcurrentHashMap<String, Long>()
     private val optimisticPendingMessages = java.util.concurrent.ConcurrentHashMap<String, Message>()
+    private val inFlightDuelPreviews = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
     init {
         savedGifStore?.let { store ->
@@ -327,6 +337,62 @@ class MessagesViewModel @Inject constructor(
         mutableState.update { it.copy(error = null) }
     }
 
+    fun loadDuelPreview(matchId: String, forceRefresh: Boolean = false) {
+        val cleanId = matchId.trim().lowercase()
+        if (cleanId.isEmpty()) return
+        val existing = mutableState.value.duelPreviews[cleanId]
+        if (!forceRefresh && (
+                existing?.status == DuelPreviewLoadStatus.LOADED ||
+                    existing?.status == DuelPreviewLoadStatus.EXPIRED_OR_NOT_FOUND ||
+                    existing?.status == DuelPreviewLoadStatus.LOADING
+                )
+        ) {
+            return
+        }
+        if (!inFlightDuelPreviews.add(cleanId)) return
+        mutableState.update { current ->
+            current.copy(
+                duelPreviews = current.duelPreviews + (cleanId to DuelPreviewUiState(
+                    status = DuelPreviewLoadStatus.LOADING,
+                    preview = existing?.preview,
+                )),
+            )
+        }
+        viewModelScope.launch {
+            try {
+                when (val result = repository.getDuelPreview(cleanId, forceRefresh)) {
+                    is ChatResult.Success -> {
+                        mutableState.update { current ->
+                            current.copy(
+                                duelPreviews = current.duelPreviews + (cleanId to DuelPreviewUiState(
+                                    status = DuelPreviewLoadStatus.LOADED,
+                                    preview = result.value,
+                                )),
+                            )
+                        }
+                    }
+                    is ChatResult.Failure -> {
+                        val nextStatus = when {
+                            !result.retryable -> DuelPreviewLoadStatus.EXPIRED_OR_NOT_FOUND
+                            existing?.preview != null -> DuelPreviewLoadStatus.LOADED
+                            else -> DuelPreviewLoadStatus.IDLE
+                        }
+                        mutableState.update { current ->
+                            current.copy(
+                                duelPreviews = current.duelPreviews + (cleanId to DuelPreviewUiState(
+                                    status = nextStatus,
+                                    preview = existing?.preview,
+                                )),
+                            )
+                        }
+                    }
+                }
+            } finally {
+                inFlightDuelPreviews.remove(cleanId)
+            }
+        }
+    }
+
     fun loadPinnedMessages() {
         val conversationId = mutableState.value.conversationId ?: return
         viewModelScope.launch {
@@ -409,9 +475,11 @@ class MessagesViewModel @Inject constructor(
             MessageContent.Deleted -> "این پیام حذف شده است"
             MessageContent.EncryptedUnavailable -> "پیام محرمانه"
         }
-        val replyContent = SharedPostParser.tryParse(rawReplyContent)?.let { post ->
-            "پست ${post.authorName}: ${post.content.ifBlank { "رسانه پیوست" }}"
-        } ?: rawReplyContent
+        val replyContent = DuelInviteParser.formatPreviewIfDuel(rawReplyContent, replyTo.transportType)
+            ?: SharedPostParser.tryParse(rawReplyContent)?.let { post ->
+                "پست ${post.authorName}: ${post.content.ifBlank { "رسانه پیوست" }}"
+            }
+            ?: rawReplyContent
         val optimistic = Message(
             accountId = myUserId,
             conversationId = conversationId,

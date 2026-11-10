@@ -13,15 +13,27 @@ class DeepLinkContractTest {
             "vista://profile/user-42" to DeferredFeatureKind.PROFILE,
             "vista://group/invite_42" to DeferredFeatureKind.GROUP,
             "vista://chat/conversation-42" to DeferredFeatureKind.CHAT,
+            "vista://game" to DeferredFeatureKind.GAME,
+            "vista://duel/11111111-1111-4111-8111-111111111111" to DeferredFeatureKind.GAME,
             "https://cafevista.ir/post/post_42" to DeferredFeatureKind.POST,
             "https://vista.me/profile/user-42" to DeferredFeatureKind.PROFILE,
             "https://www.cafevista.ir/group/invite_42" to DeferredFeatureKind.GROUP,
+            "https://cafevista.ir/game/duel/create?code=11111111-1111-4111-8111-111111111111" to DeferredFeatureKind.GAME,
+            "https://www.cafevista.ir/game/match/11111111-1111-4111-8111-111111111111" to DeferredFeatureKind.GAME,
         )
 
         cases.forEach { (uri, expectedKind) ->
             val parsed = DeepLinkParser.parse(uri) as DeepLinkParseResult.Supported
             assertEquals(expectedKind, parsed.destination.kind)
         }
+
+        val duelParsed = DeepLinkParser.parse(
+            "https://cafevista.ir/game/duel/create?code=11111111-1111-4111-8111-111111111111",
+        ) as DeepLinkParseResult.Supported
+        assertEquals(
+            "/game/duel/create?code=11111111-1111-4111-8111-111111111111",
+            duelParsed.destination.reference,
+        )
     }
 
     @Test
@@ -31,6 +43,8 @@ class DeepLinkContractTest {
             "vista://chat/",
             "vista://profile/a/b",
             "vista://group/unsafe%2Fvalue",
+            "https://cafevista.ir/game/sso?ticket=abc",
+            "vista://duel/not-a-uuid",
         )
         invalid.forEach { uri ->
             assertEquals(
@@ -45,7 +59,7 @@ class DeepLinkContractTest {
             "vista://post/42?token=secret",
             "vista://unknown/42",
             "https://cafevista.ir/feed",
-            "https://coffevista.ir/post/42",
+            "https://evil.example/post/42",
         )
         unsupported.forEach { uri ->
             assertEquals(

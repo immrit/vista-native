@@ -1,6 +1,9 @@
 package ir.coffevista.vista_native.features.services.ui.web
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -19,5 +22,28 @@ class InAppWebScreenNavigationTest {
         assertTrue(isNavigationAllowed("data:text/plain,ok", "coffevista.ir", "/game"))
         assertFalse(isNavigationAllowed("intent://coffevista.ir/game", "coffevista.ir", "/game"))
         assertFalse(isNavigationAllowed(null, "coffevista.ir", "/game"))
+    }
+
+    @Test
+    fun `trusted origin helper rejects http and foreign domains`() {
+        assertTrue(isTrustedGameOrigin("https://cafevista.ir/game/duel/create"))
+        assertTrue(isTrustedGameOrigin("https://www.cafevista.ir/game"))
+        assertFalse(isTrustedGameOrigin("http://cafevista.ir/game"))
+        assertFalse(isTrustedGameOrigin("https://evil.example/game"))
+        assertFalse(isTrustedGameOrigin(null))
+    }
+
+    @Test
+    fun `bridge request parser extracts valid duel payload and rejects invalid matchId`() {
+        val valid = parseDuelShareBridgeRequest(
+            """{"requestId":"req-1","matchId":"11111111-1111-4111-8111-111111111111","entryFee":50,"inviterName":"سارا"}""",
+        )
+        assertNotNull(valid)
+        assertEquals("req-1", valid?.requestId)
+        assertEquals("11111111-1111-4111-8111-111111111111", valid?.matchId)
+        assertEquals(50L, valid?.entryFee)
+        assertEquals("سارا", valid?.inviterName)
+
+        assertNull(parseDuelShareBridgeRequest("""{"requestId":"req-2","matchId":"not-a-uuid"}"""))
     }
 }

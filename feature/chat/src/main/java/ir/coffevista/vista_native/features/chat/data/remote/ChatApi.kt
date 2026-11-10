@@ -238,6 +238,11 @@ interface ChatApi {
     suspend fun profileNotesBatch(
         @Body request: ProfileBatchRequest,
     ): Map<String, ProfileNoteDto>
+
+    @GET("v1/game/duel/{matchId}/preview")
+    suspend fun duelPreview(
+        @Path("matchId") matchId: String,
+    ): DuelPreviewDto
 }
 
 @Serializable
@@ -534,4 +539,29 @@ data class UpsertProfileNoteRequest(val content: String)
 @Serializable
 data class ConversationKeysDto(
     val participants: List<String> = emptyList(),
+)
+
+@Serializable
+data class DuelPreviewPlayerDto(
+    val id: String = "",
+    val name: String = "",
+    val avatarUrl: String? = null,
+)
+
+@Serializable
+data class DuelPreviewDto(
+    val matchId: String = "",
+    val status: String = "",
+    val gameEnabled: Boolean = true,
+    val player1: DuelPreviewPlayerDto = DuelPreviewPlayerDto(),
+    val player2: DuelPreviewPlayerDto? = null,
+    val entryFee: Long = 0L,
+    val baseEntryFee: Long = 0L,
+    val winCoinBonus: Long = 0L,
+    val canJoin: Boolean = false,
+    val isParticipant: Boolean = false,
+    val viewerAtLimit: Boolean = false,
+    val createdAt: Long = 0L,
+    val expiresAt: Long = 0L,
+    val cancelReason: String? = null,
 )

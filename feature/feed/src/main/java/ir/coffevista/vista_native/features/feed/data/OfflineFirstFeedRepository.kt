@@ -14,6 +14,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ConcurrentLinkedQueue
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -29,6 +30,7 @@ class OfflineFirstFeedRepository @Inject constructor(
     private val hashtagLimit = 24
     private val appendMutexes = mutableMapOf<String, Mutex>()
     private val pendingEvents = ConcurrentHashMap<String, FeedEventRequestDto>()
+    private val pendingBehaviorEvents = ConcurrentLinkedQueue<BehaviorEventDto>()
     private val sentViewEvents = Collections.newSetFromMap(ConcurrentHashMap<String, Boolean>())
     private val repositoryScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
@@ -41,12 +43,23 @@ class OfflineFirstFeedRepository @Inject constructor(
         }
     }
 
-    private suspend fun flushPendingEvents() {
-        if (pendingEvents.isEmpty()) return
-        val snapshot = ArrayList(pendingEvents.values)
-        pendingEvents.clear()
-        for (event in snapshot) {
-            runCatching { feedApi.trackFeedEvent(event) }
+    internal suspend fun flushPendingEvents() {
+        if (pendingEvents.isNotEmpty()) {
+            val snapshot = ArrayList(pendingEvents.values)
+            pendingEvents.clear()
+            for (event in snapshot) {
+                runCatching { feedApi.trackFeedEvent(event) }
+            }
+        }
+        if (pendingBehaviorEvents.isNotEmpty()) {
+            val batch = mutableListOf<BehaviorEventDto>()
+            while (batch.size < 25) {
+                val item = pendingBehaviorEvents.poll() ?: break
+                batch += item
+            }
+            if (batch.isNotEmpty()) {
+                runCatching { feedApi.trackBehaviorEvents(BehaviorEventsBatchRequestDto(batch)) }
+            }
         }
     }
 
@@ -346,12 +359,38 @@ class OfflineFirstFeedRepository @Inject constructor(
     }
 
     override suspend fun trackFeedEvent(postId: String, eventType: String) {
+        trackDetailedFeedEvent(postId = postId, eventType = eventType)
+    }
+
+    override suspend fun trackDetailedFeedEvent(
+        postId: String,
+        eventType: String,
+        dwellMs: Long?,
+        watchPct: Float?,
+        sourceSurface: String?,
+    ) {
         if (postId.isBlank() || eventType !in ALLOWED_FEED_EVENTS) return
         val key = "$postId:$eventType"
         if (eventType == "view") {
             if (!sentViewEvents.add(postId)) return
         }
-        pendingEvents[key] = FeedEventRequestDto(postId, eventType)
+        pendingEvents[key] = FeedEventRequestDto(
+            postId = postId,
+            eventType = eventType,
+            dwellMs = dwellMs?.takeIf { it > 0L },
+            watchPct = watchPct?.coerceIn(0f, 1f),
+            sourceSurface = sourceSurface?.trim()?.takeIf(String::isNotEmpty),
+        )
+    }
+
+    override suspend fun trackBehaviorEvent(event: BehaviorEventDto) {
+        if (event.eventType.isBlank()) return
+        pendingBehaviorEvents.offer(event)
+    }
+
+    override suspend fun markPostNotInterestedLocal(postId: String) {
+        if (postId.isBlank()) return
+        feedDao.deletePostEverywhere(postId)
     }
 
     override suspend fun updateAuthorFollowStatus(authorId: String, followStatus: String) {

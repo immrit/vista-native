@@ -16,6 +16,7 @@ import ir.coffevista.vista_native.features.chat.domain.model.PresenceState
 import ir.coffevista.vista_native.features.chat.domain.model.GroupInfo
 import ir.coffevista.vista_native.features.chat.domain.model.GroupMember
 import ir.coffevista.vista_native.features.chat.domain.model.DownloadTask
+import ir.coffevista.vista_native.features.chat.domain.model.DuelPreview
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -125,6 +126,10 @@ interface ChatRepository {
     suspend fun sendText(conversationId: String, text: String, clientId: String? = null): ChatResult<Message>
     suspend fun sendSharedPost(conversationId: String, post: SharedPostDraft): ChatResult<Message> =
         ChatResult.Failure("ارسال پست در دسترس نیست", false)
+    suspend fun sendDuelInvite(conversationId: String, payloadJson: String): ChatResult<Message> =
+        ChatResult.Failure("ارسال دعوت دوئل در دسترس نیست", false)
+    suspend fun getDuelPreview(matchId: String, forceRefresh: Boolean = false): ChatResult<DuelPreview> =
+        ChatResult.Failure("دریافت پیش‌نمایش دوئل در دسترس نیست", false)
     suspend fun sendReply(conversationId: String, text: String, replyTo: Message, clientId: String? = null): ChatResult<Message> =
         sendText(conversationId, text, clientId)
     suspend fun sendAttachment(conversationId: String, draft: ChatAttachmentDraft): ChatResult<Message>

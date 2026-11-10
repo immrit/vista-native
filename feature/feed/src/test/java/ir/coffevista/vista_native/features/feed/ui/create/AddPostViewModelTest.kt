@@ -90,6 +90,7 @@ class AddPostViewModelTest {
         override suspend fun reportPost(body: ir.coffevista.vista_native.features.feed.data.ReportPostRequestDto) = throw NotImplementedError()
         override suspend fun submitAppeal(body: ir.coffevista.vista_native.features.feed.data.SubmitAppealRequestDto) = throw NotImplementedError()
         override suspend fun trackFeedEvent(body: ir.coffevista.vista_native.features.feed.data.FeedEventRequestDto) = throw NotImplementedError()
+        override suspend fun trackBehaviorEvents(body: ir.coffevista.vista_native.features.feed.data.BehaviorEventsBatchRequestDto) = Unit
         override suspend fun presignUpload(request: ir.coffevista.vista_native.features.feed.data.PostPresignRequestDto) = throw NotImplementedError()
         override suspend fun deleteUpload(request: ir.coffevista.vista_native.features.feed.data.DeleteUploadRequestDto) = ir.coffevista.vista_native.features.feed.data.DeleteUploadResponseDto(true)
         override suspend fun follow(request: ir.coffevista.vista_native.features.feed.data.FollowActionRequestDto) = throw NotImplementedError()

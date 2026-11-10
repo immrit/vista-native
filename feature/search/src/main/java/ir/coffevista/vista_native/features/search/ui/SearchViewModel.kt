@@ -268,6 +268,12 @@ class SearchViewModel @Inject constructor(
                 query = "@${user.username}",
                 type = SearchHistoryType.User,
             )
+            repository.trackSearchBehavior(
+                eventType = "profile_visit",
+                targetType = "user",
+                targetId = user.id,
+                queryText = user.username,
+            )
         }
     }
 
@@ -395,6 +401,18 @@ class SearchViewModel @Inject constructor(
                         postNextCursor = page.nextCursor,
                     )
                 }
+                val cleanTag = normalized.removePrefix("#").lowercase()
+                if (cleanTag.isNotEmpty()) {
+                    viewModelScope.launch {
+                        repository.trackSearchBehavior(
+                            eventType = "hashtag_click",
+                            targetType = "tag",
+                            targetId = cleanTag,
+                            queryText = normalized,
+                            tags = listOf(cleanTag),
+                        )
+                    }
+                }
                 return
             }
 
@@ -443,6 +461,16 @@ class SearchViewModel @Inject constructor(
                         rawUserCount >= SearchRepository.USER_LIMIT,
                     postHasMore = postHasMore,
                     postNextCursor = nextCursor,
+                )
+            }
+            viewModelScope.launch {
+                val cleanQuery = normalized.removePrefix("@").trim()
+                val tags = if (canSearchAsTag(normalized)) listOf(normalized.lowercase()) else emptyList()
+                repository.trackSearchBehavior(
+                    eventType = "search_query",
+                    targetType = "query",
+                    queryText = cleanQuery,
+                    tags = tags,
                 )
             }
         } catch (cancelled: CancellationException) {

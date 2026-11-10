@@ -208,6 +208,26 @@ data class ReportPostRequestDto(
 data class FeedEventRequestDto(
     @SerialName("post_id") val postId: String,
     @SerialName("event_type") val eventType: String,
+    @SerialName("dwell_ms") val dwellMs: Long? = null,
+    @SerialName("watch_pct") val watchPct: Float? = null,
+    @SerialName("source_surface") val sourceSurface: String? = null,
+)
+
+@Serializable
+data class BehaviorEventDto(
+    @SerialName("event_type") val eventType: String,
+    @SerialName("target_type") val targetType: String? = null,
+    @SerialName("target_id") val targetId: String? = null,
+    @SerialName("query_text") val queryText: String? = null,
+    @SerialName("tags") val tags: List<String> = emptyList(),
+    @SerialName("dwell_ms") val dwellMs: Long? = null,
+    @SerialName("watch_pct") val watchPct: Float? = null,
+    @SerialName("source_surface") val sourceSurface: String? = null,
+)
+
+@Serializable
+data class BehaviorEventsBatchRequestDto(
+    @SerialName("events") val events: List<BehaviorEventDto>,
 )
 
 @Serializable

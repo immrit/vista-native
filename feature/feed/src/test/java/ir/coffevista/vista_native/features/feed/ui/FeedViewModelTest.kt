@@ -214,6 +214,37 @@ class FeedViewModelTest {
         assertFalse((viewModel.uiState.value as FeedUiState.Content).isAppending)
     }
 
+    @Test
+    fun markNotInterestedTracksEventRemovesPostLocallyAndFiltersUi() = runTest(dispatcher) {
+        repository.emit("account-a", listOf(post("good"), post("junk")), hasMore = false)
+        val viewModel = FeedViewModel(repository, storyRepository, auth)
+        advanceUntilIdle()
+
+        viewModel.markNotInterested("junk")
+        advanceUntilIdle()
+
+        val content = viewModel.uiState.value as FeedUiState.Content
+        assertEquals(listOf("good"), content.posts.map(FeedPost::id))
+        assertEquals(listOf("junk"), repository.notInterestedLocalIds)
+        assertTrue(repository.detailedEvents.any { it.first == "junk" && it.second == "not_interested" })
+    }
+
+    @Test
+    fun trackPostEventAndBehaviorForwardRichTelemetry() = runTest(dispatcher) {
+        repository.emit("account-a", listOf(post("p1")), hasMore = false)
+        val viewModel = FeedViewModel(repository, storyRepository, auth)
+        advanceUntilIdle()
+
+        viewModel.trackPostEvent("p1", "dwell", dwellMs = 3200L, watchPct = 0.8f, sourceSurface = "feed")
+        viewModel.trackBehavior("hashtag_click", targetType = "tag", targetId = "kotlin", tags = listOf("kotlin"))
+        advanceUntilIdle()
+
+        assertEquals(listOf("p1" to "dwell"), repository.detailedEvents.map { it.first to it.second })
+        assertEquals(3200L, repository.lastDwellMs)
+        assertEquals(1, repository.behaviorEvents.size)
+        assertEquals("hashtag_click", repository.behaviorEvents.single().eventType)
+    }
+
     private fun signedIn() = AuthenticationState.SignedIn(
         AuthenticatedContext(
             userId = "account-a",
@@ -267,6 +298,10 @@ private class FakeFeedRepository : FeedRepository {
         FeedAppendResult.Appended(newItemCount = 0, hasMore = true)
     }
     var appendCalls = 0
+    val notInterestedLocalIds = mutableListOf<String>()
+    val detailedEvents = mutableListOf<Pair<String, String>>()
+    var lastDwellMs: Long? = null
+    val behaviorEvents = mutableListOf<ir.coffevista.vista_native.features.feed.data.BehaviorEventDto>()
 
     override fun observeFeed(accountId: String, kind: FeedKind): Flow<FeedSnapshot> =
         snapshots.getOrPut(accountId) {
@@ -332,6 +367,22 @@ private class FakeFeedRepository : FeedRepository {
     override suspend fun reportPost(postId: String, reportedUserId: String, reason: String, additionalDetails: String?) = Unit
     override suspend fun submitAppeal(postId: String, reason: String) = Unit
     override suspend fun trackFeedEvent(postId: String, eventType: String) = Unit
+    override suspend fun trackDetailedFeedEvent(
+        postId: String,
+        eventType: String,
+        dwellMs: Long?,
+        watchPct: Float?,
+        sourceSurface: String?,
+    ) {
+        detailedEvents += postId to eventType
+        lastDwellMs = dwellMs
+    }
+    override suspend fun trackBehaviorEvent(event: ir.coffevista.vista_native.features.feed.data.BehaviorEventDto) {
+        behaviorEvents += event
+    }
+    override suspend fun markPostNotInterestedLocal(postId: String) {
+        notInterestedLocalIds += postId
+    }
     override suspend fun updateAuthorFollowStatus(authorId: String, followStatus: String) = Unit
 
     fun emit(accountId: String, posts: List<FeedPost>, hasMore: Boolean) {

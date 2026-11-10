@@ -107,7 +107,7 @@ class VistaEmojiSpan(
     private var cachedBitmap: Bitmap? = null
 
     init {
-        val targetSize = if (sizePx > 0) sizePx else 48
+        val targetSize = if (sizePx > 0) sizePx else 64
         cachedBitmap = getBitmap(context, emoji, targetSize)
     }
 
@@ -223,7 +223,7 @@ class VistaEmojiSpan(
         end: Int,
         fm: Paint.FontMetricsInt?,
     ): Int {
-        val emojiSize = if (sizePx > 0) sizePx else paint.textSize.toInt()
+        val emojiSize = if (sizePx > 0) sizePx else (paint.textSize * 1.15f).toInt()
 
         if (fm != null) {
             val fontHeight = fm.descent - fm.ascent
@@ -249,7 +249,7 @@ class VistaEmojiSpan(
         bottom: Int,
         paint: Paint,
     ) {
-        val emojiSize = if (sizePx > 0) sizePx else paint.textSize.toInt()
+        val emojiSize = if (sizePx > 0) sizePx else (paint.textSize * 1.15f).toInt()
         val bitmap = cachedBitmap ?: getBitmap(context, emoji, emojiSize)
         if (bitmap != null) {
             val fontMetrics = paint.fontMetricsInt

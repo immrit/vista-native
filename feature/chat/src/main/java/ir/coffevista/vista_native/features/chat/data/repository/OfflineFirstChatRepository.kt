@@ -60,6 +60,9 @@ import ir.coffevista.vista_native.features.chat.domain.model.Conversation
 import ir.coffevista.vista_native.features.chat.domain.model.ConversationType
 import ir.coffevista.vista_native.features.chat.domain.model.DownloadState
 import ir.coffevista.vista_native.features.chat.domain.model.DownloadTask
+import ir.coffevista.vista_native.features.chat.domain.model.DuelInviteParser
+import ir.coffevista.vista_native.features.chat.domain.model.DuelPreview
+import ir.coffevista.vista_native.features.chat.domain.model.DuelPreviewPlayer
 import ir.coffevista.vista_native.features.chat.domain.model.MergeSource
 import ir.coffevista.vista_native.features.chat.domain.model.GroupInfo
 import ir.coffevista.vista_native.features.chat.domain.model.GroupMember
@@ -131,6 +134,7 @@ class OfflineFirstChatRepository(
     private val secretRedecryptionKeyFingerprints = ConcurrentHashMap<String, Int>()
     private val cancelledTransfers = ConcurrentHashMap.newKeySet<String>()
     private val blockStatusCache = ConcurrentHashMap<String, CachedBlockStatus>()
+    private val duelPreviewCache = ConcurrentHashMap<String, Pair<Long, DuelPreview>>()
     private val sessionGeneration = SessionGenerationGuard()
     private val pendingJson = Json { ignoreUnknownKeys = true }
     private var activeConversationId: String? = null
@@ -1180,7 +1184,10 @@ class OfflineFirstChatRepository(
                 dto.deletedAt != null -> MessageContent.Deleted
                 isSecretConversation && e2eeService.isEncryptedPayload(contentText) ->
                     MessageContent.EncryptedUnavailable
-                dto.messageType.equals("sharedPost", true) || dto.messageType.equals("storyReply", true) ->
+                dto.messageType.equals("sharedPost", true) ||
+                    dto.messageType.equals("storyReply", true) ||
+                    dto.messageType.equals("gameInvite", true) ||
+                    dto.messageType.equals("game_invite", true) ->
                     MessageContent.Structured(dto.messageType, contentText)
                 dto.messageType == "exchange_key" || dto.messageType == "exchange_key_reply" ->
                     // The protocol payload must survive Room persistence so a
@@ -1237,6 +1244,57 @@ class OfflineFirstChatRepository(
         replyOverride = null,
         messageType = "sharedPost",
     )
+
+    override suspend fun sendDuelInvite(
+        conversationId: String,
+        payloadJson: String,
+    ): ChatResult<Message> = sendTextInternal(
+        conversationId = conversationId,
+        text = payloadJson,
+        replyTo = null,
+        replyOverride = null,
+        messageType = "gameInvite",
+    )
+
+    override suspend fun getDuelPreview(
+        matchId: String,
+        forceRefresh: Boolean,
+    ): ChatResult<DuelPreview> {
+        val cleanId = matchId.trim().lowercase()
+        val cached = duelPreviewCache[cleanId]
+        if (!forceRefresh && cached != null && (now() - cached.first) <= 15_000L) {
+            return ChatResult.Success(cached.second)
+        }
+        return remoteCall {
+            val dto = api.duelPreview(cleanId)
+            val preview = DuelPreview(
+                matchId = dto.matchId.ifBlank { cleanId },
+                status = dto.status,
+                gameEnabled = dto.gameEnabled,
+                player1 = DuelPreviewPlayer(
+                    id = dto.player1.id,
+                    name = dto.player1.name,
+                    avatarUrl = dto.player1.avatarUrl,
+                ),
+                player2 = dto.player2?.let { p2 ->
+                    DuelPreviewPlayer(
+                        id = p2.id,
+                        name = p2.name,
+                        avatarUrl = p2.avatarUrl,
+                    )
+                },
+                entryFee = dto.entryFee,
+                baseEntryFee = dto.baseEntryFee,
+                winCoinBonus = dto.winCoinBonus,
+                canJoin = dto.canJoin,
+                isParticipant = dto.isParticipant,
+                viewerAtLimit = dto.viewerAtLimit,
+                cancelReason = dto.cancelReason,
+            )
+            duelPreviewCache[cleanId] = now() to preview
+            preview
+        }
+    }
 
     override suspend fun sendReply(
         conversationId: String,
@@ -1445,9 +1503,11 @@ class OfflineFirstChatRepository(
                     retryable = false,
                 )
             }
-            val formattedReplyContent = SharedPostParser.tryParse(rawReplyContent)?.let { post ->
-                "پست ${post.authorName}: ${post.content.ifBlank { "رسانه پیوست" }}"
-            } ?: rawReplyContent
+            val formattedReplyContent = DuelInviteParser.formatPreviewIfDuel(rawReplyContent, source.transportType)
+                ?: SharedPostParser.tryParse(rawReplyContent)?.let { post ->
+                    "پست ${post.authorName}: ${post.content.ifBlank { "رسانه پیوست" }}"
+                }
+                ?: rawReplyContent
             val replyContent = formattedReplyContent.take(MAX_REPLY_PREVIEW_LENGTH)
             PendingReplyPayload(
                 messageId = source.serverId ?: source.clientId,

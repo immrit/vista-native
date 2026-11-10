@@ -265,7 +265,15 @@ fun FeedScreen(
             viewModel.trackEvent(postId, "open")
             onVideoClick(postId)
         },
-        onAuthorClick = onAuthorClick,
+        onAuthorClick = { authorId ->
+            viewModel.trackBehavior(
+                eventType = "profile_visit",
+                targetType = "user",
+                targetId = authorId,
+                sourceSurface = "feed",
+            )
+            onAuthorClick(authorId)
+        },
         onLikeClick = viewModel::toggleLike,
         onSaveClick = viewModel::toggleSave,
         onCommentClick = { postId ->
@@ -278,7 +286,20 @@ fun FeedScreen(
         onReportPost = { post -> reportPostTarget = post },
         onNotInterested = viewModel::markNotInterested,
         onVisibilityChange = viewModel::updateEngagementVisibility,
-        onHashtagClick = onHashtagClick,
+        onHashtagClick = { tag ->
+            val clean = tag.trim().trimStart('#')
+            if (clean.isNotEmpty()) {
+                viewModel.trackBehavior(
+                    eventType = "hashtag_click",
+                    targetType = "tag",
+                    targetId = clean,
+                    queryText = "#$clean",
+                    tags = listOf(clean),
+                    sourceSurface = "feed",
+                )
+            }
+            onHashtagClick(tag)
+        },
         onMentionClick = onMentionClick,
         onAppealClick = onAppealClick,
         onNotificationClick = onNotificationClick,
@@ -289,6 +310,23 @@ fun FeedScreen(
         onBarsVisibilityChange = bottomBarVisibilityCallback,
         homeTabClickFlow = homeTabClickFlow,
         onTrackEvent = viewModel::trackEvent,
+        onTrackPostEvent = { postId, eventType, dwellMs ->
+            viewModel.trackPostEvent(
+                postId = postId,
+                eventType = eventType,
+                dwellMs = dwellMs,
+                sourceSurface = "feed",
+            )
+        },
+        onTrackMusicPlay = { postId, tags ->
+            viewModel.trackBehavior(
+                eventType = "music_play",
+                targetType = "post",
+                targetId = postId,
+                tags = tags,
+                sourceSurface = "feed",
+            )
+        },
     )
 
     showCommentsForPostId?.let { postId ->
@@ -424,6 +462,8 @@ internal fun FeedScreenContent(
     onBarsVisibilityChange: (Boolean) -> Unit = {},
     homeTabClickFlow: SharedFlow<Unit>? = null,
     onTrackEvent: (String, String) -> Unit = { _, _ -> },
+    onTrackPostEvent: (String, String, Long?) -> Unit = { id, ev, _ -> onTrackEvent(id, ev) },
+    onTrackMusicPlay: (String, List<String>) -> Unit = { _, _ -> },
     autoplayPostMusic: Boolean = true,
     onFollowClick: (String) -> Unit = {},
 ) {
@@ -578,6 +618,8 @@ internal fun FeedScreenContent(
                         onMentionClick = onMentionClick,
                         onAppealClick = onAppealClick,
                         onTrackEvent = onTrackEvent,
+                        onTrackPostEvent = onTrackPostEvent,
+                        onTrackMusicPlay = onTrackMusicPlay,
                         autoplayPostMusic = autoplayPostMusic,
                         onFollowClick = onFollowClick,
                         topPadding = topHeaderHeight,
@@ -865,6 +907,8 @@ internal fun FeedContent(
     selectedKind: FeedKind = FeedKind.Explore,
     listState: LazyListState = rememberLazyListState(),
     onTrackEvent: (String, String) -> Unit = { _, _ -> },
+    onTrackPostEvent: (String, String, Long?) -> Unit = { id, ev, _ -> onTrackEvent(id, ev) },
+    onTrackMusicPlay: (String, List<String>) -> Unit = { _, _ -> },
     autoplayPostMusic: Boolean = true,
     onFollowClick: (String) -> Unit = {},
     topPadding: androidx.compose.ui.unit.Dp = 8.dp,
@@ -872,7 +916,16 @@ internal fun FeedContent(
 ) {
     val navigationBarInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val viewedPostIds = remember { mutableSetOf<String>() }
+    val engagedPostIds = remember { mutableSetOf<String>() }
     val postVisibilityStartTimes = remember { mutableMapOf<String, Long>() }
+
+    LaunchedEffect(state.posts) {
+        for (p in state.posts) {
+            if (p.isLiked || p.isSaved) {
+                engagedPostIds.add(p.id)
+            }
+        }
+    }
 
     val context = LocalContext.current
     val backgroundMusicPlayer = remember {
@@ -922,6 +975,7 @@ internal fun FeedContent(
                 if (!musicUrl.isNullOrBlank() && isBackgroundMusicPost(musicUrl)) {
                     if (activeMusicPostId != centerPostId) {
                         activeMusicPostId = centerPostId
+                        onTrackMusicPlay(post.id, post.tags)
                         val range = resolveMusicRange(musicUrl)
                         val startMs = if (post.musicStartMs > 0) post.musicStartMs else range.first
                         val endMs = post.musicEndMs ?: range.second
@@ -994,7 +1048,9 @@ internal fun FeedContent(
                 if (startTime != null) {
                     val dwellTime = now - startTime
                     if (dwellTime >= 1500L) {
-                        onTrackEvent(leftId, "dwell")
+                        onTrackPostEvent(leftId, "dwell", dwellTime)
+                    } else if (dwellTime in 180L..1499L && leftId !in engagedPostIds) {
+                        onTrackPostEvent(leftId, "skip", dwellTime)
                     }
                 }
             }
@@ -1007,7 +1063,7 @@ internal fun FeedContent(
                     activeJobs[visibleId] = launch {
                         delay(800L)
                         viewedPostIds.add(visibleId)
-                        onTrackEvent(visibleId, "view")
+                        onTrackPostEvent(visibleId, "view", null)
                     }
                 }
             }
@@ -1053,18 +1109,42 @@ internal fun FeedContent(
                 hasPremiumEdit = viewerHasPremiumEdit,
                 showFollowState = selectedKind == FeedKind.Explore,
                 onFollowClick = onFollowClick,
-                onPostClick = { onPostClick(post.id) },
-                onVideoClick = { onVideoClick(post.id) },
+                onPostClick = {
+                    engagedPostIds.add(post.id)
+                    onPostClick(post.id)
+                },
+                onVideoClick = {
+                    engagedPostIds.add(post.id)
+                    onVideoClick(post.id)
+                },
                 onMediaClick = onMediaClick,
-                onAuthorClick = { onAuthorClick(post.userId) },
-                onLikeClick = onLikeClick,
-                onSaveClick = onSaveClick,
-                onCommentClick = { onCommentClick(post.id) },
-                onShareClick = { onShareClick(post) },
+                onAuthorClick = {
+                    engagedPostIds.add(post.id)
+                    onAuthorClick(post.userId)
+                },
+                onLikeClick = { id, liked, count ->
+                    engagedPostIds.add(id)
+                    onLikeClick(id, liked, count)
+                },
+                onSaveClick = { id, saved ->
+                    engagedPostIds.add(id)
+                    onSaveClick(id, saved)
+                },
+                onCommentClick = {
+                    engagedPostIds.add(post.id)
+                    onCommentClick(post.id)
+                },
+                onShareClick = {
+                    engagedPostIds.add(post.id)
+                    onShareClick(post)
+                },
                 onEditPost = { onEditPost(post) },
                 onDeletePost = { onDeletePost(post.id) },
                 onReportPost = { onReportPost(post) },
-                onNotInterested = { onNotInterested(post.id) },
+                onNotInterested = {
+                    engagedPostIds.add(post.id)
+                    onNotInterested(post.id)
+                },
                 onVisibilityChange = { hideLike, hideComment -> onVisibilityChange(post, hideLike, hideComment) },
                 onPremiumPrompt = onPremiumPrompt,
                 onHashtagClick = onHashtagClick,

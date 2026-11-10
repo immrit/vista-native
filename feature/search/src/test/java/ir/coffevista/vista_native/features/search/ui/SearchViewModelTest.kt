@@ -231,6 +231,25 @@ class SearchViewModelTest {
         assertTrue(repository.historyActions.isEmpty())
     }
 
+    @Test
+    fun searchAndProfileClicksEmitBehavioralTelemetryEvents() = runTest(dispatcher) {
+        repository.onUsers = { _, _ -> UserSearchPage(listOf(user("u1")), 1) }
+        repository.onPosts = { PostSearchPage(listOf(post("p1")), false, null) }
+        val viewModel = create()
+        runCurrent()
+
+        viewModel.onQueryChanged("kotlin")
+        advanceUntilIdle()
+        viewModel.selectHashtag("compose")
+        advanceUntilIdle()
+        viewModel.selectUser(user("u1"))
+        advanceUntilIdle()
+
+        assertTrue(repository.behaviorEvents.contains("search_query:kotlin"))
+        assertTrue(repository.behaviorEvents.contains("hashtag_click:compose"))
+        assertTrue(repository.behaviorEvents.contains("profile_visit:u1"))
+    }
+
     private fun create() = SearchViewModel(repository, auth, SavedStateHandle())
 
     private fun user(id: String) = SearchUser(
@@ -273,6 +292,7 @@ private class FakeSearchRepository : SearchRepository {
         PostSearchPage(emptyList(), false, null)
     }
     val historyActions = mutableListOf<String>()
+    val behaviorEvents = mutableListOf<String>()
     private val histories = mutableMapOf<String, MutableStateFlow<List<SearchHistoryItem>>>()
 
     override suspend fun searchUsers(query: String, offset: Int): UserSearchPage {
@@ -305,5 +325,15 @@ private class FakeSearchRepository : SearchRepository {
 
     override suspend fun clearAccount(accountId: String) {
         historyActions += "clear:$accountId"
+    }
+
+    override suspend fun trackSearchBehavior(
+        eventType: String,
+        targetType: String?,
+        targetId: String?,
+        queryText: String?,
+        tags: List<String>,
+    ) {
+        behaviorEvents += "$eventType:${targetId ?: queryText.orEmpty()}"
     }
 }

@@ -33,6 +33,7 @@ import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import ir.coffevista.vista_native.core.designsystem.navigation.LocalVistaInternalLinkNavigator
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaBrandColors
 
 private val URL_REGEX = Regex(
@@ -60,6 +61,7 @@ fun ChatLinkPreviewCard(
     onUrlClick: ((String) -> Unit)? = null,
 ) {
     val uriHandler = LocalUriHandler.current
+    val internalNavigator = LocalVistaInternalLinkNavigator.current
     val domain = remember(url) { extractDomain(url) }
 
     val accentColor = if (isMine) Color.White.copy(alpha = 0.95f) else VistaBrandColors.Indigo
@@ -80,7 +82,7 @@ fun ChatLinkPreviewCard(
             .clickable {
                 if (onUrlClick != null) {
                     onUrlClick(url)
-                } else {
+                } else if (internalNavigator?.openUrl(url) != true) {
                     runCatching { uriHandler.openUri(url) }
                 }
             }

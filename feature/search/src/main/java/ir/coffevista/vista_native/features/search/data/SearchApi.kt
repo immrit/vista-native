@@ -1,7 +1,9 @@
 package ir.coffevista.vista_native.features.search.data
 
 import retrofit2.Response
+import retrofit2.http.Body
 import retrofit2.http.GET
+import retrofit2.http.POST
 import retrofit2.http.Path
 import retrofit2.http.Query
 
@@ -42,4 +44,9 @@ interface SearchApi {
         @Query("limit") limit: Int = 30,
         @Query("offset") offset: Int = 0,
     ): Response<SearchPostsResponseDto>
+
+    @POST("v1/behavior/events")
+    suspend fun trackBehaviorEvents(
+        @Body body: SearchBehaviorBatchRequestDto,
+    ): Response<Unit>
 }

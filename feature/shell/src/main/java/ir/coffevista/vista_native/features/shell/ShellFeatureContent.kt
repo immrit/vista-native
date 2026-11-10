@@ -131,7 +131,7 @@ data class ShellFeatureContent(
     ) -> Unit),
     val servicesContacts: (@Composable (() -> Unit, (String) -> Unit) -> Unit),
     val servicesTopGroups: (@Composable (() -> Unit, (String) -> Unit) -> Unit),
-    val servicesGameLaunch: (@Composable (() -> Unit, (String, String) -> Unit) -> Unit),
+    val servicesGameLaunch: (@Composable (String?, () -> Unit, (String, String) -> Unit) -> Unit),
     val servicesNearby: (@Composable (
         onBack: () -> Unit,
         onOpenLikes: () -> Unit,

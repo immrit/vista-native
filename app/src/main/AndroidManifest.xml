@@ -107,8 +107,11 @@
                 <data android:host="chat" />
                 <data android:host="appeal" />
                 <data android:host="payment" />
+                <data android:host="game" />
+                <data android:host="duel" />
             </intent-filter>
 
+            <!-- Primary App Links domains (cafevista.ir / www.cafevista.ir) -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
 
@@ -118,6 +121,17 @@
                 <data android:scheme="https" />
                 <data android:host="cafevista.ir" />
                 <data android:host="www.cafevista.ir" />
+                <data android:pathPattern="/.*" />
+            </intent-filter>
+
+            <!-- Secondary legacy domains isolated so verification failure on one never blocks cafevista.ir -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <data android:scheme="https" />
                 <data android:host="coffevista.ir" />
                 <data android:host="www.coffevista.ir" />
                 <data android:host="vista.me" />

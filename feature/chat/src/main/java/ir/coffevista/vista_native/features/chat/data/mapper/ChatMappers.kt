@@ -226,7 +226,10 @@ internal fun MessageDto.toDomain(accountId: String): Message {
         deleted -> MessageContent.Deleted
         isSecret && (content.looksLikeCiphertextPreview() || content.startsWith("VE2E") || content.startsWith("e2ee:")) ->
             MessageContent.EncryptedUnavailable
-        messageType.equals("sharedPost", true) || messageType.equals("storyReply", true) ->
+        messageType.equals("sharedPost", true) ||
+            messageType.equals("storyReply", true) ||
+            messageType.equals("gameInvite", true) ||
+            messageType.equals("game_invite", true) ->
             MessageContent.Structured(messageType, content)
         content.startsWith("wf:") -> MessageContent.Text("")
         else -> MessageContent.Text(content)

@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.SportsEsports
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -51,6 +52,7 @@ fun ChatAttachmentBottomSheet(
     onDismiss: () -> Unit,
     onMediaSelected: (List<Uri>) -> Unit,
     onFilesSelected: (List<Uri>) -> Unit,
+    onDuelInviteSelected: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     var isGalleryMode by rememberSaveable { mutableStateOf(false) }
@@ -173,6 +175,24 @@ fun ChatAttachmentBottomSheet(
                                 gradient = listOf(Color(0xFFFFA726), Color(0xFFF57C00)),
                                 onClick = launchCamera,
                             )
+                        }
+
+                        if (onDuelInviteSelected != null) {
+                            Spacer(Modifier.height(16.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+                                horizontalArrangement = Arrangement.Start,
+                            ) {
+                                AttachmentOptionItem(
+                                    icon = Icons.Default.SportsEsports,
+                                    label = "دعوت به دوئل",
+                                    gradient = listOf(Color(0xFFEC4899), Color(0xFF7C3AED)),
+                                    onClick = {
+                                        onDismiss()
+                                        onDuelInviteSelected()
+                                    },
+                                )
+                            }
                         }
 
                         Spacer(Modifier.height(28.dp))

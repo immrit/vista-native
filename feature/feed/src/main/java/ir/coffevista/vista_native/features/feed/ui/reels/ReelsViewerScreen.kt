@@ -52,6 +52,8 @@ import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.VolumeMute
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -206,8 +208,40 @@ class ReelsViewModel @Inject constructor(
                 },
             )
         }
+        if (newIsLiked) {
+            trackReelEvent(postId, "like")
+        }
         viewModelScope.launch {
             feedRepository.toggleLike(userId, postId, current.userId, newIsLiked, newCount)
+        }
+    }
+
+    fun trackReelEvent(
+        postId: String,
+        eventType: String,
+        dwellMs: Long? = null,
+        watchPct: Float? = null,
+    ) {
+        viewModelScope.launch {
+            runCatching {
+                feedRepository.trackDetailedFeedEvent(
+                    postId = postId,
+                    eventType = eventType,
+                    dwellMs = dwellMs,
+                    watchPct = watchPct,
+                    sourceSurface = "reels",
+                )
+            }
+        }
+    }
+
+    fun markNotInterested(postId: String) {
+        trackReelEvent(postId, "not_interested")
+        _uiState.update { state ->
+            state.copy(reels = state.reels.filterNot { it.id == postId })
+        }
+        viewModelScope.launch {
+            runCatching { feedRepository.markPostNotInterestedLocal(postId) }
         }
     }
 }
@@ -293,9 +327,21 @@ fun ReelsViewerScreen(
                         isCurrentPage = isCurrentPage,
                         isMuted = uiState.isMuted,
                         onLikeClick = { viewModel.toggleLike(reel.id) },
-                        onCommentsClick = { showCommentsForPostId = reel.id },
+                        onCommentsClick = {
+                            viewModel.trackReelEvent(reel.id, "comment")
+                            showCommentsForPostId = reel.id
+                        },
                         onShareClick = { showShareForPost = reel },
                         onAuthorClick = { onAuthorClick(reel.userId) },
+                        onNotInterested = { viewModel.markNotInterested(reel.id) },
+                        onTrackReelEvent = { eventType, dwellMs, watchPct ->
+                            viewModel.trackReelEvent(
+                                postId = reel.id,
+                                eventType = eventType,
+                                dwellMs = dwellMs,
+                                watchPct = watchPct,
+                            )
+                        },
                     )
                 }
 
@@ -352,7 +398,10 @@ fun ReelsViewerScreen(
                 ir.coffevista.vista_native.features.feed.ui.PostShareBottomSheet(
                     post = post,
                     onDismiss = { showShareForPost = null },
-                    onShared = { showShareForPost = null },
+                    onShared = {
+                        viewModel.trackReelEvent(post.id, "share")
+                        showShareForPost = null
+                    },
                 )
             }
         }
@@ -369,6 +418,8 @@ private fun ReelsVideoItem(
     onCommentsClick: () -> Unit,
     onShareClick: () -> Unit,
     onAuthorClick: () -> Unit,
+    onNotInterested: () -> Unit,
+    onTrackReelEvent: (eventType: String, dwellMs: Long?, watchPct: Float?) -> Unit,
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -376,6 +427,9 @@ private fun ReelsVideoItem(
     var isBuffering by remember { mutableStateOf(true) }
     var heartBurstKey by remember { mutableIntStateOf(0) }
     var showHeartBurst by remember { mutableStateOf(false) }
+    var enterTimeMs by remember { mutableStateOf(0L) }
+    var engagedOnPage by remember(post.id) { mutableStateOf(post.isLiked || post.isSaved) }
+    var showMenu by remember { mutableStateOf(false) }
 
     val videoUrl = post.videoUrl.orEmpty()
     val player = remember(videoUrl) {
@@ -405,11 +459,39 @@ private fun ReelsVideoItem(
         }
     }
 
+    fun flushReelWatchTelemetry() {
+        val started = enterTimeMs
+        if (started <= 0L) return
+        enterTimeMs = 0L
+        val dwellMs = (System.currentTimeMillis() - started).coerceAtLeast(0L)
+        val duration = player.duration
+        val watchPct = if (duration > 0L) {
+            (player.currentPosition.toFloat() / duration.toFloat()).coerceIn(0f, 1f)
+        } else {
+            null
+        }
+        if (dwellMs >= 1800L || (watchPct != null && watchPct >= 0.25f)) {
+            onTrackReelEvent("dwell", dwellMs, watchPct)
+        } else if (dwellMs in 150L..1799L && !engagedOnPage) {
+            onTrackReelEvent("skip", dwellMs, watchPct)
+        }
+    }
+
+    DisposableEffect(post.id, player) {
+        onDispose {
+            flushReelWatchTelemetry()
+        }
+    }
+
     LaunchedEffect(isCurrentPage) {
         if (isCurrentPage) {
+            enterTimeMs = System.currentTimeMillis()
             player.playWhenReady = true
             player.play()
+            delay(500L)
+            onTrackReelEvent("view", null, null)
         } else {
+            flushReelWatchTelemetry()
             player.pause()
             player.seekTo(0)
         }
@@ -651,6 +733,7 @@ private fun ReelsVideoItem(
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 IconButton(
                     onClick = {
+                        engagedOnPage = true
                         reelsLikeScale = 1.35f
                         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                         onLikeClick()
@@ -676,7 +759,13 @@ private fun ReelsVideoItem(
 
             // Comments Action
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                IconButton(onClick = onCommentsClick, modifier = Modifier.size(44.dp)) {
+                IconButton(
+                    onClick = {
+                        engagedOnPage = true
+                        onCommentsClick()
+                    },
+                    modifier = Modifier.size(44.dp),
+                ) {
                     Icon(
                         imageVector = Icons.Default.Comment,
                         contentDescription = "دیدگاه‌ها",
@@ -694,7 +783,13 @@ private fun ReelsVideoItem(
 
             // Share Action
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                IconButton(onClick = onShareClick, modifier = Modifier.size(44.dp)) {
+                IconButton(
+                    onClick = {
+                        engagedOnPage = true
+                        onShareClick()
+                    },
+                    modifier = Modifier.size(44.dp),
+                ) {
                     Icon(
                         imageVector = Icons.Default.Share,
                         contentDescription = "اشتراک‌گذاری",
@@ -708,6 +803,31 @@ private fun ReelsVideoItem(
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium,
                 )
+            }
+
+            // More Menu (Not Interested)
+            Box {
+                IconButton(onClick = { showMenu = true }, modifier = Modifier.size(40.dp)) {
+                    Icon(
+                        imageVector = Icons.Default.MoreVert,
+                        contentDescription = "گزینه‌های بیشتر",
+                        tint = Color.White,
+                        modifier = Modifier.size(24.dp),
+                    )
+                }
+                DropdownMenu(
+                    expanded = showMenu,
+                    onDismissRequest = { showMenu = false },
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("علاقه‌مند نیستم") },
+                        onClick = {
+                            engagedOnPage = true
+                            showMenu = false
+                            onNotInterested()
+                        },
+                    )
+                }
             }
 
             // Rotating Audio Vinyl Disc

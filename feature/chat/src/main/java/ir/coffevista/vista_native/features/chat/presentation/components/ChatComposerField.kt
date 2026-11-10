@@ -215,7 +215,7 @@ fun ChatComposerField(
                     override fun focusSearch(direction: Int): android.view.View = this
                 }.apply {
                     editTextRef[0] = this
-                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 17.5f)
                     setOnTouchListener { _, event ->
                         if (event.action == android.view.MotionEvent.ACTION_UP && latestIsEmojiPanelOpen.value) {
                             latestOnFocusText.value()
@@ -261,7 +261,7 @@ fun ChatComposerField(
                 },
             update = { editText ->
                 editText.hint = hint
-                editText.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+                editText.setTextSize(TypedValue.COMPLEX_UNIT_SP, 17.5f)
                 editText.textDirection = if (isRtlParagraph) android.view.View.TEXT_DIRECTION_RTL else android.view.View.TEXT_DIRECTION_LTR
                 editText.setTextColor(textColor)
                 editText.setHintTextColor(hintColor)

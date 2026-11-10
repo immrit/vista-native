@@ -3,10 +3,6 @@ package ir.coffevista.vista_native.core.designsystem.component
 import android.net.Uri
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -83,11 +79,10 @@ import kotlinx.coroutines.isActive
  *
  * Renders audio waveform bars with a smooth, continuous fluid fill that sweeps across each bar
  * from the side (via canvas clipping), completely avoiding abrupt bar-by-bar discrete jumps.
+ * The bars maintain steady, clean natural acoustic heights with no dancing/pulsing motion.
  *
- * Features:
- * - Dynamic equalizer bounce animation when [isPlaying] is true for an alive, musical feel.
- * - Stable, natural acoustic bars when paused.
- * - Interactive scrubbing (tap or drag) with haptic feedback.
+ * Supports dragging finger across the waveform to scrub (seek) backward / forward smoothly with haptic feedback,
+ * as well as tapping anywhere along the waveform to immediately jump to that position.
  */
 @Composable
 fun VistaSoundCloudWaveform(
@@ -98,8 +93,8 @@ fun VistaSoundCloudWaveform(
     currentPositionMs: Long = 0L,
     durationMs: Long = 0L,
     seed: Long = 0L,
-    barCount: Int = 36,
-    waveformHeight: Dp = 20.dp,
+    barCount: Int = 34,
+    waveformHeight: Dp = 18.dp,
     activeBrush: Brush = SolidColor(MaterialTheme.colorScheme.primary),
     inactiveColor: Color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.20f),
     showTimeLabels: Boolean = false,
@@ -108,19 +103,8 @@ fun VistaSoundCloudWaveform(
     val currentOnSeek = rememberUpdatedState(onSeek)
     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
 
-    // Dynamic wave animation phase for active playback bounce
-    val infiniteTransition = rememberInfiniteTransition(label = "waveform-bounce")
-    val bouncePhase by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = (2f * Math.PI).toFloat(),
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1100, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart,
-        ),
-        label = "bouncePhase",
-    )
-
-    // Generate deterministic pseudo-waveform heights based on audio seed.
+    // Generate deterministic static pseudo-waveform heights based on audio seed.
+    // Steady, elegant acoustic profile with no dancing or wave motion.
     val barAmplitudes = remember(seed, barCount) {
         val safeSeed = if (seed == 0L) 1234567L else seed
         List(barCount) { index ->
@@ -198,12 +182,7 @@ fun VistaSoundCloudWaveform(
 
                     // 1. Draw base inactive waveform (all bars in unplayed color)
                     for (i in 0 until barCount) {
-                        val dynamicBounce = if (isPlaying) {
-                            1f + 0.20f * sin(bouncePhase + i * 0.48f)
-                        } else {
-                            1f
-                        }
-                        val barH = (canvasHeight * barAmplitudes[i] * dynamicBounce).coerceIn(barWidth, canvasHeight)
+                        val barH = (canvasHeight * barAmplitudes[i]).coerceIn(barWidth, canvasHeight)
                         val topY = (canvasHeight - barH) / 2f
                         val leftX = i * (barWidth + barSpacing)
 
@@ -220,12 +199,7 @@ fun VistaSoundCloudWaveform(
                     if (fillRight > 0f) {
                         clipRect(left = 0f, top = 0f, right = fillRight, bottom = canvasHeight) {
                             for (i in 0 until barCount) {
-                                val dynamicBounce = if (isPlaying) {
-                                    1f + 0.20f * sin(bouncePhase + i * 0.48f)
-                                } else {
-                                    1f
-                                }
-                                val barH = (canvasHeight * barAmplitudes[i] * dynamicBounce).coerceIn(barWidth, canvasHeight)
+                                val barH = (canvasHeight * barAmplitudes[i]).coerceIn(barWidth, canvasHeight)
                                 val topY = (canvasHeight - barH) / 2f
                                 val leftX = i * (barWidth + barSpacing)
 
@@ -276,12 +250,12 @@ fun VistaSoundCloudWaveform(
 /**
  * Unified compact, minimal, user-friendly music player card component.
  *
- * Designed with a streamlined 2-row horizontal layout:
- * - Start: 36dp circular Play/Pause button with gradient & crisp icon
- * - Center:
- *     Top row: Track title (ellipsis) + Compact time readout (current / total)
- *     Bottom row: 36-bar acoustic waveform (20dp height) with fluid fill & dynamic bounce
- * - End (optional): Trailing action buttons (e.g. trim/delete in composer)
+ * Features:
+ * - Proper horizontal margins (aligns with feed posts and user avatars)
+ * - 2-row compact layout:
+ *     Top row: Track title + Duration
+ *     Bottom row: Smooth static acoustic waveform with fluid horizontal fill
+ * - Play/Pause button (36dp) with vibrant primary gradient
  */
 @Composable
 fun VistaMusicPlayerCard(
@@ -313,16 +287,17 @@ fun VistaMusicPlayerCard(
 
     Surface(
         modifier = modifier
+            .padding(horizontal = 16.dp, vertical = 4.dp)
             .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(16.dp))
             .border(
                 border = BorderStroke(0.8.dp, cardBorder),
-                shape = RoundedCornerShape(14.dp),
+                shape = RoundedCornerShape(16.dp),
             )
             .then(
                 if (onCardClick != null) Modifier.clickable(onClick = onCardClick) else Modifier
             ),
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(16.dp),
         color = cardBackground,
         tonalElevation = 0.dp,
         shadowElevation = 0.dp,
@@ -330,7 +305,7 @@ fun VistaMusicPlayerCard(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 9.dp),
+                .padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             // Sleek Circular Play/Pause Button (36dp)
@@ -420,8 +395,8 @@ fun VistaMusicPlayerCard(
                     currentPositionMs = currentPositionMs,
                     durationMs = durationMs,
                     seed = seed,
-                    barCount = 36,
-                    waveformHeight = 20.dp,
+                    barCount = 34,
+                    waveformHeight = 18.dp,
                     activeBrush = SolidColor(MaterialTheme.colorScheme.primary),
                     inactiveColor = if (isDark) Color.White.copy(alpha = 0.16f) else Color(0xFFD6D8E2),
                     showTimeLabels = false,

@@ -26,7 +26,7 @@ class ChatTextBubbleLayoutTest {
         assertFalse(result.isInline)
         assertEquals(IntSize(100, 66), result.size) // 40 + 2 + 24 = 66
         assertEquals(IntOffset(x = 0, y = 0), result.textOffset)
-        assertEquals(IntOffset(x = 0, y = 42), result.footerOffset)
+        assertEquals(IntOffset(x = 40, y = 42), result.footerOffset) // 100 - 60 = 40 (فوتر همواره در گوشه راست)
     }
 
     @Test
@@ -64,7 +64,7 @@ class ChatTextBubbleLayoutTest {
         assertFalse(result.isInline)
         assertEquals(IntSize(450, 149), result.size) // 120 + 4 + 25 = 149
         assertEquals(IntOffset(x = 0, y = 0), result.textOffset)
-        assertEquals(IntOffset(x = 0, y = 124), result.footerOffset)
+        assertEquals(IntOffset(x = 370, y = 124), result.footerOffset) // 450 - 80 = 370 (فوتر همواره در گوشه راست)
     }
 
     @Test
@@ -87,7 +87,7 @@ class ChatTextBubbleLayoutTest {
     }
 
     @Test
-    fun `tiny text smaller than footer expands width to footerWidth and stacks vertically`() {
+    fun `tiny text smaller than footer expands width to footerWidth and stacks vertically in RTL`() {
         val result = calculateChatTextBubblePlacement(
             textWidth = 40,
             textHeight = 30,
@@ -101,8 +101,27 @@ class ChatTextBubbleLayoutTest {
 
         assertFalse(result.isInline)
         assertEquals(IntSize(90, 52), result.size) // 30 + 2 + 20 = 52
-        assertEquals(IntOffset(x = 0, y = 0), result.textOffset)
-        assertEquals(IntOffset(x = 0, y = 32), result.footerOffset)
+        assertEquals(IntOffset(x = 50, y = 0), result.textOffset) // 90 - 40 = 50 in RTL
+        assertEquals(IntOffset(x = 0, y = 32), result.footerOffset) // 90 - 90 = 0
+    }
+
+    @Test
+    fun `tiny text smaller than footer expands width to footerWidth and stacks vertically in LTR`() {
+        val result = calculateChatTextBubblePlacement(
+            textWidth = 40,
+            textHeight = 30,
+            footerWidth = 90,
+            footerHeight = 20,
+            maxWidthPx = 300,
+            spacingPx = 10,
+            verticalGapPx = 2,
+            layoutDirection = LayoutDirection.Ltr,
+        )
+
+        assertFalse(result.isInline)
+        assertEquals(IntSize(90, 52), result.size)
+        assertEquals(IntOffset(x = 0, y = 0), result.textOffset) // starts at 0 in LTR
+        assertEquals(IntOffset(x = 0, y = 32), result.footerOffset) // 90 - 90 = 0
     }
 
     @Test

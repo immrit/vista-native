@@ -133,6 +133,9 @@ object FeedApiModule {
 
             override suspend fun trackFeedEvent(body: FeedEventRequestDto) = remote.trackFeedEvent(body)
 
+            override suspend fun trackBehaviorEvents(body: BehaviorEventsBatchRequestDto) =
+                remote.trackBehaviorEvents(body)
+
             override suspend fun presignUpload(request: PostPresignRequestDto): PostPresignResponseDto =
                 remote.presignUpload(request)
 

@@ -81,6 +81,28 @@ data class HashtagSuggestionDto(
     val usageCount: Int = 0,
 )
 
+@Serializable
+data class SearchBehaviorEventDto(
+    @SerialName("event_type")
+    val eventType: String,
+    @SerialName("target_type")
+    val targetType: String? = null,
+    @SerialName("target_id")
+    val targetId: String? = null,
+    @SerialName("query_text")
+    val queryText: String? = null,
+    @SerialName("tags")
+    val tags: List<String> = emptyList(),
+    @SerialName("source_surface")
+    val sourceSurface: String? = "search",
+)
+
+@Serializable
+data class SearchBehaviorBatchRequestDto(
+    @SerialName("events")
+    val events: List<SearchBehaviorEventDto>,
+)
+
 internal fun SearchUserDto.toDomainOrNull(): SearchUser? {
     val id = userId?.trim().orEmpty()
     if (id.isEmpty()) return null

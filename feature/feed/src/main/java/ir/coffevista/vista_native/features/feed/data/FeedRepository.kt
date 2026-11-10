@@ -67,5 +67,16 @@ interface FeedRepository {
     suspend fun reportPost(postId: String, reportedUserId: String, reason: String, additionalDetails: String? = null)
     suspend fun submitAppeal(postId: String, reason: String)
     suspend fun trackFeedEvent(postId: String, eventType: String)
+    suspend fun trackDetailedFeedEvent(
+        postId: String,
+        eventType: String,
+        dwellMs: Long? = null,
+        watchPct: Float? = null,
+        sourceSurface: String? = null,
+    ) {
+        trackFeedEvent(postId, eventType)
+    }
+    suspend fun trackBehaviorEvent(event: BehaviorEventDto) = Unit
+    suspend fun markPostNotInterestedLocal(postId: String) = Unit
     suspend fun updateAuthorFollowStatus(authorId: String, followStatus: String)
 }

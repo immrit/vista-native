@@ -86,7 +86,11 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.core.view.WindowInsetsCompat
+import ir.coffevista.vista_native.core.model.navigation.VistaGameUrlHelper
+import ir.coffevista.vista_native.core.designsystem.navigation.LocalVistaInternalLinkNavigator
+import ir.coffevista.vista_native.core.designsystem.navigation.VistaInternalLinkNavigator
 import androidx.navigation.NavController
 import androidx.navigation.NavDestination
 import androidx.navigation.NavDestination.Companion.hasRoute
@@ -201,6 +205,95 @@ fun VistaShell(
         }
     }
 
+    fun navigateToGame(targetPath: String? = null, switchToServicesTab: Boolean = false) {
+        val safePath = VistaGameUrlHelper.sanitizeGameTargetPath(targetPath)
+        if (switchToServicesTab) {
+            selectTab(ShellTab.Services)
+        }
+        val hasOpenWebView = runCatching {
+            navController.currentBackStack.value.any { it.destination.route == ShellRoutes.ServicesWebRoute }
+        }.getOrDefault(false)
+        if (hasOpenWebView) {
+            navController.popBackStack(ShellRoutes.ServicesWebRoute, inclusive = true)
+        }
+        navController.navigate(ShellRoutes.servicesGameLaunch(safePath)) {
+            launchSingleTop = true
+        }
+    }
+
+    val uriHandler = LocalUriHandler.current
+    val internalLinkNavigator = remember(navController, context.userId) {
+        VistaInternalLinkNavigator { rawUrl ->
+            val trimmed = rawUrl.trim()
+            if (trimmed.isEmpty()) return@VistaInternalLinkNavigator false
+
+            val gamePath = VistaGameUrlHelper.parseGameTargetPath(trimmed)
+            if (gamePath != null) {
+                navigateToGame(targetPath = gamePath, switchToServicesTab = false)
+                return@VistaInternalLinkNavigator true
+            }
+
+            val parsed = runCatching { java.net.URI(trimmed) }.getOrNull()
+                ?: return@VistaInternalLinkNavigator false
+            val scheme = parsed.scheme?.lowercase().orEmpty()
+            val host = parsed.host?.lowercase().orEmpty()
+            val segments = parsed.path.orEmpty().split('/').filter(String::isNotBlank)
+
+            when (scheme) {
+                "vista" -> {
+                    val target = segments.firstOrNull()
+                    when (host) {
+                        "post" -> if (!target.isNullOrBlank()) {
+                            navController.navigate(ShellRoutes.postDetail(target))
+                            true
+                        } else false
+                        "appeal" -> if (!target.isNullOrBlank()) {
+                            navController.navigate(ShellRoutes.appeal(target))
+                            true
+                        } else false
+                        "profile" -> if (!target.isNullOrBlank()) {
+                            if (target == context.userId) selectTab(ShellTab.Profile)
+                            else navController.navigate(ShellRoutes.userProfile(target))
+                            true
+                        } else false
+                        "group", "chat" -> if (!target.isNullOrBlank()) {
+                            selectTab(ShellTab.Chat)
+                            navController.navigate(ShellRoutes.chatDetail(target))
+                            true
+                        } else false
+                        else -> false
+                    }
+                }
+                "https", "http" -> {
+                    if (!VistaGameUrlHelper.isVistaWebHost(host)) return@VistaInternalLinkNavigator false
+                    val head = segments.firstOrNull()?.lowercase()
+                    val ref = segments.getOrNull(1)
+                    when {
+                        head == "post" && !ref.isNullOrBlank() -> {
+                            navController.navigate(ShellRoutes.postDetail(ref))
+                            true
+                        }
+                        (head == "profile" || head == "u") && !ref.isNullOrBlank() -> {
+                            if (ref == context.userId) selectTab(ShellTab.Profile)
+                            else navController.navigate(ShellRoutes.userProfile(ref))
+                            true
+                        }
+                        (head == "group" || head == "join") && !ref.isNullOrBlank() -> {
+                            selectTab(ShellTab.Chat)
+                            navController.navigate(ShellRoutes.chatDetail(ref))
+                            true
+                        }
+                        else -> {
+                            navController.navigate(ShellRoutes.servicesWeb(trimmed, "ویستا"))
+                            true
+                        }
+                    }
+                }
+                else -> false
+            }
+        }
+    }
+
     LaunchedEffect(deepLinkRequest?.deliveryId) {
         val request = deepLinkRequest ?: return@LaunchedEffect
         if (request.deliveryId == lastDeepLinkId) return@LaunchedEffect
@@ -246,6 +339,9 @@ fun VistaShell(
                     navController.navigate(ShellRoutes.chatDetail(request.reference, request.secondaryReference))
                 }
             }
+            ShellDeferredKind.GAME -> {
+                navigateToGame(targetPath = request.reference, switchToServicesTab = true)
+            }
         }
 
         lastDeepLinkId = request.deliveryId
@@ -279,6 +375,7 @@ fun VistaShell(
     CompositionLocalProvider(
         LocalBottomBarVisibility provides { isBottomIslandVisible = it },
         LocalHomeTabClick provides homeTabClickFlow,
+        LocalVistaInternalLinkNavigator provides internalLinkNavigator,
     ) {
         Box(modifier = modifier.fillMaxSize()) {
         NavHost(
@@ -397,7 +494,11 @@ fun VistaShell(
                             userIndex,
                             { navController.popBackStack() },
                             { userId -> navController.navigate(ShellRoutes.userProfile(userId)) },
-                            { url -> navController.navigate(ShellRoutes.servicesWeb(url, "پیوند استوری")) },
+                            { url ->
+                                if (!internalLinkNavigator.openUrl(url)) {
+                                    runCatching { uriHandler.openUri(url) }
+                                }
+                            },
                             { tag -> navController.navigate(ShellRoutes.hashtag(tag)) },
                         )
                     }
@@ -517,14 +618,26 @@ fun VistaShell(
                         { navController.navigate(ShellRoutes.ServicesTopGroups) },
                         { navController.navigate(ShellRoutes.ServicesContacts) },
                         { userId -> navController.navigate(ShellRoutes.userProfile(userId)) },
-                        { url, title -> navController.navigate(ShellRoutes.servicesWeb(url, title)) },
+                        { url, title ->
+                            val gamePath = VistaGameUrlHelper.parseGameTargetPath(url)
+                            if (gamePath != null) {
+                                navigateToGame(targetPath = gamePath, switchToServicesTab = false)
+                            } else {
+                                navController.navigate(ShellRoutes.servicesWeb(url, title))
+                            }
+                        },
                         { route ->
-                            when (route.lowercase()) {
-                                "vista://nearby" -> navController.navigate(ShellRoutes.ServicesNearby)
-                                "vista://game", "vista://games" -> navController.navigate(ShellRoutes.ServicesGameLaunch)
-                                "vista://group", "vista://groups" -> navController.navigate(ShellRoutes.ServicesTopGroups)
-                                "vista://contact", "vista://contacts" -> navController.navigate(ShellRoutes.ServicesContacts)
-                                else -> navController.navigate(ShellRoutes.servicesDetail(route))
+                            val gamePath = VistaGameUrlHelper.parseGameTargetPath(route)
+                            if (gamePath != null) {
+                                navigateToGame(targetPath = gamePath, switchToServicesTab = false)
+                            } else {
+                                when (route.lowercase()) {
+                                    "vista://nearby" -> navController.navigate(ShellRoutes.ServicesNearby)
+                                    "vista://game", "vista://games" -> navController.navigate(ShellRoutes.ServicesGameLaunch)
+                                    "vista://group", "vista://groups" -> navController.navigate(ShellRoutes.ServicesTopGroups)
+                                    "vista://contact", "vista://contacts" -> navController.navigate(ShellRoutes.ServicesContacts)
+                                    else -> navController.navigate(ShellRoutes.servicesDetail(route))
+                                }
                             }
                         },
                     )
@@ -564,12 +677,27 @@ fun VistaShell(
                         },
                     )
                 }
-                composable(ShellRoutes.ServicesGameLaunch) {
+                composable(
+                    route = ShellRoutes.ServicesGameLaunchRoute,
+                    arguments = listOf(
+                        navArgument("targetPath") {
+                            type = NavType.StringType
+                            nullable = true
+                            defaultValue = null
+                        },
+                    ),
+                ) { entry ->
+                    val rawTargetPath = entry.arguments?.getString("targetPath")
+                    val decodedTargetPath = rawTargetPath?.takeIf { it.isNotBlank() }?.let { candidate ->
+                        if (candidate.startsWith("/")) candidate
+                        else runCatching { java.net.URLDecoder.decode(candidate, "UTF-8") }.getOrDefault(candidate)
+                    }
                     content.servicesGameLaunch(
+                        decodedTargetPath,
                         { navController.popBackStack() },
                         { url, title ->
                             navController.navigate(ShellRoutes.servicesWeb(url, title)) {
-                                popUpTo(ShellRoutes.ServicesGameLaunch) { inclusive = true }
+                                popUpTo(ShellRoutes.ServicesGameLaunchRoute) { inclusive = true }
                             }
                         },
                     )

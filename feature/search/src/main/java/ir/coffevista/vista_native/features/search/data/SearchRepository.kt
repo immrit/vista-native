@@ -19,6 +19,13 @@ interface SearchRepository {
     suspend fun deleteHistory(accountId: String, query: String)
     suspend fun clearHistory(accountId: String)
     suspend fun clearAccount(accountId: String)
+    suspend fun trackSearchBehavior(
+        eventType: String,
+        targetType: String? = null,
+        targetId: String? = null,
+        queryText: String? = null,
+        tags: List<String> = emptyList(),
+    ) = Unit
 
     companion object {
         const val USER_LIMIT = 20

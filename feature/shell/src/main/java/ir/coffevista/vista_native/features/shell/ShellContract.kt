@@ -15,7 +15,7 @@ enum class ShellTab(val labelFa: String, val glyph: String) {
 
 @Serializable
 @Keep
-enum class ShellDeferredKind { POST, PROFILE, GROUP, CHAT }
+enum class ShellDeferredKind { POST, PROFILE, GROUP, CHAT, GAME }
 
 data class ShellDeepLinkRequest(
     val deliveryId: Long,
@@ -28,6 +28,7 @@ fun ShellDeferredKind.targetTab(): ShellTab = when (this) {
     ShellDeferredKind.POST, ShellDeferredKind.GROUP -> ShellTab.Feed
     ShellDeferredKind.PROFILE -> ShellTab.Profile
     ShellDeferredKind.CHAT -> ShellTab.Chat
+    ShellDeferredKind.GAME -> ShellTab.Services
 }
 
 fun shellBackAction(

@@ -27,8 +27,8 @@ internal data class ChatTextBubbleLayoutResult(
 /**
  * موتور خالص محاسبه موقعیت متن پیام و فوتر متادیتا.
  *
- * طبق درخواست طراحی، فوتر متادیتا (ساعت و وضعیت تیک) همواره در زیر محتوای متن پیام (در سطر پایین)
- * قرار می‌گیرد؛ چه در پیام‌های تک‌کلمه‌ای و کوتاه و چه در پیام‌های طولانی و چندسطری.
+ * طبق درخواست قاطع طراحی، فوتر متادیتا (ساعت و وضعیت تیک) در تمامی حباب‌ها با هر اندازه‌ای
+ * و با هر زبانی همواره به صورت تضمین‌شده در گوشه پایین سمت راست حباب قرار می‌گیرد.
  */
 internal fun calculateChatTextBubblePlacement(
     textWidth: Int,
@@ -44,12 +44,17 @@ internal fun calculateChatTextBubblePlacement(
     val totalHeight = textHeight + verticalGapPx + footerHeight
     val isRtl = layoutDirection == LayoutDirection.Rtl
 
-    val textOffset = IntOffset(x = 0, y = 0)
-    val footerOffset = if (isRtl) {
-        IntOffset(x = 0, y = textHeight + verticalGapPx)
+    val textOffset = if (isRtl) {
+        IntOffset(x = (totalWidth - textWidth).coerceAtLeast(0), y = 0)
     } else {
-        IntOffset(x = (totalWidth - footerWidth).coerceAtLeast(0), y = textHeight + verticalGapPx)
+        IntOffset(x = 0, y = 0)
     }
+
+    // فوتر (ساعت و تیک) طبق خواسته سختگیرانه همواره باید در گوشه راست حباب قرار گیرد
+    val footerOffset = IntOffset(
+        x = (totalWidth - footerWidth).coerceAtLeast(0),
+        y = textHeight + verticalGapPx,
+    )
 
     return ChatTextBubbleLayoutResult(
         size = IntSize(totalWidth, totalHeight),
@@ -100,8 +105,9 @@ fun ChatTextBubbleLayout(
         )
 
         layout(placement.size.width, placement.size.height) {
-            textPlaceable.placeRelative(placement.textOffset.x, placement.textOffset.y)
-            footerPlaceable.placeRelative(placement.footerOffset.x, placement.footerOffset.y)
+            // استفاده از place فیزیکی به جای placeRelative تا ساعت و تیک تحت هر شرایط و زبانی دقیقاً در گوشه راست حباب بنشینند
+            textPlaceable.place(placement.textOffset.x, placement.textOffset.y)
+            footerPlaceable.place(placement.footerOffset.x, placement.footerOffset.y)
         }
     }
 }

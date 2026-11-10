@@ -260,6 +260,7 @@ fun chatMessageTypePreview(type: String?, secret: Boolean = false): String? {
         "file", "document", "unknown" -> "📎 فایل"
         "gif" -> "🎞️ گیف"
         "post", "shared_post" -> "📮 پست اشتراک‌گذاری شده"
+        "gameinvite", "game_invite" -> "🎮 دعوت به دوئل ویستا کوییز"
         "sticker" -> "😀 استیکر"
         "location" -> "📍 موقعیت مکانی"
         "contact" -> "👤 مخاطب"
@@ -272,14 +273,18 @@ fun Message.inboxPreviewText(): String = attachment?.let { value ->
     chatMessageTypePreview(value.kind.name, secret = false)
 } ?: when (val value = content) {
     is MessageContent.Text -> {
-        SharedPostParser.tryParse(value.value)?.let { post ->
-            "پست اشتراک‌گذاری‌شده: ${post.authorName}"
-        } ?: value.value
+        DuelInviteParser.formatPreviewIfDuel(value.value, transportType)
+            ?: SharedPostParser.tryParse(value.value)?.let { post ->
+                "پست اشتراک‌گذاری‌شده: ${post.authorName}"
+            }
+            ?: value.value
     }
     is MessageContent.Structured -> {
-        SharedPostParser.tryParse(value.payload)?.let { post ->
-            "پست اشتراک‌گذاری‌شده: ${post.authorName}"
-        } ?: value.payload
+        DuelInviteParser.formatPreviewIfDuel(value.payload, transportType)
+            ?: SharedPostParser.tryParse(value.payload)?.let { post ->
+                "پست اشتراک‌گذاری‌شده: ${post.authorName}"
+            }
+            ?: value.payload
     }
     MessageContent.Deleted -> "این پیام حذف شده است"
     MessageContent.EncryptedUnavailable -> "🔒 پیام رمزگذاری‌شده"
@@ -293,9 +298,11 @@ fun Conversation.inboxPreviewText(): String? = lastMessage
     ?.trim()
     ?.takeIf(String::isNotEmpty)
     ?.let { preview ->
-        SharedPostParser.tryParse(preview)?.let { post ->
-            "پست اشتراک‌گذاری‌شده: ${post.authorName}"
-        } ?: if (preview.looksLikeOpaqueConversationPreview()) "پیام جدید" else preview
+        DuelInviteParser.formatPreviewIfDuel(preview)
+            ?: SharedPostParser.tryParse(preview)?.let { post ->
+                "پست اشتراک‌گذاری‌شده: ${post.authorName}"
+            }
+            ?: if (preview.looksLikeOpaqueConversationPreview()) "پیام جدید" else preview
     }
 
 private fun String.looksLikeOpaqueConversationPreview(): Boolean {

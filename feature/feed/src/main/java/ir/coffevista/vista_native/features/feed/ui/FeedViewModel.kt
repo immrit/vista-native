@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import ir.coffevista.vista_native.core.model.session.AuthenticationState
 import ir.coffevista.vista_native.core.model.session.AuthenticationStateProvider
+import ir.coffevista.vista_native.features.feed.data.BehaviorEventDto
 import ir.coffevista.vista_native.features.feed.data.FeedAppendResult
 import ir.coffevista.vista_native.features.feed.data.FeedKind
 import ir.coffevista.vista_native.features.feed.data.FeedPost
@@ -471,7 +472,10 @@ class FeedViewModel @Inject constructor(
     }
 
     fun markNotInterested(postId: String) {
-        trackEvent(postId, "not_interested")
+        trackPostEvent(postId, "not_interested", sourceSurface = "feed")
+        viewModelScope.launch {
+            runCatching { feedRepository.markPostNotInterestedLocal(postId) }
+        }
         _uiState.update { state ->
             val content = state as? FeedUiState.Content ?: return@update state
             content.copy(posts = content.posts.filterNot { it.id == postId })
@@ -497,8 +501,52 @@ class FeedViewModel @Inject constructor(
     }
 
     fun trackEvent(postId: String, eventType: String) {
+        trackPostEvent(postId = postId, eventType = eventType)
+    }
+
+    fun trackPostEvent(
+        postId: String,
+        eventType: String,
+        dwellMs: Long? = null,
+        watchPct: Float? = null,
+        sourceSurface: String = "feed",
+    ) {
         viewModelScope.launch {
-            runCatching { feedRepository.trackFeedEvent(postId, eventType) }
+            runCatching {
+                feedRepository.trackDetailedFeedEvent(
+                    postId = postId,
+                    eventType = eventType,
+                    dwellMs = dwellMs,
+                    watchPct = watchPct,
+                    sourceSurface = sourceSurface,
+                )
+            }
+        }
+    }
+
+    fun trackBehavior(
+        eventType: String,
+        targetType: String? = null,
+        targetId: String? = null,
+        queryText: String? = null,
+        tags: List<String> = emptyList(),
+        dwellMs: Long? = null,
+        sourceSurface: String = "feed",
+    ) {
+        viewModelScope.launch {
+            runCatching {
+                feedRepository.trackBehaviorEvent(
+                    BehaviorEventDto(
+                        eventType = eventType,
+                        targetType = targetType,
+                        targetId = targetId,
+                        queryText = queryText,
+                        tags = tags,
+                        dwellMs = dwellMs,
+                        sourceSurface = sourceSurface,
+                    ),
+                )
+            }
         }
     }
 }

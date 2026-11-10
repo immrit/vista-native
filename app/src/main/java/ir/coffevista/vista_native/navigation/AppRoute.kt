@@ -42,6 +42,7 @@ enum class DeferredFeatureKind {
     PROFILE,
     GROUP,
     CHAT,
+    GAME,
 }
 
 @Serializable

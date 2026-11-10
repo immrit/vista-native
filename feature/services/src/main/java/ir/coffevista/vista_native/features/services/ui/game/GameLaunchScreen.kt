@@ -57,6 +57,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material3.Icon
+import ir.coffevista.vista_native.core.model.navigation.VistaGameUrlHelper
 import ir.coffevista.vista_native.core.designsystem.theme.VistaFontFamily
 import ir.coffevista.vista_native.features.services.data.ServicesRepository
 import ir.coffevista.vista_native.features.services.ui.ServicesActionIcon
@@ -75,21 +76,26 @@ fun GameLaunchScreen(
     onBack: () -> Unit,
     onLaunchSuccess: (url: String, title: String) -> Unit,
     modifier: Modifier = Modifier,
+    targetPath: String? = null,
 ) {
     var phase by remember { mutableStateOf(GameLaunchPhase.LOADING) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    val safeTargetPath = remember(targetPath) { VistaGameUrlHelper.sanitizeGameTargetPath(targetPath) }
 
     fun launch() {
         phase = GameLaunchPhase.LOADING
         errorMessage = null
     }
 
-    LaunchedEffect(phase) {
+    LaunchedEffect(phase, safeTargetPath) {
         if (phase == GameLaunchPhase.LOADING) {
             runCatching {
                 val ticket = repository.createGameSsoTicket()
                 val encodedTicket = URLEncoder.encode(ticket, "UTF-8")
-                val targetUrl = "https://cafevista.ir/game/sso?ticket=$encodedTicket"
+                val nextParam = safeTargetPath?.takeIf { it != "/game" }?.let { path ->
+                    "&next=${URLEncoder.encode(path, "UTF-8")}"
+                }.orEmpty()
+                val targetUrl = "https://cafevista.ir/game/sso?ticket=$encodedTicket$nextParam"
                 onLaunchSuccess(targetUrl, "ویستا کوییز")
             }.onFailure { error ->
                 errorMessage = mapGameError(error)

@@ -40,7 +40,12 @@ object ShellRoutes {
     const val ServicesNearbyLikes = "services_nearby_likes"
     const val ServicesContacts = "services_contacts"
     const val ServicesTopGroups = "services_top_groups"
-    const val ServicesGameLaunch = "services_game_launch"
+    const val ServicesGameLaunchBase = "services_game_launch"
+    const val ServicesGameLaunch = ServicesGameLaunchBase
+    const val ServicesGameLaunchRoute = "$ServicesGameLaunchBase?targetPath={targetPath}"
+    fun servicesGameLaunch(targetPath: String? = null): String =
+        if (targetPath.isNullOrBlank()) ServicesGameLaunchBase
+        else "$ServicesGameLaunchBase?targetPath=" + java.net.URLEncoder.encode(targetPath, "UTF-8")
     fun servicesWeb(url: String, title: String) =
         "services_web?url=" + java.net.URLEncoder.encode(url, "UTF-8") +
             "&title=" + java.net.URLEncoder.encode(title, "UTF-8")

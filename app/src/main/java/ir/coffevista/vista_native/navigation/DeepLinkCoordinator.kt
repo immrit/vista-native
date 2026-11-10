@@ -1,6 +1,7 @@
 package ir.coffevista.vista_native.navigation
 
 import ir.coffevista.vista_native.core.common.EpochClock
+import ir.coffevista.vista_native.core.model.navigation.VistaGameUrlHelper
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -40,6 +41,16 @@ object DeepLinkParser {
         val segments = uri.path.orEmpty()
             .split('/')
             .filter(String::isNotBlank)
+        if (host in setOf("game", "duel")) {
+            val gameTargetPath = VistaGameUrlHelper.parseGameTargetPath(rawUri)
+                ?: return DeepLinkParseResult.Rejected(DeepLinkFailureReason.INVALID_ARGUMENT)
+            return DeepLinkParseResult.Supported(
+                PendingDestination(
+                    kind = DeferredFeatureKind.GAME,
+                    reference = gameTargetPath,
+                ),
+            )
+        }
         if (host == "payment" && segments == listOf("callback")) {
             return DeepLinkParseResult.Supported(
                 PendingDestination(
@@ -108,10 +119,20 @@ object DeepLinkParser {
                 ),
             )
         }
+        val firstSegment = segments.firstOrNull()?.lowercase()
+        if (firstSegment == "game") {
+            val gameTargetPath = VistaGameUrlHelper.parseGameTargetPath(uri.toString())
+                ?: return DeepLinkParseResult.Rejected(DeepLinkFailureReason.INVALID_ARGUMENT)
+            return DeepLinkParseResult.Supported(
+                PendingDestination(
+                    kind = DeferredFeatureKind.GAME,
+                    reference = gameTargetPath,
+                ),
+            )
+        }
         if (uri.rawQuery != null) {
             return DeepLinkParseResult.Rejected(DeepLinkFailureReason.UNSUPPORTED)
         }
-        val firstSegment = segments.firstOrNull()?.lowercase()
         val kind = when (firstSegment) {
             "post" -> DeferredFeatureKind.POST
             "profile", "u" -> DeferredFeatureKind.PROFILE

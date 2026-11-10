@@ -43,6 +43,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import ir.coffevista.vista_native.core.designsystem.navigation.LocalVistaInternalLinkNavigator
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -79,6 +80,7 @@ fun StoryElementsOverlay(
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
+    val internalNavigator = LocalVistaInternalLinkNavigator.current
     var answeringQuestion by remember { mutableStateOf<StoryElement?>(null) }
     var activeLocation by remember { mutableStateOf<StoryLocation?>(null) }
     var pendingExternalLink by remember { mutableStateOf<String?>(null) }
@@ -110,6 +112,7 @@ fun StoryElementsOverlay(
         onMentionClick,
         onHashtagClick,
         onReactionClick,
+        internalNavigator,
     ) {
         StoryWidgetActions(
             isAuthor = isAuthor,
@@ -117,9 +120,17 @@ fun StoryElementsOverlay(
             onQuestionClick = { answeringQuestion = it },
             onViewQuestionAnswers = onViewQuestionAnswers,
             onLinkClick = { rawUrl ->
+                val trimmed = rawUrl.trim()
+                if (trimmed.startsWith("vista://", ignoreCase = true) &&
+                    internalNavigator?.openUrl(trimmed) == true
+                ) {
+                    return@StoryWidgetActions
+                }
                 val safeUrl = StorySecurityGuard.normalizeSafeHttpUrl(rawUrl)
                 if (safeUrl != null) {
-                    pendingExternalLink = safeUrl
+                    if (internalNavigator?.openUrl(safeUrl) != true) {
+                        pendingExternalLink = safeUrl
+                    }
                 }
             },
             onMentionClick = onMentionClick,
