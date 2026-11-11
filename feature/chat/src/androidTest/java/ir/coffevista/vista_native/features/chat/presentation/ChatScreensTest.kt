@@ -1,51 +1,71 @@
-﻿package ir.coffevista.vista_native.features.chat.presentation
+package ir.coffevista.vista_native.features.chat.presentation
 
-import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.compose.ui.test.onNodeWithContentDescription
-import androidx.compose.ui.test.onAllNodesWithContentDescription
-import androidx.compose.ui.test.onAllNodesWithTag
-import androidx.compose.ui.test.onNodeWithTag
-import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.onAllNodesWithText
-import androidx.compose.ui.test.performTouchInput
-import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performScrollToNode
-import androidx.compose.ui.test.performScrollToIndex
-import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.assertCountEquals
-import androidx.compose.ui.test.hasTestTag
-import androidx.compose.ui.test.hasText
-import androidx.compose.ui.test.longClick
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.test.swipe
-import androidx.compose.material3.Text
-import androidx.test.platform.app.InstrumentationRegistry
+import android.app.Activity
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas as AndroidCanvas
+import android.graphics.Color as AndroidColor
+import android.graphics.Paint
 import android.net.Uri
+import android.view.WindowManager
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.longClick
+import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.click
+import androidx.compose.ui.test.swipe
+import androidx.core.view.WindowCompat
+import androidx.test.platform.app.InstrumentationRegistry
 import ir.coffevista.vista_native.core.designsystem.theme.VistaTheme
-import ir.coffevista.vista_native.features.chat.domain.model.Conversation
-import ir.coffevista.vista_native.features.chat.domain.model.ConversationType
+import ir.coffevista.vista_native.features.chat.domain.model.Attachment
+import ir.coffevista.vista_native.features.chat.domain.model.AttachmentKind
 import ir.coffevista.vista_native.features.chat.domain.model.BlockStatus
+import ir.coffevista.vista_native.features.chat.domain.model.ChatAttachmentDraft
 import ir.coffevista.vista_native.features.chat.domain.model.ChatPartnerProfile
 import ir.coffevista.vista_native.features.chat.domain.model.ChatUser
+import ir.coffevista.vista_native.features.chat.domain.model.Conversation
+import ir.coffevista.vista_native.features.chat.domain.model.ConversationType
+import ir.coffevista.vista_native.features.chat.domain.model.DownloadState
+import ir.coffevista.vista_native.features.chat.domain.model.DownloadTask
+import ir.coffevista.vista_native.features.chat.domain.model.GroupInfo
+import ir.coffevista.vista_native.features.chat.domain.model.GroupMember
 import ir.coffevista.vista_native.features.chat.domain.model.Message
 import ir.coffevista.vista_native.features.chat.domain.model.MessageContent
 import ir.coffevista.vista_native.features.chat.domain.model.MessageStatus
 import ir.coffevista.vista_native.features.chat.domain.model.ProfileNote
-import ir.coffevista.vista_native.features.chat.domain.model.GroupInfo
-import ir.coffevista.vista_native.features.chat.domain.model.GroupMember
-import ir.coffevista.vista_native.features.chat.domain.model.Attachment
-import ir.coffevista.vista_native.features.chat.domain.model.AttachmentKind
 import ir.coffevista.vista_native.features.chat.domain.model.TransferState
-import ir.coffevista.vista_native.features.chat.domain.model.DownloadState
-import ir.coffevista.vista_native.features.chat.domain.model.DownloadTask
+import ir.coffevista.vista_native.features.chat.presentation.components.ChatAttachmentReviewSheet
+import ir.coffevista.vista_native.features.chat.presentation.components.ChatImageEditorHelper
+import ir.coffevista.vista_native.features.chat.presentation.components.SwipeToReplyLayout
 import ir.coffevista.vista_native.features.chat.presentation.conversations.ConversationsUiState
 import ir.coffevista.vista_native.features.chat.presentation.messages.MessagesUiState
 import ir.coffevista.vista_native.features.chat.presentation.newmessage.NewMessageScreen
 import ir.coffevista.vista_native.features.chat.presentation.newmessage.NewMessageUiState
-import ir.coffevista.vista_native.features.chat.presentation.components.SwipeToReplyLayout
 import org.junit.Rule
 import org.junit.Test
 import java.io.File
@@ -53,6 +73,7 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import kotlin.math.abs
 
 class ChatScreensTest {
     @get:Rule val compose = createComposeRule()
@@ -1847,6 +1868,390 @@ class ChatScreensTest {
         compose.onNodeWithContentDescription("گزینه‌های گفتگو").performClick()
         compose.onNodeWithText("شروع گفتگوی محرمانه").performClick()
         compose.runOnIdle { assertTrue(secretRequested) }
+    }
+
+    @Test
+    fun attachmentReviewCaptionOpensKeyboardLiftsOnlyCaptionBoxAndSubmitsCaption() {
+        var imeBottomPx = 0
+        var sentCaption: String? = null
+        val drafts = listOf(
+            ChatAttachmentDraft(
+                uri = "content://fixture/photo-1.jpg",
+                fileName = "photo-1.jpg",
+                mimeType = "image/jpeg",
+                sizeBytes = 1024L,
+                kind = AttachmentKind.IMAGE,
+            ),
+            ChatAttachmentDraft(
+                uri = "content://fixture/photo-2.jpg",
+                fileName = "photo-2.jpg",
+                mimeType = "image/jpeg",
+                sizeBytes = 2048L,
+                kind = AttachmentKind.IMAGE,
+            ),
+        )
+        compose.setContent {
+            AdjustNothingImeTestHost(onImeBottomPx = { imeBottomPx = it }) {
+                ChatAttachmentReviewSheet(
+                    drafts = drafts,
+                    recipientTitle = "کاربر نمونه",
+                    onDismiss = {},
+                    onRemove = {},
+                    onMove = { _, _ -> },
+                    onSend = { sentCaption = it },
+                )
+            }
+        }
+
+        val captionNode = compose.onNodeWithTag("attachment-review-caption")
+        val captionBoundsBefore = captionNode.fetchSemanticsNode().boundsInRoot
+        val stageBoundsBefore = compose.onNodeWithTag("attachment-review-stage").fetchSemanticsNode().boundsInRoot
+        val viewportBoundsBefore = compose.onNodeWithTag("attachment-transformed-viewport").fetchSemanticsNode().boundsInRoot
+        compose.onNodeWithContentDescription("برش و چرخش").assertIsDisplayed()
+        compose.onNodeWithTag("attachment-review-thumb:0").assertIsDisplayed()
+
+        captionNode.performClick()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            imeBottomPx > 100 &&
+                captionNode.fetchSemanticsNode().boundsInRoot.bottom < captionBoundsBefore.top - 40f
+        }
+        compose.waitForIdle()
+
+        val stageBoundsAfter = compose.onNodeWithTag("attachment-review-stage").fetchSemanticsNode().boundsInRoot
+        val viewportBoundsAfter = compose.onNodeWithTag("attachment-transformed-viewport").fetchSemanticsNode().boundsInRoot
+        assertEquals(stageBoundsBefore.top, stageBoundsAfter.top, 2f)
+        assertEquals(stageBoundsBefore.bottom, stageBoundsAfter.bottom, 2f)
+        assertEquals(viewportBoundsBefore.top, viewportBoundsAfter.top, 2f)
+        assertEquals(viewportBoundsBefore.bottom, viewportBoundsAfter.bottom, 2f)
+
+        captionNode.assertIsFocused()
+        compose.onAllNodesWithContentDescription("برش و چرخش").assertCountEquals(0)
+        compose.onAllNodesWithContentDescription("نقاشی").assertCountEquals(0)
+        compose.onAllNodesWithTag("attachment-review-thumb:0").assertCountEquals(0)
+
+        captionNode.performTextInput("کپشن آزمایشی تصویر")
+        compose.waitForIdle()
+        assertTrue(imeBottomPx > 100)
+        captionNode.assertIsFocused()
+
+        compose.onNodeWithTag("attachment-review-send").performClick()
+        compose.runOnIdle {
+            assertEquals("کپشن آزمایشی تصویر", sentCaption)
+        }
+    }
+
+    @Test
+    fun attachmentReviewCaptionDismissesKeyboardOnStageTapAndReopensOnSecondTap() {
+        var imeBottomPx = 0
+        val drafts = listOf(
+            ChatAttachmentDraft(
+                uri = "content://fixture/photo-single.jpg",
+                fileName = "photo-single.jpg",
+                mimeType = "image/jpeg",
+                sizeBytes = 1024L,
+                kind = AttachmentKind.IMAGE,
+            ),
+        )
+        compose.setContent {
+            AdjustNothingImeTestHost(onImeBottomPx = { imeBottomPx = it }) {
+                ChatAttachmentReviewSheet(
+                    drafts = drafts,
+                    recipientTitle = "کاربر نمونه",
+                    onDismiss = {},
+                    onRemove = {},
+                    onMove = { _, _ -> },
+                    onSend = {},
+                )
+            }
+        }
+
+        val captionNode = compose.onNodeWithTag("attachment-review-caption")
+        captionNode.performClick()
+        compose.waitUntil(timeoutMillis = 5_000) { imeBottomPx > 100 }
+        compose.waitForIdle()
+
+        captionNode.performTextInput("متن تستی")
+        compose.waitForIdle()
+
+        // Tap the image preview stage area to hide keyboard and bring back editing tools
+        compose.onNodeWithTag("attachment-review-sheet").performTouchInput {
+            click(Offset(centerX, height * 0.35f))
+        }
+        compose.waitUntil(timeoutMillis = 5_000) { imeBottomPx == 0 }
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription("برش و چرخش").assertIsDisplayed()
+
+        // Tap the caption field again to reopen the keyboard
+        captionNode.performClick()
+        compose.waitUntil(timeoutMillis = 5_000) { imeBottomPx > 100 }
+        compose.waitForIdle()
+        captionNode.assertIsFocused()
+    }
+
+    @Test
+    fun messageDetailAttachmentReviewOpensKeyboardAndSubmitsCaption() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val tempAttachment = File(context.cacheDir, "review-caption-fixture.jpg").apply {
+            writeBytes(byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte(), 0xD9.toByte()))
+        }
+        try {
+            var imeBottomPx = 0
+            val sentDrafts = mutableListOf<ChatAttachmentDraft>()
+            compose.setContent {
+                AdjustNothingImeTestHost(onImeBottomPx = { imeBottomPx = it }) {
+                    MessageDetailScreen(
+                        state = MessagesUiState(
+                            conversationId = "conversation",
+                            conversation = conversationFixture(),
+                            isInitialLoading = false,
+                            hasMore = false,
+                        ),
+                        title = "کاربر نمونه",
+                        initialSharedContentId = "shared-preview-1",
+                        initialSharedUris = listOf(Uri.fromFile(tempAttachment)),
+                        onBack = {},
+                        onRefresh = {},
+                        onLoadOlder = {},
+                        onSend = { _, _ -> },
+                        onRetry = {},
+                        onAttachDraft = { sentDrafts += it },
+                    )
+                }
+            }
+
+            val captionNode = compose.onNodeWithTag("attachment-review-caption")
+            compose.waitUntil(timeoutMillis = 5_000) {
+                runCatching { captionNode.fetchSemanticsNode() }.isSuccess
+            }
+            val captionBoundsBefore = captionNode.fetchSemanticsNode().boundsInRoot
+
+            captionNode.performClick()
+            compose.waitUntil(timeoutMillis = 5_000) {
+                imeBottomPx > 100 &&
+                    captionNode.fetchSemanticsNode().boundsInRoot.bottom < captionBoundsBefore.top - 40f
+            }
+            compose.waitForIdle()
+            captionNode.assertIsFocused()
+
+            captionNode.performTextInput("کپشن تصویر در گفتگو")
+            compose.waitForIdle()
+            assertTrue(imeBottomPx > 100)
+
+            compose.onNodeWithTag("attachment-review-send").performClick()
+            compose.waitUntil(timeoutMillis = 5_000) { sentDrafts.isNotEmpty() }
+            compose.runOnIdle {
+                assertEquals(1, sentDrafts.size)
+                assertEquals("کپشن تصویر در گفتگو", sentDrafts.single().caption)
+            }
+        } finally {
+            tempAttachment.delete()
+        }
+    }
+
+    @Test
+    fun attachmentReviewCropUpdatesPreviewAndAppliesBitmapCrop() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val sourceFile = createColorSplitTestJpeg(context.cacheDir, "crop-ratio-fixture.jpg", 200, 400)
+        var updatedDraft: ChatAttachmentDraft? = null
+        var sentTriggered = false
+        try {
+            val draft = ChatAttachmentDraft(
+                uri = Uri.fromFile(sourceFile).toString(),
+                fileName = sourceFile.name,
+                mimeType = "image/jpeg",
+                sizeBytes = sourceFile.length(),
+                kind = AttachmentKind.IMAGE,
+            )
+            compose.setContent {
+                VistaTheme {
+                    ChatAttachmentReviewSheet(
+                        drafts = listOf(draft),
+                        recipientTitle = "کاربر نمونه",
+                        onDismiss = {},
+                        onRemove = {},
+                        onMove = { _, _ -> },
+                        onUpdateDraft = { _, updated -> updatedDraft = updated },
+                        onSend = { sentTriggered = true },
+                    )
+                }
+            }
+
+            // Wait for actual portrait image aspect ratio (1:2) to load into preview viewport
+            compose.waitUntil(timeoutMillis = 5_000) {
+                runCatching {
+                    val b = compose.onNodeWithTag("attachment-transformed-viewport")
+                        .fetchSemanticsNode().boundsInRoot
+                    b.height > b.width * 1.6f
+                }.getOrDefault(false)
+            }
+
+            compose.onNodeWithContentDescription("برش و چرخش").performClick()
+            compose.waitForIdle()
+            compose.onNodeWithTag("attachment-crop-overlay").assertIsDisplayed()
+
+            compose.onNodeWithText("۱:۱").performClick()
+            compose.waitForIdle()
+            compose.onNodeWithContentDescription("تأیید برش").performClick()
+            compose.waitForIdle()
+
+            // Live VIEW stage must now reflect the 1:1 cropped image aspect ratio
+            compose.waitUntil(timeoutMillis = 5_000) {
+                runCatching {
+                    val b = compose.onNodeWithTag("attachment-transformed-viewport")
+                        .fetchSemanticsNode().boundsInRoot
+                    abs(b.width - b.height) <= 12f
+                }.getOrDefault(false)
+            }
+
+            compose.onNodeWithTag("attachment-review-send").performClick()
+            compose.waitUntil(timeoutMillis = 5_000) { sentTriggered && updatedDraft != null }
+
+            val editedUri = Uri.parse(updatedDraft!!.uri)
+            val editedPath = requireNotNull(editedUri.path)
+            val editedBitmap = BitmapFactory.decodeFile(editedPath)!!
+            try {
+                assertTrue(
+                    "Expected 1:1 square output bitmap (~200x200), got ${editedBitmap.width}x${editedBitmap.height}",
+                    abs(editedBitmap.width - editedBitmap.height) <= 4 && editedBitmap.width in 180..210,
+                )
+            } finally {
+                editedBitmap.recycle()
+                File(editedPath).delete()
+            }
+        } finally {
+            sourceFile.delete()
+        }
+    }
+
+    @Test
+    fun attachmentReviewCropDragHandlesAndRotateTransformOutput() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val sourceFile = createColorSplitTestJpeg(context.cacheDir, "crop-drag-fixture.jpg", 400, 200)
+        var updatedDraft: ChatAttachmentDraft? = null
+        var sentTriggered = false
+        try {
+            val draft = ChatAttachmentDraft(
+                uri = Uri.fromFile(sourceFile).toString(),
+                fileName = sourceFile.name,
+                mimeType = "image/jpeg",
+                sizeBytes = sourceFile.length(),
+                kind = AttachmentKind.IMAGE,
+            )
+            compose.setContent {
+                VistaTheme {
+                    ChatAttachmentReviewSheet(
+                        drafts = listOf(draft),
+                        recipientTitle = "کاربر نمونه",
+                        onDismiss = {},
+                        onRemove = {},
+                        onMove = { _, _ -> },
+                        onUpdateDraft = { _, updated -> updatedDraft = updated },
+                        onSend = { sentTriggered = true },
+                    )
+                }
+            }
+
+            // Wait for landscape 2:1 source image dimensions to resolve
+            compose.waitUntil(timeoutMillis = 5_000) {
+                runCatching {
+                    val b = compose.onNodeWithTag("attachment-transformed-viewport")
+                        .fetchSemanticsNode().boundsInRoot
+                    b.width > b.height * 1.6f
+                }.getOrDefault(false)
+            }
+
+            compose.onNodeWithContentDescription("برش و چرخش").performClick()
+            compose.waitForIdle()
+
+            // Rotate 90 deg -> image becomes 200x400 portrait
+            compose.onNodeWithContentDescription("چرخش").performClick()
+            compose.waitForIdle()
+
+            val overlayNode = compose.onNodeWithTag("attachment-crop-overlay")
+            val overlaySize = overlayNode.fetchSemanticsNode().size
+            val fitted = ChatImageEditorHelper.computeFittedImageRect(
+                containerWidth = overlaySize.width.toFloat(),
+                containerHeight = overlaySize.height.toFloat(),
+                imageWidth = 400f,
+                imageHeight = 200f,
+                rotationDegrees = 90f,
+            )
+
+            // Drag bottom-right corner handle inward by 35% of fitted image dimensions
+            overlayNode.performTouchInput {
+                swipe(
+                    start = Offset(fitted.right - 2f, fitted.bottom - 2f),
+                    end = Offset(fitted.right - fitted.width * 0.35f, fitted.bottom - fitted.height * 0.35f),
+                    durationMillis = 300,
+                )
+            }
+            compose.waitForIdle()
+
+            compose.onNodeWithContentDescription("تأیید برش").performClick()
+            compose.waitForIdle()
+
+            compose.onNodeWithTag("attachment-review-send").performClick()
+            compose.waitUntil(timeoutMillis = 5_000) { sentTriggered && updatedDraft != null }
+
+            val editedPath = requireNotNull(Uri.parse(updatedDraft!!.uri).path)
+            val editedBitmap = BitmapFactory.decodeFile(editedPath)!!
+            try {
+                assertTrue(
+                    "Expected rotated+cropped bitmap smaller than 200x400, got ${editedBitmap.width}x${editedBitmap.height}",
+                    editedBitmap.width in 100..160 && editedBitmap.height in 200..320,
+                )
+            } finally {
+                editedBitmap.recycle()
+                File(editedPath).delete()
+            }
+        } finally {
+            sourceFile.delete()
+        }
+    }
+
+    private fun createColorSplitTestJpeg(
+        cacheDir: File,
+        fileName: String,
+        width: Int,
+        height: Int,
+    ): File {
+        val bmp = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val canvas = AndroidCanvas(bmp)
+        val paint = Paint()
+        paint.color = AndroidColor.RED
+        canvas.drawRect(0f, 0f, width.toFloat(), height / 2f, paint)
+        paint.color = AndroidColor.BLUE
+        canvas.drawRect(0f, height / 2f, width.toFloat(), height.toFloat(), paint)
+        return File(cacheDir, fileName).apply {
+            outputStream().use { out ->
+                bmp.compress(Bitmap.CompressFormat.JPEG, 95, out)
+            }
+            bmp.recycle()
+        }
+    }
+
+    @Composable
+    private fun AdjustNothingImeTestHost(
+        onImeBottomPx: (Int) -> Unit,
+        content: @Composable () -> Unit,
+    ) {
+        val view = LocalView.current
+        DisposableEffect(view) {
+            val window = (view.context as? Activity)?.window
+            val prevSoftInputMode = window?.attributes?.softInputMode
+            if (window != null) {
+                WindowCompat.setDecorFitsSystemWindows(window, false)
+                window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING)
+            }
+            onDispose {
+                if (window != null && prevSoftInputMode != null) {
+                    window.setSoftInputMode(prevSoftInputMode)
+                }
+            }
+        }
+        val density = LocalDensity.current
+        onImeBottomPx(WindowInsets.ime.getBottom(density))
+        VistaTheme(content = content)
     }
 
     private fun conversationFixture() = Conversation(

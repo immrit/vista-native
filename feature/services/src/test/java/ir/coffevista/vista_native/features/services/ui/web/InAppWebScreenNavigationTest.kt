@@ -46,4 +46,14 @@ class InAppWebScreenNavigationTest {
 
         assertNull(parseDuelShareBridgeRequest("""{"requestId":"req-2","matchId":"not-a-uuid"}"""))
     }
+
+    @Test
+    fun `mini app mode is enabled for game urls and disabled for non-game urls`() {
+        assertTrue(shouldUseMiniAppMode("https://cafevista.ir/game"))
+        assertTrue(shouldUseMiniAppMode("https://cafevista.ir/game/sso?ticket=abc"))
+        assertTrue(shouldUseMiniAppMode("https://cafevista.ir/game/spin"))
+        assertFalse(shouldUseMiniAppMode("https://cafevista.ir/post/123"))
+        assertFalse(shouldUseMiniAppMode("https://cafevista.ir/games"))
+        assertFalse(shouldUseMiniAppMode(null))
+    }
 }

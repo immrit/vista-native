@@ -74,3 +74,10 @@
 
 # Lottie Android
 -keep class com.airbnb.lottie.** { *; }
+
+
+# WebView JavaScript bridge methods (VistaGameBridge)
+-keepattributes JavascriptInterface
+-keepclassmembers class * {
+    @android.webkit.JavascriptInterface <methods>;
+}

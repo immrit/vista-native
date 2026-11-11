@@ -1041,16 +1041,20 @@ fun VistaApp(
                             var pendingDuelShare by remember {
                                 mutableStateOf<Pair<DuelShareBridgeRequest, (DuelShareBridgeResult) -> Unit>?>(null)
                             }
+                            val isGameSurface = remember(url) {
+                                runCatching {
+                                    android.net.Uri.parse(url).path
+                                }.getOrNull().let { path ->
+                                    path == "/game" || path?.startsWith("/game/") == true
+                                }
+                            }
                             InAppWebScreen(
                                 url = url,
                                 title = title,
                                 onBack = onBack,
                                 restrictHost = "cafevista.ir",
-                                allowedPathPrefix = runCatching {
-                                    android.net.Uri.parse(url).path
-                                }.getOrNull().takeIf { path ->
-                                    path == "/game" || path?.startsWith("/game/") == true
-                                }?.let { "/game" },
+                                allowedPathPrefix = if (isGameSurface) "/game" else null,
+                                miniAppMode = isGameSurface,
                                 appBarColor = androidx.compose.ui.graphics.Color(0xFF0A3D6B),
                                 appBarForegroundColor = androidx.compose.ui.graphics.Color.White,
                                 useBackButton = true,

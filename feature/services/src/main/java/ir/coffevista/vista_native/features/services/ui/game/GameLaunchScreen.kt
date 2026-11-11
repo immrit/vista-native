@@ -119,7 +119,6 @@ fun GameLaunchScreen(
         Box(
             modifier = modifier
                 .fillMaxSize()
-                .safeDrawingPadding()
                 .background(
                     Brush.linearGradient(
                         colors = listOf(
@@ -128,7 +127,8 @@ fun GameLaunchScreen(
                             Color(0xFF1B82C9),
                         ),
                     ),
-                ),
+                )
+                .safeDrawingPadding(),
         ) {
             // Subtle Dot Grid Background
             DotGridBackground(modifier = Modifier.fillMaxSize())
@@ -138,7 +138,7 @@ fun GameLaunchScreen(
                 onClick = onBack,
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .padding(top = 40.dp, end = 16.dp),
+                    .padding(top = 12.dp, end = 16.dp),
             ) {
                 Icon(
                     imageVector = Icons.Rounded.Close,

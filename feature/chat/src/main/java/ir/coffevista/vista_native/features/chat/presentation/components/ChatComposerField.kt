@@ -291,7 +291,7 @@ private fun previousGraphemeStart(text: String, cursor: Int): Int {
     return iterator.preceding(cursor).takeIf { it != BreakIterator.DONE } ?: 0
 }
 
-private tailrec fun Context.findActivity(): android.app.Activity? = when (this) {
+internal tailrec fun Context.findActivity(): android.app.Activity? = when (this) {
     is android.app.Activity -> this
     is android.content.ContextWrapper -> baseContext.findActivity()
     else -> null

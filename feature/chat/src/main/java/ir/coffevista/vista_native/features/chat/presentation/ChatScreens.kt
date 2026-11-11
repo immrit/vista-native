@@ -1854,6 +1854,14 @@ fun MessageDetailScreen(
         mutableStateOf(emptyList<ChatAttachmentDraft>())
     }
     var pendingAttachmentsAsAlbum by remember(state.conversationId) { mutableStateOf(false) }
+    val hasPendingAttachments = pendingAttachmentDrafts.isNotEmpty()
+    LaunchedEffect(hasPendingAttachments) {
+        if (hasPendingAttachments) {
+            emojiPanelVisible = false
+            focusManager.clearFocus(force = true)
+            composerController.closeKeyboard()
+        }
+    }
     fun enqueueSelectedAttachments(uris: List<android.net.Uri>, groupAsAlbum: Boolean) {
         val drafts = uris.mapNotNull { uri ->
             runCatching {
@@ -1925,6 +1933,7 @@ fun MessageDetailScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
+            .focusProperties { canFocus = !hasPendingAttachments }
             .background(if (isDarkTheme) Color(0xFF101419) else Color(0xFFDFE5E9)),
     ) {
         val displayedMessages = state.messages

@@ -1,9 +1,12 @@
 package ir.coffevista.vista_native.features.chat.presentation.components
 
+import android.content.Context
 import android.net.Uri
+import android.os.Build
+import android.view.WindowManager
+import android.view.inputmethod.InputMethodManager
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -12,24 +15,33 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.isImeVisible
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
@@ -38,6 +50,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.RotateRight
@@ -52,47 +65,65 @@ import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material.icons.outlined.SentimentSatisfiedAlt
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -104,6 +135,7 @@ import ir.coffevista.vista_native.features.chat.presentation.MAX_ATTACHMENT_CAPT
 import kotlinx.coroutines.launch
 import java.util.Locale
 import kotlin.math.abs
+import kotlin.math.min
 
 private enum class ReviewMode {
     VIEW,
@@ -115,6 +147,7 @@ private val ReviewAccentBlue = Color(0xFF2AABEE)
 private val ReviewAccentBlueDeep = Color(0xFF229ED9)
 private val ReviewPillBackground = Color(0xFF1E232F)
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun ChatAttachmentReviewSheet(
     drafts: List<ChatAttachmentDraft>,
@@ -128,7 +161,15 @@ internal fun ChatAttachmentReviewSheet(
     if (drafts.isEmpty()) return
 
     val context = LocalContext.current
+    val localView = LocalView.current
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
     val coroutineScope = rememberCoroutineScope()
+    val captionFocusRequester = remember { FocusRequester() }
+    val dismissFocusRequester = remember { FocusRequester() }
+    val captionInteractionSource = remember { MutableInteractionSource() }
+    var isCaptionFocused by remember { mutableStateOf(false) }
+
     var selectedUri by rememberSaveable { mutableStateOf(drafts.first().uri) }
     var caption by rememberSaveable { mutableStateOf("") }
     var currentMode by remember { mutableStateOf(ReviewMode.VIEW) }
@@ -150,17 +191,74 @@ internal fun ChatAttachmentReviewSheet(
 
     val density = LocalDensity.current
     val imeBottomDp = with(density) { WindowInsets.ime.getBottom(density).toDp() }
-    val isKeyboardOpen = imeBottomDp > 60.dp
+    val isImeVisible = WindowInsets.isImeVisible
+    val isKeyboardOpen = isImeVisible || imeBottomDp > 60.dp
+    val navBottomDp = with(density) { WindowInsets.navigationBars.getBottom(density).toDp() }
+    var closedControlsHeightDp by remember { mutableStateOf(0.dp) }
+
+    // Ensure WindowInsets.ime reports keyboard height on Android < 11 even when
+    // MainActivity uses adjustNothing for the main chat composer.
+    DisposableEffect(localView) {
+        val window = localView.context.findActivity()
+            ?.takeUnless { it.isFinishing || it.isDestroyed }
+            ?.window
+        val previousSoftInputMode = window?.attributes?.softInputMode
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R && window != null) {
+            @Suppress("DEPRECATION")
+            runCatching { window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE) }
+        }
+        onDispose {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R && window != null && previousSoftInputMode != null) {
+                runCatching { window.setSoftInputMode(previousSoftInputMode) }
+            }
+        }
+    }
+
+    LaunchedEffect(captionInteractionSource) {
+        captionInteractionSource.interactions.collect { interaction ->
+            if (interaction is PressInteraction.Release) {
+                keyboardController?.show()
+            }
+        }
+    }
+
+    val hideKeyboardAndClearFocus = {
+        if (isCaptionFocused) {
+            runCatching { dismissFocusRequester.requestFocus() }
+        } else {
+            focusManager.clearFocus(force = true)
+        }
+        keyboardController?.hide()
+        val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+        imm?.hideSoftInputFromWindow(localView.windowToken, 0)
+        Unit
+    }
+
+    var wasKeyboardOpen by remember { mutableStateOf(false) }
+    LaunchedEffect(isKeyboardOpen) {
+        if (wasKeyboardOpen && !isKeyboardOpen && isCaptionFocused) {
+            runCatching { dismissFocusRequester.requestFocus() }
+        }
+        wasKeyboardOpen = isKeyboardOpen
+    }
 
     BackHandler {
         when (currentMode) {
             ReviewMode.CROP, ReviewMode.DRAW -> currentMode = ReviewMode.VIEW
-            ReviewMode.VIEW -> if (!isProcessingSend) onDismiss()
+            ReviewMode.VIEW -> {
+                if (isKeyboardOpen) {
+                    hideKeyboardAndClearFocus()
+                } else if (!isProcessingSend) {
+                    hideKeyboardAndClearFocus()
+                    onDismiss()
+                }
+            }
         }
     }
 
     val onPerformSend = {
         if (!isProcessingSend) {
+            hideKeyboardAndClearFocus()
             isProcessingSend = true
             coroutineScope.launch {
                 try {
@@ -194,13 +292,32 @@ internal fun ChatAttachmentReviewSheet(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black)
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = {}, // Absorb all clicks
-            )
             .testTag("attachment-review-sheet"),
     ) {
+        // Zero-size non-text focus sink so dismissing caption focus never leaves the window
+        // without a focused node (which causes ViewRootImpl to bounce focus back to BasicTextField).
+        Box(
+            modifier = Modifier
+                .size(0.dp)
+                .focusRequester(dismissFocusRequester)
+                .focusable(),
+        )
+        // Backdrop absorbs touches so underlying chat views never receive clicks,
+        // without participating in focus traversal, and dismisses the keyboard on tap.
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .focusProperties { canFocus = false }
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = {
+                        if (isKeyboardOpen || isCaptionFocused) {
+                            hideKeyboardAndClearFocus()
+                        }
+                    },
+                ),
+        )
         Column(
             modifier = Modifier.fillMaxSize(),
         ) {
@@ -213,7 +330,10 @@ internal fun ChatAttachmentReviewSheet(
                 recipientTitle = recipientTitle,
                 onCloseOrBack = {
                     if (currentMode == ReviewMode.VIEW) {
-                        if (!isProcessingSend) onDismiss()
+                        if (!isProcessingSend) {
+                            hideKeyboardAndClearFocus()
+                            onDismiss()
+                        }
                     } else {
                         currentMode = ReviewMode.VIEW
                     }
@@ -232,19 +352,32 @@ internal fun ChatAttachmentReviewSheet(
             ) {
                 when (currentMode) {
                     ReviewMode.VIEW -> {
-                        AttachmentMediaViewStage(
-                            draft = selectedDraft,
-                            editState = currentEditState,
-                        )
+                        // Keep stage sized to the resting (closed-controls) bounds so opening the keyboard
+                        // slides the caption bar over the photo instead of shrinking or lifting the image.
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(bottom = closedControlsHeightDp)
+                                .testTag("attachment-review-stage"),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            AttachmentMediaViewStage(
+                                draft = selectedDraft,
+                                editState = currentEditState,
+                            )
+                        }
                     }
                     ReviewMode.CROP -> {
                         AttachmentCropStage(
                             draft = selectedDraft,
                             initialCrop = currentEditState.cropRectNorm,
                             rotationDegrees = currentEditState.rotationDegrees,
-                            onRotate = {
+                            onRotate = { rotatedCrop ->
                                 val nextRotation = (currentEditState.rotationDegrees + 90f) % 360f
-                                editStates[selectedDraft.uri] = currentEditState.copy(rotationDegrees = nextRotation)
+                                editStates[selectedDraft.uri] = currentEditState.copy(
+                                    rotationDegrees = nextRotation,
+                                    cropRectNorm = rotatedCrop,
+                                )
                             },
                             onApplyCrop = { newCrop ->
                                 editStates[selectedDraft.uri] = currentEditState.copy(cropRectNorm = newCrop)
@@ -258,6 +391,7 @@ internal fun ChatAttachmentReviewSheet(
                             draft = selectedDraft,
                             initialStrokes = currentEditState.strokes,
                             rotationDegrees = currentEditState.rotationDegrees,
+                            cropRectNorm = currentEditState.cropRectNorm,
                             onApplyStrokes = { newStrokes ->
                                 editStates[selectedDraft.uri] = currentEditState.copy(strokes = newStrokes)
                                 currentMode = ReviewMode.VIEW
@@ -267,45 +401,42 @@ internal fun ChatAttachmentReviewSheet(
                     }
                 }
 
-                if (isProcessingSend) {
+                // Bottom Controls overlay in VIEW mode: floats above IME without resizing the photo stage
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = currentMode == ReviewMode.VIEW,
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                    enter = slideInVertically { it / 2 } + fadeIn(),
+                    exit = slideOutVertically { it / 2 } + fadeOut(),
+                ) {
                     Box(
                         modifier = Modifier
-                            .fillMaxSize()
-                            .background(Color.Black.copy(alpha = 0.65f)),
-                        contentAlignment = Alignment.Center,
+                            .fillMaxWidth()
+                            .then(
+                                if (isKeyboardOpen) {
+                                    Modifier.background(
+                                        Brush.verticalGradient(
+                                            colors = listOf(
+                                                Color.Transparent,
+                                                Color.Black.copy(alpha = 0.72f),
+                                            ),
+                                        ),
+                                    )
+                                } else {
+                                    Modifier
+                                },
+                            )
+                            .navigationBarsPadding()
+                            .imePadding(),
                     ) {
                         Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(14.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .onSizeChanged { size ->
+                                    if (!isKeyboardOpen && !isCaptionFocused) {
+                                        closedControlsHeightDp = with(density) { size.height.toDp() } + navBottomDp
+                                    }
+                                },
                         ) {
-                            CircularProgressIndicator(
-                                color = ReviewAccentBlue,
-                                strokeWidth = 3.dp,
-                                modifier = Modifier.size(36.dp),
-                            )
-                            Text(
-                                text = "در حال پردازش تصویر…",
-                                color = Color.White,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Medium,
-                            )
-                        }
-                    }
-                }
-            }
-
-            // Bottom Controls (Visible in VIEW mode, adapts to keyboard)
-            AnimatedVisibility(
-                visible = currentMode == ReviewMode.VIEW,
-                enter = slideInVertically { it / 2 } + fadeIn(),
-                exit = slideOutVertically { it / 2 } + fadeOut(),
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .navigationBarsPadding()
-                        .imePadding(),
-                ) {
                     // Multi-attachment thumbnails strip (when keyboard is closed)
                     if (drafts.size > 1 && !isKeyboardOpen) {
                         LazyRow(
@@ -438,137 +569,124 @@ internal fun ChatAttachmentReviewSheet(
                         }
                     }
 
-                    if (isKeyboardOpen) {
-                        // Keyboard OPEN state: Capsule docked right above the keyboard
+                    // Keep a single BasicTextField in a stable tree position across keyboard open/close
+                    // transitions so IME focus and the active TextInputSession are never disposed.
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(
+                                horizontal = if (isKeyboardOpen) 12.dp else 14.dp,
+                                vertical = 6.dp,
+                            ),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        val captionShape = RoundedCornerShape(if (isKeyboardOpen) 26.dp else 24.dp)
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 12.dp, vertical = 6.dp)
-                                .clip(RoundedCornerShape(26.dp))
+                                .clip(captionShape)
                                 .background(ReviewPillBackground)
-                                .border(1.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(26.dp))
-                                .padding(start = 12.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+                                .border(
+                                    width = 1.dp,
+                                    color = if (isCaptionFocused || isKeyboardOpen) {
+                                        ReviewAccentBlue.copy(alpha = 0.55f)
+                                    } else {
+                                        Color.White.copy(alpha = 0.08f)
+                                    },
+                                    shape = captionShape,
+                                )
+                                .pointerInput(Unit) {
+                                    detectTapGestures {
+                                        captionFocusRequester.requestFocus()
+                                        keyboardController?.show()
+                                    }
+                                }
+                                .padding(
+                                    start = 16.dp,
+                                    end = if (isKeyboardOpen) 8.dp else 16.dp,
+                                    top = 4.dp,
+                                    bottom = 4.dp,
+                                ),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            Icon(
-                                imageVector = Icons.Outlined.SentimentSatisfiedAlt,
-                                contentDescription = "ایموجی",
-                                tint = Color.White.copy(alpha = 0.7f),
-                                modifier = Modifier.size(24.dp),
-                            )
-
-                            Box(
+                            BasicTextField(
+                                value = caption,
+                                onValueChange = { caption = it.take(MAX_ATTACHMENT_CAPTION_LENGTH) },
+                                interactionSource = captionInteractionSource,
+                                textStyle = TextStyle(
+                                    color = Color.White,
+                                    fontSize = 15.sp,
+                                    textDirection = TextDirection.ContentOrRtl,
+                                ),
+                                cursorBrush = SolidColor(ReviewAccentBlue),
+                                keyboardOptions = KeyboardOptions(
+                                    capitalization = KeyboardCapitalization.Sentences,
+                                    imeAction = ImeAction.Default,
+                                ),
+                                maxLines = 4,
                                 modifier = Modifier
                                     .weight(1f)
+                                    .focusRequester(captionFocusRequester)
+                                    .onFocusChanged { focusState ->
+                                        isCaptionFocused = focusState.isFocused
+                                    }
                                     .testTag("attachment-review-caption"),
-                            ) {
-                                if (caption.isEmpty()) {
-                                    Text(
-                                        text = "افزودن شرح…",
-                                        color = Color.White.copy(alpha = 0.5f),
-                                        fontSize = 15.sp,
-                                    )
-                                }
-                                BasicTextField(
-                                    value = caption,
-                                    onValueChange = { caption = it.take(MAX_ATTACHMENT_CAPTION_LENGTH) },
-                                    textStyle = TextStyle(
-                                        color = Color.White,
-                                        fontSize = 15.sp,
-                                    ),
-                                    maxLines = 4,
-                                    modifier = Modifier.fillMaxWidth(),
+                                decorationBox = { innerTextField ->
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .defaultMinSize(minHeight = 40.dp)
+                                            .padding(vertical = 8.dp),
+                                        contentAlignment = Alignment.CenterStart,
+                                    ) {
+                                        if (caption.isEmpty()) {
+                                            Text(
+                                                text = "افزودن شرح…",
+                                                color = Color.White.copy(alpha = 0.5f),
+                                                fontSize = 15.sp,
+                                            )
+                                        }
+                                        innerTextField()
+                                    }
+                                },
+                            )
+
+                            if (caption.isNotEmpty()) {
+                                Text(
+                                    text = "${caption.length}/${MAX_ATTACHMENT_CAPTION_LENGTH}".toPersianDigits(),
+                                    color = Color.White.copy(alpha = 0.4f),
+                                    fontSize = 11.sp,
                                 )
                             }
 
-                            if (caption.isNotEmpty()) {
+                            if (isKeyboardOpen && caption.isNotEmpty()) {
                                 IconButton(
                                     onClick = { caption = "" },
-                                    modifier = Modifier.size(24.dp),
+                                    modifier = Modifier.size(28.dp),
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.Clear,
                                         contentDescription = "پاک کردن متن",
-                                        tint = Color.White.copy(alpha = 0.5f),
+                                        tint = Color.White.copy(alpha = 0.6f),
                                         modifier = Modifier.size(16.dp),
                                     )
                                 }
                             }
 
-                            // Blue Circular Send Button docked inside capsule
-                            Box(
-                                modifier = Modifier
-                                    .size(38.dp)
-                                    .clip(CircleShape)
-                                    .background(
-                                        Brush.linearGradient(
-                                            listOf(ReviewAccentBlue, ReviewAccentBlueDeep),
-                                        ),
-                                    )
-                                    .clickable(enabled = !isProcessingSend, onClick = onPerformSend)
-                                    .testTag("attachment-review-send"),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.Send,
-                                    contentDescription = "ارسال",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(18.dp),
+                            if (isKeyboardOpen) {
+                                AttachmentReviewSendButton(
+                                    buttonSize = 38.dp,
+                                    iconSize = 18.dp,
+                                    shadowElevation = 0.dp,
+                                    enabled = !isProcessingSend,
+                                    onClick = onPerformSend,
                                 )
                             }
                         }
-                    } else {
-                        // Keyboard CLOSED state: Caption capsule + bottom action bar
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 14.dp, vertical = 6.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            // Row 1: Full-width Caption Capsule
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(24.dp))
-                                    .background(ReviewPillBackground)
-                                    .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(24.dp))
-                                    .padding(horizontal = 16.dp, vertical = 12.dp)
-                                    .testTag("attachment-review-caption"),
-                            ) {
-                                if (caption.isEmpty()) {
-                                    Text(
-                                        text = "افزودن شرح…",
-                                        color = Color.White.copy(alpha = 0.5f),
-                                        fontSize = 15.sp,
-                                    )
-                                }
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    BasicTextField(
-                                        value = caption,
-                                        onValueChange = { caption = it.take(MAX_ATTACHMENT_CAPTION_LENGTH) },
-                                        textStyle = TextStyle(
-                                            color = Color.White,
-                                            fontSize = 15.sp,
-                                        ),
-                                        maxLines = 4,
-                                        modifier = Modifier.weight(1f),
-                                    )
-                                    if (caption.isNotEmpty()) {
-                                        Text(
-                                            text = "${caption.length}/${MAX_ATTACHMENT_CAPTION_LENGTH}".toPersianDigits(),
-                                            color = Color.White.copy(alpha = 0.4f),
-                                            fontSize = 11.sp,
-                                            modifier = Modifier.padding(start = 6.dp),
-                                        )
-                                    }
-                                }
-                            }
 
-                            // Row 2: Bottom Toolbar (Tools on start, Send on end)
+                        if (!isKeyboardOpen) {
+                            // Bottom Toolbar (Tools on start, Send on end)
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -584,7 +702,10 @@ internal fun ChatAttachmentReviewSheet(
                                     ) {
                                         // Crop & Rotate Tool
                                         IconButton(
-                                            onClick = { currentMode = ReviewMode.CROP },
+                                            onClick = {
+                                                hideKeyboardAndClearFocus()
+                                                currentMode = ReviewMode.CROP
+                                            },
                                             modifier = Modifier.size(40.dp),
                                         ) {
                                             Icon(
@@ -597,7 +718,10 @@ internal fun ChatAttachmentReviewSheet(
 
                                         // Doodle / Brush Tool
                                         IconButton(
-                                            onClick = { currentMode = ReviewMode.DRAW },
+                                            onClick = {
+                                                hideKeyboardAndClearFocus()
+                                                currentMode = ReviewMode.DRAW
+                                            },
                                             modifier = Modifier.size(40.dp),
                                         ) {
                                             Icon(
@@ -634,7 +758,12 @@ internal fun ChatAttachmentReviewSheet(
                                         IconButton(
                                             onClick = {
                                                 val nextRotation = (currentEditState.rotationDegrees + 90f) % 360f
-                                                editStates[selectedDraft.uri] = currentEditState.copy(rotationDegrees = nextRotation)
+                                                editStates[selectedDraft.uri] = currentEditState.copy(
+                                                    rotationDegrees = nextRotation,
+                                                    cropRectNorm = ChatImageEditorHelper.rotateCropRectClockwise90(
+                                                        currentEditState.cropRectNorm,
+                                                    ),
+                                                )
                                             },
                                             modifier = Modifier.size(40.dp),
                                         ) {
@@ -650,34 +779,78 @@ internal fun ChatAttachmentReviewSheet(
                                     Spacer(modifier = Modifier.width(40.dp))
                                 }
 
-                                // Right: Send Button
-                                Box(
-                                    modifier = Modifier
-                                        .size(50.dp)
-                                        .shadow(6.dp, CircleShape)
-                                        .clip(CircleShape)
-                                        .background(
-                                            Brush.linearGradient(
-                                                listOf(ReviewAccentBlue, ReviewAccentBlueDeep),
-                                            ),
-                                        )
-                                        .clickable(enabled = !isProcessingSend, onClick = onPerformSend)
-                                        .testTag("attachment-review-send"),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Filled.Send,
-                                        contentDescription = "ارسال",
-                                        tint = Color.White,
-                                        modifier = Modifier.size(22.dp),
-                                    )
-                                }
+                                AttachmentReviewSendButton(
+                                    buttonSize = 50.dp,
+                                    iconSize = 22.dp,
+                                    shadowElevation = 6.dp,
+                                    enabled = !isProcessingSend,
+                                    onClick = onPerformSend,
+                                )
                             }
+                        }
+                    }
+                }
+                }
+                }
+
+                if (isProcessingSend) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.65f)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(14.dp),
+                        ) {
+                            CircularProgressIndicator(
+                                color = ReviewAccentBlue,
+                                strokeWidth = 3.dp,
+                                modifier = Modifier.size(36.dp),
+                            )
+                            Text(
+                                text = "در حال پردازش تصویر…",
+                                color = Color.White,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium,
+                            )
                         }
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun AttachmentReviewSendButton(
+    buttonSize: Dp,
+    iconSize: Dp,
+    shadowElevation: Dp,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .size(buttonSize)
+            .let { mod -> if (shadowElevation > 0.dp) mod.shadow(shadowElevation, CircleShape) else mod }
+            .clip(CircleShape)
+            .background(
+                Brush.linearGradient(
+                    listOf(ReviewAccentBlue, ReviewAccentBlueDeep),
+                ),
+            )
+            .clickable(enabled = enabled, onClick = onClick)
+            .testTag("attachment-review-send"),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = Icons.AutoMirrored.Filled.Send,
+            contentDescription = "ارسال",
+            tint = Color.White,
+            modifier = Modifier.size(iconSize),
+        )
     }
 }
 
@@ -776,88 +949,203 @@ private fun AttachmentReviewTopBar(
 }
 
 @Composable
+private fun rememberResolvedImageSize(
+    uri: Uri,
+    fallbackSize: Size = Size(1000f, 1000f),
+): Pair<Size, (Int, Int) -> Unit> {
+    val context = LocalContext.current
+    var resolvedSize by remember(uri) { mutableStateOf<Size?>(null) }
+
+    LaunchedEffect(uri) {
+        val loaded = ChatImageEditorHelper.loadImageDimensions(context, uri)
+        if (loaded != null && loaded.width > 0f && loaded.height > 0f) {
+            resolvedSize = loaded
+        }
+    }
+
+    val onDrawableLoaded: (Int, Int) -> Unit = remember(uri) {
+        { width, height ->
+            if (width > 0 && height > 0) {
+                resolvedSize = Size(width.toFloat(), height.toFloat())
+            }
+        }
+    }
+
+    return (resolvedSize ?: fallbackSize) to onDrawableLoaded
+}
+
+private fun DrawScope.drawNormalizedStrokes(
+    strokes: List<ChatDrawingStroke>,
+    activePoints: List<Offset> = emptyList(),
+    activeColor: Color = Color.White,
+    activeWidthNorm: Float = 0.012f,
+) {
+    fun drawSingleStroke(points: List<Offset>, color: Color, widthNorm: Float) {
+        if (points.isEmpty() || size.width <= 0f || size.height <= 0f) return
+        val canvasW = size.width
+        val canvasH = size.height
+        val strokeWidthPx = (widthNorm * canvasW).coerceAtLeast(2f)
+        if (points.size == 1) {
+            val pt = points[0]
+            drawCircle(
+                color = color,
+                radius = strokeWidthPx / 2f,
+                center = Offset(pt.x * canvasW, pt.y * canvasH),
+            )
+            return
+        }
+        val path = Path().apply {
+            val first = points[0]
+            moveTo(first.x * canvasW, first.y * canvasH)
+            for (i in 1 until points.size) {
+                val prev = points[i - 1]
+                val curr = points[i]
+                val midX = (prev.x + curr.x) / 2f * canvasW
+                val midY = (prev.y + curr.y) / 2f * canvasH
+                quadraticTo(prev.x * canvasW, prev.y * canvasH, midX, midY)
+            }
+            val last = points.last()
+            lineTo(last.x * canvasW, last.y * canvasH)
+        }
+        drawPath(
+            path = path,
+            color = color,
+            style = Stroke(
+                width = strokeWidthPx,
+                cap = StrokeCap.Round,
+                join = StrokeJoin.Round,
+            ),
+        )
+    }
+
+    strokes.forEach { stroke ->
+        drawSingleStroke(
+            points = stroke.points,
+            color = Color(stroke.colorArgb),
+            widthNorm = stroke.strokeWidthNorm,
+        )
+    }
+    if (activePoints.isNotEmpty()) {
+        drawSingleStroke(
+            points = activePoints,
+            color = activeColor,
+            widthNorm = activeWidthNorm,
+        )
+    }
+}
+
+@Composable
+private fun TransformedAttachmentImage(
+    uri: Uri,
+    contentDescription: String?,
+    editState: ImageEditState,
+    modifier: Modifier = Modifier,
+    overlayContent: @Composable BoxScope.() -> Unit = {},
+) {
+    val (imageSize, onDrawableLoaded) = rememberResolvedImageSize(uri)
+    val density = LocalDensity.current
+
+    BoxWithConstraints(
+        modifier = modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center,
+    ) {
+        val containerW = constraints.maxWidth.toFloat().coerceAtLeast(1f)
+        val containerH = constraints.maxHeight.toFloat().coerceAtLeast(1f)
+        val geometry = remember(
+            containerW,
+            containerH,
+            imageSize.width,
+            imageSize.height,
+            editState.rotationDegrees,
+            editState.cropRectNorm,
+        ) {
+            ChatImageEditorHelper.computePreviewTransformGeometry(
+                containerWidth = containerW,
+                containerHeight = containerH,
+                srcWidth = imageSize.width,
+                srcHeight = imageSize.height,
+                rotationDegrees = editState.rotationDegrees,
+                cropRectNorm = editState.cropRectNorm,
+            )
+        }
+
+        val viewportWDp = with(density) { geometry.viewportWidth.toDp() }
+        val viewportHDp = with(density) { geometry.viewportHeight.toDp() }
+        val unrotatedWDp = with(density) { geometry.unrotatedImageWidth.toDp() }
+        val unrotatedHDp = with(density) { geometry.unrotatedImageHeight.toDp() }
+
+        Box(
+            modifier = Modifier
+                .size(viewportWDp, viewportHDp)
+                .clipToBounds()
+                .testTag("attachment-transformed-viewport"),
+            contentAlignment = Alignment.Center,
+        ) {
+            AsyncImage(
+                model = uri,
+                contentDescription = contentDescription,
+                contentScale = ContentScale.FillBounds,
+                onSuccess = { success ->
+                    onDrawableLoaded(
+                        success.result.drawable.intrinsicWidth,
+                        success.result.drawable.intrinsicHeight,
+                    )
+                },
+                modifier = Modifier
+                    .requiredSize(unrotatedWDp, unrotatedHDp)
+                    .graphicsLayer {
+                        translationX = geometry.translationX
+                        translationY = geometry.translationY
+                        rotationZ = geometry.normalizedRotationDegrees
+                    },
+            )
+            overlayContent()
+        }
+    }
+}
+
+@Composable
 private fun AttachmentMediaViewStage(
     draft: ChatAttachmentDraft,
     editState: ImageEditState,
 ) {
-    val animatedRotation by animateFloatAsState(
-        targetValue = editState.rotationDegrees,
-        label = "rotation",
-    )
-
     Box(
         modifier = Modifier
             .fillMaxSize()
             .padding(horizontal = 4.dp, vertical = 2.dp),
         contentAlignment = Alignment.Center,
     ) {
-        if (draft.kind in MEDIA_KINDS) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .graphicsLayer {
-                        rotationZ = animatedRotation
-                    },
-                contentAlignment = Alignment.Center,
+        if (draft.kind == AttachmentKind.IMAGE) {
+            TransformedAttachmentImage(
+                uri = Uri.parse(draft.uri),
+                contentDescription = draft.fileName,
+                editState = editState,
             ) {
-                AsyncImage(
-                    model = Uri.parse(draft.uri),
-                    contentDescription = draft.fileName,
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier.fillMaxSize(),
-                )
-
-                // Render live strokes on top of image
                 if (editState.strokes.isNotEmpty()) {
                     Canvas(modifier = Modifier.fillMaxSize()) {
-                        val canvasW = size.width
-                        val canvasH = size.height
-
-                        editState.strokes.forEach { stroke ->
-                            if (stroke.points.size > 1) {
-                                val p = Path()
-                                val first = stroke.points[0]
-                                p.moveTo(first.x * canvasW, first.y * canvasH)
-
-                                for (i in 1 until stroke.points.size) {
-                                    val prev = stroke.points[i - 1]
-                                    val curr = stroke.points[i]
-                                    val midX = (prev.x + curr.x) / 2f * canvasW
-                                    val midY = (prev.y + curr.y) / 2f * canvasH
-                                    p.quadraticTo(prev.x * canvasW, prev.y * canvasH, midX, midY)
-                                }
-                                val last = stroke.points.last()
-                                p.lineTo(last.x * canvasW, last.y * canvasH)
-
-                                drawPath(
-                                    path = p,
-                                    color = Color(stroke.colorArgb),
-                                    style = Stroke(
-                                        width = stroke.strokeWidthNorm * canvasW,
-                                        cap = StrokeCap.Round,
-                                        join = StrokeJoin.Round,
-                                    ),
-                                )
-                            }
-                        }
+                        drawNormalizedStrokes(strokes = editState.strokes)
                     }
                 }
             }
-
-            if (draft.kind == AttachmentKind.VIDEO) {
-                Box(
-                    modifier = Modifier
-                        .size(68.dp)
-                        .background(Color.Black.copy(alpha = 0.55f), CircleShape),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        Icons.Default.PlayArrow,
-                        contentDescription = "ویدئو",
-                        tint = Color.White,
-                        modifier = Modifier.size(36.dp),
-                    )
-                }
+        } else if (draft.kind == AttachmentKind.VIDEO) {
+            AsyncImage(
+                model = Uri.parse(draft.uri),
+                contentDescription = draft.fileName,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxSize(),
+            )
+            Box(
+                modifier = Modifier
+                    .size(68.dp)
+                    .background(Color.Black.copy(alpha = 0.55f), CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.Default.PlayArrow,
+                    contentDescription = "ویدئو",
+                    tint = Color.White,
+                    modifier = Modifier.size(36.dp),
+                )
             }
         } else {
             // Document card
@@ -895,17 +1183,48 @@ private fun AttachmentMediaViewStage(
     }
 }
 
+private fun aspectRatioValue(ratioKey: String): Float? = when (ratioKey) {
+    "1:1" -> 1f
+    "4:5" -> 4f / 5f
+    "16:9" -> 16f / 9f
+    else -> null
+}
+
 @Composable
 private fun AttachmentCropStage(
     draft: ChatAttachmentDraft,
     initialCrop: NormalizedCropRect,
     rotationDegrees: Float,
-    onRotate: () -> Unit,
+    onRotate: (NormalizedCropRect) -> Unit,
     onApplyCrop: (NormalizedCropRect) -> Unit,
     onCancel: () -> Unit,
 ) {
+    val imageUri = remember(draft.uri) { Uri.parse(draft.uri) }
+    val (imageSize, onDrawableLoaded) = rememberResolvedImageSize(imageUri)
+    val density = LocalDensity.current
+
     var cropRect by remember { mutableStateOf(initialCrop) }
     var selectedRatio by remember { mutableStateOf("free") }
+    var hasCustomDrag by remember { mutableStateOf(false) }
+
+    val rotatedImageSize = remember(imageSize.width, imageSize.height, rotationDegrees) {
+        ChatImageEditorHelper.computeRotatedDimensions(
+            srcWidth = imageSize.width,
+            srcHeight = imageSize.height,
+            rotationDegrees = rotationDegrees,
+        )
+    }
+
+    LaunchedEffect(rotatedImageSize) {
+        val ratio = aspectRatioValue(selectedRatio)
+        if (ratio != null && !hasCustomDrag) {
+            cropRect = ChatImageEditorHelper.aspectRatioCropRect(
+                targetAspectRatio = ratio,
+                imageWidth = rotatedImageSize.width,
+                imageHeight = rotatedImageSize.height,
+            )
+        }
+    }
 
     Column(
         modifier = Modifier.fillMaxSize(),
@@ -919,58 +1238,131 @@ private fun AttachmentCropStage(
         ) {
             val widthPx = constraints.maxWidth.toFloat().coerceAtLeast(1f)
             val heightPx = constraints.maxHeight.toFloat().coerceAtLeast(1f)
+            val fittedRect = remember(widthPx, heightPx, imageSize.width, imageSize.height, rotationDegrees) {
+                ChatImageEditorHelper.computeFittedImageRect(
+                    containerWidth = widthPx,
+                    containerHeight = heightPx,
+                    imageWidth = imageSize.width,
+                    imageHeight = imageSize.height,
+                    rotationDegrees = rotationDegrees,
+                )
+            }
 
-            // Base Image
+            val normalizedRot = ((rotationDegrees % 360f) + 360f) % 360f
+            val isQuarterTurn = normalizedRot == 90f || normalizedRot == 270f
+            val unrotatedFittedW = if (isQuarterTurn) fittedRect.height else fittedRect.width
+            val unrotatedFittedH = if (isQuarterTurn) fittedRect.width else fittedRect.height
+
+            // Base Image scaled to exact fitted bounds so rotated dimensions never overflow or misalign
             AsyncImage(
-                model = Uri.parse(draft.uri),
+                model = imageUri,
                 contentDescription = "برش",
-                contentScale = ContentScale.Fit,
+                contentScale = ContentScale.FillBounds,
+                onSuccess = { success ->
+                    onDrawableLoaded(
+                        success.result.drawable.intrinsicWidth,
+                        success.result.drawable.intrinsicHeight,
+                    )
+                },
                 modifier = Modifier
-                    .fillMaxSize()
+                    .requiredSize(
+                        with(density) { unrotatedFittedW.toDp() },
+                        with(density) { unrotatedFittedH.toDp() },
+                    )
                     .graphicsLayer {
-                        this.rotationZ = rotationDegrees
+                        this.rotationZ = normalizedRot
                     },
             )
 
-            // Crop Overlay with Handles and 3x3 Grid
+            val latestFittedRect by rememberUpdatedState(fittedRect)
+            val latestRotatedSize by rememberUpdatedState(rotatedImageSize)
+            val latestTargetAspectRatio by rememberUpdatedState(aspectRatioValue(selectedRatio))
+            val handleRadiusPx = with(density) { 28.dp.toPx() }
+
+            // Crop Overlay bounded strictly to fittedRect; uses 4 outer scrim rects (no BlendMode.Clear)
             Canvas(
                 modifier = Modifier
                     .fillMaxSize()
-                    .pointerInput(widthPx, heightPx, selectedRatio) {
-                        detectDragGestures { change, dragAmount ->
-                            change.consume()
-                            val dx = dragAmount.x / widthPx
-                            val dy = dragAmount.y / heightPx
-
-                            val current = cropRect
-                            val newRight = (current.right + dx).coerceIn(current.left + 0.15f, 1f)
-                            val newBottom = (current.bottom + dy).coerceIn(current.top + 0.15f, 1f)
-
-                            cropRect = NormalizedCropRect(
-                                left = current.left,
-                                top = current.top,
-                                right = newRight,
-                                bottom = newBottom,
-                            )
-                        }
+                    .testTag("attachment-crop-overlay")
+                    .pointerInput(handleRadiusPx) {
+                        var activeHandle = CropDragHandle.NONE
+                        detectDragGestures(
+                            onDragStart = { startOffset ->
+                                val curFitted = latestFittedRect
+                                val curCrop = cropRect
+                                val curCropPx = Rect(
+                                    left = curFitted.left + curCrop.left * curFitted.width,
+                                    top = curFitted.top + curCrop.top * curFitted.height,
+                                    right = curFitted.left + curCrop.right * curFitted.width,
+                                    bottom = curFitted.top + curCrop.bottom * curFitted.height,
+                                )
+                                activeHandle = ChatImageEditorHelper.hitTestCropHandle(
+                                    touchPoint = startOffset,
+                                    cropPixelRect = curCropPx,
+                                    handleRadiusPx = handleRadiusPx,
+                                )
+                            },
+                            onDrag = { change, dragAmount ->
+                                if (activeHandle == CropDragHandle.NONE) return@detectDragGestures
+                                change.consume()
+                                val curFitted = latestFittedRect
+                                if (curFitted.width <= 0f || curFitted.height <= 0f) return@detectDragGestures
+                                hasCustomDrag = true
+                                val dxNorm = dragAmount.x / curFitted.width
+                                val dyNorm = dragAmount.y / curFitted.height
+                                cropRect = ChatImageEditorHelper.updateCropRectOnDrag(
+                                    current = cropRect,
+                                    handle = activeHandle,
+                                    dxNorm = dxNorm,
+                                    dyNorm = dyNorm,
+                                    targetAspectRatio = latestTargetAspectRatio,
+                                    imageWidth = latestRotatedSize.width,
+                                    imageHeight = latestRotatedSize.height,
+                                )
+                            },
+                            onDragEnd = { activeHandle = CropDragHandle.NONE },
+                            onDragCancel = { activeHandle = CropDragHandle.NONE },
+                        )
                     },
             ) {
-                val left = cropRect.left * widthPx
-                val top = cropRect.top * heightPx
-                val right = cropRect.right * widthPx
-                val bottom = cropRect.bottom * heightPx
-                val cropW = right - left
-                val cropH = bottom - top
+                val left = fittedRect.left + cropRect.left * fittedRect.width
+                val top = fittedRect.top + cropRect.top * fittedRect.height
+                val right = fittedRect.left + cropRect.right * fittedRect.width
+                val bottom = fittedRect.top + cropRect.bottom * fittedRect.height
+                val cropW = (right - left).coerceAtLeast(1f)
+                val cropH = (bottom - top).coerceAtLeast(1f)
 
-                // Scrim around crop rect
-                drawRect(Color.Black.copy(alpha = 0.55f))
-                // Clear cut in crop rect
-                drawRect(
-                    color = Color.Transparent,
-                    topLeft = Offset(left, top),
-                    size = Size(cropW, cropH),
-                    blendMode = androidx.compose.ui.graphics.BlendMode.Clear,
-                )
+                val scrimColor = Color.Black.copy(alpha = 0.6f)
+                // Four non-overlapping outer scrim bands leaving crop interior completely untouched
+                if (top > fittedRect.top) {
+                    drawRect(
+                        color = scrimColor,
+                        topLeft = Offset(fittedRect.left, fittedRect.top),
+                        size = Size(fittedRect.width, top - fittedRect.top),
+                    )
+                }
+                if (fittedRect.bottom > bottom) {
+                    drawRect(
+                        color = scrimColor,
+                        topLeft = Offset(fittedRect.left, bottom),
+                        size = Size(fittedRect.width, fittedRect.bottom - bottom),
+                    )
+                }
+                if (left > fittedRect.left) {
+                    drawRect(
+                        color = scrimColor,
+                        topLeft = Offset(fittedRect.left, top),
+                        size = Size(left - fittedRect.left, cropH),
+                    )
+                }
+                if (fittedRect.right > right) {
+                    drawRect(
+                        color = scrimColor,
+                        topLeft = Offset(right, top),
+                        size = Size(fittedRect.right - right, cropH),
+                    )
+                }
+
                 // Crop border
                 drawRect(
                     color = Color.White,
@@ -1007,8 +1399,8 @@ private fun AttachmentCropStage(
                     strokeWidth = 1.dp.toPx(),
                 )
 
-                // Corner brackets
-                val cornerLen = 16.dp.toPx()
+                // Corner brackets + edge midpoint handles
+                val cornerLen = min(18.dp.toPx(), min(cropW, cropH) * 0.35f)
                 val cornerStroke = 3.dp.toPx()
                 drawLine(Color.White, Offset(left, top), Offset(left + cornerLen, top), cornerStroke)
                 drawLine(Color.White, Offset(left, top), Offset(left, top + cornerLen), cornerStroke)
@@ -1018,6 +1410,14 @@ private fun AttachmentCropStage(
                 drawLine(Color.White, Offset(left, bottom), Offset(left, bottom - cornerLen), cornerStroke)
                 drawLine(Color.White, Offset(right, bottom), Offset(right - cornerLen, bottom), cornerStroke)
                 drawLine(Color.White, Offset(right, bottom), Offset(right, bottom - cornerLen), cornerStroke)
+
+                val edgeHalfLen = min(10.dp.toPx(), min(cropW, cropH) * 0.2f)
+                val midX = (left + right) / 2f
+                val midY = (top + bottom) / 2f
+                drawLine(Color.White, Offset(midX - edgeHalfLen, top), Offset(midX + edgeHalfLen, top), cornerStroke)
+                drawLine(Color.White, Offset(midX - edgeHalfLen, bottom), Offset(midX + edgeHalfLen, bottom), cornerStroke)
+                drawLine(Color.White, Offset(left, midY - edgeHalfLen), Offset(left, midY + edgeHalfLen), cornerStroke)
+                drawLine(Color.White, Offset(right, midY - edgeHalfLen), Offset(right, midY + edgeHalfLen), cornerStroke)
             }
         }
 
@@ -1040,6 +1440,7 @@ private fun AttachmentCropStage(
                     isSelected = selectedRatio == "free",
                     onClick = {
                         selectedRatio = "free"
+                        hasCustomDrag = false
                         cropRect = NormalizedCropRect(0f, 0f, 1f, 1f)
                     },
                 )
@@ -1048,7 +1449,12 @@ private fun AttachmentCropStage(
                     isSelected = selectedRatio == "1:1",
                     onClick = {
                         selectedRatio = "1:1"
-                        cropRect = NormalizedCropRect(0.1f, 0.1f, 0.9f, 0.9f)
+                        hasCustomDrag = false
+                        cropRect = ChatImageEditorHelper.aspectRatioCropRect(
+                            targetAspectRatio = 1f,
+                            imageWidth = rotatedImageSize.width,
+                            imageHeight = rotatedImageSize.height,
+                        )
                     },
                 )
                 RatioChip(
@@ -1056,7 +1462,12 @@ private fun AttachmentCropStage(
                     isSelected = selectedRatio == "4:5",
                     onClick = {
                         selectedRatio = "4:5"
-                        cropRect = NormalizedCropRect(0.1f, 0.05f, 0.9f, 0.95f)
+                        hasCustomDrag = false
+                        cropRect = ChatImageEditorHelper.aspectRatioCropRect(
+                            targetAspectRatio = 4f / 5f,
+                            imageWidth = rotatedImageSize.width,
+                            imageHeight = rotatedImageSize.height,
+                        )
                     },
                 )
                 RatioChip(
@@ -1064,7 +1475,12 @@ private fun AttachmentCropStage(
                     isSelected = selectedRatio == "16:9",
                     onClick = {
                         selectedRatio = "16:9"
-                        cropRect = NormalizedCropRect(0.05f, 0.2f, 0.95f, 0.8f)
+                        hasCustomDrag = false
+                        cropRect = ChatImageEditorHelper.aspectRatioCropRect(
+                            targetAspectRatio = 16f / 9f,
+                            imageWidth = rotatedImageSize.width,
+                            imageHeight = rotatedImageSize.height,
+                        )
                     },
                 )
             }
@@ -1083,7 +1499,13 @@ private fun AttachmentCropStage(
                 }
 
                 IconButton(
-                    onClick = onRotate,
+                    onClick = {
+                        val rotatedCrop = ChatImageEditorHelper.rotateCropRectClockwise90(cropRect)
+                        cropRect = rotatedCrop
+                        selectedRatio = "free"
+                        hasCustomDrag = false
+                        onRotate(rotatedCrop)
+                    },
                     modifier = Modifier.size(44.dp),
                 ) {
                     Icon(Icons.AutoMirrored.Filled.RotateRight, contentDescription = "چرخش", tint = Color.White)
@@ -1126,6 +1548,7 @@ private fun AttachmentDrawStage(
     draft: ChatAttachmentDraft,
     initialStrokes: List<ChatDrawingStroke>,
     rotationDegrees: Float,
+    cropRectNorm: NormalizedCropRect,
     onApplyStrokes: (List<ChatDrawingStroke>) -> Unit,
     onCancel: () -> Unit,
 ) {
@@ -1149,121 +1572,72 @@ private fun AttachmentDrawStage(
     var selectedColor by remember { mutableStateOf(colors[0]) }
     var selectedWidthNorm by remember { mutableFloatStateOf(0.012f) } // medium
 
+    val latestSelectedColor by rememberUpdatedState(selectedColor)
+    val latestSelectedWidthNorm by rememberUpdatedState(selectedWidthNorm)
+
     Column(
         modifier = Modifier.fillMaxSize(),
     ) {
-        BoxWithConstraints(
+        Box(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
                 .padding(8.dp),
             contentAlignment = Alignment.Center,
         ) {
-            val widthPx = constraints.maxWidth.toFloat().coerceAtLeast(1f)
-            val heightPx = constraints.maxHeight.toFloat().coerceAtLeast(1f)
-
-            // Base Image
-            AsyncImage(
-                model = Uri.parse(draft.uri),
+            TransformedAttachmentImage(
+                uri = Uri.parse(draft.uri),
                 contentDescription = "نقاشی",
-                contentScale = ContentScale.Fit,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .graphicsLayer {
-                        this.rotationZ = rotationDegrees
-                    },
-            )
-
-            // Drawing Surface
-            Canvas(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .pointerInput(widthPx, heightPx, selectedColor, selectedWidthNorm) {
-                        detectDragGestures(
-                            onDragStart = { offset ->
-                                currentPoints = listOf(
-                                    Offset(
-                                        (offset.x / widthPx).coerceIn(0f, 1f),
-                                        (offset.y / heightPx).coerceIn(0f, 1f),
-                                    )
-                                )
-                            },
-                            onDrag = { change, _ ->
-                                change.consume()
-                                currentPoints = currentPoints + Offset(
-                                    (change.position.x / widthPx).coerceIn(0f, 1f),
-                                    (change.position.y / heightPx).coerceIn(0f, 1f),
-                                )
-                            },
-                            onDragEnd = {
-                                if (currentPoints.isNotEmpty()) {
-                                    strokes = strokes + ChatDrawingStroke(
-                                        colorArgb = selectedColor.toArgb(),
-                                        strokeWidthNorm = selectedWidthNorm,
-                                        points = currentPoints,
-                                    )
-                                    currentPoints = emptyList()
-                                }
-                            },
-                            onDragCancel = {
-                                currentPoints = emptyList()
-                            },
-                        )
-                    },
+                editState = ImageEditState(
+                    rotationDegrees = rotationDegrees,
+                    cropRectNorm = cropRectNorm,
+                ),
             ) {
-                // Render completed strokes
-                strokes.forEach { stroke ->
-                    if (stroke.points.size > 1) {
-                        val p = Path()
-                        val first = stroke.points[0]
-                        p.moveTo(first.x * widthPx, first.y * heightPx)
-
-                        for (i in 1 until stroke.points.size) {
-                            val prev = stroke.points[i - 1]
-                            val curr = stroke.points[i]
-                            val midX = (prev.x + curr.x) / 2f * widthPx
-                            val midY = (prev.y + curr.y) / 2f * heightPx
-                            p.quadraticTo(prev.x * widthPx, prev.y * heightPx, midX, midY)
-                        }
-                        val last = stroke.points.last()
-                        p.lineTo(last.x * widthPx, last.y * heightPx)
-
-                        drawPath(
-                            path = p,
-                            color = Color(stroke.colorArgb),
-                            style = Stroke(
-                                width = stroke.strokeWidthNorm * widthPx,
-                                cap = StrokeCap.Round,
-                                join = StrokeJoin.Round,
-                            ),
-                        )
-                    }
-                }
-
-                // Render active stroke
-                if (currentPoints.size > 1) {
-                    val p = Path()
-                    val first = currentPoints[0]
-                    p.moveTo(first.x * widthPx, first.y * heightPx)
-
-                    for (i in 1 until currentPoints.size) {
-                        val prev = currentPoints[i - 1]
-                        val curr = currentPoints[i]
-                        val midX = (prev.x + curr.x) / 2f * widthPx
-                        val midY = (prev.y + curr.y) / 2f * heightPx
-                        p.quadraticTo(prev.x * widthPx, prev.y * heightPx, midX, midY)
-                    }
-                    val last = currentPoints.last()
-                    p.lineTo(last.x * widthPx, last.y * heightPx)
-
-                    drawPath(
-                        path = p,
-                        color = selectedColor,
-                        style = Stroke(
-                            width = selectedWidthNorm * widthPx,
-                            cap = StrokeCap.Round,
-                            join = StrokeJoin.Round,
-                        ),
+                Canvas(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .pointerInput(Unit) {
+                            detectDragGestures(
+                                onDragStart = { offset ->
+                                    val vpW = size.width.toFloat().coerceAtLeast(1f)
+                                    val vpH = size.height.toFloat().coerceAtLeast(1f)
+                                    currentPoints = listOf(
+                                        Offset(
+                                            (offset.x / vpW).coerceIn(0f, 1f),
+                                            (offset.y / vpH).coerceIn(0f, 1f),
+                                        ),
+                                    )
+                                },
+                                onDrag = { change, _ ->
+                                    change.consume()
+                                    val vpW = size.width.toFloat().coerceAtLeast(1f)
+                                    val vpH = size.height.toFloat().coerceAtLeast(1f)
+                                    currentPoints = currentPoints + Offset(
+                                        (change.position.x / vpW).coerceIn(0f, 1f),
+                                        (change.position.y / vpH).coerceIn(0f, 1f),
+                                    )
+                                },
+                                onDragEnd = {
+                                    if (currentPoints.isNotEmpty()) {
+                                        strokes = strokes + ChatDrawingStroke(
+                                            colorArgb = latestSelectedColor.toArgb(),
+                                            strokeWidthNorm = latestSelectedWidthNorm,
+                                            points = currentPoints,
+                                        )
+                                        currentPoints = emptyList()
+                                    }
+                                },
+                                onDragCancel = {
+                                    currentPoints = emptyList()
+                                },
+                            )
+                        },
+                ) {
+                    drawNormalizedStrokes(
+                        strokes = strokes,
+                        activePoints = currentPoints,
+                        activeColor = selectedColor,
+                        activeWidthNorm = selectedWidthNorm,
                     )
                 }
             }
