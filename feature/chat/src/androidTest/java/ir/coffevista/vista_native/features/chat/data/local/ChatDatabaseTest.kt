@@ -471,6 +471,72 @@ class ChatDatabaseTest {
         }
     }
 
+    @Test
+    fun migration6To7PreservesConversationsAndAddsVerificationColumns() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val name = "chat-migration-6-7.db"
+        context.deleteDatabase(name)
+        val factory = FrameworkSQLiteOpenHelperFactory()
+        val versionSix = factory.create(
+            SupportSQLiteOpenHelper.Configuration.builder(context)
+                .name(name)
+                .callback(object : SupportSQLiteOpenHelper.Callback(6) {
+                    override fun onCreate(db: SupportSQLiteDatabase) {
+                        db.execSQL("CREATE TABLE chat_conversation (accountId TEXT NOT NULL, id TEXT NOT NULL, type TEXT NOT NULL, title TEXT NOT NULL, avatarUrl TEXT, peerId TEXT, lastMessageCiphertext BLOB, lastMessageAtEpochMillis INTEGER, unreadCount INTEGER NOT NULL, isArchived INTEGER NOT NULL, isPinned INTEGER NOT NULL, isMuted INTEGER NOT NULL, requestStatus TEXT, lastSyncedAtEpochMillis INTEGER NOT NULL, isMessageRequest INTEGER NOT NULL DEFAULT 0, lastMessageType TEXT, lastMessageIsMine INTEGER NOT NULL DEFAULT 0, lastMessageStatus TEXT NOT NULL DEFAULT 'SENT', PRIMARY KEY(accountId, id))")
+                        db.execSQL("INSERT INTO chat_conversation (accountId, id, type, title, unreadCount, isArchived, isPinned, isMuted, lastSyncedAtEpochMillis) VALUES ('account', 'conv-1', 'PRIVATE', 'sara', 0, 0, 0, 0, 1)")
+                    }
+
+                    override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+                })
+                .build(),
+        )
+        versionSix.writableDatabase
+        versionSix.close()
+
+        val versionSeven = factory.create(
+            SupportSQLiteOpenHelper.Configuration.builder(context)
+                .name(name)
+                .callback(object : SupportSQLiteOpenHelper.Callback(7) {
+                    override fun onCreate(db: SupportSQLiteDatabase) = Unit
+
+                    override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) {
+                        assertEquals(6, oldVersion)
+                        assertEquals(7, newVersion)
+                        ChatDatabase.MIGRATION_6_7.migrate(db)
+                    }
+                })
+                .build(),
+        )
+        try {
+            val db = versionSeven.writableDatabase
+            db.query("PRAGMA table_info(chat_conversation)").use { cursor ->
+                val columns = mutableSetOf<String>()
+                val nameIndex = cursor.getColumnIndex("name")
+                while (cursor.moveToNext()) columns += cursor.getString(nameIndex)
+                assertEquals(true, "isVerified" in columns)
+                assertEquals(true, "verificationType" in columns)
+                assertEquals(true, "role" in columns)
+            }
+            db.query("SELECT id, isVerified, verificationType, role FROM chat_conversation").use { cursor ->
+                assertEquals(true, cursor.moveToFirst())
+                assertEquals("conv-1", cursor.getString(0))
+                assertEquals(0, cursor.getInt(1))
+                assertEquals(null, cursor.getString(2))
+                assertEquals(null, cursor.getString(3))
+            }
+            db.execSQL("UPDATE chat_conversation SET isVerified = 1, verificationType = 'blueTick', role = 'creator' WHERE id = 'conv-1'")
+            db.query("SELECT isVerified, verificationType, role FROM chat_conversation WHERE id = 'conv-1'").use { cursor ->
+                assertEquals(true, cursor.moveToFirst())
+                assertEquals(1, cursor.getInt(0))
+                assertEquals("blueTick", cursor.getString(1))
+                assertEquals("creator", cursor.getString(2))
+            }
+        } finally {
+            versionSeven.close()
+            context.deleteDatabase(name)
+        }
+    }
+
     private fun conversation(accountId: String) = ConversationEntity(
         accountId = accountId,
         id = "conversation-a",

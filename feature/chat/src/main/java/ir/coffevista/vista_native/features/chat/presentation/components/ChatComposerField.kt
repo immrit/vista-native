@@ -104,22 +104,46 @@ fun ChatComposerField(
     val latestIsEmojiPanelOpen = rememberUpdatedState(isEmojiPanelOpen)
     val latestKeyboardController = rememberUpdatedState(keyboardController)
     val editTextRef = remember { arrayOfNulls<EditText>(1) }
+    val isRequestingKeyboard = remember { booleanArrayOf(false) }
+
+    fun focusEditTextAndShowIme(et: EditText) {
+        if (editTextRef[0] !== et) return
+        val wasRequesting = isRequestingKeyboard[0]
+        isRequestingKeyboard[0] = true
+        try {
+            et.isFocusable = true
+            et.isFocusableInTouchMode = true
+            if (!et.hasFocus()) {
+                et.requestFocus()
+            }
+            val imm = et.context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+            imm?.showSoftInput(et, 0)
+            val activity = et.context.findActivity() ?: et.rootView.context.findActivity()
+            val window = activity?.window
+            if (window != null) {
+                androidx.core.view.WindowCompat.getInsetsController(window, et)
+                    .show(WindowInsetsCompat.Type.ime())
+            }
+        } finally {
+            isRequestingKeyboard[0] = wasRequesting
+        }
+    }
 
     DisposableEffect(controller, actualFocusRequester) {
         controller.onInsertEmoji = { symbol ->
             val currentValue = latestValue.value
-            val start = currentValue.selection.min
-            val end = currentValue.selection.max
             val currentText = currentValue.text
+            val start = currentValue.selection.min.coerceIn(0, currentText.length)
+            val end = currentValue.selection.max.coerceIn(start, currentText.length)
             val newText = currentText.substring(0, start) + symbol + currentText.substring(end)
             val newCursor = start + symbol.length
             latestOnValueChange.value(TextFieldValue(newText, TextRange(newCursor)))
         }
         controller.onDispatchBackspace = {
             val currentValue = latestValue.value
-            val start = currentValue.selection.min
-            val end = currentValue.selection.max
             val currentText = currentValue.text
+            val start = currentValue.selection.min.coerceIn(0, currentText.length)
+            val end = currentValue.selection.max.coerceIn(start, currentText.length)
             if (start != end) {
                 val newText = currentText.substring(0, start) + currentText.substring(end)
                 latestOnValueChange.value(TextFieldValue(newText, TextRange(start)))
@@ -130,45 +154,25 @@ fun ChatComposerField(
             }
         }
         controller.onRequestKeyboard = {
-            actualFocusRequester.requestFocus()
-            latestKeyboardController.value?.show()
-            val et = editTextRef[0]
-            if (et != null) {
-                et.isFocusable = true
-                et.isFocusableInTouchMode = true
-                et.requestFocus()
-                val imm = et.context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
-                imm?.showSoftInput(et, 0)
-                val activity = et.context.findActivity() ?: et.rootView.context.findActivity()
-                val window = activity?.window
-                if (window != null) {
-                    androidx.core.view.WindowCompat.getInsetsController(window, et)
-                        .show(WindowInsetsCompat.Type.ime())
+            if (!isRequestingKeyboard[0]) {
+                isRequestingKeyboard[0] = true
+                try {
+                    // Requesting focus here can synchronously trigger .onFocusChanged while
+                    // emojiPanelVisible is still true during the IME transition; guard
+                    // against re-entry into onFocusText -> openKeyboard().
+                    actualFocusRequester.requestFocus()
+                    latestKeyboardController.value?.show()
+                    val et = editTextRef[0]
+                    if (et != null) {
+                        focusEditTextAndShowIme(et)
+                        et.post { focusEditTextAndShowIme(et) }
+                        for (delayMs in longArrayOf(40L, 100L)) {
+                            et.postDelayed({ focusEditTextAndShowIme(et) }, delayMs)
+                        }
+                    }
+                } finally {
+                    isRequestingKeyboard[0] = false
                 }
-                et.post {
-                    et.requestFocus()
-                    imm?.showSoftInput(et, 0)
-                    if (window != null) {
-                        androidx.core.view.WindowCompat.getInsetsController(window, et)
-                            .show(WindowInsetsCompat.Type.ime())
-                    }
-                }
-                et.postDelayed({
-                    et.requestFocus()
-                    imm?.showSoftInput(et, 0)
-                    if (window != null) {
-                        androidx.core.view.WindowCompat.getInsetsController(window, et)
-                            .show(WindowInsetsCompat.Type.ime())
-                    }
-                }, 40)
-                et.postDelayed({
-                    et.requestFocus()
-                    imm?.showSoftInput(et, 0)
-                    if (window != null) {
-                        androidx.core.view.WindowCompat.getInsetsController(window, et)
-                            .show(WindowInsetsCompat.Type.ime())
-                    }
-                }, 100)
             }
         }
         controller.onHideKeyboard = {
@@ -242,7 +246,7 @@ fun ChatComposerField(
                             latestOnValueChange.value(
                                 TextFieldValue(
                                     editable.toString(),
-                                    TextRange(selectionStart.coerceAtLeast(0)),
+                                    TextRange(selectionStart.coerceIn(0, editable.length)),
                                 ),
                             )
                         }
@@ -252,8 +256,8 @@ fun ChatComposerField(
             modifier = modifier
                 .focusRequester(actualFocusRequester)
                 .onFocusChanged {
-                    if (it.isFocused) {
-                        onFocusText()
+                    if (it.isFocused && !isRequestingKeyboard[0]) {
+                        latestOnFocusText.value()
                     }
                 }
                 .semantics {
@@ -272,7 +276,7 @@ fun ChatComposerField(
                     editText.setSelection(value.selection.min.coerceIn(0, editText.text.length))
                     VistaEmojiSpan.applySpans(editText.context, editText.text)
                     editText.tag = false
-                    if (hadFocus) {
+                    if (hadFocus && !isEmojiPanelOpen) {
                         editText.requestFocus()
                         val imm = editText.context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
                         imm?.showSoftInput(editText, 0)

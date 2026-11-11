@@ -4,6 +4,7 @@ import ir.coffevista.vista_native.core.testing.MainDispatcherRule
 import ir.coffevista.vista_native.features.chat.domain.model.Conversation
 import ir.coffevista.vista_native.features.chat.domain.model.ConversationType
 import ir.coffevista.vista_native.features.chat.domain.model.ChatAttachmentDraft
+import ir.coffevista.vista_native.features.chat.domain.model.ChatPartnerProfile
 import ir.coffevista.vista_native.features.chat.domain.model.ChatUser
 import ir.coffevista.vista_native.features.chat.domain.model.BlockStatus
 import ir.coffevista.vista_native.features.chat.domain.model.Message
@@ -630,6 +631,48 @@ class ChatViewModelsTest {
         assertEquals(1, repository.getPinnedMessagesCalls)
     }
 
+    @Test
+    fun `reaction offline failure maps generic network error to actionable message`() = runTest(mainDispatcherRule.dispatcher) {
+        val serverMessage = message().copy(serverId = "fixture-server", status = MessageStatus.SENT)
+        val repository = FakeChatRepository().apply {
+            messages.value = listOf(serverMessage)
+            toggleReactionResult = ChatResult.Failure("اتصال برقرار نشد؛ دوباره تلاش کنید", retryable = true)
+        }
+        val viewModel = MessagesViewModel(repository)
+        viewModel.bind("fixture-conversation")
+        advanceUntilIdle()
+
+        viewModel.react(serverMessage, "❤️")
+        advanceUntilIdle()
+
+        assertEquals(
+            "ثبت واکنش انجام نشد؛ اتصال اینترنت را بررسی کنید",
+            viewModel.state.value.error,
+        )
+    }
+
+    @Test
+    fun `bind loads partner profile verification metadata for private conversation`() = runTest(mainDispatcherRule.dispatcher) {
+        val repository = FakeChatRepository().apply {
+            conversations.value = listOf(conversation())
+            partnerProfileResult = ChatResult.Success(
+                ChatPartnerProfile(
+                    userId = "fixture-peer",
+                    username = "ahmad",
+                    isVerified = true,
+                    verificationType = "blueTick",
+                ),
+            )
+        }
+        val viewModel = MessagesViewModel(repository)
+        viewModel.bind("fixture-conversation")
+        advanceUntilIdle()
+
+        assertEquals(listOf("fixture-peer"), repository.partnerProfileCalls)
+        assertEquals(true, viewModel.state.value.partnerProfile?.isVerified)
+        assertEquals("blueTick", viewModel.state.value.partnerProfile?.verificationType)
+    }
+
     private class FakeChatRepository : ChatRepository {
         val mutableRealtime = MutableStateFlow(RealtimeConnectionState.CONNECTED)
         override val realtimeState: StateFlow<RealtimeConnectionState> = mutableRealtime
@@ -654,7 +697,10 @@ class ChatViewModelsTest {
         val acceptedMessageRequests = mutableListOf<String>()
         val rejectedMessageRequests = mutableListOf<String>()
         val toggledConversationFlags = mutableListOf<Pair<String, String>>()
+        val partnerProfileCalls = mutableListOf<String>()
         val autoDeleteSeconds = mutableMapOf<String, Int>()
+        var partnerProfileResult: ChatResult<ChatPartnerProfile> =
+            ChatResult.Failure("اطلاعات کاربر در دسترس نیست", false)
         var safetyNumberResult: String? = "12345 67890 12345 67890 12345 67890"
         var handshakeCalls = 0
         var blockStatus = BlockStatus(isBlocked = false, isBlockedBy = false)
@@ -666,6 +712,7 @@ class ChatViewModelsTest {
         var refreshMessagesCalls = 0
         var getPinnedMessagesCalls = 0
         var pinResult: ChatResult<Unit> = ChatResult.Success(Unit)
+        var toggleReactionResult: ChatResult<Unit> = ChatResult.Success(Unit)
         var retryResult: ChatResult<Message> = ChatResult.Success(message())
         var cancelResult: ChatResult<Unit> = ChatResult.Success(Unit)
         var refreshConversationsResult: ChatResult<Page<Conversation>> =
@@ -757,6 +804,8 @@ class ChatViewModelsTest {
             return retryResult
         }
         override suspend fun cancelTransfer(conversationId: String, clientId: String) = cancelResult
+        override suspend fun partnerProfile(userId: String): ChatResult<ChatPartnerProfile> =
+            partnerProfileResult.also { partnerProfileCalls += userId }
         override suspend fun markRead(conversationId: String): ChatResult<Unit> {
             readCalls += conversationId
             return ChatResult.Success(Unit)
@@ -782,7 +831,7 @@ class ChatViewModelsTest {
         }
         
         override suspend fun toggleReaction(message: Message, emoji: String): ChatResult<Unit> {
-            return ChatResult.Success(Unit)
+            return toggleReactionResult
         }
 
         override suspend fun getPinnedMessages(conversationId: String): ChatResult<List<Message>> {

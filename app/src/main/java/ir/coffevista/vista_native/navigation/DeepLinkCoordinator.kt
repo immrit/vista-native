@@ -71,6 +71,42 @@ object DeepLinkParser {
                 ),
             )
         }
+        if (host == "notifications") {
+            if (segments.isNotEmpty()) {
+                return DeepLinkParseResult.Rejected(DeepLinkFailureReason.INVALID_ARGUMENT)
+            }
+            val tab = when (uri.rawQuery?.trim()) {
+                null, "" -> "all"
+                "tab=suggestions" -> "suggestions"
+                else -> return DeepLinkParseResult.Rejected(DeepLinkFailureReason.UNSUPPORTED)
+            }
+            return DeepLinkParseResult.Supported(
+                PendingDestination(
+                    kind = DeferredFeatureKind.NOTIFICATIONS,
+                    reference = tab,
+                ),
+            )
+        }
+        if (host == "nearby") {
+            if (uri.rawQuery != null) {
+                return DeepLinkParseResult.Rejected(DeepLinkFailureReason.UNSUPPORTED)
+            }
+            val section = when (segments.size) {
+                0 -> "explore"
+                1 -> when (segments.single().lowercase()) {
+                    "likes" -> "likes"
+                    "matches" -> "matches"
+                    else -> return DeepLinkParseResult.Rejected(DeepLinkFailureReason.INVALID_ARGUMENT)
+                }
+                else -> return DeepLinkParseResult.Rejected(DeepLinkFailureReason.INVALID_ARGUMENT)
+            }
+            return DeepLinkParseResult.Supported(
+                PendingDestination(
+                    kind = DeferredFeatureKind.NEARBY,
+                    reference = section,
+                ),
+            )
+        }
         val kind = when (host) {
             "post" -> DeferredFeatureKind.POST
             "profile" -> DeferredFeatureKind.PROFILE

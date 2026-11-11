@@ -7,6 +7,7 @@ import android.content.pm.ServiceInfo
 import android.net.Uri
 import android.os.Build
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.ForegroundInfo
@@ -15,6 +16,7 @@ import androidx.work.workDataOf
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import ir.coffevista.vista_native.core.database.feed.FeedDao
+import ir.coffevista.vista_native.core.designsystem.R as DesignSystemR
 import kotlinx.coroutines.CancellationException
 import java.io.File
 
@@ -246,7 +248,9 @@ class PostUploadWorker @AssistedInject constructor(
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setContentTitle("ارسال پست در ویستا")
             .setContentText(message)
-            .setSmallIcon(android.R.drawable.stat_sys_upload)
+            .setSmallIcon(DesignSystemR.drawable.ic_notification)
+            .setColor(ContextCompat.getColor(context, DesignSystemR.color.vista_notification_accent))
+            .setOnlyAlertOnce(true)
             .setOngoing(progress < 1f)
             .setProgress(100, (progress * 100).toInt(), false)
             .build()

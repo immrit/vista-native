@@ -2,7 +2,6 @@ package ir.coffevista.vista_native.features.profile.settings.editprofile
 
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -142,18 +141,24 @@ fun EditProfileScreen(
 
     val genderOptions = listOf("male" to "مرد", "female" to "زن", "prefer_not_to_say" to "ترجیح می‌دهم نگویم")
     val maritalStatusOptions = listOf("single" to "مجرد", "married" to "متأهل", "prefer_not_to_say" to "ترجیح می‌دهم نگویم")
-    val avatarPicker = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickVisualMedia(),
-    ) { uri ->
-        uri ?: return@rememberLauncherForActivityResult
-        scope.launch {
-            isUploadingAvatar = true
-            when (val result = onAvatarSelected(uri)) {
-                is Outcome.Success -> snackbarHostState.showSnackbar("تصویر پروفایل با موفقیت به‌روزرسانی شد")
-                is Outcome.Failure -> snackbarHostState.showSnackbar(result.error.messageFa)
-            }
-            isUploadingAvatar = false
-        }
+    var showAvatarInAppPicker by remember { mutableStateOf(false) }
+
+    if (showAvatarInAppPicker) {
+        ir.coffevista.vista_native.core.designsystem.component.VistaInAppMediaPickerBottomSheet(
+            mode = ir.coffevista.vista_native.core.designsystem.component.VistaInAppPickerMode.IMAGE_SINGLE,
+            title = "انتخاب تصویر پروفایل",
+            onDismiss = { showAvatarInAppPicker = false },
+            onSingleSelected = { uri ->
+                scope.launch {
+                    isUploadingAvatar = true
+                    when (val result = onAvatarSelected(uri)) {
+                        is Outcome.Success -> snackbarHostState.showSnackbar("تصویر پروفایل با موفقیت به‌روزرسانی شد")
+                        is Outcome.Failure -> snackbarHostState.showSnackbar(result.error.messageFa)
+                    }
+                    isUploadingAvatar = false
+                }
+            },
+        )
     }
 
     CompositionLocalProvider(LocalLayoutDirection provides LocalLayoutDirection.current) {
@@ -551,9 +556,7 @@ fun EditProfileScreen(
                     leadingContent = { Icon(Icons.Outlined.AddAPhoto, contentDescription = null) },
                     modifier = Modifier.clickable {
                         showAvatarOptions = false
-                        avatarPicker.launch(
-                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
-                        )
+                        showAvatarInAppPicker = true
                     },
                 )
                 ListItem(

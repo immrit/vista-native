@@ -109,6 +109,8 @@
                 <data android:host="payment" />
                 <data android:host="game" />
                 <data android:host="duel" />
+                <data android:host="notifications" />
+                <data android:host="nearby" />
             </intent-filter>
 
             <!-- Primary App Links domains (cafevista.ir / www.cafevista.ir) -->
@@ -187,6 +189,10 @@
             android:exported="true"
             android:targetActivity="ir.coffevista.vista.MainActivity" />
 
+        <receiver
+            android:name=".notifications.ChatNotificationActionReceiver"
+            android:exported="false" />
+
         <service
             android:name=".notifications.VistaFirebaseMessagingService"
             android:exported="false">
@@ -203,6 +209,9 @@
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_icon"
             android:resource="@drawable/ic_notification" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_color"
+            android:resource="@color/vista_notification_accent" />
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
             android:value="social_notify" />

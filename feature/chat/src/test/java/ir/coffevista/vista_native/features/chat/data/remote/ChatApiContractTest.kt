@@ -125,4 +125,41 @@ class ChatApiContractTest {
         assertTrue(memberInfo.isAdminFor("admin", members))
         assertFalse(memberInfo.isAdminFor("member", members))
     }
+
+    @Test
+    fun reactionsEndpointsMatchBackendContracts() {
+        val toggle = ChatApi::class.java.declaredMethods.single { it.name == "toggleReaction" }
+        val single = ChatApi::class.java.declaredMethods.single { it.name == "getMessageReactions" }
+        val batch = ChatApi::class.java.declaredMethods.single { it.name == "getMultipleMessageReactions" }
+
+        assertEquals(
+            "v1/chat/messages/{messageId}/reactions",
+            requireNotNull(toggle.getAnnotation(POST::class.java)).value,
+        )
+        assertEquals(
+            "v1/chat/messages/{messageId}/reactions",
+            requireNotNull(single.getAnnotation(GET::class.java)).value,
+        )
+        assertEquals(
+            "v1/chat/reactions/batch",
+            requireNotNull(batch.getAnnotation(POST::class.java)).value,
+        )
+    }
+
+    @Test
+    fun reactionUpdateDtoSurvivesOmittedConversationIdAndReactions() {
+        val withoutConv = json.decodeFromString(
+            ReactionUpdateDto.serializer(),
+            """{"message_id":"m1","reactions":[{"user_id":"u1","emoji":"❤️"}]}""",
+        )
+        assertEquals("m1", withoutConv.messageId)
+        assertEquals("", withoutConv.conversationId)
+        assertEquals(1, withoutConv.reactions?.size)
+
+        val ackOnly = json.decodeFromString(
+            ReactionUpdateDto.serializer(),
+            """{"message_id":"m1"}""",
+        )
+        assertEquals(null, ackOnly.reactions)
+    }
 }

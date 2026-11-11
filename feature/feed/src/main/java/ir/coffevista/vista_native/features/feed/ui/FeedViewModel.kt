@@ -165,16 +165,23 @@ class FeedViewModel @Inject constructor(
     private var currentUserId: String? = null
     private var initialRefreshPending = false
     private var pageJob: Job? = null
+    private var lastNotificationRefreshAtMillis: Long = 0L
 
     init {
         viewModelScope.launch {
             launch { storyRepository.refreshActiveStories() }
-            launch { runCatching { notificationRepository.refresh() } }
+            launch { refreshNotificationsNow() }
+            launch {
+                ir.coffevista.vista_native.core.common.NotificationRuntimeCoordinator.socialPushArrivals.collectLatest {
+                    refreshNotificationsIfStale(minIntervalMillis = 3_000L)
+                }
+            }
             authStateProvider.state.collectLatest { authState ->
                 if (authState is AuthenticationState.SignedIn) {
                     currentUserId = authState.context.userId
                     _viewerUserId.value = authState.context.userId
                     startPage(authState.context.userId, _selectedKind.value)
+                    launch { refreshNotificationsIfStale(minIntervalMillis = 10_000L) }
                 } else {
                     pageJob?.cancel()
                     currentUserId = null
@@ -252,6 +259,19 @@ class FeedViewModel @Inject constructor(
                 }
             }
         }
+    }
+
+    fun refreshNotificationsIfStale(minIntervalMillis: Long = 30_000L) {
+        val now = System.currentTimeMillis()
+        if (now - lastNotificationRefreshAtMillis < minIntervalMillis) return
+        viewModelScope.launch {
+            refreshNotificationsNow()
+        }
+    }
+
+    private suspend fun refreshNotificationsNow() {
+        lastNotificationRefreshAtMillis = System.currentTimeMillis()
+        runCatching { notificationRepository.refresh() }
     }
 
     fun refresh() {

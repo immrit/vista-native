@@ -342,6 +342,29 @@ fun VistaShell(
             ShellDeferredKind.GAME -> {
                 navigateToGame(targetPath = request.reference, switchToServicesTab = true)
             }
+            ShellDeferredKind.NOTIFICATIONS -> {
+                selectTab(ShellTab.Feed)
+                if (request.reference == "suggestions") {
+                    selectTab(ShellTab.Search)
+                    navController.navigate(ShellRoutes.SearchWorkspace)
+                } else {
+                    navController.navigate(ShellRoutes.Notifications) {
+                        launchSingleTop = true
+                    }
+                }
+            }
+            ShellDeferredKind.NEARBY -> {
+                selectTab(ShellTab.Services)
+                if (request.reference == "likes") {
+                    navController.navigate(ShellRoutes.ServicesNearbyLikes) {
+                        launchSingleTop = true
+                    }
+                } else {
+                    navController.navigate(ShellRoutes.ServicesNearby) {
+                        launchSingleTop = true
+                    }
+                }
+            }
         }
 
         lastDeepLinkId = request.deliveryId

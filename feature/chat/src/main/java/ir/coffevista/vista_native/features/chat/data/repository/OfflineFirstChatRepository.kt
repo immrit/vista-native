@@ -8,6 +8,7 @@ import ir.coffevista.vista_native.core.model.note.ProfileNoteBridge
 import ir.coffevista.vista_native.core.model.note.SharedProfileNote
 import ir.coffevista.vista_native.core.network.BackendErrorParser
 import ir.coffevista.vista_native.core.network.RemoteFailure
+import ir.coffevista.vista_native.core.common.NotificationRuntimeCoordinator
 import ir.coffevista.vista_native.features.chat.data.local.ChatDao
 import ir.coffevista.vista_native.features.chat.data.local.ConversationEntity
 import ir.coffevista.vista_native.features.chat.data.local.MessageEntity
@@ -18,12 +19,15 @@ import ir.coffevista.vista_native.features.chat.data.local.TombstoneEntity
 import ir.coffevista.vista_native.features.chat.data.local.TransferTaskEntity
 import ir.coffevista.vista_native.features.chat.data.mapper.toDomain
 import ir.coffevista.vista_native.features.chat.data.mapper.toEntity
+import ir.coffevista.vista_native.features.chat.data.mapper.toReactionMap
+import ir.coffevista.vista_native.features.chat.data.mapper.toReactionsStorageString
 import ir.coffevista.vista_native.features.chat.data.mapper.epochMillisOrNull
 import ir.coffevista.vista_native.features.chat.data.mapper.resolvedAvatarUrl
 import ir.coffevista.vista_native.features.chat.data.mapper.wireName
 import ir.coffevista.vista_native.features.chat.data.realtime.ChatRealtimeCoordinator
 import ir.coffevista.vista_native.features.chat.data.realtime.RealtimeEvent
 import ir.coffevista.vista_native.features.chat.data.remote.ActiveConversationRequest
+import ir.coffevista.vista_native.features.chat.data.remote.BatchReactionsRequest
 import ir.coffevista.vista_native.features.chat.data.remote.BlockStatusDto
 import ir.coffevista.vista_native.features.chat.data.remote.ChatApi
 import ir.coffevista.vista_native.features.chat.data.remote.ChatMediaUploader
@@ -43,6 +47,7 @@ import ir.coffevista.vista_native.features.chat.data.remote.ReportUserRequest
 import ir.coffevista.vista_native.features.chat.data.remote.ProfileBatchRequest
 import ir.coffevista.vista_native.features.chat.data.remote.ProfileDto
 import ir.coffevista.vista_native.features.chat.data.remote.ProfileNoteDto
+import ir.coffevista.vista_native.features.chat.data.remote.ReactionDto
 import ir.coffevista.vista_native.features.chat.data.remote.ReactionUpdateDto
 import ir.coffevista.vista_native.features.chat.data.remote.SendMessageRequest
 import ir.coffevista.vista_native.features.chat.data.remote.SetGroupAdminRequest
@@ -106,6 +111,11 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import retrofit2.HttpException
 
 class OfflineFirstChatRepository(
@@ -129,6 +139,7 @@ class OfflineFirstChatRepository(
     // per account/conversation prevents a refresh from overwriting the cursor
     // chosen by an in-flight older-page request.
     private val messageFetchMutexes = ConcurrentHashMap<String, Mutex>()
+    private val reactionMutexes = ConcurrentHashMap<String, Mutex>()
     private val secretHandshakeFramesInFlight = ConcurrentHashMap.newKeySet<String>()
     private val secretRedecryptionInFlight = ConcurrentHashMap.newKeySet<String>()
     private val secretRedecryptionKeyFingerprints = ConcurrentHashMap<String, Int>()
@@ -462,6 +473,9 @@ class OfflineFirstChatRepository(
                     isMuted = false,
                     requestStatus = null,
                     lastSyncedAtEpochMillis = now(),
+                    isVerified = peerConv?.isVerified ?: false,
+                    verificationType = peerConv?.verificationType,
+                    role = peerConv?.role,
                 )
                 dao.upsertConversations(enrichMissingProfiles(listOf(recovered)))
                 candidates = dao.conversations(account.accountId).filter(::matches)
@@ -725,12 +739,43 @@ class OfflineFirstChatRepository(
 
     override suspend fun partnerProfile(userId: String): ChatResult<ChatPartnerProfile> = remoteCall {
         val profile = api.profile(userId)
+        val resolvedId = profile.resolvedUserId.ifBlank { userId }
+        val resolvedVerified = profile.resolvedIsVerified == true
+        val resolvedType = if (resolvedVerified) {
+            profile.verificationType?.trim()?.takeIf(String::isNotEmpty)
+        } else null
+        val resolvedRole = if (resolvedVerified) profile.resolvedRole else null
+        val resolvedAvatar = profile.avatarUrl.resolvedAvatarUrl()
+        if (profile.resolvedIsVerified != null) {
+            sessionProvider.account.value?.accountId?.let { accountId ->
+                val normalizedPeer = resolvedId.trim().lowercase()
+                val matching = dao.conversations(accountId).filter { entity ->
+                    entity.type != ConversationType.GROUP.name &&
+                        entity.peerId?.trim()?.lowercase() == normalizedPeer
+                }
+                if (matching.isNotEmpty()) {
+                    val refreshed = matching.map { entity ->
+                        entity.copy(
+                            avatarUrl = resolvedAvatar ?: entity.avatarUrl,
+                            isVerified = resolvedVerified,
+                            verificationType = resolvedType,
+                            role = resolvedRole,
+                            lastSyncedAtEpochMillis = now(),
+                        )
+                    }
+                    runCatching { dao.upsertConversations(refreshed) }
+                }
+            }
+        }
         ChatPartnerProfile(
-            userId = profile.resolvedUserId.ifBlank { userId },
+            userId = resolvedId,
             username = profile.username?.trim()?.takeIf(String::isNotEmpty),
             fullName = profile.fullName?.trim()?.takeIf(String::isNotEmpty),
-            avatarUrl = profile.avatarUrl.resolvedAvatarUrl(),
+            avatarUrl = resolvedAvatar,
             bio = profile.bio?.trim()?.takeIf(String::isNotEmpty),
+            isVerified = resolvedVerified,
+            verificationType = resolvedType,
+            role = resolvedRole,
         )
     }
 
@@ -1073,8 +1118,41 @@ class OfflineFirstChatRepository(
                     isSecretConversationHint = isSecretConversation,
                 )
             }
+            val reactionHydrationIds = response.messages
+                .filter { dto ->
+                    dto.reactions == null &&
+                        dto.deletedAt == null &&
+                        dto.messageType != "exchange_key" &&
+                        dto.messageType != "exchange_key_reply"
+                }
+                .map { it.id }
+                .distinct()
+            val batchReactions = if (reactionHydrationIds.isNotEmpty()) {
+                fetchBatchReactionsBestEffort(reactionHydrationIds)
+            } else {
+                null
+            }
+            val dtoById = response.messages.associateBy { it.id }
+            val hydratedMessages = messages.map { mapped ->
+                val dto = dtoById[mapped.serverId ?: mapped.clientId]
+                val hydrated = when {
+                    dto?.reactions != null -> mapped
+                    batchReactions != null -> mapped.copy(
+                        reactions = batchReactions[dto?.id ?: mapped.serverId ?: mapped.clientId].orEmpty(),
+                    )
+                    else -> mapped
+                }
+                val preserveExistingReactions = dto?.reactions == null && batchReactions == null
+                hydrated to preserveExistingReactions
+            }
             check(sessionGeneration.isCurrent(generation)) { "نشست کاربر تغییر کرده است" }
-            messages.forEach { mergeAndPersist(it, MergeSource.REST) }
+            hydratedMessages.forEach { (hydrated, preserveExistingReactions) ->
+                mergeAndPersist(
+                    incoming = hydrated,
+                    source = MergeSource.REST,
+                    preserveExistingReactionsWhenEmpty = preserveExistingReactions,
+                )
+            }
             if (isSecretConversation) {
                 // An older pagination page may contain a retired key. Restore
                 // the latest persisted frame after the page has been merged.
@@ -1084,7 +1162,7 @@ class OfflineFirstChatRepository(
             dao.upsertRemoteKey(
                 RemoteKeyEntity(account.accountId, scope, response.nextCursor, hasMore, now()),
             )
-            Page(messages, PaginationCursor(response.nextCursor), hasMore)
+            Page(hydratedMessages.map { it.first }, PaginationCursor(response.nextCursor), hasMore)
         }
         }
     }
@@ -1370,9 +1448,10 @@ class OfflineFirstChatRepository(
         val members = api.groupMembers(conversationId).members
         val profiles = members.map { it.userId }.filter(String::isNotBlank).chunked(PROFILE_BATCH_SIZE)
             .flatMap { api.profilesBatch(ProfileBatchRequest(it)).resolvedProfiles }
-            .associateBy { it.resolvedUserId }
+            .associateBy { it.resolvedUserId.trim().lowercase() }
         members.map { member ->
-            val profile = profiles[member.userId]
+            val profile = profiles[member.userId.trim().lowercase()]
+            val memberVerified = profile?.resolvedIsVerified == true
             GroupMember(
                 userId = member.userId,
                 username = profile?.username.orEmpty(),
@@ -1380,6 +1459,11 @@ class OfflineFirstChatRepository(
                 avatarUrl = profile?.avatarUrl.resolvedAvatarUrl(),
                 isAdmin = member.isAdmin,
                 joinedAtEpochMillis = member.joinedAt.epochMillisOrNull(),
+                isVerified = memberVerified,
+                verificationType = if (memberVerified) {
+                    profile?.verificationType?.trim()?.takeIf(String::isNotEmpty)
+                } else null,
+                role = if (memberVerified) profile?.resolvedRole else null,
             )
         }
     }
@@ -2087,6 +2171,7 @@ class OfflineFirstChatRepository(
     override suspend fun markRead(conversationId: String): ChatResult<Unit> {
         sessionProvider.synchronize()
         val account = sessionProvider.account.value ?: return loggedOut()
+        NotificationRuntimeCoordinator.notifyConversationRead(conversationId)
         return remoteCall {
             api.markRead(conversationId)
             dao.markConversationRead(account.accountId, conversationId)
@@ -2110,8 +2195,15 @@ class OfflineFirstChatRepository(
         active: Boolean,
     ): ChatResult<Unit> {
         activeConversationId = if (active) conversationId else null
+        NotificationRuntimeCoordinator.setActiveConversation(conversationId, active)
         return remoteCall {
             api.setActive(conversationId, ActiveConversationRequest(active))
+        }
+    }
+
+    override suspend fun heartbeatConversation(conversationId: String): ChatResult<Unit> {
+        return remoteCall {
+            api.heartbeat(conversationId)
         }
     }
 
@@ -2253,13 +2345,75 @@ class OfflineFirstChatRepository(
     }
 
     override suspend fun toggleReaction(message: Message, emoji: String): ChatResult<Unit> {
+        sessionProvider.synchronize()
+        val account = sessionProvider.account.value ?: return loggedOut()
         val messageId = message.serverId ?: return ChatResult.Failure("پیام هنوز ارسال نشده است", retryable = false)
         val normalized = emoji.trim()
         if (normalized.isEmpty()) return ChatResult.Failure("واکنش معتبر نیست", retryable = false)
-        return remoteCall {
-            val update = api.toggleReaction(messageId, ReactionRequest(normalized))
-            val reactions = update.reactions.groupBy({ it.emoji }, { it.userId }).mapValues { it.value.toSet() }
-            mergeAndPersist(message.copy(reactions = reactions), MergeSource.REST)
+        val mutex = reactionMutexes.getOrPut(messageId) { Mutex() }
+        return mutex.withLock {
+            val freshEntity = dao.messageByIdentity(
+                accountId = account.accountId,
+                conversationId = message.conversationId,
+                clientId = message.clientId,
+                serverId = messageId,
+            ) ?: dao.messageByAnyIdentity(account.accountId, messageId)
+            val baselineReactions = freshEntity?.toDomain(cipher)?.reactions ?: message.reactions
+            val optimisticReactions = toggleLocalReactionMap(baselineReactions, account.accountId, normalized)
+            if (freshEntity != null) {
+                dao.updateMessageReactions(
+                    accountId = account.accountId,
+                    conversationId = freshEntity.conversationId,
+                    clientId = freshEntity.clientId,
+                    reactionsJson = optimisticReactions.toReactionsStorageString(),
+                    mutationAtEpochMillis = now(),
+                )
+            }
+            remoteCall(
+                onFailure = {
+                    val currentEntity = dao.messageByIdentity(
+                        accountId = account.accountId,
+                        conversationId = freshEntity?.conversationId ?: message.conversationId,
+                        clientId = freshEntity?.clientId ?: message.clientId,
+                        serverId = messageId,
+                    ) ?: dao.messageByAnyIdentity(account.accountId, messageId)
+                    if (currentEntity != null) {
+                        val currentReactions = currentEntity.toDomain(cipher).reactions
+                        if (currentReactions == optimisticReactions) {
+                            dao.updateMessageReactions(
+                                accountId = account.accountId,
+                                conversationId = currentEntity.conversationId,
+                                clientId = currentEntity.clientId,
+                                reactionsJson = baselineReactions.toReactionsStorageString(),
+                                mutationAtEpochMillis = now(),
+                            )
+                        }
+                    }
+                },
+            ) {
+                val response = api.toggleReaction(messageId, ReactionRequest(normalized))
+                if (!response.isSuccessful) throw HttpException(response)
+                val rawBody = response.body()?.use { it.string() }
+                val serverReactions = parseSingleMessageReactionsJson(rawBody, pendingJson)
+                    ?: fetchSingleMessageReactionsBestEffort(messageId)
+                if (serverReactions != null) {
+                    val latestEntity = dao.messageByIdentity(
+                        accountId = account.accountId,
+                        conversationId = freshEntity?.conversationId ?: message.conversationId,
+                        clientId = freshEntity?.clientId ?: message.clientId,
+                        serverId = messageId,
+                    ) ?: dao.messageByAnyIdentity(account.accountId, messageId)
+                    if (latestEntity != null) {
+                        dao.updateMessageReactions(
+                            accountId = account.accountId,
+                            conversationId = latestEntity.conversationId,
+                            clientId = latestEntity.clientId,
+                            reactionsJson = serverReactions.toReactionsStorageString(),
+                            mutationAtEpochMillis = now(),
+                        )
+                    }
+                }
+            }
         }
     }
 
@@ -2317,6 +2471,7 @@ class OfflineFirstChatRepository(
                 mergeAndPersist(
                     incoming = decryptAndMapMessageDto(event.message, account.accountId),
                     source = MergeSource.REALTIME,
+                    preserveExistingReactionsWhenEmpty = event.message.reactions == null,
                 )
                 refreshConversationPreview(account.accountId, event.message.conversationId)
             }
@@ -2334,6 +2489,14 @@ class OfflineFirstChatRepository(
                     val existing = dao.conversation(account.accountId, targetId)
                     val incomingEntity = event.conversation.toEntity(account.accountId, cipher, now())
                     val merged = if (existing != null) {
+                        val mergedVerified = if (existing.type == ConversationType.GROUP.name) {
+                            false
+                        } else {
+                            val incomingHasVerification = event.conversation.peerIsVerified != null ||
+                                event.conversation.otherUserIsVerified != null ||
+                                event.conversation.isVerified != null
+                            if (incomingHasVerification) incomingEntity.isVerified else existing.isVerified
+                        }
                         existing.copy(
                             title = if (incomingEntity.title.isNotBlank() && incomingEntity.title != "کاربر" && incomingEntity.title != "user") incomingEntity.title else existing.title,
                             avatarUrl = incomingEntity.avatarUrl ?: existing.avatarUrl,
@@ -2350,6 +2513,9 @@ class OfflineFirstChatRepository(
                             lastMessageType = incomingEntity.lastMessageType ?: existing.lastMessageType,
                             lastMessageIsMine = incomingEntity.lastMessageIsMine,
                             lastMessageStatus = if (incomingEntity.lastMessageStatus != "PENDING") incomingEntity.lastMessageStatus else existing.lastMessageStatus,
+                            isVerified = mergedVerified,
+                            verificationType = if (mergedVerified) incomingEntity.verificationType ?: existing.verificationType else null,
+                            role = if (mergedVerified) incomingEntity.role ?: existing.role else null,
                         )
                     } else {
                         incomingEntity
@@ -2369,19 +2535,34 @@ class OfflineFirstChatRepository(
                 )
             }
             is RealtimeEvent.ReactionUpdated -> {
-                val conversationId = event.conversationId ?: event.update.conversationId
-                val entity = dao.messageByIdentity(
-                    account.accountId,
-                    conversationId,
-                    event.update.messageId,
-                    event.update.messageId,
-                )
+                val conversationId = event.conversationId
+                    ?: event.update.conversationId.takeIf(String::isNotBlank)
+                    ?: ""
+                val entity = if (conversationId.isNotBlank()) {
+                    dao.messageByIdentity(
+                        account.accountId,
+                        conversationId,
+                        event.update.messageId,
+                        event.update.messageId,
+                    )
+                } else {
+                    null
+                } ?: dao.messageByAnyIdentity(account.accountId, event.update.messageId)
                 if (entity != null) {
-                    val domain = entity.toDomain(cipher)
-                    val reactions = event.update.reactions
-                        .groupBy({ it.emoji }, { it.userId })
-                        .mapValues { it.value.toSet() }
-                    mergeAndPersist(domain.copy(reactions = reactions), MergeSource.REALTIME)
+                    val rawReactions = event.update.reactions
+                    val reactions = if (rawReactions != null) {
+                        rawReactions.toReactionMap()
+                    } else {
+                        fetchSingleMessageReactionsBestEffort(event.update.messageId)
+                            ?: return
+                    }
+                    dao.updateMessageReactions(
+                        accountId = account.accountId,
+                        conversationId = entity.conversationId,
+                        clientId = entity.clientId,
+                        reactionsJson = reactions.toReactionsStorageString(),
+                        mutationAtEpochMillis = now(),
+                    )
                 }
             }
             is RealtimeEvent.Connected -> retryPendingOperations(account.accountId)
@@ -2507,7 +2688,51 @@ class OfflineFirstChatRepository(
         }
     }
 
-    private suspend fun mergeAndPersist(incoming: Message, source: MergeSource) {
+    private suspend fun fetchSingleMessageReactionsBestEffort(
+        messageId: String,
+    ): Map<String, Set<String>>? = try {
+        val response = api.getMessageReactions(messageId)
+        if (!response.isSuccessful) {
+            null
+        } else {
+            val rawBody = response.body()?.use { it.string() }
+            parseSingleMessageReactionsJson(rawBody, pendingJson)
+        }
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (_: Throwable) {
+        null
+    }
+
+    private suspend fun fetchBatchReactionsBestEffort(
+        messageIds: List<String>,
+    ): Map<String, Map<String, Set<String>>>? {
+        val validIds = messageIds.asSequence()
+            .map(String::trim)
+            .filter(String::isNotEmpty)
+            .distinct()
+            .toList()
+        if (validIds.isEmpty()) return emptyMap()
+        return try {
+            val response = api.getMultipleMessageReactions(BatchReactionsRequest(validIds))
+            if (!response.isSuccessful) {
+                null
+            } else {
+                val rawBody = response.body()?.use { it.string() }
+                parseBatchReactionsJson(rawBody, pendingJson)
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    private suspend fun mergeAndPersist(
+        incoming: Message,
+        source: MergeSource,
+        preserveExistingReactionsWhenEmpty: Boolean = false,
+    ) {
         val identities = listOfNotNull(incoming.serverId, incoming.clientId).distinct()
         if (identities.any { identity ->
                 dao.isTombstoned(incoming.accountId, incoming.conversationId, identity)
@@ -2520,7 +2745,12 @@ class OfflineFirstChatRepository(
             incoming.serverId,
         )
         val existing = existingEntity?.toDomain(cipher)
-        val merged = MessageMergeReducer.merge(existing, incoming, source)
+        val merged = MessageMergeReducer.merge(
+            existing = existing,
+            incoming = incoming,
+            source = source,
+            preserveExistingReactionsWhenEmpty = preserveExistingReactionsWhenEmpty,
+        )
         if (existing == merged) return
         val mutationAt = now()
         if (merged.isSecretHandshakeFrame) {
@@ -2557,6 +2787,17 @@ class OfflineFirstChatRepository(
             ?: peerConv?.title?.takeIf { it != "کاربر" && it != "user" && it.isNotBlank() }
             ?: if (resolvedConvType == ConversationType.GROUP.name) "گروه" else "کاربر"
         val fallbackAvatar = existingConv?.avatarUrl ?: peerConv?.avatarUrl
+        val fallbackVerified = if (resolvedConvType == ConversationType.GROUP.name) {
+            false
+        } else {
+            existingConv?.isVerified ?: peerConv?.isVerified ?: false
+        }
+        val fallbackVerificationType = if (fallbackVerified) {
+            existingConv?.verificationType ?: peerConv?.verificationType
+        } else null
+        val fallbackRole = if (fallbackVerified) {
+            existingConv?.role ?: peerConv?.role
+        } else null
         val fallback = ConversationEntity(
             accountId = merged.accountId,
             id = merged.conversationId,
@@ -2572,6 +2813,9 @@ class OfflineFirstChatRepository(
             isMuted = false,
             requestStatus = null,
             lastSyncedAtEpochMillis = mutationAt,
+            isVerified = fallbackVerified,
+            verificationType = fallbackVerificationType,
+            role = fallbackRole,
         )
         dao.mergeMessageAndConversation(
             message = merged.toEntity(cipher, mutationAt),
@@ -2588,6 +2832,13 @@ class OfflineFirstChatRepository(
             mutationAtEpochMillis = mutationAt,
         )
         val conversationAfterMerge = dao.conversation(merged.accountId, merged.conversationId)
+        if (existingEntity == null && source == MergeSource.REALTIME && !merged.isMine) {
+            if (NotificationRuntimeCoordinator.isConversationActivelyViewed(merged.conversationId)) {
+                NotificationRuntimeCoordinator.notifyConversationRead(merged.conversationId)
+            } else if (conversationAfterMerge?.isMuted != true) {
+                NotificationRuntimeCoordinator.requestInAppChatChime(merged.conversationId)
+            }
+        }
         if (source != MergeSource.OPTIMISTIC && (conversationAfterMerge?.title == "کاربر" || conversationAfterMerge?.avatarUrl.isNullOrBlank())) {
             val refreshed = runCatching {
                 api.conversation(merged.conversationId).toEntity(merged.accountId, cipher, now())
@@ -2607,54 +2858,74 @@ class OfflineFirstChatRepository(
         // conversation already carries an avatar: that URL can be stale or
         // revoked and must not permanently pin the inbox to a broken image.
         val missingIds = conversations.asSequence()
-              .filter { it.type != ConversationType.GROUP.name }
+            .filter { it.type != ConversationType.GROUP.name }
             .mapNotNull { it.peerId?.trim()?.takeIf(String::isNotEmpty) }
             .distinct()
-            .take(PROFILE_BATCH_SIZE)
+            .take(PAGE_SIZE_CONVERSATIONS)
             .toList()
         if (missingIds.isEmpty()) return conversations
-        val batchProfiles = runCatching { api.profilesBatch(ProfileBatchRequest(missingIds)).resolvedProfiles }
-              .getOrDefault(emptyList())
-              .associateBy { it.resolvedUserId }
+        val batchProfiles = missingIds
+            .chunked(PROFILE_BATCH_SIZE)
+            .flatMap { chunk ->
+                runCatching { api.profilesBatch(ProfileBatchRequest(chunk)).resolvedProfiles }
+                    .getOrDefault(emptyList())
+            }
+            .associateBy { it.resolvedUserId.trim().lowercase() }
             .toMutableMap()
         // Flutter falls back to GET /profiles/{userId} when the lightweight
-        // conversation/batch payload does not contain an avatar. Keep the
-        // same bounded fallback so valid peers do not render as anonymous,
+        // conversation/batch payload does not contain an avatar or verification.
+        // Keep the same bounded fallback so valid peers do not render incomplete,
         // while avoiding an unbounded N+1 request on a large inbox.
         missingIds.asSequence()
-            .filter { batchProfiles[it]?.avatarUrl.isNullOrBlank() }
+            .filter { userId ->
+                val cached = batchProfiles[userId.lowercase()]
+                cached?.avatarUrl.isNullOrBlank() || cached?.resolvedIsVerified == null
+            }
             .take(PROFILE_INDIVIDUAL_FALLBACK_LIMIT)
             .forEach { userId ->
                 val profile = runCatching { api.profile(userId) }.getOrNull()
                 if (profile != null && profile.resolvedUserId.isNotBlank()) {
-                    batchProfiles[userId] = profile
+                    batchProfiles[userId.lowercase()] = profile
                 }
             }
         conversations.asSequence()
             .filter {
+                val peerKey = it.peerId?.trim()?.lowercase()
+                val cached = peerKey?.let(batchProfiles::get)
                 it.type != ConversationType.GROUP.name &&
                     it.title != "کاربر" &&
-                    !it.peerId.isNullOrBlank() &&
-                    batchProfiles[it.peerId?.trim()]?.avatarUrl.isNullOrBlank()
+                    !peerKey.isNullOrEmpty() &&
+                    (cached == null || cached.avatarUrl.isNullOrBlank() || cached.resolvedIsVerified == null)
             }
-            .distinctBy { it.peerId }
+            .distinctBy { it.peerId?.trim()?.lowercase() }
             .take(PROFILE_USERNAME_FALLBACK_LIMIT)
             .forEach { conversation ->
                 val profile = runCatching { api.profileByUsername(conversation.title) }.getOrNull()
-                if (profile != null && !profile.avatarUrl.isNullOrBlank()) {
-                    batchProfiles[conversation.peerId.orEmpty().trim()] = profile
+                if (profile != null && (!profile.avatarUrl.isNullOrBlank() || profile.resolvedIsVerified != null)) {
+                    batchProfiles[conversation.peerId.orEmpty().trim().lowercase()] = profile
                 }
             }
         val accountId = conversations.firstOrNull()?.accountId
         val localPeerInfo = if (!accountId.isNullOrBlank()) {
             runCatching {
                 dao.conversations(accountId)
-                    .filter { it.title != "کاربر" && it.title.isNotBlank() && !it.peerId.isNullOrBlank() }
-                    .associate { it.peerId!!.trim().lowercase() to (it.title to it.avatarUrl) }
+                    .filter { it.type != ConversationType.GROUP.name && it.title != "کاربر" && it.title.isNotBlank() && !it.peerId.isNullOrBlank() }
+                    .associate {
+                        it.peerId!!.trim().lowercase() to CachedPeerIdentity(
+                            title = it.title,
+                            avatarUrl = it.avatarUrl,
+                            isVerified = it.isVerified,
+                            verificationType = it.verificationType,
+                            role = it.role,
+                        )
+                    }
             }.getOrDefault(emptyMap())
         } else emptyMap()
 
         return conversations.map { conversation ->
+            if (conversation.type == ConversationType.GROUP.name) {
+                return@map conversation
+            }
             val peerKey = conversation.peerId?.trim()?.lowercase()
             val profile = peerKey?.let(batchProfiles::get)
             val localInfo = peerKey?.let(localPeerInfo::get)
@@ -2664,18 +2935,41 @@ class OfflineFirstChatRepository(
                 listOf(
                     profile?.username,
                     profile?.fullName,
-                    localInfo?.first,
+                    localInfo?.title,
                 ).firstNotNullOfOrNull { it?.trim()?.takeIf(String::isNotEmpty) }
                     ?: conversation.title
             }
             val avatar = listOf(
                 profile?.avatarUrl?.resolvedAvatarUrl(),
-                localInfo?.second,
+                localInfo?.avatarUrl,
                 conversation.avatarUrl,
             ).firstOrNull { !it.isNullOrBlank() }
+            val resolvedVerified = profile?.resolvedIsVerified
+                ?: (conversation.isVerified || localInfo?.isVerified == true)
+            val resolvedVerificationType = if (!resolvedVerified) {
+                null
+            } else {
+                listOf(
+                    profile?.verificationType,
+                    conversation.verificationType,
+                    localInfo?.verificationType,
+                ).firstNotNullOfOrNull { it?.trim()?.takeIf(String::isNotEmpty) }
+            }
+            val resolvedRole = if (!resolvedVerified) {
+                null
+            } else {
+                listOf(
+                    profile?.resolvedRole,
+                    conversation.role,
+                    localInfo?.role,
+                ).firstNotNullOfOrNull { it?.trim()?.takeIf(String::isNotEmpty) }
+            }
             conversation.copy(
                 title = name,
                 avatarUrl = avatar,
+                isVerified = resolvedVerified,
+                verificationType = resolvedVerificationType,
+                role = resolvedRole,
                 lastSyncedAtEpochMillis = now(),
             )
         }
@@ -2754,11 +3048,26 @@ class OfflineFirstChatRepository(
         val allConversations = dao.conversations(accountId)
         val peerTitles = allConversations
             .filter { it.title != "کاربر" && it.title.isNotBlank() && !it.peerId.isNullOrBlank() }
-            .associate { it.peerId!!.trim().lowercase() to (it.title to it.avatarUrl) }
+            .associate {
+                it.peerId!!.trim().lowercase() to CachedPeerIdentity(
+                    title = it.title,
+                    avatarUrl = it.avatarUrl,
+                    isVerified = it.isVerified,
+                    verificationType = it.verificationType,
+                    role = it.role,
+                )
+            }
         val toUpdate = allConversations.filter { it.title == "کاربر" && !it.peerId.isNullOrBlank() }
             .mapNotNull { conv ->
                 val info = peerTitles[conv.peerId!!.trim().lowercase()] ?: return@mapNotNull null
-                conv.copy(title = info.first, avatarUrl = conv.avatarUrl ?: info.second)
+                val mergedVerified = conv.isVerified || info.isVerified
+                conv.copy(
+                    title = info.title,
+                    avatarUrl = conv.avatarUrl ?: info.avatarUrl,
+                    isVerified = mergedVerified,
+                    verificationType = if (mergedVerified) conv.verificationType ?: info.verificationType else null,
+                    role = if (mergedVerified) conv.role ?: info.role else null,
+                )
             }
         if (toUpdate.isNotEmpty()) {
             dao.upsertConversations(toUpdate)
@@ -3117,6 +3426,9 @@ private fun List<ConversationEntity>.toSuggestedUsers(accountId: String): List<C
                 fullName = row.title,
                 avatarUrl = row.avatarUrl,
                 conversationId = row.id,
+                isVerified = row.isVerified,
+                verificationType = row.verificationType,
+                role = row.role,
             )
         }
         .toList()
@@ -3124,13 +3436,25 @@ private fun List<ConversationEntity>.toSuggestedUsers(accountId: String): List<C
 private fun ProfileDto.toChatUserOrNull(accountId: String): ChatUser? {
     val userId = resolvedUserId
     if (userId.isBlank() || userId == accountId || userId == NIL_USER_ID) return null
+    val verified = resolvedIsVerified == true
     return ChatUser(
         id = userId,
         username = username.orEmpty(),
         fullName = fullName,
         avatarUrl = avatarUrl.resolvedAvatarUrl(),
+        isVerified = verified,
+        verificationType = if (verified) verificationType?.trim()?.takeIf(String::isNotEmpty) else null,
+        role = if (verified) resolvedRole else null,
     )
 }
+
+private data class CachedPeerIdentity(
+    val title: String,
+    val avatarUrl: String?,
+    val isVerified: Boolean,
+    val verificationType: String?,
+    val role: String?,
+)
 
 private const val NIL_USER_ID = "00000000-0000-0000-0000-000000000000"
 
@@ -3178,3 +3502,71 @@ private data class PendingReplyPayload(
     val senderName: String,
     val kind: String,
 )
+
+internal fun toggleLocalReactionMap(
+    current: Map<String, Set<String>>,
+    accountId: String,
+    emoji: String,
+): Map<String, Set<String>> {
+    val cleanEmoji = emoji.trim()
+    val cleanAccountId = accountId.trim()
+    if (cleanEmoji.isEmpty() || cleanAccountId.isEmpty()) return current
+    val next = current.mapValues { it.value.toMutableSet() }.toMutableMap()
+    val existingUsers = next[cleanEmoji] ?: mutableSetOf()
+    val alreadyReacted = existingUsers.any { it.equals(cleanAccountId, ignoreCase = true) }
+    if (alreadyReacted) {
+        existingUsers.removeAll { it.equals(cleanAccountId, ignoreCase = true) }
+        if (existingUsers.isEmpty()) next.remove(cleanEmoji) else next[cleanEmoji] = existingUsers
+    } else {
+        existingUsers.add(cleanAccountId)
+        next[cleanEmoji] = existingUsers
+    }
+    return next.mapValues { it.value.toSet() }.filterValues { it.isNotEmpty() }
+}
+
+internal fun parseSingleMessageReactionsJson(
+    rawBody: String?,
+    json: Json = Json { ignoreUnknownKeys = true },
+): Map<String, Set<String>>? {
+    val body = rawBody?.trim()?.takeIf(String::isNotEmpty) ?: return null
+    val root = runCatching { json.parseToJsonElement(body) }.getOrNull() ?: return null
+    val listElement = when (root) {
+        is JsonArray -> root
+        is JsonObject -> {
+            val direct = root["reactions"]
+            val dataObj = root["data"] as? JsonObject
+            (direct ?: dataObj?.get("reactions")) as? JsonArray
+        }
+        else -> null
+    } ?: return null
+    return listElement.toReactionDtos().toReactionMap()
+}
+
+internal fun parseBatchReactionsJson(
+    rawBody: String?,
+    json: Json = Json { ignoreUnknownKeys = true },
+): Map<String, Map<String, Set<String>>>? {
+    val body = rawBody?.trim()?.takeIf(String::isNotEmpty) ?: return null
+    val root = runCatching { json.parseToJsonElement(body) }.getOrNull() as? JsonObject ?: return null
+    val dataObj = root["data"] as? JsonObject
+    val reactionsMapObj = (root["reactions"] ?: dataObj?.get("reactions")) as? JsonObject ?: return null
+    val result = LinkedHashMap<String, Map<String, Set<String>>>(reactionsMapObj.size)
+    for ((messageId, value) in reactionsMapObj) {
+        val cleanId = messageId.trim()
+        if (cleanId.isEmpty()) continue
+        val arr = value as? JsonArray ?: continue
+        result[cleanId] = arr.toReactionDtos().toReactionMap()
+    }
+    return result
+}
+
+private fun JsonArray.toReactionDtos(): List<ReactionDto> = mapNotNull { item ->
+    val obj = item as? JsonObject ?: return@mapNotNull null
+    val emoji = obj.stringField("emoji") ?: return@mapNotNull null
+    val userId = obj.stringField("user_id", "userId") ?: return@mapNotNull null
+    ReactionDto(userId = userId, emoji = emoji)
+}
+
+private fun JsonObject.stringField(vararg keys: String): String? = keys.firstNotNullOfOrNull { key ->
+    (get(key) as? JsonPrimitive)?.contentOrNull?.trim()?.takeIf(String::isNotEmpty)
+}

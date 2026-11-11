@@ -263,28 +263,6 @@ fun MusicPickerBottomSheet(
         hasAudioPermission = granted || checkAudioReadPermission(context)
     }
 
-    val audioDocumentPicker = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument(),
-    ) { uri ->
-        if (uri != null) {
-            runCatching {
-                context.contentResolver.takePersistableUriPermission(
-                    uri,
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION,
-                )
-            }
-            coroutineScope.launch {
-                val extracted = extractAudioTrackFromUri(context, uri)
-                localDeviceTracks = listOf(extracted) + localDeviceTracks.filterNot { it.musicUrl == extracted.musicUrl }
-                stagedTrack = extracted
-                editTitle = extracted.title
-                editArtist = extracted.artist
-                clipStartFraction = 0f
-                playPreviewAt(extracted, 0L)
-            }
-        }
-    }
-
     // Load Local Device Music when granted
     LaunchedEffect(hasAudioPermission) {
         if (hasAudioPermission) {
@@ -506,7 +484,7 @@ fun MusicPickerBottomSheet(
                     singleLine = true,
                 )
 
-                // Direct File Picker Action Card on Tab 0 ("گوشی من")
+                // In-App Device Audio Refresh Card on Tab 0 ("گوشی من")
                 if (selectedTab == 0) {
                     Row(
                         modifier = Modifier
@@ -523,7 +501,20 @@ fun MusicPickerBottomSheet(
                             )
                             .border(1.dp, VistaBrandColors.Pink.copy(alpha = 0.4f), RoundedCornerShape(16.dp))
                             .clickable {
-                                audioDocumentPicker.launch(arrayOf("audio/*"))
+                                if (hasAudioPermission) {
+                                    coroutineScope.launch {
+                                        isLoadingLocal = true
+                                        localDeviceTracks = queryDeviceMusicTracks(context)
+                                        isLoadingLocal = false
+                                    }
+                                } else {
+                                    val perm = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                        Manifest.permission.READ_MEDIA_AUDIO
+                                    } else {
+                                        Manifest.permission.READ_EXTERNAL_STORAGE
+                                    }
+                                    audioPermissionLauncher.launch(perm)
+                                }
                             }
                             .padding(horizontal = 14.dp, vertical = 11.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -542,7 +533,7 @@ fun MusicPickerBottomSheet(
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.FolderOpen,
+                                    imageVector = Icons.Default.MusicNote,
                                     contentDescription = null,
                                     tint = Color.White,
                                     modifier = Modifier.size(18.dp),
@@ -550,13 +541,17 @@ fun MusicPickerBottomSheet(
                             }
                             Column {
                                 Text(
-                                    text = "انتخاب فایل صوتی از پوشه‌ها و دانلودها",
+                                    text = if (hasAudioPermission) {
+                                        "بازخوانی لیست آهنگ‌های حافظه گوشی"
+                                    } else {
+                                        "نمایش تمام فایل‌های صوتی گوشی درون برنامه"
+                                    },
                                     color = Color.White,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 13.sp,
                                 )
                                 Text(
-                                    text = "پشتیبانی از MP3، M4A، AAC، WAV و فایل‌های ذخیره شده تلگرام",
+                                    text = "نمایش مستقیم MP3، M4A، AAC، WAV با قابلیت جستجو و پیش‌نمایش",
                                     color = Color.White.copy(alpha = 0.65f),
                                     fontSize = 10.5.sp,
                                     maxLines = 1,
@@ -589,7 +584,7 @@ fun MusicPickerBottomSheet(
                                 verticalArrangement = Arrangement.Center,
                             ) {
                                 Text(
-                                    text = "برای نمایش خودکار تمام آهنگ‌های موجود در حافظه گوشی، دسترسی خواندن فایل‌های صوتی را فعال کنید یا از دکمه بالا فایل دلخواه را انتخاب نمایید.",
+                                    text = "برای نمایش خودکار تمام آهنگ‌های موجود در حافظه گوشی، دسترسی خواندن فایل‌های صوتی را فعال کنید.",
                                     color = Color.White.copy(alpha = 0.72f),
                                     fontSize = 12.5.sp,
                                 )
@@ -653,7 +648,7 @@ fun MusicPickerBottomSheet(
                                 Text(
                                     text = when {
                                         searchQuery.isNotBlank() -> "موزیکی با این عبارت پیدا نشد"
-                                        selectedTab == 0 -> "آهنگی در پوشه موسیقی گوشی یافت نشد؛ از دکمه انتخاب فایل بالا استفاده کنید"
+                                        selectedTab == 0 -> "آهنگی در حافظه گوشی یافت نشد"
                                         selectedTab == 1 -> "هنوز موزیکی در حساب خود ذخیره نکرده‌اید؛ از تب «گوشی من» انتخاب کنید"
                                         else -> "موزیکی موجود نیست"
                                     },
@@ -1570,7 +1565,7 @@ private suspend fun queryDeviceMusicTracks(context: Context): List<MusicTrack> =
             MediaStore.Audio.Media.DURATION,
             MediaStore.Audio.Media.DISPLAY_NAME,
         )
-        val selection = "${MediaStore.Audio.Media.DURATION} >= 4000"
+        val selection = "${MediaStore.Audio.Media.DURATION} >= 1000"
         val sortOrder = "${MediaStore.Audio.Media.DATE_ADDED} DESC"
         val albumArtBase = Uri.parse("content://media/external/audio/albumart")
 
@@ -1589,7 +1584,7 @@ private suspend fun queryDeviceMusicTracks(context: Context): List<MusicTrack> =
             val nameCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME)
 
             var count = 0
-            while (cursor.moveToNext() && count < 150) {
+            while (cursor.moveToNext() && count < 250) {
                 val id = cursor.getLong(idCol)
                 val rawTitle = cursor.getString(titleCol)?.trim().orEmpty()
                 val rawArtist = cursor.getString(artistCol)?.trim().orEmpty()

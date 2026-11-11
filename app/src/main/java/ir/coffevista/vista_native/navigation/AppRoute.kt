@@ -43,6 +43,8 @@ enum class DeferredFeatureKind {
     GROUP,
     CHAT,
     GAME,
+    NOTIFICATIONS,
+    NEARBY,
 }
 
 @Serializable

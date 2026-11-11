@@ -5,6 +5,7 @@ import ir.coffevista.vista_native.features.chat.data.local.MessageEntity
 import ir.coffevista.vista_native.features.chat.data.remote.ConversationDto
 import ir.coffevista.vista_native.features.chat.data.remote.ConversationParticipantDto
 import ir.coffevista.vista_native.features.chat.data.remote.MessageDto
+import ir.coffevista.vista_native.features.chat.data.remote.ReactionDto
 import ir.coffevista.vista_native.features.chat.domain.model.Conversation
 import ir.coffevista.vista_native.features.chat.domain.model.ConversationType
 import ir.coffevista.vista_native.features.chat.domain.model.Attachment
@@ -20,6 +21,7 @@ import java.util.Locale
 import java.util.TimeZone
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 
@@ -63,10 +65,37 @@ internal suspend fun ConversationDto.toEntity(
         .firstOrNull { it.resolvedUserId == accountId }
         ?.unreadCount
         ?: unreadCount
+    val resolvedType = resolvedConversationType
+    val resolvedIsVerified = if (resolvedType == ConversationType.GROUP) {
+        false
+    } else {
+        peerIsVerified ?: otherUserIsVerified ?: isVerified ?: participantIdentity?.isVerified ?: false
+    }
+    val resolvedVerificationType = if (!resolvedIsVerified) {
+        null
+    } else {
+        listOf(
+            peerVerificationType,
+            otherUserVerificationType,
+            verificationType,
+            participantIdentity?.verificationType,
+        ).firstNotNullOfOrNull { it?.trim()?.takeIf(String::isNotEmpty) }
+    }
+    val resolvedRole = if (!resolvedIsVerified) {
+        null
+    } else {
+        listOf(
+            peerRole,
+            otherUserRole,
+            role,
+            accountType,
+            participantIdentity?.role,
+        ).firstNotNullOfOrNull { it?.trim()?.takeIf(String::isNotEmpty) }
+    }
     return ConversationEntity(
     accountId = accountId,
     id = id,
-    type = resolvedConversationType.name,
+    type = resolvedType.name,
     title = listOf(
         name,
         peerUsername,
@@ -96,6 +125,9 @@ internal suspend fun ConversationDto.toEntity(
     lastMessageType = lastMessageType,
     lastMessageIsMine = isLastMessageFromMe ?: (lastMessageSenderId?.trim() == accountId),
     lastMessageStatus = resolvedLastMessageStatus.name,
+    isVerified = resolvedIsVerified,
+    verificationType = resolvedVerificationType,
+    role = resolvedRole,
 )
 }
 
@@ -119,6 +151,9 @@ private data class ParticipantPeerIdentity(
     val username: String?,
     val fullName: String?,
     val avatarUrl: String?,
+    val isVerified: Boolean? = null,
+    val verificationType: String? = null,
+    val role: String? = null,
 )
 
 private val ConversationParticipantDto.resolvedUserId: String?
@@ -136,6 +171,9 @@ private fun ConversationDto.participantPeerIdentity(accountId: String): Particip
         username = profile.stringValue("username", "user_name"),
         fullName = profile.stringValue("full_name", "name", "display_name"),
         avatarUrl = profile.stringValue("avatar_url", "avatar", "image"),
+        isVerified = profile.booleanValue("is_verified", "user_is_verified", "isVerified"),
+        verificationType = profile.stringValue("verification_type", "verificationType"),
+        role = profile.stringValue("role", "account_type", "accountType"),
     )
 }
 
@@ -149,7 +187,11 @@ private fun ConversationParticipantDto.profileObject(): JsonObject? {
 }
 
 private fun JsonObject?.stringValue(vararg keys: String): String? = keys.firstNotNullOfOrNull { key ->
-    this?.get(key)?.jsonPrimitive?.contentOrNull?.trim()?.takeIf(String::isNotEmpty)
+    (this?.get(key) as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull?.trim()?.takeIf(String::isNotEmpty)
+}
+
+private fun JsonObject?.booleanValue(vararg keys: String): Boolean? = keys.firstNotNullOfOrNull { key ->
+    (this?.get(key) as? kotlinx.serialization.json.JsonPrimitive)?.booleanOrNull
 }
 
 private val ConversationDto.isSecretConversation: Boolean
@@ -218,6 +260,9 @@ internal suspend fun ConversationEntity.toDomain(cipher: ChatContentCipher): Con
     isLastMessageFromMe = lastMessageIsMine,
     lastMessageStatus = runCatching { MessageStatus.valueOf(lastMessageStatus) }
         .getOrDefault(MessageStatus.SENT),
+    isVerified = if (type == ConversationType.GROUP.name) false else isVerified,
+    verificationType = if (type == ConversationType.GROUP.name || !isVerified) null else verificationType,
+    role = if (type == ConversationType.GROUP.name || !isVerified) null else role,
 )
 
 internal fun MessageDto.toDomain(accountId: String): Message {
@@ -277,7 +322,7 @@ internal fun MessageDto.toDomain(accountId: String): Message {
         replyToSenderName = replyToSenderName,
         replyToKind = replyToKind,
         attachment = attachment,
-        reactions = reactions.groupBy({ it.emoji }, { it.userId }).mapValues { it.value.toSet() },
+        reactions = reactions.orEmpty().toReactionMap(),
         isForwarded = isForwarded,
         forwardedFromSenderName = forwardedFromSenderName,
         originalSenderId = originalSenderId,
@@ -443,14 +488,38 @@ internal fun String.toAttachmentKind(): AttachmentKind = when (trim().lowercase(
     else -> AttachmentKind.UNKNOWN
 }
 
-private fun Map<String, Set<String>>.toStorageString(): String = entries.joinToString("\u001e") { (emoji, users) ->
-    "$emoji\u001f${users.joinToString("\u001d")}" 
-}
+internal fun List<ReactionDto>.toReactionMap(): Map<String, Set<String>> =
+    asSequence()
+        .mapNotNull { dto ->
+            val emoji = dto.emoji.trim().takeIf(String::isNotEmpty) ?: return@mapNotNull null
+            val userId = dto.userId.trim().takeIf(String::isNotEmpty) ?: return@mapNotNull null
+            emoji to userId
+        }
+        .groupBy({ it.first }, { it.second })
+        .mapValues { it.value.toSet() }
+        .filterValues { it.isNotEmpty() }
+
+internal fun Map<String, Set<String>>.toReactionsStorageString(): String = toStorageString()
+
+private fun Map<String, Set<String>>.toStorageString(): String = entries
+    .asSequence()
+    .mapNotNull { (emoji, users) ->
+        val cleanEmoji = emoji.trim().takeIf(String::isNotEmpty) ?: return@mapNotNull null
+        val cleanUsers = users.asSequence().map(String::trim).filter(String::isNotEmpty).toList()
+        if (cleanUsers.isEmpty()) return@mapNotNull null
+        "$cleanEmoji\u001f${cleanUsers.joinToString("\u001d")}"
+    }
+    .joinToString("\u001e")
 
 private fun String.fromStorageString(): Map<String, Set<String>> =
     takeIf(String::isNotBlank)?.split('\u001e')?.mapNotNull { entry ->
         val parts = entry.split('\u001f', limit = 2)
-        parts.firstOrNull()?.takeIf(String::isNotBlank)?.let { emoji ->
-            emoji to parts.getOrElse(1) { "" }.split('\u001d').filter(String::isNotBlank).toSet()
-        }
+        val emoji = parts.firstOrNull()?.trim()?.takeIf(String::isNotEmpty) ?: return@mapNotNull null
+        val users = parts.getOrElse(1) { "" }
+            .split('\u001d')
+            .asSequence()
+            .map(String::trim)
+            .filter(String::isNotEmpty)
+            .toSet()
+        if (users.isEmpty()) null else emoji to users
     }?.toMap().orEmpty()

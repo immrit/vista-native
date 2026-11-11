@@ -44,9 +44,21 @@ class ChatRealtimeTest {
         assertEquals("c1", event.conversationId)
         assertEquals("m1", event.update.messageId)
         assertEquals("c1", event.update.conversationId)
-        assertEquals(1, event.update.reactions.size)
-        assertEquals("u2", event.update.reactions[0].userId)
-        assertEquals("❤️", event.update.reactions[0].emoji)
+        assertEquals(1, event.update.reactions?.size)
+        assertEquals("u2", event.update.reactions?.get(0)?.userId)
+        assertEquals("❤️", event.update.reactions?.get(0)?.emoji)
+    }
+
+    @Test
+    fun `reaction updated envelope parses without conversation_id inside data`() {
+        val payload = """
+            {"type":"reaction_updated","event_id":"rev-2","data":{"message_id":"m2","reactions":[{"user_id":"u3","emoji":"🔥"}]}}
+        """.trimIndent()
+        val event = RealtimeEventParser.parse(payload) as RealtimeEvent.ReactionUpdated
+        assertEquals("rev-2", event.eventId)
+        assertNull(event.conversationId)
+        assertEquals("m2", event.update.messageId)
+        assertEquals("🔥", event.update.reactions?.single()?.emoji)
     }
 
     @Test

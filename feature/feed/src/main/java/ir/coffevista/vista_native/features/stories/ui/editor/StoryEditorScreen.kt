@@ -6,7 +6,6 @@ import android.view.ViewGroup
 import android.widget.FrameLayout
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
@@ -364,13 +363,15 @@ fun StoryEditorScreen(
         }
     }
 
-    // Secondary Photo-on-Photo Cutout Picker
-    val photoCutoutPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickVisualMedia(),
-    ) { uri ->
-        if (uri != null) {
-            viewModel.addPhotoCutoutElement(uri)
-        }
+    // Secondary Photo-on-Photo Cutout Picker (In-App)
+    var showPhotoCutoutPicker by remember { mutableStateOf(false) }
+    if (showPhotoCutoutPicker) {
+        ir.coffevista.vista_native.core.designsystem.component.VistaInAppMediaPickerBottomSheet(
+            mode = ir.coffevista.vista_native.core.designsystem.component.VistaInAppPickerMode.IMAGE_SINGLE,
+            title = "انتخاب تصویر برای برش",
+            onDismiss = { showPhotoCutoutPicker = false },
+            onSingleSelected = { uri -> viewModel.addPhotoCutoutElement(uri) },
+        )
     }
 
     LaunchedEffect(uiState.isSuccess) {
@@ -897,11 +898,7 @@ fun StoryEditorScreen(
                                 StudioCircleIconButton(
                                     icon = Icons.Default.AddPhotoAlternate,
                                     contentDescription = "برش عکس",
-                                    onClick = {
-                                        photoCutoutPickerLauncher.launch(
-                                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
-                                        )
-                                    },
+                                    onClick = { showPhotoCutoutPicker = true },
                                 )
 
                                 // Music Picker
@@ -1126,9 +1123,7 @@ fun StoryEditorScreen(
                     },
                     onSelectPhotoCutout = {
                         showStickerSheet = false
-                        photoCutoutPickerLauncher.launch(
-                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
-                        )
+                        showPhotoCutoutPicker = true
                     },
                     onSelectWeather = {
                         showStickerSheet = false

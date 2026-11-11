@@ -4,6 +4,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -298,10 +299,30 @@ internal fun MessageContextMenu(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             quickReactions.forEach { emoji ->
+                                val isMyReaction = message.reactions[emoji]
+                                    ?.any { it.equals(message.accountId, ignoreCase = true) } == true
                                 Box(
                                     modifier = Modifier
                                         .size(35.dp)
                                         .clip(CircleShape)
+                                        .then(
+                                            if (isMyReaction) {
+                                                Modifier
+                                                    .background(
+                                                        MaterialTheme.colorScheme.primary.copy(
+                                                            alpha = if (isDark) 0.30f else 0.18f,
+                                                        ),
+                                                        CircleShape,
+                                                    )
+                                                    .border(
+                                                        width = 1.dp,
+                                                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.65f),
+                                                        shape = CircleShape,
+                                                    )
+                                            } else {
+                                                Modifier
+                                            },
+                                        )
                                         .semantics { contentDescription = "واکنش $emoji" }
                                         .clickable(role = Role.Button) { onReact(emoji) },
                                     contentAlignment = Alignment.Center,

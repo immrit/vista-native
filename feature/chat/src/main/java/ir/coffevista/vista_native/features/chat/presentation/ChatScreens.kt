@@ -32,6 +32,7 @@ import ir.coffevista.vista_native.core.designsystem.glass.VistaGlassTokens
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.onSizeChanged
 import ir.coffevista.vista_native.core.designsystem.component.VistaNotificationBadge
+import ir.coffevista.vista_native.core.designsystem.component.VistaVerificationBadge
 import ir.coffevista.vista_native.features.chat.presentation.components.FullscreenMediaViewerDialog
 import ir.coffevista.vista_native.features.chat.presentation.components.MediaViewerItem
 import ir.coffevista.vista_native.features.chat.presentation.components.ChatAttachmentBottomSheet
@@ -290,6 +291,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -1035,38 +1037,48 @@ private fun ConversationRow(
                 }
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        if (conversation.isMuted) {
-                            MutedGlyph(MaterialTheme.colorScheme.onSurfaceVariant)
-                            Spacer(Modifier.width(4.dp))
-                        }
-                        VistaEmojiText(
-                            text = conversation.title.ifBlank { "کاربر" },
-                            modifier = Modifier.weight(1f),
-                            style = TextStyle(
-                                fontSize = 15.sp,
-                                fontWeight = if (conversation.unreadCount > 0) FontWeight.SemiBold else FontWeight.Medium,
-                                color = if (conversation.type.name == "SECRET") Color(0xFF2E7D32) else MaterialTheme.colorScheme.onSurface,
-                            ),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        if (conversation.type == ConversationType.GROUP) {
-                            Spacer(Modifier.width(4.dp))
-                            Icon(
-                                Icons.Default.Group,
-                                contentDescription = null,
-                                modifier = Modifier.size(14.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                            if (conversation.isMuted) {
+                                MutedGlyph(MaterialTheme.colorScheme.onSurfaceVariant)
+                                Spacer(Modifier.width(4.dp))
+                            }
+                            VistaEmojiText(
+                                text = conversation.title.ifBlank { "کاربر" },
+                                modifier = Modifier.weight(1f, fill = false),
+                                style = TextStyle(
+                                    fontSize = 15.sp,
+                                    fontWeight = if (conversation.unreadCount > 0) FontWeight.SemiBold else FontWeight.Medium,
+                                    color = if (conversation.type.name == "SECRET") Color(0xFF2E7D32) else MaterialTheme.colorScheme.onSurface,
+                                ),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                             )
-                        }
-                        if (conversation.type == ConversationType.SECRET) {
-                            Spacer(Modifier.width(4.dp))
-                            Icon(
-                                Icons.Default.Lock,
-                                contentDescription = null,
-                                modifier = Modifier.size(14.dp),
-                                tint = Color(0xFF2E7D32),
-                            )
+                            if (conversation.type != ConversationType.GROUP) {
+                                ChatUserVerificationBadge(
+                                    isVerified = conversation.isVerified,
+                                    verificationType = conversation.verificationType,
+                                    role = conversation.role,
+                                    size = 15.dp,
+                                )
+                            }
+                            if (conversation.type == ConversationType.GROUP) {
+                                Spacer(Modifier.width(4.dp))
+                                Icon(
+                                    Icons.Default.Group,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(14.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                )
+                            }
+                            if (conversation.type == ConversationType.SECRET) {
+                                Spacer(Modifier.width(4.dp))
+                                Icon(
+                                    Icons.Default.Lock,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(14.dp),
+                                    tint = Color(0xFF2E7D32),
+                                )
+                            }
                         }
                         conversation.lastMessageAtEpochMillis?.let {
                             Spacer(Modifier.width(8.dp))
@@ -1128,6 +1140,28 @@ private fun ConversationRow(
             )
         }
     }
+}
+
+@Composable
+internal fun ChatUserVerificationBadge(
+    isVerified: Boolean,
+    verificationType: String? = null,
+    role: String? = null,
+    modifier: Modifier = Modifier,
+    size: Dp = 15.dp,
+    isDarkSurface: Boolean = MaterialTheme.colorScheme.surface.luminance() < 0.5f,
+    spacerWidth: Dp = 4.dp,
+) {
+    if (!isVerified) return
+    Spacer(Modifier.width(spacerWidth))
+    VistaVerificationBadge(
+        isVerified = true,
+        verificationType = verificationType,
+        role = role,
+        size = size,
+        isDarkSurface = isDarkSurface,
+        modifier = modifier,
+    )
 }
 
 @Composable
@@ -1268,13 +1302,24 @@ private fun ConversationActionsSheet(
     ModalBottomSheet(onDismissRequest = onDismiss) {
         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 8.dp)) {
-                Text(
-                    conversation.title.ifBlank { "گفتگو" },
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        conversation.title.ifBlank { "گفتگو" },
+                        modifier = Modifier.weight(1f, fill = false),
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    if (conversation.type != ConversationType.GROUP) {
+                        ChatUserVerificationBadge(
+                            isVerified = conversation.isVerified,
+                            verificationType = conversation.verificationType,
+                            role = conversation.role,
+                            size = 16.dp,
+                        )
+                    }
+                }
                 Spacer(Modifier.height(8.dp))
                 ConversationActionRow(
                     text = if (conversation.isPinned) "برداشتن سنجاق" else "سنجاق کردن",
@@ -1473,21 +1518,40 @@ fun MessageDetailRoute(
     val state by viewModel.state.collectAsStateWithLifecycle()
     LaunchedEffect(conversationId) { viewModel.bind(conversationId) }
     val lifecycleOwner = LocalLifecycleOwner.current
+    var isConversationResumed by remember(lifecycleOwner) {
+        mutableStateOf(lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))
+    }
     DisposableEffect(lifecycleOwner, conversationId, viewModel) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
-                Lifecycle.Event.ON_RESUME -> viewModel.setConversationVisible(conversationId, true)
-                Lifecycle.Event.ON_PAUSE -> viewModel.setConversationVisible(conversationId, false)
+                Lifecycle.Event.ON_RESUME -> {
+                    isConversationResumed = true
+                    viewModel.setConversationVisible(conversationId, true)
+                }
+                Lifecycle.Event.ON_PAUSE -> {
+                    isConversationResumed = false
+                    viewModel.setConversationVisible(conversationId, false)
+                }
                 else -> Unit
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+            isConversationResumed = true
             viewModel.setConversationVisible(conversationId, true)
         }
         onDispose {
+            isConversationResumed = false
             lifecycleOwner.lifecycle.removeObserver(observer)
             viewModel.setConversationVisible(conversationId, false)
+        }
+    }
+    val activeHeartbeatConversationId = state.conversationId ?: conversationId
+    LaunchedEffect(activeHeartbeatConversationId, isConversationResumed) {
+        if (!isConversationResumed) return@LaunchedEffect
+        while (true) {
+            kotlinx.coroutines.delay(40_000L)
+            viewModel.sendConversationHeartbeat(activeHeartbeatConversationId)
         }
     }
     MessageDetailScreen(
@@ -2118,6 +2182,9 @@ fun MessageDetailScreen(
                                     senderId = message.senderId,
                                     senderName = groupSender?.displayName ?: "کاربر",
                                     avatarUrl = groupSender?.avatarUrl,
+                                    senderIsVerified = groupSender?.isVerified == true,
+                                    senderVerificationType = groupSender?.verificationType,
+                                    senderRole = groupSender?.role,
                                     isFirstInGroup = groupPosition.isFirstInGroup,
                                     isLastInGroup = groupPosition.isLastInGroup,
                                     onOpenProfile = onOpenProfile,
@@ -2162,38 +2229,15 @@ fun MessageDetailScreen(
                                                     onCancelDownload = onCancelDownload,
                                                     onAttachmentClick = { viewedAttachment = it },
                                                 )
-                                                if (message.reactions.isNotEmpty()) {
-                                                    LazyRow(
-                                                        modifier = Modifier.padding(top = 4.dp, start = 8.dp, end = 8.dp),
-                                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                                    ) {
-                                                        items(message.reactions.entries.toList(), key = { it.key }) { reaction ->
-                                                            val isMyReaction = message.accountId in reaction.value
-                                                            Row(
-                                                                modifier = Modifier
-                                                                    .clip(RoundedCornerShape(12.dp))
-                                                                    .background(
-                                                                        if (isMyReaction) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
-                                                                        else if (message.isMine) Color.White.copy(alpha = 0.16f)
-                                                                        else MaterialTheme.colorScheme.surfaceVariant
-                                                                    )
-                                                                    .clickable { onReact(message, reaction.key) }
-                                                                    .padding(horizontal = 7.dp, vertical = 2.dp),
-                                                                verticalAlignment = Alignment.CenterVertically,
-                                                                horizontalArrangement = Arrangement.spacedBy(3.dp),
-                                                            ) {
-                                                                VistaEmoji(emoji = reaction.key, size = 13.dp)
-                                                                if (reaction.value.size > 1) {
-                                                                    Text(
-                                                                        reaction.value.size.toString().toPersianDigits(),
-                                                                        fontSize = 11.sp,
-                                                                        fontWeight = FontWeight.Medium,
-                                                                    )
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                }
+                                                MessageReactionsRow(
+                                                    reactions = message.reactions,
+                                                    accountId = message.accountId,
+                                                    insideMineBubble = false,
+                                                    selectionMode = selectedMessageKeys.isNotEmpty(),
+                                                    onToggleSelection = { toggleMessageSelection(messageKeys) },
+                                                    onReact = { emoji -> onReact(message, emoji) },
+                                                    modifier = Modifier.padding(top = 4.dp, start = 8.dp, end = 8.dp),
+                                                )
                                             }
                                         }
                                     } else {
@@ -2422,7 +2466,12 @@ fun MessageDetailScreen(
                 onComposerChanged = onComposerChanged,
                 composerController = composerController,
                 focusRequester = focusRequester,
-                onAttach = { attachmentSheetVisible = true },
+                onAttach = {
+                    emojiPanelVisible = false
+                    focusManager.clearFocus(force = true)
+                    composerController.closeKeyboard()
+                    attachmentSheetVisible = true
+                },
                 onEmoji = {
                     if (emojiPanelVisible) {
                         composerController.openKeyboard()
@@ -2446,24 +2495,6 @@ fun MessageDetailScreen(
                 onPermissionRequired = { recordAudioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO) },
                 attachmentsEnabled = true,
             )
-            if (attachmentSheetVisible) {
-                ChatAttachmentBottomSheet(
-                    onDismiss = { attachmentSheetVisible = false },
-                    onMediaSelected = { uris -> enqueueSelectedAttachments(uris, groupAsAlbum = true) },
-                    onFilesSelected = { uris -> enqueueSelectedAttachments(uris, groupAsAlbum = false) },
-                    onDuelInviteSelected = state.conversation?.let { conv ->
-                        {
-                            val params = buildList {
-                                if (conv.type != ConversationType.GROUP && !conv.peerId.isNullOrBlank()) {
-                                    add("opponent=${java.net.URLEncoder.encode(conv.peerId, "UTF-8")}")
-                                }
-                                add("chatConvId=${java.net.URLEncoder.encode(conv.id, "UTF-8")}")
-                            }
-                            internalNavigator?.openUrl("https://cafevista.ir/game/duel/create?${params.joinToString("&")}")
-                        }
-                    },
-                )
-            }
             val currentPanelHeight = composerPanelHeightDp.dp
 
             if (emojiPanelVisible) {
@@ -2712,6 +2743,14 @@ fun MessageDetailScreen(
                                     modifier = Modifier.weight(1f),
                                     horizontalAlignment = Alignment.Start,
                                 ) {
+                                    val headerIsVerified = state.conversation?.type != ConversationType.GROUP &&
+                                        (state.partnerProfile?.isVerified == true || state.conversation?.isVerified == true)
+                                    val headerVerificationType = state.partnerProfile?.verificationType
+                                        ?.takeIf(String::isNotBlank)
+                                        ?: state.conversation?.verificationType
+                                    val headerRole = state.partnerProfile?.role
+                                        ?.takeIf(String::isNotBlank)
+                                        ?: state.conversation?.role
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         if (isSecretConversation) {
                                             Icon(
@@ -2724,12 +2763,21 @@ fun MessageDetailScreen(
                                         }
                                         Text(
                                             resolvedHeaderTitle,
+                                            modifier = Modifier.weight(1f, fill = false),
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis,
                                             fontSize = 17.sp,
                                             fontWeight = FontWeight.Bold,
                                             color = if (isSecretConversation && !isDarkTheme) Color(0xFF1B5E20) else Color.Unspecified,
                                         )
+                                        if (headerIsVerified) {
+                                            ChatUserVerificationBadge(
+                                                isVerified = true,
+                                                verificationType = headerVerificationType,
+                                                role = headerRole,
+                                                size = 16.dp,
+                                            )
+                                        }
                                     }
                                     if (isSecretConversation) {
                                         val secretText = if (state.secretAutoDeleteSeconds > 0) {
@@ -2984,6 +3032,27 @@ fun MessageDetailScreen(
                 onAttachmentClick = { viewedAttachment = it },
             )
         }
+        if (attachmentSheetVisible) {
+            CompositionLocalProvider(LocalVistaGlassState provides chatGlassState) {
+                ChatAttachmentBottomSheet(
+                    onDismiss = { attachmentSheetVisible = false },
+                    onMediaSelected = { uris -> enqueueSelectedAttachments(uris, groupAsAlbum = true) },
+                    onFilesSelected = { uris -> enqueueSelectedAttachments(uris, groupAsAlbum = false) },
+                    onDuelInviteSelected = state.conversation?.let { conv ->
+                        {
+                            val params = buildList {
+                                if (conv.type != ConversationType.GROUP && !conv.peerId.isNullOrBlank()) {
+                                    add("opponent=${java.net.URLEncoder.encode(conv.peerId, "UTF-8")}")
+                                }
+                                add("chatConvId=${java.net.URLEncoder.encode(conv.id, "UTF-8")}")
+                            }
+                            internalNavigator?.openUrl("https://cafevista.ir/game/duel/create?${params.joinToString("&")}")
+                        }
+                    },
+                    glassState = chatGlassState,
+                )
+            }
+        }
     }
 
     (messageInteraction as? MessageInteractionState.Context)?.let { contextInteraction ->
@@ -3224,6 +3293,9 @@ private fun GroupSenderFrame(
     senderId: String,
     senderName: String,
     avatarUrl: String?,
+    senderIsVerified: Boolean = false,
+    senderVerificationType: String? = null,
+    senderRole: String? = null,
     isFirstInGroup: Boolean,
     isLastInGroup: Boolean,
     onOpenProfile: (String) -> Unit,
@@ -3261,18 +3333,30 @@ private fun GroupSenderFrame(
                 horizontalAlignment = Alignment.Start,
             ) {
                 if (isFirstInGroup) {
-                    Text(
-                        text = senderName,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
+                    Row(
                         modifier = Modifier
                             .clickable { onOpenProfile(senderId) }
                             .padding(start = 14.dp, end = 12.dp, top = 2.dp, bottom = 1.dp)
                             .testTag("group-message-sender:$senderId"),
-                    )
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = senderName,
+                            modifier = Modifier.weight(1f, fill = false),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        ChatUserVerificationBadge(
+                            isVerified = senderIsVerified,
+                            verificationType = senderVerificationType,
+                            role = senderRole,
+                            size = 13.dp,
+                            spacerWidth = 3.dp,
+                        )
+                    }
                 }
                 CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
                     content()
@@ -4293,54 +4377,89 @@ private fun MessageBubble(
                         modifier = Modifier.padding(top = 4.dp),
                     )
                 }
-                AnimatedContent(
-                    targetState = if (isDeleted) emptyMap() else message.reactions,
-                    transitionSpec = {
-                        (fadeIn(tween(220)) + scaleIn(tween(220, easing = FastOutSlowInEasing), initialScale = 0.92f))
-                            .togetherWith(fadeOut(tween(160)) + scaleOut(tween(160), targetScale = 0.92f))
-                    },
-                    label = "message-reactions",
-                ) { reactions ->
-                    if (reactions.isNotEmpty()) {
-                        LazyRow(
-                            modifier = Modifier.padding(top = 5.dp),
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        ) {
-                            items(reactions.entries.toList(), key = { it.key }) { reaction ->
-                                val isMyReaction = message.accountId in reaction.value
-                                val chipScale by animateFloatAsState(
-                                    targetValue = if (isMyReaction) 1.06f else 1f,
-                                    animationSpec = tween(160, easing = FastOutSlowInEasing),
-                                    label = "reaction-scale",
-                                )
-                                val chipColor by animateColorAsState(
-                                    targetValue = when {
-                                        isMyReaction -> MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
-                                        message.isMine -> Color.White.copy(alpha = 0.16f)
-                                        else -> MaterialTheme.colorScheme.surface
-                                    },
-                                    animationSpec = tween(180),
-                                    label = "reaction-color",
-                                )
-                                Row(
-                                    modifier = Modifier
-                                        .graphicsLayer { scaleX = chipScale; scaleY = chipScale }
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .background(chipColor)
-                                        .clickable(role = Role.Button) { onReact(reaction.key) }
-                                        .padding(horizontal = 7.dp, vertical = 2.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(3.dp),
-                                ) {
-                                    VistaEmoji(emoji = reaction.key, size = 13.dp)
-                                    Text(
-                                        "${reaction.value.size}",
-                                        fontSize = 11.sp,
-                                        color = if (message.isMine) Color.White else MaterialTheme.colorScheme.onSurface,
-                                    )
-                                }
+                MessageReactionsRow(
+                    reactions = if (isDeleted) emptyMap() else message.reactions,
+                    accountId = message.accountId,
+                    insideMineBubble = message.isMine,
+                    selectionMode = selectionMode,
+                    onToggleSelection = onToggleSelection,
+                    onReact = onReact,
+                    modifier = Modifier.padding(top = 5.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun MessageReactionsRow(
+    reactions: Map<String, Set<String>>,
+    accountId: String,
+    insideMineBubble: Boolean,
+    selectionMode: Boolean,
+    onToggleSelection: () -> Unit,
+    onReact: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    AnimatedContent(
+        targetState = reactions,
+        transitionSpec = {
+            (fadeIn(tween(220)) + scaleIn(tween(220, easing = FastOutSlowInEasing), initialScale = 0.92f))
+                .togetherWith(fadeOut(tween(160)) + scaleOut(tween(160), targetScale = 0.92f))
+        },
+        label = "message-reactions",
+    ) { currentReactions ->
+        if (currentReactions.isNotEmpty()) {
+            LazyRow(
+                modifier = modifier,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                items(currentReactions.entries.toList(), key = { it.key }) { reaction ->
+                    val isMyReaction = reaction.value.any { it.equals(accountId, ignoreCase = true) }
+                    val chipScale by animateFloatAsState(
+                        targetValue = if (isMyReaction) 1.06f else 1f,
+                        animationSpec = tween(160, easing = FastOutSlowInEasing),
+                        label = "reaction-scale",
+                    )
+                    val chipColor by animateColorAsState(
+                        targetValue = when {
+                            isMyReaction && insideMineBubble -> Color.White.copy(alpha = 0.30f)
+                            isMyReaction -> MaterialTheme.colorScheme.primary.copy(alpha = 0.20f)
+                            insideMineBubble -> Color.White.copy(alpha = 0.14f)
+                            else -> MaterialTheme.colorScheme.surface
+                        },
+                        animationSpec = tween(180),
+                        label = "reaction-color",
+                    )
+                    val chipBorderColor = when {
+                        isMyReaction && insideMineBubble -> Color.White.copy(alpha = 0.70f)
+                        isMyReaction -> MaterialTheme.colorScheme.primary.copy(alpha = 0.55f)
+                        else -> Color.Transparent
+                    }
+                    Row(
+                        modifier = Modifier
+                            .graphicsLayer { scaleX = chipScale; scaleY = chipScale }
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(chipColor)
+                            .border(
+                                width = if (isMyReaction) 1.dp else 0.dp,
+                                color = chipBorderColor,
+                                shape = RoundedCornerShape(12.dp),
+                            )
+                            .clickable(role = Role.Button) {
+                                if (selectionMode) onToggleSelection() else onReact(reaction.key)
                             }
-                        }
+                            .padding(horizontal = 7.dp, vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(3.dp),
+                    ) {
+                        VistaEmoji(emoji = reaction.key, size = 13.dp)
+                        Text(
+                            "${reaction.value.size}",
+                            fontSize = 11.sp,
+                            fontWeight = if (isMyReaction) FontWeight.SemiBold else FontWeight.Normal,
+                            color = if (insideMineBubble) Color.White else MaterialTheme.colorScheme.onSurface,
+                        )
                     }
                 }
             }
@@ -4613,7 +4732,20 @@ private fun GroupDetailsSheet(
                     )
                     Spacer(Modifier.width(10.dp))
                     Column(Modifier.weight(1f)) {
-                        Text(member.displayName, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                member.displayName,
+                                modifier = Modifier.weight(1f, fill = false),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            ChatUserVerificationBadge(
+                                isVerified = member.isVerified,
+                                verificationType = member.verificationType,
+                                role = member.role,
+                                size = 14.dp,
+                            )
+                        }
                         Text(
                             buildString {
                                 append(
@@ -4727,7 +4859,20 @@ private fun GroupDetailsSheet(
                             )
                             Spacer(Modifier.width(10.dp))
                             Column(Modifier.weight(1f)) {
-                                Text(candidate.displayName, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        candidate.displayName,
+                                        modifier = Modifier.weight(1f, fill = false),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                    ChatUserVerificationBadge(
+                                        isVerified = candidate.isVerified,
+                                        verificationType = candidate.verificationType,
+                                        role = candidate.role,
+                                        size = 14.dp,
+                                    )
+                                }
                                 candidate.username.takeIf(String::isNotBlank)?.let {
                                     Text("@$it", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
@@ -4989,7 +5134,22 @@ private fun ForwardMessageSheet(
                             modifier = Modifier.size(42.dp).clip(CircleShape),
                         )
                         Spacer(Modifier.width(12.dp))
-                        Text(conversation.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                conversation.title,
+                                modifier = Modifier.weight(1f, fill = false),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            if (conversation.type != ConversationType.GROUP) {
+                                ChatUserVerificationBadge(
+                                    isVerified = conversation.isVerified,
+                                    verificationType = conversation.verificationType,
+                                    role = conversation.role,
+                                    size = 15.dp,
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -5932,6 +6092,7 @@ private fun ChatComposerBar(
     // the trailing control remained the voice recorder forever.
     val isBlank = composerValue.text.isBlank()
     val isNotBlank = !isBlank
+    val latestEmojiPanelOpen = androidx.compose.runtime.rememberUpdatedState(isEmojiPanelOpen)
 
     Column(Modifier.fillMaxWidth()) {
         AnimatedVisibility(
@@ -5991,19 +6152,25 @@ private fun ChatComposerBar(
                     null -> when (val reply = replyingTo) {
                         null -> onSend(currentText) {
                             composerValue = TextFieldValue("", TextRange.Zero)
-                            composerController.openKeyboard()
+                            if (!latestEmojiPanelOpen.value) {
+                                composerController.openKeyboard()
+                            }
                         }
                         else -> onSendReply(currentText, reply) {
                             composerValue = TextFieldValue("", TextRange.Zero)
                             onClearReply()
-                            composerController.openKeyboard()
+                            if (!latestEmojiPanelOpen.value) {
+                                composerController.openKeyboard()
+                            }
                         }
                     }
                     else -> if (currentText.isNotBlank()) {
                         onEdit(editing, currentText)
                         composerValue = TextFieldValue("", TextRange.Zero)
                         onClearEdit()
-                        composerController.openKeyboard()
+                        if (!latestEmojiPanelOpen.value) {
+                            composerController.openKeyboard()
+                        }
                     }
                 }
             },
@@ -6153,12 +6320,7 @@ private fun Composer(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         IconButton(
-                            onClick = {
-                                if (isEmojiPanelOpen) {
-                                    focusRequester.requestFocus()
-                                }
-                                onEmoji()
-                            },
+                            onClick = onEmoji,
                             modifier = Modifier
                                 .focusProperties { canFocus = false }
                                 .size(38.dp)
@@ -6235,7 +6397,9 @@ private fun Composer(
                                     .background(Color(0xFF2EA6FF))
                                     .clickable {
                                         onSend()
-                                        controller.openKeyboard()
+                                        if (!isEmojiPanelOpen) {
+                                            controller.openKeyboard()
+                                        }
                                     }
                                     .semantics { contentDescription = "ارسال پیام" },
                                 contentAlignment = Alignment.Center,
@@ -6656,7 +6820,23 @@ private fun PartnerProfileSheet(
                 modifier = Modifier.size(96.dp).clip(CircleShape),
             )
             Spacer(Modifier.height(16.dp))
-            Text(state.conversation?.title.orEmpty(), fontSize = 24.sp, fontWeight = FontWeight.Bold)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    state.conversation?.title.orEmpty(),
+                    modifier = Modifier.weight(1f, fill = false),
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                ChatUserVerificationBadge(
+                    isVerified = state.partnerProfile?.isVerified == true || state.conversation?.isVerified == true,
+                    verificationType = state.partnerProfile?.verificationType ?: state.conversation?.verificationType,
+                    role = state.partnerProfile?.role ?: state.conversation?.role,
+                    size = 19.dp,
+                    spacerWidth = 6.dp,
+                )
+            }
 
             Spacer(Modifier.height(20.dp))
 
@@ -7078,14 +7258,25 @@ private fun PartnerDetailsScreen(
                         }
                     }
                     Spacer(Modifier.height(16.dp))
-                    Text(
-                        text = displayName,
-                        color = Color.White,
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = displayName,
+                            modifier = Modifier.weight(1f, fill = false),
+                            color = Color.White,
+                            fontSize = 24.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        ChatUserVerificationBadge(
+                            isVerified = profile?.isVerified == true || conversation?.isVerified == true,
+                            verificationType = profile?.verificationType ?: conversation?.verificationType,
+                            role = profile?.role ?: conversation?.role,
+                            size = 19.dp,
+                            isDarkSurface = true,
+                            spacerWidth = 6.dp,
+                        )
+                    }
                     Spacer(Modifier.height(6.dp))
                     Text(
                         text = state.presence?.let { presence ->

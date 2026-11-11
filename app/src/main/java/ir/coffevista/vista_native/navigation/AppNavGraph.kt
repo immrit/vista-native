@@ -122,6 +122,7 @@ fun VistaApp(
     routedSharedContent: ir.coffevista.vista_native.share.RoutedSharedContent? = null,
     onSharedContentConsumed: (String) -> Unit = {},
     onCheckForUpdate: (() -> Unit)? = null,
+    onBeforeClearSession: suspend () -> Unit = {},
     onExitRequested: () -> Unit,
 ) {
     val navController = rememberNavController()
@@ -428,6 +429,7 @@ fun VistaApp(
                     },
                     onUsePasswordOrOtp = {
                         applicationScope.launch {
+                            runCatching { onBeforeClearSession() }
                             sessionStore.clear()
                             authenticationStateOwner.signOut()
                             navController.navigate(AppRoute.Authentication) {
@@ -470,9 +472,9 @@ fun VistaApp(
                     },
                     onLogout = {
                         applicationScope.launch {
-                            // Revoke the shared session before feature cleanup so no
-                            // repository can rehydrate credentials or start new work
-                            // while its account-scoped cache is being removed.
+                            // Unregister FCM token while the authenticated JWT is still valid,
+                            // then revoke the shared session before feature cleanup.
+                            runCatching { onBeforeClearSession() }
                             sessionStore.clear()
                             runCatching {
                                 feedRepository.clearAccount(signedIn.context.userId)

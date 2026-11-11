@@ -251,7 +251,7 @@ android.sourceSets.getByName("production").res.srcDir(generateProductionFirebase
 // task producer an implicit AGP dependency. Ensure the production resource
 // merger never packages an empty Firebase resource directory.
 tasks.configureEach {
-    if (name.contains("ProductionRelease") && name != "generateProductionFirebaseResources") {
+    if (name.contains("Production") && name != "generateProductionFirebaseResources") {
         dependsOn(generateProductionFirebaseResources)
     }
 }

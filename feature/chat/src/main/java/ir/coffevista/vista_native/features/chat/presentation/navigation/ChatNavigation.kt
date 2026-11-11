@@ -48,7 +48,7 @@ object ChatNavigationContract {
     fun fromNotification(data: Map<String, String>): ChatDestination? {
         val normalized = normalizeNotificationData(data)
         val type = (normalized["type"] ?: normalized["notification_type"])?.trim()?.lowercase()
-        if (type != null && type !in setOf("chat_message", "message", "chat", "reaction")) return null
+        if (type != null && type !in setOf("chat_message", "message", "chat", "reaction", "message_reaction")) return null
         val conversationId = (
             normalized["conversation_id"] ?: normalized["conversationId"]
             )?.trim().orEmpty()

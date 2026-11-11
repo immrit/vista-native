@@ -37,6 +37,9 @@ data class ConversationEntity(
     val lastMessageType: String? = null,
     val lastMessageIsMine: Boolean = false,
     val lastMessageStatus: String = "SENT",
+    val isVerified: Boolean = false,
+    val verificationType: String? = null,
+    val role: String? = null,
 )
 
 @Entity(
@@ -438,6 +441,34 @@ interface ChatDao {
     @Query(
         """
         SELECT * FROM chat_message
+        WHERE accountId = :accountId
+          AND (serverId = :messageId OR clientId = :messageId)
+        LIMIT 1
+        """,
+    )
+    suspend fun messageByAnyIdentity(
+        accountId: String,
+        messageId: String,
+    ): MessageEntity?
+
+    @Query(
+        """
+        UPDATE chat_message
+        SET reactionsJson = :reactionsJson, lastMutationAtEpochMillis = :mutationAtEpochMillis
+        WHERE accountId = :accountId AND conversationId = :conversationId AND clientId = :clientId
+        """,
+    )
+    suspend fun updateMessageReactions(
+        accountId: String,
+        conversationId: String,
+        clientId: String,
+        reactionsJson: String,
+        mutationAtEpochMillis: Long,
+    )
+
+    @Query(
+        """
+        SELECT * FROM chat_message
         WHERE accountId = :accountId AND conversationId = :conversationId AND attachmentMimeType IS NOT NULL
           AND NOT EXISTS (
             SELECT 1 FROM chat_tombstone AS tombstone
@@ -698,7 +729,7 @@ interface ChatDao {
         RemoteKeyEntity::class,
         ProfileNoteEntity::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = false,
 )
 abstract class ChatDatabase : RoomDatabase() {
@@ -772,6 +803,14 @@ abstract class ChatDatabase : RoomDatabase() {
                 // only unambiguous legacy state so pending requests remain
                 // available offline immediately after an in-place upgrade.
                 db.execSQL("UPDATE chat_conversation SET isMessageRequest = 1 WHERE LOWER(requestStatus) = 'pending'")
+            }
+        }
+
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE chat_conversation ADD COLUMN isVerified INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE chat_conversation ADD COLUMN verificationType TEXT")
+                db.execSQL("ALTER TABLE chat_conversation ADD COLUMN role TEXT")
             }
         }
     }

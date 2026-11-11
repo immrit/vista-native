@@ -148,6 +148,7 @@ interface ChatRepository {
     suspend fun markRead(conversationId: String): ChatResult<Unit>
     suspend fun sendTyping(conversationId: String): ChatResult<Unit>
     suspend fun setConversationActive(conversationId: String, active: Boolean): ChatResult<Unit>
+    suspend fun heartbeatConversation(conversationId: String): ChatResult<Unit> = ChatResult.Success(Unit)
     suspend fun toggleConversationFlag(conversationId: String, flag: String): ChatResult<Conversation>
     suspend fun deleteConversation(conversationId: String): ChatResult<Unit> =
         ChatResult.Failure("حذف گفتگو در دسترس نیست", false)

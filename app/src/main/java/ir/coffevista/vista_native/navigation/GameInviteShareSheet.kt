@@ -59,6 +59,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import ir.coffevista.vista_native.core.designsystem.component.VistaVerificationBadge
 import ir.coffevista.vista_native.features.chat.domain.model.ChatUser
 import ir.coffevista.vista_native.features.chat.domain.model.Conversation
 import ir.coffevista.vista_native.features.chat.domain.model.ConversationType
@@ -439,13 +440,25 @@ internal fun GameInviteShareModal(
                                 ShareAvatar(avatarUrl = user.avatarUrl, name = user.displayName)
                                 Spacer(Modifier.width(10.dp))
                                 Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = user.displayName,
-                                        fontWeight = FontWeight.Medium,
-                                        fontSize = 14.sp,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = user.displayName,
+                                            modifier = Modifier.weight(1f, fill = false),
+                                            fontWeight = FontWeight.Medium,
+                                            fontSize = 14.sp,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                        if (user.isVerified) {
+                                            Spacer(Modifier.width(4.dp))
+                                            VistaVerificationBadge(
+                                                isVerified = true,
+                                                verificationType = user.verificationType,
+                                                role = user.role,
+                                                size = 14.dp,
+                                            )
+                                        }
+                                    }
                                     if (user.username.isNotBlank()) {
                                         Text(
                                             text = "@${user.username}",
@@ -527,14 +540,28 @@ private fun ConversationPickRow(
     ) {
         ShareAvatar(avatarUrl = conversation.avatarUrl, name = conversation.title)
         Spacer(Modifier.width(10.dp))
-        Text(
-            text = conversation.title.ifBlank { "گفتگو" },
+        Row(
             modifier = Modifier.weight(1f),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            fontWeight = FontWeight.Medium,
-            fontSize = 14.sp,
-        )
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = conversation.title.ifBlank { "گفتگو" },
+                modifier = Modifier.weight(1f, fill = false),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                fontWeight = FontWeight.Medium,
+                fontSize = 14.sp,
+            )
+            if (conversation.type != ConversationType.GROUP && conversation.isVerified) {
+                Spacer(Modifier.width(4.dp))
+                VistaVerificationBadge(
+                    isVerified = true,
+                    verificationType = conversation.verificationType,
+                    role = conversation.role,
+                    size = 14.dp,
+                )
+            }
+        }
         Checkbox(checked = selected, onCheckedChange = { onToggle() })
     }
 }

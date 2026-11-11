@@ -2,7 +2,6 @@ package ir.coffevista.vista_native.features.profile.ui.setup
 
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -29,6 +28,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -181,8 +181,17 @@ fun ProfileSetupWizardScreen(onCompleted: () -> Unit) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var page by rememberSaveable { mutableIntStateOf(0) }
     var isBirthDatePickerVisible by rememberSaveable { mutableStateOf(false) }
-    val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        viewModel.change { it.copy(avatarUri = uri) }
+    var showInAppAvatarPicker by remember { mutableStateOf(false) }
+
+    if (showInAppAvatarPicker) {
+        ir.coffevista.vista_native.core.designsystem.component.VistaInAppMediaPickerBottomSheet(
+            mode = ir.coffevista.vista_native.core.designsystem.component.VistaInAppPickerMode.IMAGE_SINGLE,
+            title = "انتخاب آواتار",
+            onDismiss = { showInAppAvatarPicker = false },
+            onSingleSelected = { uri ->
+                viewModel.change { it.copy(avatarUri = uri) }
+            },
+        )
     }
 
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
@@ -241,7 +250,7 @@ fun ProfileSetupWizardScreen(onCompleted: () -> Unit) {
                         AsyncImage(model = it, contentDescription = "آواتار انتخاب‌شده", modifier = Modifier.height(120.dp).fillMaxWidth())
                     }
                     OutlinedButton(
-                        onClick = { photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                        onClick = { showInAppAvatarPicker = true },
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Text("انتخاب آواتار")

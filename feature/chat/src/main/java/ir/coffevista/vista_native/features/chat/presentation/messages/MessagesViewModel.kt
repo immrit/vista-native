@@ -209,6 +209,7 @@ class MessagesViewModel @Inject constructor(
                     loadedBlockPeerId = peerId
                     loadBlockStatus(peerId)
                     loadPresence(peerId)
+                    loadPartnerProfile(peerId)
                 }
             }
         }
@@ -228,7 +229,9 @@ class MessagesViewModel @Inject constructor(
         refresh()
         loadPinnedMessages()
         viewModelScope.launch {
-            if (isConversationVisible) repository.setConversationActive(conversationId, true)
+            if (isConversationVisible) {
+                repository.setConversationActive(conversationId, true)
+            }
             acknowledgeVisibleUnread()
             val current = mutableState.value.conversation
             if (current?.type != ConversationType.GROUP) {
@@ -251,6 +254,14 @@ class MessagesViewModel @Inject constructor(
         if (!visible) lastReadAttemptedMessageId = null
         viewModelScope.launch { repository.setConversationActive(conversationId, visible) }
         if (visible) acknowledgeVisibleUnread()
+    }
+
+    fun sendConversationHeartbeat(conversationId: String) {
+        if (!isConversationVisible || mutableState.value.conversationId != conversationId) return
+        if (!ir.coffevista.vista_native.core.common.NotificationRuntimeCoordinator.isAppForeground) return
+        viewModelScope.launch {
+            repository.heartbeatConversation(conversationId)
+        }
     }
 
     private fun acknowledgeVisibleUnread() {
@@ -693,7 +704,12 @@ class MessagesViewModel @Inject constructor(
         viewModelScope.launch {
             val result = repository.toggleReaction(message, emoji)
             if (result is ChatResult.Failure) {
-                mutableState.update { it.copy(error = result.message) }
+                val userMessage = if (result.message.contains("اتصال برقرار نشد")) {
+                    "ثبت واکنش انجام نشد؛ اتصال اینترنت را بررسی کنید"
+                } else {
+                    result.message
+                }
+                mutableState.update { it.copy(error = userMessage) }
             }
         }
     }
@@ -851,7 +867,10 @@ class MessagesViewModel @Inject constructor(
     fun setForeground(active: Boolean) {
         viewModelScope.launch {
             repository.setForeground(active)
-            mutableState.value.conversationId?.let { repository.setConversationActive(it, active) }
+            val convId = mutableState.value.conversationId
+            if (convId != null) {
+                repository.setConversationActive(convId, active && isConversationVisible)
+            }
         }
     }
 

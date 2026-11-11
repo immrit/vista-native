@@ -128,6 +128,29 @@ class MessageMergeReducerTest {
         assertEquals("VE2E2:recoverable", merged.opaqueEncryptedPayload)
     }
 
+    @Test
+    fun `message sync omitting reactions preserves existing reactions when requested`() {
+        val existing = message(clientId = "a", serverId = "a", status = MessageStatus.SENT)
+            .copy(reactions = mapOf("❤️" to setOf("account-a")))
+        val refreshWithoutReactions = message(clientId = "a", serverId = "a", status = MessageStatus.READ)
+
+        val preserved = MessageMergeReducer.merge(
+            existing = existing,
+            incoming = refreshWithoutReactions,
+            source = MergeSource.REST,
+            preserveExistingReactionsWhenEmpty = true,
+        )
+        assertEquals(mapOf("❤️" to setOf("account-a")), preserved.reactions)
+
+        val cleared = MessageMergeReducer.merge(
+            existing = existing,
+            incoming = refreshWithoutReactions,
+            source = MergeSource.REST,
+            preserveExistingReactionsWhenEmpty = false,
+        )
+        assertTrue(cleared.reactions.isEmpty())
+    }
+
     private fun message(clientId: String, serverId: String?, status: MessageStatus) = Message(
         accountId = "account-a",
         conversationId = "conversation-a",

@@ -474,10 +474,14 @@ private fun GifPickerPage(
     accentColor: Color,
     cardBg: Color,
 ) {
-    val importLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri ->
-        if (uri != null) onImportDeviceGif?.invoke(uri)
+    var showInAppGifPicker by remember { mutableStateOf(false) }
+
+    if (showInAppGifPicker) {
+        ir.coffevista.vista_native.core.designsystem.component.VistaInAppMediaPickerBottomSheet(
+            mode = ir.coffevista.vista_native.core.designsystem.component.VistaInAppPickerMode.GIF_SINGLE,
+            onDismiss = { showInAppGifPicker = false },
+            onSingleSelected = { uri -> onImportDeviceGif?.invoke(uri) },
+        )
     }
 
     val quickReactions = remember {
@@ -590,7 +594,7 @@ private fun GifPickerPage(
                                     .aspectRatio(1f)
                                     .clip(RoundedCornerShape(8.dp))
                                     .background(cardBg)
-                                    .clickable { importLauncher.launch("image/gif") },
+                                    .clickable { showInAppGifPicker = true },
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Column(

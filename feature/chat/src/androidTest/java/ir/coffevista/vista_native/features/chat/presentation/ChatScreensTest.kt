@@ -1004,6 +1004,103 @@ class ChatScreensTest {
     }
 
     @Test
+    fun conversationListAndChatDetailShowVerificationBadgeForVerifiedUsers() {
+        compose.setContent {
+            VistaTheme {
+                ConversationListScreen(
+                    state = ConversationsUiState(
+                        conversations = listOf(
+                            Conversation(
+                                accountId = "account",
+                                id = "conv-verified",
+                                type = ConversationType.PRIVATE,
+                                title = "کاربر تاییدشده",
+                                avatarUrl = null,
+                                peerId = "peer-1",
+                                lastMessage = "سلام",
+                                lastMessageAtEpochMillis = 2,
+                                unreadCount = 0,
+                                isArchived = false,
+                                isPinned = false,
+                                isMuted = false,
+                                requestStatus = null,
+                                isVerified = true,
+                                verificationType = "blueTick",
+                            ),
+                            Conversation(
+                                accountId = "account",
+                                id = "conv-group",
+                                type = ConversationType.GROUP,
+                                title = "گروه عادی",
+                                avatarUrl = null,
+                                peerId = null,
+                                lastMessage = "پیام",
+                                lastMessageAtEpochMillis = 1,
+                                unreadCount = 0,
+                                isArchived = false,
+                                isPinned = false,
+                                isMuted = false,
+                                requestStatus = null,
+                                isVerified = true,
+                            ),
+                        ),
+                        isInitialLoading = false,
+                    ),
+                    onRefresh = {},
+                    onLoadMore = {},
+                    onOpenConversation = {},
+                )
+            }
+        }
+
+        assertEquals(1, compose.onAllNodesWithContentDescription("حساب تایید شده").fetchSemanticsNodes().size)
+    }
+
+    @Test
+    fun messageDetailHeaderShowsVerificationBadgeFromPartnerProfile() {
+        compose.setContent {
+            VistaTheme {
+                MessageDetailScreen(
+                    state = MessagesUiState(
+                        conversationId = "conv-1",
+                        conversation = Conversation(
+                            accountId = "account",
+                            id = "conv-1",
+                            type = ConversationType.PRIVATE,
+                            title = "سارا",
+                            avatarUrl = null,
+                            peerId = "peer-2",
+                            lastMessage = null,
+                            lastMessageAtEpochMillis = 1,
+                            unreadCount = 0,
+                            isArchived = false,
+                            isPinned = false,
+                            isMuted = false,
+                            requestStatus = null,
+                        ),
+                        partnerProfile = ChatPartnerProfile(
+                            userId = "peer-2",
+                            username = "sara",
+                            isVerified = true,
+                            verificationType = "goldTick",
+                        ),
+                        isInitialLoading = false,
+                        hasMore = false,
+                    ),
+                    title = "سارا",
+                    onBack = {},
+                    onRefresh = {},
+                    onLoadOlder = {},
+                    onSend = { _, _ -> },
+                    onRetry = {},
+                )
+            }
+        }
+
+        compose.onNodeWithContentDescription("حساب تایید شده").assertExists()
+    }
+
+    @Test
     fun peerNoteOpensQuickReplySheet() {
         compose.setContent {
             VistaTheme {

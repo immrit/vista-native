@@ -29,6 +29,14 @@ class ChatNavigationContractTest {
     }
 
     @Test
+    fun `notification accepts message_reaction type`() {
+        val destination = ChatNavigationContract.fromNotification(
+            mapOf("type" to "message_reaction", "conversation_id" to "conversation-9", "message_id" to "message-9"),
+        )
+        assertEquals(ChatDestination("conversation-9", "message-9"), destination)
+    }
+
+    @Test
     fun `unrelated notification is rejected`() {
         assertNull(ChatNavigationContract.fromNotification(mapOf("type" to "post", "conversation_id" to "conversation-1")))
     }

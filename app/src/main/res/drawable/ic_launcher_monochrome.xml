@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Center the 24x24 Vista logo at (54, 54) inside the 66dp adaptive safe zone -->
+    <group
+        android:pivotX="12"
+        android:pivotY="12"
+        android:scaleX="3.0"
+        android:scaleY="3.0"
+        android:translateX="42"
+        android:translateY="42">
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M11.35,21.48 A9.5,9.5 0 1,1 12.65,21.48 L13.95,18.62 A6.9,6.9 0 1,0 10.05,18.62 Z" />
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M6.40,8.70 L9.38,8.70 L12.00,14.05 L14.62,8.70 L17.60,8.70 L12.00,20.65 Z" />
+    </group>
+</vector>

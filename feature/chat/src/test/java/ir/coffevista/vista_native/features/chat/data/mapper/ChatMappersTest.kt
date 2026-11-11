@@ -9,10 +9,13 @@ import ir.coffevista.vista_native.features.chat.domain.model.MessageStatus
 import ir.coffevista.vista_native.features.chat.domain.model.ConversationType
 import ir.coffevista.vista_native.features.chat.domain.repository.ChatContentCipher
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -220,6 +223,73 @@ class ChatMappersTest {
         assertEquals("vista_service", conversation.title)
         assertEquals("https://s3.coffevista.ir/avatars/vista-service.png", conversation.avatarUrl)
         assertEquals(4, conversation.unreadCount)
+    }
+
+    @Test
+    fun `participant profile verification badge aliases hydrate conversation entity and domain`() = runTest {
+        val entity = ConversationDto(
+            id = "conversation-verified",
+            conversationType = "private",
+            conversationParticipants = listOf(
+                ConversationParticipantDto(userId = "account", unreadCount = 0),
+                ConversationParticipantDto(
+                    userId = "verified-peer",
+                    profiles = buildJsonArray {
+                        add(buildJsonObject {
+                            put("username", "ahmad")
+                            put("is_verified", true)
+                            put("verification_type", "goldTick")
+                            put("role", "vip")
+                        })
+                    },
+                ),
+            ),
+        ).toEntity("account", cipher, 10)
+
+        val conversation = entity.toDomain(cipher)
+        assertTrue(conversation.isVerified)
+        assertEquals("goldTick", conversation.verificationType)
+        assertEquals("vip", conversation.role)
+    }
+
+    @Test
+    fun `group conversations never expose peer verification badge`() = runTest {
+        val entity = ConversationDto(
+            id = "group-verified-flag",
+            conversationType = "group",
+            name = "گروه عمومی",
+            isVerified = true,
+            verificationType = "blueTick",
+            role = "creator",
+        ).toEntity("account", cipher, 10)
+
+        val conversation = entity.toDomain(cipher)
+        assertFalse(conversation.isVerified)
+        assertNull(conversation.verificationType)
+        assertNull(conversation.role)
+    }
+
+    @Test
+    fun `profile dto decodes verification fields and distinguishes absent flag`() {
+        val parser = Json { ignoreUnknownKeys = true }
+        val verified = parser.decodeFromString(
+            ProfileDto.serializer(),
+            """{"user_id":"u-1","username":"sara","is_verified":true,"verification_type":"blackTick","account_type":"creator"}""",
+        )
+        val unverified = parser.decodeFromString(
+            ProfileDto.serializer(),
+            """{"user_id":"u-2","username":"ali","is_verified":false}""",
+        )
+        val partial = parser.decodeFromString(
+            ProfileDto.serializer(),
+            """{"user_id":"u-3","username":"reza"}""",
+        )
+
+        assertEquals(true, verified.resolvedIsVerified)
+        assertEquals("blackTick", verified.verificationType)
+        assertEquals("creator", verified.resolvedRole)
+        assertEquals(false, unverified.resolvedIsVerified)
+        assertNull(partial.resolvedIsVerified)
     }
 
     private fun dto() = MessageDto(

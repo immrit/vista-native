@@ -27,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import ir.coffevista.vista_native.core.designsystem.component.VistaVerificationBadge
 import ir.coffevista.vista_native.features.chat.domain.model.Conversation
 import ir.coffevista.vista_native.features.chat.domain.model.SharedPostDraft
 import ir.coffevista.vista_native.features.chat.domain.repository.ChatRepository
@@ -113,7 +114,18 @@ private fun RecipientRow(conversation: Conversation, selected: Boolean, onToggle
         horizontalArrangement = Arrangement.End,
     ) {
         Column(Modifier.weight(1f)) {
-            Text(conversation.title, style = MaterialTheme.typography.bodyLarge)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(conversation.title, modifier = Modifier.weight(1f, fill = false), style = MaterialTheme.typography.bodyLarge)
+                if (conversation.type != ir.coffevista.vista_native.features.chat.domain.model.ConversationType.GROUP && conversation.isVerified) {
+                    Spacer(Modifier.width(4.dp))
+                    VistaVerificationBadge(
+                        isVerified = true,
+                        verificationType = conversation.verificationType,
+                        role = conversation.role,
+                        size = 15.dp,
+                    )
+                }
+            }
             conversation.lastMessage?.takeIf(String::isNotBlank)?.let {
                 Text(it, style = MaterialTheme.typography.bodySmall, maxLines = 1)
             }

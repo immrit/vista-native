@@ -15,6 +15,11 @@ class DeepLinkContractTest {
             "vista://chat/conversation-42" to DeferredFeatureKind.CHAT,
             "vista://game" to DeferredFeatureKind.GAME,
             "vista://duel/11111111-1111-4111-8111-111111111111" to DeferredFeatureKind.GAME,
+            "vista://notifications" to DeferredFeatureKind.NOTIFICATIONS,
+            "vista://notifications?tab=suggestions" to DeferredFeatureKind.NOTIFICATIONS,
+            "vista://nearby" to DeferredFeatureKind.NEARBY,
+            "vista://nearby/likes" to DeferredFeatureKind.NEARBY,
+            "vista://nearby/matches" to DeferredFeatureKind.NEARBY,
             "https://cafevista.ir/post/post_42" to DeferredFeatureKind.POST,
             "https://vista.me/profile/user-42" to DeferredFeatureKind.PROFILE,
             "https://www.cafevista.ir/group/invite_42" to DeferredFeatureKind.GROUP,
@@ -45,6 +50,8 @@ class DeepLinkContractTest {
             "vista://group/unsafe%2Fvalue",
             "https://cafevista.ir/game/sso?ticket=abc",
             "vista://duel/not-a-uuid",
+            "vista://notifications/extra",
+            "vista://nearby/unknown",
         )
         invalid.forEach { uri ->
             assertEquals(

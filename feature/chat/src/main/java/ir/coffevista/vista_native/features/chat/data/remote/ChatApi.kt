@@ -3,6 +3,8 @@ package ir.coffevista.vista_native.features.chat.data.remote
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
+import okhttp3.ResponseBody
+import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
@@ -56,6 +58,11 @@ interface ChatApi {
     suspend fun setActive(
         @Path("conversationId") conversationId: String,
         @Body request: ActiveConversationRequest,
+    )
+
+    @POST("v1/chat/conversations/{conversationId}/heartbeat")
+    suspend fun heartbeat(
+        @Path("conversationId") conversationId: String,
     )
 
     @POST("v1/chat/conversations/{conversationId}/{flag}")
@@ -113,7 +120,17 @@ interface ChatApi {
     suspend fun toggleReaction(
         @Path("messageId") messageId: String,
         @Body request: ReactionRequest,
-    ): ReactionUpdateDto
+    ): Response<ResponseBody>
+
+    @GET("v1/chat/messages/{messageId}/reactions")
+    suspend fun getMessageReactions(
+        @Path("messageId") messageId: String,
+    ): Response<ResponseBody>
+
+    @POST("v1/chat/reactions/batch")
+    suspend fun getMultipleMessageReactions(
+        @Body request: BatchReactionsRequest,
+    ): Response<ResponseBody>
 
     @POST("v1/chat/conversations")
     suspend fun createConversation(@Body request: CreateConversationRequest): ConversationDto
@@ -307,6 +324,16 @@ data class ConversationDto(
     @SerialName("message_request_status") val messageRequestStatus: String? = null,
     @SerialName("is_message_request") val isMessageRequest: Boolean = false,
     @SerialName("message_request") val messageRequest: Boolean = false,
+    @SerialName("is_verified") val isVerified: Boolean? = null,
+    @SerialName("peer_is_verified") val peerIsVerified: Boolean? = null,
+    @SerialName("other_user_is_verified") val otherUserIsVerified: Boolean? = null,
+    @SerialName("verification_type") val verificationType: String? = null,
+    @SerialName("peer_verification_type") val peerVerificationType: String? = null,
+    @SerialName("other_user_verification_type") val otherUserVerificationType: String? = null,
+    val role: String? = null,
+    @SerialName("peer_role") val peerRole: String? = null,
+    @SerialName("other_user_role") val otherUserRole: String? = null,
+    @SerialName("account_type") val accountType: String? = null,
 )
 
 @Serializable
@@ -363,7 +390,7 @@ data class MessageDto(
     @SerialName("original_message_id") val originalMessageId: String? = null,
     @SerialName("forwarded_from_sender_name") val forwardedFromSenderName: String? = null,
     @SerialName("is_pinned") val isPinned: Boolean = false,
-    val reactions: List<ReactionDto> = emptyList(),
+    val reactions: List<ReactionDto>? = null,
 )
 
 @Serializable
@@ -403,6 +430,7 @@ data class SendMessageRequest(
 @Serializable data class EditMessageRequest(val content: String)
 @Serializable data class ForwardMessageRequest(@SerialName("target_conversation_id") val targetConversationId: String)
 @Serializable data class ReactionRequest(val emoji: String)
+@Serializable data class BatchReactionsRequest(@SerialName("message_ids") val messageIds: List<String>)
 @Serializable data class CreateConversationRequest(@SerialName("peer_id") val peerId: String, @SerialName("is_secret") val isSecret: Boolean = false)
 @Serializable data class CreateGroupRequest(
     val name: String,
@@ -432,15 +460,15 @@ data class SendMessageRequest(
 
 @Serializable
 data class ReactionDto(
-    @SerialName("user_id") val userId: String,
-    val emoji: String,
+    @SerialName("user_id") val userId: String = "",
+    val emoji: String = "",
 )
 
 @Serializable
 data class ReactionUpdateDto(
-    @SerialName("message_id") val messageId: String,
-    @SerialName("conversation_id") val conversationId: String,
-    val reactions: List<ReactionDto> = emptyList(),
+    @SerialName("message_id") val messageId: String = "",
+    @SerialName("conversation_id") val conversationId: String = "",
+    val reactions: List<ReactionDto>? = null,
 )
 
 @Serializable
@@ -519,9 +547,21 @@ data class ProfileDto(
     @SerialName("full_name") val fullName: String? = null,
     @SerialName("avatar_url") val avatarUrl: String? = null,
     val bio: String? = null,
+    @SerialName("is_verified") val isVerified: Boolean? = null,
+    @SerialName("user_is_verified") val userIsVerified: Boolean? = null,
+    @SerialName("verification_type") val verificationType: String? = null,
+    val role: String? = null,
+    @SerialName("account_type") val accountType: String? = null,
 ) {
     val resolvedUserId: String
         get() = userId.trim().ifEmpty { id?.trim().orEmpty() }
+
+    val resolvedIsVerified: Boolean?
+        get() = isVerified ?: userIsVerified
+
+    val resolvedRole: String?
+        get() = role?.trim()?.takeIf(String::isNotEmpty)
+            ?: accountType?.trim()?.takeIf(String::isNotEmpty)
 }
 
 @Serializable

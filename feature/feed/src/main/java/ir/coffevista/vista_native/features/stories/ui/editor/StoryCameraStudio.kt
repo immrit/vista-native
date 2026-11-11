@@ -32,7 +32,6 @@ import android.view.ViewGroup
 import android.widget.FrameLayout
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
@@ -230,13 +229,17 @@ internal fun StoryCameraStudio(
         }
     }
 
-    val systemPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickVisualMedia(),
-    ) { uri ->
-        if (uri != null) {
-            val mime = context.contentResolver.getType(uri).orEmpty()
-            latestOnMediaSelected(uri, mime.startsWith("video/", ignoreCase = true))
-        }
+    var showInAppAlbumSheet by remember { mutableStateOf(false) }
+    if (showInAppAlbumSheet) {
+        ir.coffevista.vista_native.core.designsystem.component.VistaInAppMediaPickerBottomSheet(
+            mode = ir.coffevista.vista_native.core.designsystem.component.VistaInAppPickerMode.IMAGE_AND_VIDEO_SINGLE,
+            title = "آلبوم‌ها و پوشه‌های گالری",
+            onDismiss = { showInAppAlbumSheet = false },
+            onSingleSelected = { uri ->
+                val mime = context.contentResolver.getType(uri).orEmpty()
+                latestOnMediaSelected(uri, mime.startsWith("video/", ignoreCase = true))
+            },
+        )
     }
 
     // Camera hardware state
@@ -1175,13 +1178,7 @@ internal fun StoryCameraStudio(
                                         .clip(RoundedCornerShape(16.dp))
                                         .background(Color.White.copy(alpha = 0.12f))
                                         .border(0.8.dp, Color.White.copy(alpha = 0.2f), RoundedCornerShape(16.dp))
-                                        .clickable {
-                                            systemPickerLauncher.launch(
-                                                PickVisualMediaRequest(
-                                                    ActivityResultContracts.PickVisualMedia.ImageAndVideo,
-                                                ),
-                                            )
-                                        }
+                                        .clickable { showInAppAlbumSheet = true }
                                         .padding(horizontal = 10.dp, vertical = 6.dp),
                                 ) {
                                     Row(
@@ -1256,11 +1253,7 @@ internal fun StoryCameraStudio(
                                     Button(
                                         onClick = {
                                             onPickSystemVisualMedia()
-                                            systemPickerLauncher.launch(
-                                                PickVisualMediaRequest(
-                                                    ActivityResultContracts.PickVisualMedia.ImageAndVideo,
-                                                ),
-                                            )
+                                            ir.coffevista.vista_native.core.designsystem.component.openVistaAppSettings(context)
                                         },
                                         shape = RoundedCornerShape(18.dp),
                                         colors = ButtonDefaults.buttonColors(
@@ -1268,7 +1261,7 @@ internal fun StoryCameraStudio(
                                             contentColor = Color.White,
                                         ),
                                     ) {
-                                        Text("انتخاب از فایل‌ها", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                        Text("تنظیمات دسترسی", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                     }
                                 }
                             }

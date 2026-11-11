@@ -34,8 +34,14 @@ class NotificationSettingsViewModel @Inject constructor(
         runCatching { api.getSettings() }
             .onSuccess { response ->
                 if (response.isSuccessful && response.body() != null) {
+                    val loaded = requireNotNull(response.body())
+                    ir.coffevista.vista_native.core.common.NotificationRuntimeCoordinator.updateNotificationPreferences(
+                        inAppChatSounds = loaded.in_app_chat_sounds,
+                        soundEnabled = loaded.sound_enabled,
+                        vibrationEnabled = loaded.vibration_enabled,
+                    )
                     mutableUiState.update {
-                        it.copy(settings = requireNotNull(response.body()), isLoading = false, hasLoaded = true)
+                        it.copy(settings = loaded, isLoading = false, hasLoaded = true)
                     }
                 } else {
                     mutableUiState.update {
@@ -53,6 +59,11 @@ class NotificationSettingsViewModel @Inject constructor(
     fun update(transform: (NotificationSettingsDto) -> NotificationSettingsDto) {
         val previous = mutableUiState.value.settings
         val updated = transform(previous)
+        ir.coffevista.vista_native.core.common.NotificationRuntimeCoordinator.updateNotificationPreferences(
+            inAppChatSounds = updated.in_app_chat_sounds,
+            soundEnabled = updated.sound_enabled,
+            vibrationEnabled = updated.vibration_enabled,
+        )
         mutableUiState.update { it.copy(settings = updated, isSaving = true, errorMessage = null) }
         viewModelScope.launch {
             runCatching { api.updateSettings(updated) }
@@ -60,12 +71,22 @@ class NotificationSettingsViewModel @Inject constructor(
                     if (response.isSuccessful) {
                         mutableUiState.update { it.copy(isSaving = false) }
                     } else {
+                        ir.coffevista.vista_native.core.common.NotificationRuntimeCoordinator.updateNotificationPreferences(
+                            inAppChatSounds = previous.in_app_chat_sounds,
+                            soundEnabled = previous.sound_enabled,
+                            vibrationEnabled = previous.vibration_enabled,
+                        )
                         mutableUiState.update {
                             it.copy(settings = previous, isSaving = false, errorMessage = "ذخیرهٔ تنظیمات اعلان‌ها ناموفق بود")
                         }
                     }
                 }
                 .onFailure {
+                    ir.coffevista.vista_native.core.common.NotificationRuntimeCoordinator.updateNotificationPreferences(
+                        inAppChatSounds = previous.in_app_chat_sounds,
+                        soundEnabled = previous.sound_enabled,
+                        vibrationEnabled = previous.vibration_enabled,
+                    )
                     mutableUiState.update {
                         it.copy(settings = previous, isSaving = false, errorMessage = "اتصال برای ذخیرهٔ تنظیمات اعلان‌ها برقرار نشد")
                     }

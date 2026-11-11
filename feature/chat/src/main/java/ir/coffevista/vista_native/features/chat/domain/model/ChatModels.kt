@@ -23,6 +23,9 @@ data class Conversation(
     val lastMessageType: String? = null,
     val isLastMessageFromMe: Boolean = false,
     val lastMessageStatus: MessageStatus = MessageStatus.SENT,
+    val isVerified: Boolean = false,
+    val verificationType: String? = null,
+    val role: String? = null,
 )
 
 enum class ConversationType { PRIVATE, GROUP, SECRET }
@@ -65,6 +68,9 @@ data class ChatUser(
     val fullName: String?,
     val avatarUrl: String?,
     val conversationId: String? = null,
+    val isVerified: Boolean = false,
+    val verificationType: String? = null,
+    val role: String? = null,
 ) {
     val displayName: String get() = fullName?.trim()?.takeIf(String::isNotEmpty)
         ?: username.trim().takeIf(String::isNotEmpty)
@@ -101,6 +107,9 @@ data class ChatPartnerProfile(
     val fullName: String? = null,
     val avatarUrl: String? = null,
     val bio: String? = null,
+    val isVerified: Boolean = false,
+    val verificationType: String? = null,
+    val role: String? = null,
 )
 
 @Immutable
@@ -138,6 +147,9 @@ data class GroupMember(
     val avatarUrl: String?,
     val isAdmin: Boolean,
     val joinedAtEpochMillis: Long?,
+    val isVerified: Boolean = false,
+    val verificationType: String? = null,
+    val role: String? = null,
 ) {
     val displayName: String get() = fullName?.trim()?.takeIf(String::isNotEmpty)
         ?: username.trim().takeIf(String::isNotEmpty)

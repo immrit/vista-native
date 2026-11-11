@@ -66,6 +66,7 @@ import ir.coffevista.vista_native.features.chat.domain.model.Conversation
 import ir.coffevista.vista_native.features.chat.domain.model.ConversationType
 import ir.coffevista.vista_native.features.chat.domain.model.ProfileNote
 import ir.coffevista.vista_native.features.chat.presentation.ChatAvatarImage
+import ir.coffevista.vista_native.features.chat.presentation.ChatUserVerificationBadge
 
 @Composable
 internal fun ProfileNotesTray(
@@ -152,7 +153,24 @@ internal fun PeerNoteReplySheet(
                     modifier = Modifier.size(56.dp).clip(CircleShape),
                 )
                 Spacer(Modifier.height(8.dp))
-                Text(conversation.title, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        conversation.title,
+                        modifier = Modifier.weight(1f, fill = false),
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    if (conversation.type != ConversationType.GROUP) {
+                        ChatUserVerificationBadge(
+                            isVerified = conversation.isVerified,
+                            verificationType = conversation.verificationType,
+                            role = conversation.role,
+                            size = 15.dp,
+                        )
+                    }
+                }
                 Spacer(Modifier.height(12.dp))
                 Text(
                     note.content,

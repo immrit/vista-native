@@ -6,7 +6,12 @@ import ir.coffevista.vista_native.features.chat.domain.model.MessageContent
 import ir.coffevista.vista_native.features.chat.domain.model.MessageStatus
 
 object MessageMergeReducer {
-    fun merge(existing: Message?, incoming: Message, source: MergeSource): Message {
+    fun merge(
+        existing: Message?,
+        incoming: Message,
+        source: MergeSource,
+        preserveExistingReactionsWhenEmpty: Boolean = false,
+    ): Message {
         if (existing == null) return incoming
         require(existing.accountId == incoming.accountId)
         require(existing.conversationId == incoming.conversationId)
@@ -57,12 +62,11 @@ object MessageMergeReducer {
                     progress = if (incoming.attachment.remoteUrl != null) 1f else incoming.attachment.progress,
                 )
             },
-            reactions = if (source == MergeSource.REST || source == MergeSource.REALTIME) {
-                incoming.reactions
-            } else if (incoming.reactions.isNotEmpty()) {
-                incoming.reactions
-            } else {
-                existing.reactions
+            reactions = when {
+                preserveExistingReactionsWhenEmpty && incoming.reactions.isEmpty() -> existing.reactions
+                source == MergeSource.REST || source == MergeSource.REALTIME -> incoming.reactions
+                incoming.reactions.isNotEmpty() -> incoming.reactions
+                else -> existing.reactions
             },
             isForwarded = incoming.isForwarded || existing.isForwarded,
             forwardedFromSenderName = incoming.forwardedFromSenderName ?: existing.forwardedFromSenderName,

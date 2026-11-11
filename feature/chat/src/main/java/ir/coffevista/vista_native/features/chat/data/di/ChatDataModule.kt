@@ -61,6 +61,7 @@ object ChatDataModule {
                 ChatDatabase.MIGRATION_3_4,
                 ChatDatabase.MIGRATION_4_5,
                 ChatDatabase.MIGRATION_5_6,
+                ChatDatabase.MIGRATION_6_7,
             )
             .fallbackToDestructiveMigration()
             .fallbackToDestructiveMigrationOnDowngrade()

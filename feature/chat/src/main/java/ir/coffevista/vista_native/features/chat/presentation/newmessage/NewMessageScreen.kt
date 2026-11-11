@@ -58,6 +58,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import ir.coffevista.vista_native.core.designsystem.R
 import ir.coffevista.vista_native.features.chat.domain.model.ChatUser
+import ir.coffevista.vista_native.features.chat.presentation.ChatUserVerificationBadge
 
 @Composable
 fun NewMessageRoute(
@@ -357,7 +358,22 @@ private fun NewMessageUserRow(user: ChatUser, loading: Boolean, selected: Boolea
         )
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
-            Text(user.displayName, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 16.sp, fontWeight = FontWeight.Medium)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    user.displayName,
+                    modifier = Modifier.weight(1f, fill = false),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Medium,
+                )
+                ChatUserVerificationBadge(
+                    isVerified = user.isVerified,
+                    verificationType = user.verificationType,
+                    role = user.role,
+                    size = 15.dp,
+                )
+            }
             if (user.username.isNotBlank() && user.username != user.displayName) {
                 Text("@${user.username}", maxLines = 1, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
             }

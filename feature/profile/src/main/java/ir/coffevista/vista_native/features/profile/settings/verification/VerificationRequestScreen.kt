@@ -1,8 +1,6 @@
 package ir.coffevista.vista_native.features.profile.settings.verification
 
 import android.net.Uri
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -45,7 +43,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -69,12 +69,15 @@ fun VerificationRequestScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
 
-    val documentPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent(),
-    ) { uri: Uri? ->
-        if (uri != null) {
-            viewModel.onDocumentSelected(uri)
-        }
+    var showInAppDocPicker by remember { mutableStateOf(false) }
+
+    if (showInAppDocPicker) {
+        ir.coffevista.vista_native.core.designsystem.component.VistaInAppMediaPickerBottomSheet(
+            mode = ir.coffevista.vista_native.core.designsystem.component.VistaInAppPickerMode.IMAGE_SINGLE,
+            title = "انتخاب تصویر مدرک هویتی",
+            onDismiss = { showInAppDocPicker = false },
+            onSingleSelected = { uri -> viewModel.onDocumentSelected(uri) },
+        )
     }
 
     LaunchedEffect(uiState.errorMessage) {
@@ -217,7 +220,7 @@ fun VerificationRequestScreen(
                             shape = RoundedCornerShape(12.dp),
                         )
                         .clickable(enabled = !uiState.isSubmitting) {
-                            documentPickerLauncher.launch("image/*")
+                            showInAppDocPicker = true
                         }
                         .padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically,

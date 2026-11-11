@@ -2,7 +2,6 @@ package ir.coffevista.vista_native.features.feed.ui.create
 
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -184,31 +183,34 @@ fun AddPostScreen(
         }
     }
 
-    // Launcher for Images (multi-selection)
-    val imagePickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickMultipleVisualMedia(maxItems = uiState.maxGalleryImages),
-    ) { uris ->
-        if (uris.isNotEmpty()) {
-            viewModel.onImagesSelected(uris)
-        }
+    var activeInAppPickerMode by remember {
+        mutableStateOf<ir.coffevista.vista_native.core.designsystem.component.VistaInAppPickerMode?>(null)
     }
 
-    // Launcher for Video: remember the original, then open the trimmer. The preview only
-    // appears on this screen once the trimmer returns the trimmed file.
-    val videoPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickVisualMedia(),
-    ) { uri ->
-        if (uri != null) {
-            viewModel.onVideoPicked(uri)
-            onNavigateToTrimmer(uri)
-        }
-    }
-
-    // Launcher for Music
-    val musicPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent(),
-    ) { uri ->
-        uri?.let(viewModel::onMusicFileSelected)
+    activeInAppPickerMode?.let { pickerMode ->
+        val remainingSlots = (uiState.maxGalleryImages - uiState.selectedImages.size).coerceAtLeast(1)
+        ir.coffevista.vista_native.core.designsystem.component.VistaInAppMediaPickerBottomSheet(
+            mode = pickerMode,
+            maxSelection = remainingSlots,
+            onDismiss = { activeInAppPickerMode = null },
+            onSingleSelected = { uri ->
+                when (pickerMode) {
+                    ir.coffevista.vista_native.core.designsystem.component.VistaInAppPickerMode.VIDEO_SINGLE -> {
+                        viewModel.onVideoPicked(uri)
+                        onNavigateToTrimmer(uri)
+                    }
+                    ir.coffevista.vista_native.core.designsystem.component.VistaInAppPickerMode.AUDIO_SINGLE -> {
+                        viewModel.onMusicFileSelected(uri)
+                    }
+                    else -> viewModel.onImagesSelected(listOf(uri))
+                }
+            },
+            onMultipleSelected = { uris ->
+                if (uris.isNotEmpty()) {
+                    viewModel.onImagesSelected(uris)
+                }
+            },
+        )
     }
 
     fun pickImages() {
@@ -217,20 +219,12 @@ fun AddPostScreen(
                 snackbarHostState.showSnackbar("حداکثر ${uiState.maxGalleryImages} تصویر می‌توانید انتخاب کنید")
             }
         } else {
-            runCatching {
-                imagePickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-            }.onFailure {
-                coroutineScope.launch { snackbarHostState.showSnackbar("امکان باز کردن گالری وجود ندارد") }
-            }
+            activeInAppPickerMode = ir.coffevista.vista_native.core.designsystem.component.VistaInAppPickerMode.IMAGE_MULTI
         }
     }
 
     fun pickVideo() {
-        runCatching {
-            videoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly))
-        }.onFailure {
-            coroutineScope.launch { snackbarHostState.showSnackbar("امکان انتخاب ویدیو وجود ندارد") }
-        }
+        activeInAppPickerMode = ir.coffevista.vista_native.core.designsystem.component.VistaInAppPickerMode.VIDEO_SINGLE
     }
 
     LaunchedEffect(uiState.isSuccess) {
@@ -300,7 +294,9 @@ fun AddPostScreen(
                             onPickImages = ::pickImages,
                             onCaptureCamera = ::launchCamera,
                             onPickVideo = ::pickVideo,
-                            onPickMusic = { musicPickerLauncher.launch("audio/*") },
+                            onPickMusic = {
+                                activeInAppPickerMode = ir.coffevista.vista_native.core.designsystem.component.VistaInAppPickerMode.AUDIO_SINGLE
+                            },
                             onPickLocation = { showLocationDialog = true },
                         )
 

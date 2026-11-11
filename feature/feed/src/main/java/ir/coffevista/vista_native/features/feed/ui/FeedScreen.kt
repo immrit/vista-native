@@ -209,8 +209,16 @@ fun FeedScreen(
     homeTabClickFlow: SharedFlow<Unit>? = null,
 ) {
     val bottomBarVisibilityCallback = onBottomBarVisibilityChange ?: LocalBottomBarVisibility.current
-    DisposableEffect(Unit) {
+    val feedLifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(feedLifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                viewModel.refreshNotificationsIfStale()
+            }
+        }
+        feedLifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
+            feedLifecycleOwner.lifecycle.removeObserver(observer)
             bottomBarVisibilityCallback(true)
         }
     }

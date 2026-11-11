@@ -1,10 +1,15 @@
 package ir.coffevista.vista_native.features.feed.data
 
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import retrofit2.HttpException
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -13,6 +18,7 @@ import javax.inject.Singleton
 class DefaultNotificationRepository @Inject constructor(
     private val api: NotificationApi,
 ) : NotificationRepository {
+    private val repoScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mutableNotifications = MutableStateFlow<List<VistaNotification>>(emptyList())
     override val notifications: StateFlow<List<VistaNotification>> = mutableNotifications.asStateFlow()
 
@@ -84,8 +90,12 @@ class DefaultNotificationRepository @Inject constructor(
     override suspend fun markAllAsRead() {
         val previous = mutableNotifications.value
         mutableNotifications.value = previous.map { it.copy(isRead = true) }
-        runCatching { api.markAllAsRead() }.onFailure {
-            mutableNotifications.value = previous
+        // Dispatch on the singleton repository scope so exiting NotificationsScreen
+        // (which cancels viewModelScope) never aborts the read-all network call.
+        repoScope.launch {
+            runCatching { api.markAllAsRead() }.onFailure {
+                mutableNotifications.value = previous
+            }
         }
     }
 

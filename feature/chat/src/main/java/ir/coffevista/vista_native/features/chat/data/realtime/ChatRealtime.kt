@@ -189,11 +189,23 @@ object RealtimeEventParser {
                     ),
                 )
             }
-            "reaction_updated" -> RealtimeEvent.ReactionUpdated(
-                envelope.event_id,
-                conversationId,
-                json.decodeFromJsonElement(data),
-            )
+            "reaction_updated" -> {
+                val parsed = json.decodeFromJsonElement<ReactionUpdateDto>(data)
+                val resolvedMessageId = parsed.messageId.ifBlank { data.string("message_id").orEmpty() }
+                if (resolvedMessageId.isBlank()) {
+                    RealtimeEvent.Unknown(envelope.type, envelope.event_id, conversationId)
+                } else {
+                    val resolvedConvId = conversationId ?: parsed.conversationId.takeIf(String::isNotBlank)
+                    RealtimeEvent.ReactionUpdated(
+                        envelope.event_id,
+                        resolvedConvId,
+                        parsed.copy(
+                            messageId = resolvedMessageId,
+                            conversationId = resolvedConvId.orEmpty(),
+                        ),
+                    )
+                }
+            }
             "session_terminated", "force_logout" -> RealtimeEvent.SessionTerminated(
                 eventId = envelope.event_id,
                 sessionId = data.string("session_id"),

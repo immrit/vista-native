@@ -3,7 +3,6 @@ package ir.coffevista.vista_native.features.profile.ui.qr
 import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -38,8 +37,11 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -71,26 +73,31 @@ fun ProfileQrScannerScreen(
     val coroutineScope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
-    val galleryLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickVisualMedia(),
-    ) { uri: Uri? ->
-        if (uri != null) {
-            coroutineScope.launch {
-                val scannedText = withContext(Dispatchers.IO) {
-                    decodeQrFromUri(context, uri)
-                }
-                if (scannedText != null) {
-                    val userIdentifier = extractUserFromQr(scannedText)
-                    if (userIdentifier != null) {
-                        onUserFound(userIdentifier)
-                    } else {
-                        snackbarHostState.showSnackbar("این کد QR متعلق به پروفایل ویستا نیست")
+    var showInAppQrGalleryPicker by remember { mutableStateOf(false) }
+
+    if (showInAppQrGalleryPicker) {
+        ir.coffevista.vista_native.core.designsystem.component.VistaInAppMediaPickerBottomSheet(
+            mode = ir.coffevista.vista_native.core.designsystem.component.VistaInAppPickerMode.IMAGE_SINGLE,
+            title = "انتخاب تصویر کد QR",
+            onDismiss = { showInAppQrGalleryPicker = false },
+            onSingleSelected = { uri ->
+                coroutineScope.launch {
+                    val scannedText = withContext(Dispatchers.IO) {
+                        decodeQrFromUri(context, uri)
                     }
-                } else {
-                    snackbarHostState.showSnackbar("کد QR در تصویر پیدا نشد")
+                    if (scannedText != null) {
+                        val userIdentifier = extractUserFromQr(scannedText)
+                        if (userIdentifier != null) {
+                            onUserFound(userIdentifier)
+                        } else {
+                            snackbarHostState.showSnackbar("این کد QR متعلق به پروفایل ویستا نیست")
+                        }
+                    } else {
+                        snackbarHostState.showSnackbar("کد QR در تصویر پیدا نشد")
+                    }
                 }
-            }
-        }
+            },
+        )
     }
 
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
@@ -162,11 +169,7 @@ fun ProfileQrScannerScreen(
                     modifier = Modifier.padding(bottom = 40.dp),
                 ) {
                     Button(
-                        onClick = {
-                            galleryLauncher.launch(
-                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
-                            )
-                        },
+                        onClick = { showInAppQrGalleryPicker = true },
                         shape = RoundedCornerShape(24.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = Color.White.copy(alpha = 0.2f),

@@ -7,6 +7,7 @@ import android.content.pm.ServiceInfo
 import android.net.Uri
 import android.os.Build
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
@@ -15,6 +16,7 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
+import ir.coffevista.vista_native.core.designsystem.R as DesignSystemR
 import ir.coffevista.vista_native.features.feed.data.PostMediaUploadGateway
 import ir.coffevista.vista_native.features.feed.music.MusicRepository
 import ir.coffevista.vista_native.features.stories.domain.CreateStoryRequestDto
@@ -373,7 +375,9 @@ class StoryUploadWorker @AssistedInject constructor(
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setContentTitle("انتشار استوری در ویستا")
             .setContentText(message)
-            .setSmallIcon(android.R.drawable.stat_sys_upload)
+            .setSmallIcon(DesignSystemR.drawable.ic_notification)
+            .setColor(ContextCompat.getColor(context, DesignSystemR.color.vista_notification_accent))
+            .setOnlyAlertOnce(true)
             .setOngoing(progress < 1f)
             .setProgress(100, (progress * 100).toInt(), false)
             .build()

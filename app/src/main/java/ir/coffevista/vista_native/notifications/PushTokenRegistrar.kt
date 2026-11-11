@@ -9,15 +9,17 @@ import ir.coffevista.vista_native.core.network.InternalApi
 import ir.coffevista.vista_native.core.network.InternalEnvironment
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.Call
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import javax.inject.Inject
@@ -38,7 +40,7 @@ class PushTokenRegistrar @Inject constructor(
     @InternalApi private val client: Call.Factory,
     @InternalEnvironment private val environment: AppEnvironment,
 ) {
-    private val scope = CoroutineScope(Dispatchers.IO)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val prefs = context.getSharedPreferences("fcm_token_prefs", Context.MODE_PRIVATE)
 
     companion object {
@@ -55,16 +57,18 @@ class PushTokenRegistrar @Inject constructor(
                 .remove(KEY_LAST_SYNCED_TOKEN)
                 .putLong(KEY_LAST_RESYNC_EPOCH, epoch)
                 .apply()
-            syncTokenAsync()
+            syncTokenAsync(force = true)
         }
     }
 
-    fun syncTokenAsync(userId: String? = null) {
+    fun lastKnownResyncEpoch(): Long = prefs.getLong(KEY_LAST_RESYNC_EPOCH, 0L)
+
+    fun syncTokenAsync(userId: String? = null, force: Boolean = false) {
         scope.launch {
             try {
                 val token = FirebaseMessaging.getInstance().token.await()
                 if (!token.isNullOrBlank()) {
-                    registerToken(token = token, userId = userId)
+                    registerToken(token = token, userId = userId, force = force)
                 }
             } catch (_: Exception) {
                 // Non-fatal if FCM token lookup fails (e.g. offline)
@@ -72,33 +76,47 @@ class PushTokenRegistrar @Inject constructor(
         }
     }
 
-    fun unregisterTokenAsync() {
-        scope.launch {
-            val token = prefs.getString(KEY_LAST_SYNCED_TOKEN, null)
-                ?: runCatching { FirebaseMessaging.getInstance().token.await() }.getOrNull()
-            prefs.edit()
-                .remove(KEY_LAST_SYNCED_TOKEN)
-                .remove(KEY_LAST_SYNCED_USER_ID)
-                .apply()
-            if (!token.isNullOrBlank()) {
-                try {
+    /**
+     * Unregisters the current FCM token while the authenticated session is still
+     * intact (BEFORE sessionStore.clear()) so DELETE /v1/fcm/token succeeds
+     * instead of failing with 401 Unauthorized.
+     */
+    suspend fun unregisterTokenBeforeSignOut(timeoutMs: Long = 1_500L) = withContext(Dispatchers.IO) {
+        val token = prefs.getString(KEY_LAST_SYNCED_TOKEN, null)
+            ?: runCatching { withTimeoutOrNull(500L) { FirebaseMessaging.getInstance().token.await() } }.getOrNull()
+        prefs.edit()
+            .remove(KEY_LAST_SYNCED_TOKEN)
+            .remove(KEY_LAST_SYNCED_USER_ID)
+            .apply()
+        if (!token.isNullOrBlank()) {
+            withTimeoutOrNull(timeoutMs) {
+                runCatching {
                     val payload = Json.encodeToString(mapOf("token" to token))
                     val request = Request.Builder()
                         .url("${environment.internalBaseUrl.trimEnd('/')}/v1/fcm/token")
                         .delete(payload.toRequestBody("application/json".toMediaType()))
                         .build()
                     client.newCall(request).execute().close()
-                } catch (_: Exception) {
-                    // Best-effort unregister on logout
                 }
             }
         }
     }
 
-    suspend fun registerToken(token: String, userId: String? = null): Boolean = withContext(Dispatchers.IO) {
+    fun unregisterTokenAsync() {
+        scope.launch {
+            unregisterTokenBeforeSignOut()
+        }
+    }
+
+    suspend fun registerToken(
+        token: String,
+        userId: String? = null,
+        force: Boolean = false,
+    ): Boolean = withContext(Dispatchers.IO) {
         val lastToken = prefs.getString(KEY_LAST_SYNCED_TOKEN, null)
         val lastUserId = prefs.getString(KEY_LAST_SYNCED_USER_ID, null)
-        if (token == lastToken && (userId == null || userId == lastUserId)) {
+        val userChanged = userId != null && userId != lastUserId
+        if (!force && !userChanged && token == lastToken && lastUserId != null) {
             return@withContext true
         }
 

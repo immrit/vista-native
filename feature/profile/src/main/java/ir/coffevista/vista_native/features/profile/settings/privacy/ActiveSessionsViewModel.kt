@@ -43,13 +43,27 @@ class ActiveSessionsViewModel @Inject constructor(
         var sessionId = prefs.getString(KEY_SESSION_ID, null)?.takeIf(String::isNotBlank)
         var sessionToken = prefs.getString(KEY_SESSION_TOKEN, null)?.takeIf(String::isNotBlank)
 
+        val fcmPrefs = context.getSharedPreferences("fcm_token_prefs", Context.MODE_PRIVATE)
+        val cachedFcmToken = fcmPrefs.getString("last_synced_fcm_token", null)
+        val fcmSyncEpoch = fcmPrefs.getLong("last_fcm_resync_epoch", 0L)
+
         if (sessionId != null && sessionToken != null) {
             val validated = runCatching {
                 api.validate(ValidateSessionRequestDto(sessionId = sessionId!!, sessionToken = sessionToken!!))
             }.getOrNull()
             if (validated != null && validated.isSuccessful && validated.body()?.valid == true) {
-                runCatching {
-                    api.touch(TouchSessionRequestDto(sessionId = sessionId!!, sessionToken = sessionToken!!))
+                val touchResponse = runCatching {
+                    api.touch(
+                        TouchSessionRequestDto(
+                            sessionId = sessionId!!,
+                            sessionToken = sessionToken!!,
+                            fcmToken = cachedFcmToken,
+                            fcmSyncEpoch = fcmSyncEpoch,
+                        ),
+                    )
+                }.getOrNull()
+                if (touchResponse?.body()?.requireFcmSync == true) {
+                    ir.coffevista.vista_native.core.common.NotificationRuntimeCoordinator.requestFcmTokenResync()
                 }
                 return sessionId
             }
@@ -79,6 +93,7 @@ class ActiveSessionsViewModel @Inject constructor(
                         put("platform", "android")
                     },
                     platform = "android",
+                    fcmToken = cachedFcmToken,
                 ),
             )
         }.getOrNull()

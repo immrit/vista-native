@@ -1,10 +1,16 @@
 package ir.coffevista.vista
 
-import android.os.Bundle
+import android.Manifest
+import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.media.RingtoneManager
 import android.net.Uri
+import android.os.Build
+import android.os.Bundle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.FragmentActivity
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.background
@@ -135,6 +141,15 @@ class MainActivity : FragmentActivity() {
     @Inject
     lateinit var vistaUpdateManager: ir.coffevista.vista_native.update.VistaUpdateManager
 
+    @Inject
+    lateinit var notificationSettingsApi: ir.coffevista.vista_native.features.profile.settings.notifications.NotificationSettingsApi
+
+    private var lastInAppChimeAtMillis = 0L
+
+    private val requestNotificationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { /* Permission result handled via system state */ }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (savedInstanceState != null) {
@@ -163,10 +178,34 @@ class MainActivity : FragmentActivity() {
             biometricUnlockRequired = sessionStore.isBiometricEnabled()
         }
         notificationManager.createNotificationChannels()
-        pushTokenRegistrar.syncTokenAsync()
         configureStartupFixtures(intent)
         submitDeepLink(intent)
         if (savedInstanceState == null) handleShareIntent(intent)
+        lifecycleScope.launch {
+            ir.coffevista.vista_native.core.common.NotificationRuntimeCoordinator.dismissedConversations
+                .collect { conversationId ->
+                    notificationManager.cancelChatNotification(conversationId)
+                }
+        }
+        lifecycleScope.launch {
+            ir.coffevista.vista_native.core.common.NotificationRuntimeCoordinator.inAppChatChimes
+                .collect {
+                    val now = System.currentTimeMillis()
+                    if (now - lastInAppChimeAtMillis >= 1_500L) {
+                        lastInAppChimeAtMillis = now
+                        runCatching {
+                            val uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+                            RingtoneManager.getRingtone(applicationContext, uri)?.play()
+                        }
+                    }
+                }
+        }
+        lifecycleScope.launch {
+            ir.coffevista.vista_native.core.common.NotificationRuntimeCoordinator.fcmResyncRequests
+                .collect {
+                    pushTokenRegistrar.syncTokenAsync(userId = lastSignedInUserId, force = true)
+                }
+        }
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 while (true) {
@@ -181,18 +220,35 @@ class MainActivity : FragmentActivity() {
         lifecycleScope.launch {
             authenticationStateOwner.state
                 .map { state ->
-                    (state as? AuthenticationState.SignedIn)?.context?.userId
+                    (state as? AuthenticationState.SignedIn)?.context
                 }
-                .distinctUntilChanged()
-                .collectLatest { userId ->
+                .distinctUntilChanged { old, new -> old?.userId == new?.userId && old?.profileCompleted == new?.profileCompleted }
+                .collectLatest { context ->
+                    val userId = context?.userId
                     if (userId != null) {
                         lastSignedInUserId = userId
                         pushTokenRegistrar.syncTokenAsync(userId)
                         ownProfileRepository.fetchAndCacheOwnProfile(userId)
                         reconcilePendingChatNotification()
+                        launch {
+                            runCatching { notificationSettingsApi.getSettings() }.getOrNull()?.let { resp ->
+                                if (resp.isSuccessful) {
+                                    resp.body()?.let { dto ->
+                                        ir.coffevista.vista_native.core.common.NotificationRuntimeCoordinator
+                                            .updateNotificationPreferences(
+                                                inAppChatSounds = dto.in_app_chat_sounds,
+                                                soundEnabled = dto.sound_enabled,
+                                                vibrationEnabled = dto.vibration_enabled,
+                                            )
+                                    }
+                                }
+                            }
+                        }
+                        if (context.profileCompleted) {
+                            maybePromptNotificationPermissionOnce()
+                        }
                     } else if (lastSignedInUserId != null) {
                         lastSignedInUserId = null
-                        pushTokenRegistrar.unregisterTokenAsync()
                     }
                 }
         }
@@ -240,6 +296,9 @@ class MainActivity : FragmentActivity() {
                                     }
                                 },
                                 onCheckForUpdate = { checkForAppUpdate(showUpToDateToast = true) },
+                                onBeforeClearSession = {
+                                    pushTokenRegistrar.unregisterTokenBeforeSignOut()
+                                },
                                 onExitRequested = ::finish,
                             )
                             availableUpdate?.let { update ->
@@ -361,11 +420,13 @@ class MainActivity : FragmentActivity() {
 
     override fun onStart() {
         super.onStart()
+        ir.coffevista.vista_native.core.common.NotificationRuntimeCoordinator.setAppForeground(true)
         lifecycleScope.launch { chatRepository.setForeground(true) }
         reconcilePendingChatNotification()
     }
 
     override fun onStop() {
+        ir.coffevista.vista_native.core.common.NotificationRuntimeCoordinator.setAppForeground(false)
         if (!isChangingConfigurations && sessionStore.isBiometricEnabled()) {
             biometricUnlockRequired = true
         }
@@ -419,21 +480,43 @@ class MainActivity : FragmentActivity() {
     }
 
     private fun notificationDeepLink(data: Map<String, String>): String? {
-        data["deeplink"]?.trim()?.takeIf(String::isNotBlank)?.let { return it }
         val type = (data["type"] ?: data["notification_type"]).orEmpty().lowercase()
+        if (type in setOf("post_admin_edit", "moderation_notice", "appeal_resolved")) {
+            data["post_id"]?.takeIf(String::isNotBlank)?.let { return "vista://appeal/$it" }
+        }
+        data["deeplink"]?.trim()?.takeIf(String::isNotBlank)?.let { return it }
         return when {
-            type in setOf("post_admin_edit", "post_admin_removed", "moderation_notice", "appeal_resolved") ->
-                data["post_id"]?.takeIf(String::isNotBlank)?.let { "vista://appeal/$it" }
             type in setOf("post", "like", "comment", "comment_reply", "mention", "suggest_post") ->
                 data["post_id"]?.takeIf(String::isNotBlank)?.let { "vista://post/$it" }
             type in setOf("follow", "follow_request", "follow_request_accepted", "suggest_follow") ->
-                (data["user_id"] ?: data["sender_id"] ?: data["follower_id"])
+                (data["follower_id"] ?: data["user_id"] ?: data["sender_id"])
                     ?.takeIf(String::isNotBlank)
                     ?.let { "vista://profile/$it" }
             type == "story" ->
-                data["user_id"]?.takeIf(String::isNotBlank)?.let { "vista://profile/$it" }
+                data["user_id"]?.takeIf(String::isNotBlank)?.let { "vista://profile/$it" } ?: "vista://notifications"
+            type in setOf("story_reply", "story_reaction", "admin_broadcast", "post_admin_removed", "appeal_approved", "appeal_rejected") ->
+                "vista://notifications"
+            type == "daily_suggestion_digest" ->
+                "vista://notifications?tab=suggestions"
+            type == "nearby_like" ->
+                "vista://nearby/likes"
+            type == "nearby_match" ->
+                "vista://nearby/matches"
             else -> null
         }
+    }
+
+    private fun maybePromptNotificationPermissionOnce() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) return
+        val isInstrumentation = runCatching {
+            Class.forName("androidx.test.platform.app.InstrumentationRegistry")
+        }.isSuccess
+        if (isInstrumentation) return
+        val prefs = getSharedPreferences("vista_notification_ui_prefs", Context.MODE_PRIVATE)
+        if (prefs.getBoolean("post_notifications_prompted", false)) return
+        prefs.edit().putBoolean("post_notifications_prompted", true).apply()
+        requestNotificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
 
     private fun reconcilePendingChatNotification() {
