@@ -479,11 +479,11 @@ internal val AttachmentKind.wireName: String
     }
 
 internal fun String.toAttachmentKind(): AttachmentKind = when (trim().lowercase()) {
-    "image" -> AttachmentKind.IMAGE
+    "image", "photo" -> AttachmentKind.IMAGE
     "video" -> AttachmentKind.VIDEO
     "gif" -> AttachmentKind.GIF
     "voice" -> AttachmentKind.VOICE
-    "audio" -> AttachmentKind.AUDIO
+    "audio", "music" -> AttachmentKind.AUDIO
     "file", "document", "pdf" -> AttachmentKind.DOCUMENT
     else -> AttachmentKind.UNKNOWN
 }

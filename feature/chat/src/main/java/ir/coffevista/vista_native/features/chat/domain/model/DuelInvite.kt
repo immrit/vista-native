@@ -50,8 +50,30 @@ data class DuelPreview(
     val canJoin: Boolean = false,
     val isParticipant: Boolean = false,
     val viewerAtLimit: Boolean = false,
+    val createdAt: Long = 0L,
+    val expiresAt: Long = 0L,
+    val isExpired: Boolean = false,
     val cancelReason: String? = null,
-)
+) {
+    fun isEffectivelyExpired(nowMillis: Long = System.currentTimeMillis()): Boolean {
+        if (status == "expired" || isExpired) return true
+        if ((status == "waiting" || status == "waiting_for_opponent") && player2 == null && expiresAt in 1L..nowMillis) {
+            return true
+        }
+        return false
+    }
+
+    fun remainingText(nowMillis: Long = System.currentTimeMillis()): String? {
+        if (player2 != null || isEffectivelyExpired(nowMillis) || expiresAt <= nowMillis) return null
+        val totalMinutes = ((expiresAt - nowMillis) + 59_999L) / 60_000L
+        if (totalMinutes <= 1L) return "کمتر از ۱ دقیقه"
+        if (totalMinutes < 60L) return "$totalMinutes دقیقه"
+        val hours = totalMinutes / 60L
+        val mins = totalMinutes % 60L
+        if (hours >= 24L) return "۲۴ ساعت"
+        return if (mins == 0L) "$hours ساعت" else "$hours ساعت و $mins دقیقه"
+    }
+}
 
 /**
  * Parses both structured `gameInvite` JSON payloads and plain/shared Vista Quiz

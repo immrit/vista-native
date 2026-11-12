@@ -112,6 +112,7 @@ class MessagesViewModel @Inject constructor(
     private var sharedMediaObserver: Job? = null
     private var downloadsObserver: Job? = null
     private var readAcknowledgement: Job? = null
+    private var duelPreviewPollingJob: Job? = null
     private var isConversationVisible = false
     private var lastReadAttemptedMessageId: String? = null
     private var lastTypingAt = 0L
@@ -153,6 +154,7 @@ class MessagesViewModel @Inject constructor(
         sharedMediaObserver?.cancel()
         downloadsObserver?.cancel()
         readAcknowledgement?.cancel()
+        duelPreviewPollingJob?.cancel()
         lastReadAttemptedMessageId = null
         autoDeleteJobs.values.forEach { it.cancel() }
         autoDeleteJobs.clear()
@@ -249,9 +251,16 @@ class MessagesViewModel @Inject constructor(
             if (visible) isConversationVisible = true
             return
         }
-        if (isConversationVisible == visible) return
+        val visibilityChanged = isConversationVisible != visible
         isConversationVisible = visible
-        if (!visible) lastReadAttemptedMessageId = null
+        if (visible) {
+            refreshWaitingDuelPreviews()
+            startDuelPreviewPolling(conversationId)
+        } else {
+            duelPreviewPollingJob?.cancel()
+            lastReadAttemptedMessageId = null
+        }
+        if (!visibilityChanged) return
         viewModelScope.launch { repository.setConversationActive(conversationId, visible) }
         if (visible) acknowledgeVisibleUnread()
     }
@@ -348,6 +357,46 @@ class MessagesViewModel @Inject constructor(
         mutableState.update { it.copy(error = null) }
     }
 
+    private fun waitingDuelMatchIds(): List<String> =
+        mutableState.value.duelPreviews.entries
+            .filter { (_, entry) ->
+                val p = entry.preview
+                entry.status == DuelPreviewLoadStatus.LOADED &&
+                    p != null &&
+                    p.player2 == null &&
+                    !p.isEffectivelyExpired() &&
+                    (p.status == "waiting" || p.status == "waiting_for_opponent")
+            }
+            .map { it.key }
+
+    private fun startDuelPreviewPolling(conversationId: String) {
+        if (waitingDuelMatchIds().isEmpty()) {
+            duelPreviewPollingJob?.cancel()
+            return
+        }
+        if (duelPreviewPollingJob?.isActive == true) return
+        duelPreviewPollingJob = viewModelScope.launch {
+            while (
+                isConversationVisible &&
+                mutableState.value.conversationId == conversationId &&
+                waitingDuelMatchIds().isNotEmpty()
+            ) {
+                delay(6_000L)
+                if (!isConversationVisible || mutableState.value.conversationId != conversationId) break
+                val ids = waitingDuelMatchIds()
+                if (ids.isEmpty()) break
+                ids.forEach { matchId -> loadDuelPreview(matchId, forceRefresh = true) }
+            }
+        }
+    }
+
+    private fun refreshWaitingDuelPreviews() {
+        val waitingMatchIds = waitingDuelMatchIds()
+        waitingMatchIds.forEach { matchId ->
+            loadDuelPreview(matchId, forceRefresh = true)
+        }
+    }
+
     fun loadDuelPreview(matchId: String, forceRefresh: Boolean = false) {
         val cleanId = matchId.trim().lowercase()
         if (cleanId.isEmpty()) return
@@ -361,13 +410,15 @@ class MessagesViewModel @Inject constructor(
             return
         }
         if (!inFlightDuelPreviews.add(cleanId)) return
-        mutableState.update { current ->
-            current.copy(
-                duelPreviews = current.duelPreviews + (cleanId to DuelPreviewUiState(
-                    status = DuelPreviewLoadStatus.LOADING,
-                    preview = existing?.preview,
-                )),
-            )
+        if (existing?.preview == null) {
+            mutableState.update { current ->
+                current.copy(
+                    duelPreviews = current.duelPreviews + (cleanId to DuelPreviewUiState(
+                        status = DuelPreviewLoadStatus.LOADING,
+                        preview = existing?.preview,
+                    )),
+                )
+            }
         }
         viewModelScope.launch {
             try {
@@ -380,6 +431,9 @@ class MessagesViewModel @Inject constructor(
                                     preview = result.value,
                                 )),
                             )
+                        }
+                        if (isConversationVisible) {
+                            mutableState.value.conversationId?.let(::startDuelPreviewPolling)
                         }
                     }
                     is ChatResult.Failure -> {

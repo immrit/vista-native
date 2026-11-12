@@ -56,4 +56,32 @@ class DuelInviteParserTest {
         assertNull(DuelInviteParser.tryParse("https://evil.example/game/duel/create?code=$sampleId"))
         assertNull(DuelInviteParser.tryParse("""{"type":"gameInvite","matchId":"invalid"}""", "gameInvite"))
     }
+
+    @Test
+    fun `detects waiting duel expiry and formats remaining time`() {
+        val now = 1_700_000_000_000L
+        val activeWaiting = DuelPreview(
+            matchId = sampleId,
+            status = "waiting",
+            player1 = DuelPreviewPlayer(id = "p1", name = "سارا"),
+            createdAt = now - 3_600_000L,
+            expiresAt = now + 2 * 3_600_000L,
+            canJoin = true,
+        )
+        assertFalse(activeWaiting.isEffectivelyExpired(now))
+        assertEquals("2 ساعت", activeWaiting.remainingText(now))
+
+        val expiredByClock = activeWaiting.copy(expiresAt = now - 1_000L)
+        assertTrue(expiredByClock.isEffectivelyExpired(now))
+        assertNull(expiredByClock.remainingText(now))
+
+        val startedWithPlayer2 = activeWaiting.copy(
+            status = "in_progress",
+            player2 = DuelPreviewPlayer(id = "p2", name = "امیر"),
+            expiresAt = 0L,
+            canJoin = false,
+        )
+        assertFalse(startedWithPlayer2.isEffectivelyExpired(now))
+        assertNull(startedWithPlayer2.remainingText(now))
+    }
 }

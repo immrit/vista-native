@@ -25,6 +25,7 @@ internal data class MessageContextCapabilities(
  * message actions merely because it still has text or an old server id.
  */
 internal data class MessageContextActionPolicy(
+    val canRetry: Boolean,
     val canReact: Boolean,
     val canReply: Boolean,
     val canCopy: Boolean,
@@ -37,6 +38,7 @@ internal data class MessageContextActionPolicy(
 ) {
     val visibleActionCount: Int
         get() = listOf(
+            canRetry,
             canReply,
             canCopy,
             canForward,
@@ -60,6 +62,9 @@ internal fun Message.contextActionPolicy(
     }
     val isAttachmentTransferComplete = attachment?.transferState == null ||
         attachment.transferState == TransferState.COMPLETE
+    val isFailed = status == MessageStatus.FAILED ||
+        attachment?.transferState == TransferState.FAILED ||
+        attachment?.transferState == TransferState.CANCELLED
     val isServerConfirmed = serverId != null && status !in setOf(
         MessageStatus.PENDING,
         MessageStatus.FAILED,
@@ -67,6 +72,7 @@ internal fun Message.contextActionPolicy(
     val canInteractRemotely = !isDeleted && isServerConfirmed && isAttachmentTransferComplete
 
     return MessageContextActionPolicy(
+        canRetry = !isDeleted && isMine && isFailed,
         canReact = canInteractRemotely && capabilities.allowsReactions,
         canReply = canInteractRemotely,
         canCopy = !isDeleted && (isTextOnly || hasText) && capabilities.conversationType != ConversationType.SECRET,

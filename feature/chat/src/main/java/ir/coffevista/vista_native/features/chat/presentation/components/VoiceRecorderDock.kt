@@ -55,6 +55,7 @@ import ir.coffevista.vista_native.core.designsystem.glass.vistaGlass
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaBrandColors
 import ir.coffevista.vista_native.features.chat.domain.model.AttachmentKind
 import ir.coffevista.vista_native.features.chat.domain.model.ChatAttachmentDraft
+import ir.coffevista.vista_native.features.chat.presentation.audio.AudioWaveformExtractor
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.Job
@@ -223,18 +224,12 @@ fun VoiceRecorderDock(
 
             meterJob = coroutineScope.launch {
                 while (isActive && interaction.session == session && mediaRecorder === recorder) {
-                    delay(50)
+                    delay(35)
                     val elapsedMs = SystemClock.elapsedRealtime() - recordingStartElapsedRealtime
                     durationSeconds = (elapsedMs / 1000).toInt()
 
                     val maxAmp = runCatching { recorder.maxAmplitude }.getOrDefault(0)
-                    val rawFraction = (maxAmp.toFloat() / 32767f).coerceIn(0f, 1f)
-                    val amplitude = if (rawFraction > 0.002f) {
-                        rawFraction.toDouble().pow(0.32).toFloat().coerceIn(0.12f, 1f)
-                    } else {
-                        val microFlutter = (sin(elapsedMs / 70.0).toFloat() * 0.04f).coerceAtLeast(0f)
-                        (0.10f + microFlutter).coerceIn(0.08f, 0.16f)
-                    }
+                    val amplitude = AudioWaveformExtractor.normalizeLiveAmplitude(maxAmp)
 
                     allRecordedAmplitudes.add(amplitude)
 
@@ -252,6 +247,7 @@ fun VoiceRecorderDock(
     fun finishAndSend() {
         if (!interaction.isActive) return
         val file = recordingFile
+        val capturedSamples = allRecordedAmplitudes.toList()
         val elapsedMs = if (recordingStartElapsedRealtime > 0L) {
             SystemClock.elapsedRealtime() - recordingStartElapsedRealtime
         } else {
@@ -268,38 +264,39 @@ fun VoiceRecorderDock(
         abandonAudioFocus()
 
         if (file != null && file.exists() && file.length() > 0 && elapsedMs >= 700) {
-            val processedAmplitudes = if (allRecordedAmplitudes.size >= 10) {
-                val peak = allRecordedAmplitudes.maxOrNull() ?: 0f
-                val min = allRecordedAmplitudes.minOrNull() ?: 0f
-                val range = peak - min
-                if (peak > 0.18f && range > 0.08f) {
-                    val factor = (0.90f / peak).coerceIn(1f, 3.5f)
-                    allRecordedAmplitudes.map { (it * factor).coerceIn(0.12f, 0.98f) }
-                } else {
-                    synthesizeSpeechCadence(allRecordedAmplitudes.size)
+            cleanupRecorder(deleteFile = false)
+            coroutineScope.launch {
+                val targetCount = 48
+                val fileWaveform = AudioWaveformExtractor.extract(
+                    context = context,
+                    uriOrPath = file.absolutePath,
+                    targetBars = targetCount,
+                )
+                val finalAmplitudes = when {
+                    fileWaveform != null && AudioWaveformExtractor.hasMeaningfulVariation(fileWaveform) -> fileWaveform
+                    capturedSamples.isNotEmpty() -> {
+                        val peak = (capturedSamples.maxOrNull() ?: 0.1f).coerceAtLeast(0.15f)
+                        val normalized = capturedSamples.map { (it / peak).coerceIn(0.08f, 1.0f) }
+                        downsampleWaveform(normalized, targetCount)
+                    }
+                    else -> List(targetCount) { 0.12f }
                 }
-            } else {
-                synthesizeSpeechCadence(28)
+                val encodedWaveform = AudioWaveformExtractor.encodeWaveform(finalAmplitudes)
+                val draft = ChatAttachmentDraft(
+                    uri = file.absolutePath,
+                    fileName = file.name,
+                    mimeType = "audio/mp4",
+                    sizeBytes = file.length(),
+                    kind = AttachmentKind.VOICE,
+                    durationSeconds = duration,
+                    caption = "",
+                    waveform = encodedWaveform.takeIf { it.isNotBlank() },
+                )
+                onSendVoice(draft)
             }
-
-            val targetCount = 36
-            val downsampled = downsampleWaveform(processedAmplitudes, targetCount)
-            val encodedWaveform = downsampled.joinToString(",") {
-                String.format(Locale.US, "%.2f", it)
-            }
-            val draft = ChatAttachmentDraft(
-                uri = file.absolutePath,
-                fileName = file.name,
-                mimeType = "audio/mp4",
-                sizeBytes = file.length(),
-                kind = AttachmentKind.VOICE,
-                durationSeconds = duration,
-                caption = "",
-                waveform = if (encodedWaveform.isNotBlank()) "wf:$encodedWaveform" else null,
-            )
-            onSendVoice(draft)
+        } else {
+            cleanupRecorder(deleteFile = true)
         }
-        cleanupRecorder(deleteFile = false)
     }
 
     DisposableEffect(Unit) {
@@ -644,32 +641,24 @@ fun VoiceRecorderDock(
     }
 }
 
-private fun synthesizeSpeechCadence(count: Int): List<Float> {
-    val size = count.coerceIn(24, 64)
-    val random = java.util.Random(System.currentTimeMillis())
-    return List(size) { idx ->
-        val phase = idx % 7
-        val base = when (phase) {
-            0 -> 0.18f
-            1 -> 0.42f
-            2 -> 0.88f
-            3 -> 0.65f
-            4 -> 0.82f
-            5 -> 0.38f
-            else -> 0.16f
-        }
-        val jitter = (random.nextFloat() * 0.18f) - 0.09f
-        (base + jitter).coerceIn(0.14f, 0.95f)
-    }
-}
-
 private fun downsampleWaveform(samples: List<Float>, targetCount: Int): List<Float> {
-    if (samples.size <= targetCount) return samples
+    if (samples.isEmpty() || targetCount <= 0) return emptyList()
+    if (samples.size == targetCount) return samples
+    if (samples.size < targetCount) {
+        if (samples.size == 1) return List(targetCount) { samples.first() }
+        return List(targetCount) { i ->
+            val pos = (i.toFloat() / (targetCount - 1).coerceAtLeast(1)) * samples.lastIndex
+            val low = pos.toInt().coerceIn(0, samples.lastIndex)
+            val high = (low + 1).coerceIn(0, samples.lastIndex)
+            val frac = pos - low
+            samples[low] * (1f - frac) + samples[high] * frac
+        }
+    }
     val step = samples.size.toFloat() / targetCount.toFloat()
     return List(targetCount) { i ->
         val startIdx = (i * step).toInt().coerceIn(0, samples.lastIndex)
         val endIdx = ((i + 1) * step).toInt().coerceIn(startIdx + 1, samples.size)
         val slice = samples.subList(startIdx, endIdx)
-        slice.maxOrNull() ?: 0.15f
+        slice.maxOrNull() ?: 0.12f
     }
 }

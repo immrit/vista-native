@@ -1053,6 +1053,15 @@ fun VistaShell(
                 )
             }
         }
+        content.globalTopOverlay?.invoke(
+            glassState,
+            backStackEntry?.destination?.route,
+        ) { conversationId, messageId ->
+            if (conversationId.isNotBlank()) {
+                selectTab(ShellTab.Chat)
+                navController.navigate(ShellRoutes.chatDetail(conversationId, messageId))
+            }
+        }
         val islandVisible = showBottomIsland && isBottomIslandVisible
         val snackbarBottomPadding by animateDpAsState(
             targetValue = if (islandVisible) 126.dp else 20.dp,

@@ -74,17 +74,20 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import ir.coffevista.vista_native.core.database.profile.OwnProfileEntity
+import ir.coffevista.vista_native.core.designsystem.component.VistaBadgeDot
 import ir.coffevista.vista_native.features.profile.settings.components.VistaChoiceOption
 import ir.coffevista.vista_native.features.profile.settings.components.VistaSettingsChoiceBottomSheet
 import ir.coffevista.vista_native.features.profile.settings.components.VistaSettingsDivider
 import ir.coffevista.vista_native.features.profile.settings.components.VistaSettingsGroup
 import ir.coffevista.vista_native.features.profile.settings.components.VistaSettingsTile
+import ir.coffevista.vista_native.features.profile.settings.notifications.rememberAppNotificationsEnabled
 
 private data class SettingsCopy(
     val settings: String,
     val account: String,
     val privacySecurity: String,
     val notifications: String,
+    val notificationsPermissionRequired: String,
     val language: String,
     val appearance: String,
     val dataStorage: String,
@@ -103,7 +106,9 @@ private data class SettingsCopy(
 private fun settingsCopy(locale: String): SettingsCopy = when (locale) {
     "en" -> SettingsCopy(
         settings = "Settings", account = "Account", privacySecurity = "Privacy & Security",
-        notifications = "Notifications", language = "Language", appearance = "Appearance",
+        notifications = "Notifications",
+        notificationsPermissionRequired = "Enable Android notification access",
+        language = "Language", appearance = "Appearance",
         dataStorage = "Data & Storage", savedItems = "Saved Items", requestBlueTick = "Request Blue Tick",
         changePassword = "Change Password", termsAndConditions = "Terms & Conditions",
         aboutVista = "About Vista", logout = "Log Out", logoutDialog = "Are you sure you want to log out?",
@@ -111,7 +116,9 @@ private fun settingsCopy(locale: String): SettingsCopy = when (locale) {
     )
     "ar" -> SettingsCopy(
         settings = "الإعدادات", account = "الحساب", privacySecurity = "الخصوصية والأمان",
-        notifications = "الإشعارات", language = "اللغة", appearance = "المظهر",
+        notifications = "الإشعارات",
+        notificationsPermissionRequired = "يلزم تفعيل إذن الإشعارات",
+        language = "اللغة", appearance = "المظهر",
         dataStorage = "البيانات والتخزين", savedItems = "العناصر المحفوظة", requestBlueTick = "طلب العلامة الزرقاء",
         changePassword = "تغيير كلمة المرور", termsAndConditions = "الشروط والأحكام",
         aboutVista = "حول فيستا", logout = "تسجيل الخروج", logoutDialog = "هل أنت متأكد أنك تريد تسجيل الخروج؟",
@@ -119,7 +126,9 @@ private fun settingsCopy(locale: String): SettingsCopy = when (locale) {
     )
     else -> SettingsCopy(
         settings = "تنظیمات", account = "حساب کاربری", privacySecurity = "حریم خصوصی و امنیت",
-        notifications = "اعلان‌ها", language = "زبان", appearance = "ظاهر",
+        notifications = "اعلان‌ها",
+        notificationsPermissionRequired = "دسترسی اعلان‌ها غیرفعال است",
+        language = "زبان", appearance = "ظاهر",
         dataStorage = "داده و ذخیره‌سازی", savedItems = "ذخیره‌شده‌ها", requestBlueTick = "درخواست تیک آبی",
         changePassword = "تغییر گذرواژه", termsAndConditions = "قوانین و مقررات",
         aboutVista = "درباره ویستا", logout = "خروج از حساب", logoutDialog = "آیا برای خروج اطمینان دارید؟",
@@ -160,6 +169,7 @@ fun SettingsScreen(
     val settingsLayoutDirection = if (currentLanguage == "en") LayoutDirection.Ltr else LayoutDirection.Rtl
     val copy = settingsCopy(currentLanguage)
     val context = LocalContext.current
+    val notificationPermissionMissing = !rememberAppNotificationsEnabled()
     val installedVersion = remember(context) {
         runCatching {
             context.packageManager.getPackageInfo(context.packageName, 0).versionName
@@ -243,6 +253,23 @@ fun SettingsScreen(
                     VistaSettingsTile(
                         icon = Icons.Outlined.Notifications,
                         title = copy.notifications,
+                        subtitle = if (notificationPermissionMissing) copy.notificationsPermissionRequired else null,
+                        trailing = if (notificationPermissionMissing) {
+                            {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    VistaBadgeDot(size = 8.dp)
+                                    Spacer(Modifier.width(8.dp))
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                        modifier = Modifier.size(20.dp),
+                                    )
+                                }
+                            }
+                        } else {
+                            null
+                        },
                         onClick = onNotificationsClick,
                     )
                     VistaSettingsDivider()

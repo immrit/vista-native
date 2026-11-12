@@ -54,4 +54,63 @@ class PushNotificationTest {
         assertEquals("android", dto.platform)
         assertEquals("mobile", dto.deviceType)
     }
+
+    @Test
+    fun `chat notification formatter handles all message types and blocks raw JSON`() {
+        assertEquals(
+            "سلام چطوری؟",
+            ChatNotificationContentFormatter.format(rawBody = "سلام چطوری؟", messageType = "text"),
+        )
+        assertEquals(
+            "📷 تصویر: منظره شمال",
+            ChatNotificationContentFormatter.format(rawBody = "منظره شمال", messageType = "image"),
+        )
+        assertEquals(
+            "🎤 پیام صوتی",
+            ChatNotificationContentFormatter.format(rawBody = "wf:0.1,0.4,0.8", messageType = "voice"),
+        )
+        assertEquals(
+            "📁 فایل: contract.pdf",
+            ChatNotificationContentFormatter.format(rawBody = "", messageType = "file", fileName = "contract.pdf"),
+        )
+        assertEquals(
+            "🎞️ گیف",
+            ChatNotificationContentFormatter.format(rawBody = "", messageType = "gif"),
+        )
+        assertEquals(
+            "📮 پست از علی: پست جدید",
+            ChatNotificationContentFormatter.format(
+                rawBody = """{"postId":"1","authorName":"علی","content":"پست جدید"}""",
+                messageType = "sharedPost",
+            ),
+        )
+        assertEquals(
+            "🎮 دعوت به دوئل ویستا کوییز از طرف رضا",
+            ChatNotificationContentFormatter.format(
+                rawBody = """{"type":"gameInvite","matchId":"abc","inviterName":"رضا"}""",
+                messageType = "text",
+            ),
+        )
+        assertEquals(
+            "پیام جدید",
+            ChatNotificationContentFormatter.format(
+                rawBody = """{"unexpected":"json","flag":true}""",
+                messageType = "text",
+            ),
+        )
+        assertEquals(
+            "🔒 پیام محرمانه",
+            ChatNotificationContentFormatter.format(
+                rawBody = "VE2E2:secret",
+                messageType = "file",
+                fileName = "hidden.pdf",
+                isSecret = true,
+            ),
+        )
+        // Must not double-prefix already-formatted server copy.
+        assertEquals(
+            "📷 تصویر: عکس من",
+            ChatNotificationContentFormatter.format(rawBody = "📷 تصویر: عکس من", messageType = "image"),
+        )
+    }
 }

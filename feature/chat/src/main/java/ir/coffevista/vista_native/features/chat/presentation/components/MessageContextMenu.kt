@@ -40,6 +40,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -113,6 +114,7 @@ internal fun MessageContextMenu(
     onTogglePinned: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
+    onRetry: () -> Unit = {},
     onSelect: () -> Unit = {},
     onInfo: () -> Unit = {},
     onToggleSaveGif: (() -> Unit)? = null,
@@ -396,6 +398,7 @@ internal fun MessageContextMenu(
                                 onTogglePinned = onTogglePinned,
                                 onEdit = onEdit,
                                 onDelete = onDelete,
+                                onRetry = onRetry,
                                 onToggleSaveGif = onToggleSaveGif,
                                 isGifSaved = isGifSaved,
                             )
@@ -440,6 +443,7 @@ internal fun MessageContextMenu(
                                     onTogglePinned = onTogglePinned,
                                     onEdit = onEdit,
                                     onDelete = onDelete,
+                                    onRetry = onRetry,
                                     onToggleSaveGif = onToggleSaveGif,
                                     isGifSaved = isGifSaved,
                                 )
@@ -491,10 +495,20 @@ private fun MessageContextMenuActions(
     onTogglePinned: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
+    onRetry: () -> Unit = {},
     onToggleSaveGif: (() -> Unit)? = null,
     isGifSaved: Boolean = false,
 ) {
     Column(modifier = modifier.padding(vertical = 5.dp)) {
+        if (policy.canRetry) {
+            MessageContextMenuItem(
+                icon = Icons.Default.Refresh,
+                label = "تلاش مجدد",
+                iconColor = MaterialTheme.colorScheme.primary,
+                textColor = MaterialTheme.colorScheme.primary,
+                onClick = onRetry,
+            )
+        }
         if (policy.canReply) {
             MessageContextMenuItem(
                 icon = Icons.AutoMirrored.Filled.Reply,

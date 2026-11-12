@@ -113,6 +113,35 @@ class SharedPostParserTest {
     }
 
     @Test
+    fun `parses music post fields from camelCase and snake_case payloads`() {
+        val camelDraft = SharedPostDraft(
+            postId = "music-1",
+            authorName = "موسیقیدان",
+            authorUsername = "musician",
+            musicUrl = "https://cdn.example.com/song.mp3",
+            musicTitle = "آهنگ شبانه",
+            createdAt = "2026-11-10T10:00:00Z",
+        )
+        val parsedCamel = SharedPostParser.tryParse(Json.encodeToString(camelDraft))
+        assertNotNull(parsedCamel)
+        assertEquals("https://cdn.example.com/song.mp3", parsedCamel?.musicUrl)
+        assertEquals("آهنگ شبانه", parsedCamel?.musicTitle)
+
+        val mixedJson = """
+            {
+              "postId": "music-2",
+              "authorName": "خواننده",
+              "music_url": "https://cdn.example.com/track2.mp3",
+              "music_title": "قطعه دوم"
+            }
+        """.trimIndent()
+        val parsedMixed = SharedPostParser.tryParse(mixedJson)
+        assertNotNull(parsedMixed)
+        assertEquals("https://cdn.example.com/track2.mp3", parsedMixed?.musicUrl)
+        assertEquals("قطعه دوم", parsedMixed?.musicTitle)
+    }
+
+    @Test
     fun `returns null on plain text or malformed input`() {
         assertNull(SharedPostParser.tryParse("سلام چطوری؟"))
         assertNull(SharedPostParser.tryParse(""))

@@ -38,6 +38,7 @@ class MessageContextActionPolicyTest {
         assertFalse(policy.canTogglePinned)
         assertFalse(policy.canEdit)
         assertFalse(policy.canViewInfo)
+        assertTrue(policy.canRetry)
         assertTrue(policy.canCopy)
         assertTrue(policy.canSelect)
         assertTrue(policy.canDelete)

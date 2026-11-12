@@ -1340,8 +1340,17 @@ class OfflineFirstChatRepository(
     ): ChatResult<DuelPreview> {
         val cleanId = matchId.trim().lowercase()
         val cached = duelPreviewCache[cleanId]
-        if (!forceRefresh && cached != null && (now() - cached.first) <= 15_000L) {
-            return ChatResult.Success(cached.second)
+        val currentMillis = now()
+        if (!forceRefresh && cached != null) {
+            val cachedPreview = cached.second
+            val isWaitingState =
+                cachedPreview.player2 == null &&
+                    (cachedPreview.status == "waiting" || cachedPreview.status == "waiting_for_opponent")
+            val ttlMillis = if (isWaitingState) 4_000L else 15_000L
+            val expiredLocally = isWaitingState && cachedPreview.isEffectivelyExpired(currentMillis)
+            if (!expiredLocally && (currentMillis - cached.first) <= ttlMillis) {
+                return ChatResult.Success(cachedPreview)
+            }
         }
         return remoteCall {
             val dto = api.duelPreview(cleanId)
@@ -1367,6 +1376,9 @@ class OfflineFirstChatRepository(
                 canJoin = dto.canJoin,
                 isParticipant = dto.isParticipant,
                 viewerAtLimit = dto.viewerAtLimit,
+                createdAt = dto.createdAt,
+                expiresAt = dto.expiresAt,
+                isExpired = dto.isExpired,
                 cancelReason = dto.cancelReason,
             )
             duelPreviewCache[cleanId] = now() to preview
@@ -1725,6 +1737,8 @@ class OfflineFirstChatRepository(
                 mimeType = validatedDraft.mimeType,
                 sizeBytes = validatedDraft.sizeBytes,
                 durationSeconds = validatedDraft.durationSeconds,
+                audioTitle = validatedDraft.audioTitle,
+                audioArtist = validatedDraft.audioArtist,
                 audioAlbum = validatedDraft.waveform ?: if (validatedDraft.kind == AttachmentKind.VOICE && caption.startsWith("wf:")) caption else null,
                 progress = 0f,
                 mediaGroupId = validatedDraft.mediaGroupId,
@@ -1861,6 +1875,9 @@ class OfflineFirstChatRepository(
                     durationSeconds = transfer.durationSeconds,
                     caption = caption,
                     mediaGroupId = transfer.mediaGroupId,
+                    waveform = existing.attachment?.audioAlbum,
+                    audioTitle = existing.attachment?.audioTitle,
+                    audioArtist = existing.attachment?.audioArtist,
                 ),
                 )
             } catch (error: Throwable) {
@@ -2147,6 +2164,8 @@ class OfflineFirstChatRepository(
                 attachmentMimeType = draft.mimeType,
                 attachmentSizeBytes = draft.sizeBytes,
                 duration = draft.durationSeconds,
+                audioTitle = draft.audioTitle,
+                audioArtist = draft.audioArtist,
                 audioAlbum = waveformToSend,
                 mediaGroupId = draft.mediaGroupId,
             ),
@@ -2156,6 +2175,8 @@ class OfflineFirstChatRepository(
         val merged = MessageMergeReducer.merge(local, server, MergeSource.REST).copy(
             attachment = server.attachment?.copy(
                 localUri = draft.uri,
+                audioTitle = server.attachment.audioTitle ?: draft.audioTitle,
+                audioArtist = server.attachment.audioArtist ?: draft.audioArtist,
                 audioAlbum = server.attachment.audioAlbum ?: waveformToSend,
                 progress = 1f,
                 transferState = TransferState.COMPLETE,
@@ -2596,6 +2617,7 @@ class OfflineFirstChatRepository(
                             transfer.captionCiphertext,
                         )
                     }.getOrDefault("")
+                    val domainMessage = runCatching { entity.toDomain(cipher) }.getOrNull() ?: return@forEach
                     val draft = ChatAttachmentDraft(
                         uri = transfer.localUri,
                         fileName = transfer.fileName,
@@ -2605,6 +2627,9 @@ class OfflineFirstChatRepository(
                         durationSeconds = transfer.durationSeconds,
                         caption = caption,
                         mediaGroupId = transfer.mediaGroupId,
+                        waveform = domainMessage.attachment?.audioAlbum,
+                        audioTitle = domainMessage.attachment?.audioTitle,
+                        audioArtist = domainMessage.attachment?.audioArtist,
                     )
                     val prepared = runCatching {
                         mediaUploader.prepare(
@@ -2617,7 +2642,6 @@ class OfflineFirstChatRepository(
                     if (transfer.objectKey != prepared.objectKey) {
                         dao.upsertTransfer(transfer.copy(objectKey = prepared.objectKey, state = TransferState.QUEUED.name))
                     }
-                    val domainMessage = runCatching { entity.toDomain(cipher) }.getOrNull() ?: return@forEach
                     uploadAndSendAttachment(
                         domainMessage.copy(status = MessageStatus.PENDING),
                         prepared,

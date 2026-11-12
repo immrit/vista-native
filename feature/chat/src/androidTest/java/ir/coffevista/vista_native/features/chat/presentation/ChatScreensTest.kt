@@ -1540,19 +1540,19 @@ class ChatScreensTest {
                                 Message(
                                     accountId = "account",
                                     conversationId = "conversation",
-                                    clientId = "audio-client",
-                                    serverId = "audio-server",
+                                    clientId = "voice-client",
+                                    serverId = "voice-server",
                                     senderId = "peer",
                                     content = MessageContent.Text(""),
                                     createdAtEpochMillis = 1,
                                     status = MessageStatus.READ,
                                     attachment = Attachment(
-                                        kind = AttachmentKind.AUDIO,
+                                        kind = AttachmentKind.VOICE,
                                         localUri = Uri.fromFile(audio).toString(),
                                         fileName = "fixture.wav",
                                         mimeType = "audio/wav",
                                         sizeBytes = audio.length(),
-                                durationSeconds = 3,
+                                        durationSeconds = 3,
                                     ),
                                     isMine = false,
                                 ),
@@ -1570,14 +1570,76 @@ class ChatScreensTest {
                 }
             }
 
-            compose.onNodeWithContentDescription("پخش ویس").performClick()
+            compose.onNodeWithContentDescription("پخش پیام صوتی").performClick()
             compose.waitUntil(5_000) {
-                compose.onAllNodesWithContentDescription("مکث ویس").fetchSemanticsNodes().isNotEmpty()
+                compose.onAllNodesWithContentDescription("مکث پیام صوتی").fetchSemanticsNodes().isNotEmpty()
             }
             compose.onNodeWithTag("voice-playback-position").assertExists()
-            compose.onNodeWithText("1X").assertExists()
-            compose.onNodeWithContentDescription("مکث ویس").assertExists()
+            compose.onAllNodesWithText("1X").fetchSemanticsNodes().isNotEmpty()
+            compose.onNodeWithContentDescription("مکث پیام صوتی").assertExists()
+            compose.onNodeWithTag("chat-mini-audio-player").assertExists()
         } finally {
+            ir.coffevista.vista_native.features.chat.presentation.audio.ChatAudioPlayer.stop()
+            audio.delete()
+        }
+    }
+
+    @Test
+    fun cachedMusicRendersMusicBubbleAndMiniPlayerSeparatelyFromVoice() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val audio = File(context.cacheDir, "chat-music-fixture.wav")
+        writeSilentWav(audio, durationSeconds = 3)
+        try {
+            compose.setContent {
+                VistaTheme {
+                    MessageDetailScreen(
+                        state = MessagesUiState(
+                            conversationId = "conversation",
+                            messages = listOf(
+                                Message(
+                                    accountId = "account",
+                                    conversationId = "conversation",
+                                    clientId = "music-client",
+                                    serverId = "music-server",
+                                    senderId = "peer",
+                                    content = MessageContent.Text(""),
+                                    createdAtEpochMillis = 1,
+                                    status = MessageStatus.READ,
+                                    attachment = Attachment(
+                                        kind = AttachmentKind.AUDIO,
+                                        localUri = Uri.fromFile(audio).toString(),
+                                        fileName = "song.wav",
+                                        mimeType = "audio/wav",
+                                        sizeBytes = audio.length(),
+                                        durationSeconds = 3,
+                                        audioTitle = "آهنگ تست",
+                                        audioArtist = "خواننده تست",
+                                    ),
+                                    isMine = false,
+                                ),
+                            ),
+                            isInitialLoading = false,
+                            hasMore = false,
+                        ),
+                        title = "گفتگو",
+                        onBack = {},
+                        onRefresh = {},
+                        onLoadOlder = {},
+                        onSend = { _, _ -> },
+                        onRetry = {},
+                    )
+                }
+            }
+
+            compose.onNodeWithText("آهنگ تست").assertExists()
+            compose.onNodeWithContentDescription("پخش موسیقی").performClick()
+            compose.waitUntil(5_000) {
+                compose.onAllNodesWithContentDescription("مکث موسیقی").fetchSemanticsNodes().isNotEmpty()
+            }
+            compose.onNodeWithTag("music-playback-position").assertExists()
+            compose.onNodeWithTag("chat-mini-audio-player").assertExists()
+        } finally {
+            ir.coffevista.vista_native.features.chat.presentation.audio.ChatAudioPlayer.stop()
             audio.delete()
         }
     }

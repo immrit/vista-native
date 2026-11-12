@@ -1,6 +1,7 @@
 package ir.coffevista.vista_native.features.shell
 
 import androidx.compose.runtime.Composable
+import ir.coffevista.vista_native.core.designsystem.glass.VistaGlassState
 
 /** Feature UI supplied by the app composition root; Shell owns navigation only. */
 data class ShellFeatureContent(
@@ -157,4 +158,5 @@ data class ShellFeatureContent(
         ) -> Unit
     ),
     val chatBadgeCount: Int = 0,
+    val globalTopOverlay: (@Composable (glassState: VistaGlassState, currentRoute: String?, onOpenChat: (conversationId: String, messageId: String?) -> Unit) -> Unit)? = null,
 )

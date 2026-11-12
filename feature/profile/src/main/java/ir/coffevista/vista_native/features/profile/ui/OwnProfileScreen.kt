@@ -72,6 +72,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import ir.coffevista.vista_native.core.designsystem.component.VistaBadgeDot
+import ir.coffevista.vista_native.core.designsystem.component.VistaBadgedBox
 import ir.coffevista.vista_native.core.designsystem.component.VistaEditPostDialog
 import ir.coffevista.vista_native.core.designsystem.component.VistaErrorState
 import ir.coffevista.vista_native.core.designsystem.component.VistaPremiumPromptDialog
@@ -636,16 +638,28 @@ private fun OwnProfileAppBar(
                 )
             }
             Spacer(Modifier.width(4.dp))
+            val notificationPermissionMissing = !ir.coffevista.vista_native.features.profile.settings.notifications.rememberAppNotificationsEnabled()
             IconButton(
                 onClick = onSettingsClick,
                 modifier = Modifier.size(40.dp),
             ) {
-                Icon(
-                    imageVector = ImageVector.vectorResource(R.drawable.ic_profile_settings),
-                    contentDescription = "تنظیمات",
-                    modifier = Modifier.size(24.dp),
-                    tint = MaterialTheme.colorScheme.onBackground,
-                )
+                VistaBadgedBox(
+                    badge = {
+                        if (notificationPermissionMissing) {
+                            VistaBadgeDot(
+                                size = 8.dp,
+                                borderColor = MaterialTheme.colorScheme.background,
+                            )
+                        }
+                    },
+                ) {
+                    Icon(
+                        imageVector = ImageVector.vectorResource(R.drawable.ic_profile_settings),
+                        contentDescription = "تنظیمات",
+                        modifier = Modifier.size(24.dp),
+                        tint = MaterialTheme.colorScheme.onBackground,
+                    )
+                }
             }
         }
     }

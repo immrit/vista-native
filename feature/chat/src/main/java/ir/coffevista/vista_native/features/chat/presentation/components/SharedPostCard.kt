@@ -23,20 +23,28 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChatBubble
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.foundation.text.ClickableText
 import androidx.compose.ui.semantics.Role
@@ -53,11 +61,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import ir.coffevista.vista_native.core.designsystem.component.ResolvedVerificationBadgeType
+import ir.coffevista.vista_native.core.designsystem.component.VistaSoundCloudWaveform
 import ir.coffevista.vista_native.core.designsystem.component.VistaVerificationBadge
+import ir.coffevista.vista_native.core.designsystem.component.formatAudioTime
+import ir.coffevista.vista_native.core.designsystem.component.resolveMusicTitle
 import ir.coffevista.vista_native.core.designsystem.component.resolveVerificationBadgeType
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaBrandColors
 import ir.coffevista.vista_native.features.chat.domain.model.SharedPostDraft
-import ir.coffevista.vista_native.features.chat.domain.model.SharedPostParser
+import ir.coffevista.vista_native.features.chat.presentation.audio.ChatAudioKind
+import ir.coffevista.vista_native.features.chat.presentation.audio.ChatAudioPlayer
+import ir.coffevista.vista_native.features.chat.presentation.audio.ChatAudioTrack
 import ir.coffevista.vista_native.features.chat.presentation.toPersianDigits
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -334,6 +347,19 @@ fun SharedPostCard(
             }
         }
 
+        // --- موزیک پلیر درون پست ---
+        val musicUrl = post.musicUrl?.trim()?.takeIf(String::isNotEmpty)
+        if (musicUrl != null) {
+            Spacer(Modifier.height(6.dp))
+            SharedPostMusicPlayer(
+                post = post,
+                musicUrl = musicUrl,
+                isMine = isMine,
+                primaryTextColor = primaryTextColor,
+                secondaryTextColor = secondaryTextColor,
+            )
+        }
+
         Spacer(Modifier.height(6.dp))
         HorizontalDivider(
             color = if (isMine) Color.White.copy(alpha = 0.15f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
@@ -399,6 +425,163 @@ fun SharedPostCard(
                     fontSize = 11.sp,
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun SharedPostMusicPlayer(
+    post: SharedPostDraft,
+    musicUrl: String,
+    isMine: Boolean,
+    primaryTextColor: Color,
+    secondaryTextColor: Color,
+) {
+    val context = LocalContext.current
+    LaunchedEffect(context) { ChatAudioPlayer.attach(context) }
+
+    val trackId = remember(post.postId, musicUrl) { "shared_post:${post.postId}" }
+    val resolvedTitle = remember(post.musicTitle, musicUrl) {
+        resolveMusicTitle(post.musicTitle, musicUrl)
+    }
+    val track = remember(trackId, musicUrl, resolvedTitle, post.authorName) {
+        ChatAudioTrack(
+            id = trackId,
+            url = musicUrl,
+            kind = ChatAudioKind.MUSIC,
+            title = resolvedTitle,
+            artist = post.authorName.ifBlank { null },
+            durationMs = 0L,
+            senderName = post.authorName.ifBlank { "ویستا" },
+            conversationId = "",
+            createdAtEpochMillis = 0L,
+        )
+    }
+
+    val playerState by ChatAudioPlayer.state.collectAsState()
+    val positionMs by ChatAudioPlayer.position.collectAsState()
+    val isActive = playerState.isActive(trackId)
+    val isPlaying = isActive && playerState.isPlaying
+    val isBuffering = isActive && playerState.isBuffering
+    val durationMs = if (isActive && playerState.durationMs > 0L) playerState.durationMs else 0L
+    val activePosMs = if (isActive) positionMs else ChatAudioPlayer.savedPositionMs(trackId)
+    val progress = if (durationMs > 0L) (activePosMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f) else 0f
+
+    val containerBg = if (isMine) Color.White.copy(alpha = 0.14f) else MaterialTheme.colorScheme.surface.copy(alpha = 0.72f)
+    val containerBorder = if (isMine) Color.White.copy(alpha = 0.22f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
+    val accentColor = if (isMine) Color.White else MaterialTheme.colorScheme.primary
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(containerBg)
+            .border(0.6.dp, containerBorder, RoundedCornerShape(12.dp))
+            .clickable { ChatAudioPlayer.toggle(track) }
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(38.dp)
+                .clip(CircleShape)
+                .background(
+                    if (isMine) {
+                        SolidColor(Color.White.copy(alpha = 0.22f))
+                    } else {
+                        Brush.linearGradient(listOf(VistaBrandColors.Indigo, VistaBrandColors.VioletDeep))
+                    },
+                )
+                .clickable(role = Role.Button) { ChatAudioPlayer.toggle(track) },
+            contentAlignment = Alignment.Center,
+        ) {
+            when {
+                isBuffering -> CircularProgressIndicator(
+                    modifier = Modifier.size(18.dp),
+                    strokeWidth = 2.dp,
+                    color = Color.White,
+                )
+                isPlaying -> Icon(
+                    imageVector = Icons.Default.Pause,
+                    contentDescription = "توقف موسیقی پست",
+                    tint = Color.White,
+                    modifier = Modifier.size(20.dp),
+                )
+                else -> Icon(
+                    imageVector = Icons.Default.PlayArrow,
+                    contentDescription = "پخش موسیقی پست",
+                    tint = Color.White,
+                    modifier = Modifier.size(22.dp),
+                )
+            }
+        }
+
+        Spacer(Modifier.width(10.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Row(
+                    modifier = Modifier.weight(1f, fill = false),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.MusicNote,
+                        contentDescription = null,
+                        tint = accentColor,
+                        modifier = Modifier.size(13.dp),
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        text = resolvedTitle,
+                        color = primaryTextColor,
+                        fontSize = 12.5.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                if (durationMs > 0L || activePosMs > 0L) {
+                    Spacer(Modifier.width(6.dp))
+                    val timeText = if (durationMs > 0L) {
+                        "${formatAudioTime(activePosMs)} / ${formatAudioTime(durationMs)}"
+                    } else {
+                        formatAudioTime(activePosMs)
+                    }
+                    Text(
+                        text = timeText.toPersianDigits(),
+                        color = secondaryTextColor,
+                        fontSize = 10.sp,
+                        maxLines = 1,
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(5.dp))
+
+            VistaSoundCloudWaveform(
+                progress = progress,
+                onSeek = { frac ->
+                    if (isActive) {
+                        ChatAudioPlayer.seekToFraction(frac)
+                    } else {
+                        ChatAudioPlayer.toggle(track)
+                    }
+                },
+                isPlaying = isPlaying,
+                currentPositionMs = activePosMs,
+                durationMs = durationMs,
+                seed = post.postId.hashCode().toLong(),
+                barCount = 26,
+                waveformHeight = 16.dp,
+                activeBrush = SolidColor(accentColor),
+                inactiveColor = if (isMine) Color.White.copy(alpha = 0.28f) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.25f),
+                showTimeLabels = false,
+            )
         }
     }
 }

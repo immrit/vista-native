@@ -1,26 +1,27 @@
 package ir.coffevista.vista_native.features.profile.settings.notifications
 
 import android.Manifest
-import android.app.NotificationManager
 import android.app.TimePickerDialog
 import android.content.Context
-import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
-import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.outlined.AlternateEmail
 import androidx.compose.material.icons.outlined.Bedtime
 import androidx.compose.material.icons.outlined.FavoriteBorder
@@ -40,12 +41,12 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -54,11 +55,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.app.ActivityCompat
 import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import ir.coffevista.vista_native.core.common.NotificationRuntimeCoordinator
+import ir.coffevista.vista_native.core.designsystem.component.VistaBadgeDot
 import ir.coffevista.vista_native.features.profile.settings.components.VistaSettingsDivider
 import ir.coffevista.vista_native.features.profile.settings.components.VistaSettingsGroup
 import ir.coffevista.vista_native.features.profile.settings.components.VistaSettingsSection
@@ -76,22 +77,37 @@ fun NotificationSettingsScreen(
     val settings = uiState.settings
     val canEdit = uiState.hasLoaded && !uiState.isSaving
     val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
-    var systemNotificationsEnabled by remember(context) { mutableStateOf(context.canDisplayNotifications()) }
+    val liveNotificationsEnabled = rememberAppNotificationsEnabled()
+    var systemNotificationsEnabled by remember(context) { mutableStateOf(liveNotificationsEnabled) }
+    LaunchedEffect(liveNotificationsEnabled) {
+        val wasEnabled = systemNotificationsEnabled
+        systemNotificationsEnabled = liveNotificationsEnabled
+        if (!wasEnabled && liveNotificationsEnabled) {
+            NotificationRuntimeCoordinator.requestFcmTokenResync()
+        }
+    }
     // System permission controls delivery, not the user's stored notification preferences.
     // Flutter keeps these choices available while Android notifications are disabled.
     val canManagePush = canEdit
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
-    ) { systemNotificationsEnabled = context.canDisplayNotifications() }
-    DisposableEffect(lifecycleOwner, context) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                systemNotificationsEnabled = context.canDisplayNotifications()
-            }
+    ) { granted ->
+        val enabledNow = context.areAppNotificationsEnabled()
+        systemNotificationsEnabled = enabledNow
+        if (enabledNow) {
+            NotificationRuntimeCoordinator.requestFcmTokenResync()
+        } else if (
+            !granted &&
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            context.findActivity()?.let {
+                !ActivityCompat.shouldShowRequestPermissionRationale(
+                    it,
+                    Manifest.permission.POST_NOTIFICATIONS,
+                )
+            } == true
+        ) {
+            context.openAppNotificationSettings()
         }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
     uiState.errorMessage?.let { message ->
         LaunchedEffect(message) { Toast.makeText(context, message, Toast.LENGTH_SHORT).show() }
@@ -148,13 +164,32 @@ fun NotificationSettingsScreen(
                         } else {
                             "غیرفعال؛ برای دریافت اعلان آن را فعال کنید"
                         },
+                        trailing = if (!systemNotificationsEnabled) {
+                            {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    VistaBadgeDot(size = 8.dp)
+                                    Spacer(Modifier.width(8.dp))
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                        modifier = Modifier.size(20.dp),
+                                    )
+                                }
+                            }
+                        } else {
+                            null
+                        },
                         onClick = {
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-                                context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                            if (
+                                Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                                context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED &&
+                                context.canPromptNotificationPermissionInApp()
                             ) {
+                                context.markNotificationPermissionPrompted()
                                 notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                             } else {
-                                context.openNotificationSettings()
+                                context.openAppNotificationSettings()
                             }
                         },
                     )
@@ -290,17 +325,4 @@ private fun String.toHourMinute(defaultHour: Int): Pair<Int, Int> {
 
 private fun formatTime(hour: Int, minute: Int): String = "%02d:%02d".format(hour, minute)
 
-private fun Context.canDisplayNotifications(): Boolean {
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-        checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-    ) return false
-    return getSystemService(NotificationManager::class.java)?.areNotificationsEnabled() == true
-}
 
-private fun Context.openNotificationSettings(): Boolean = runCatching {
-    startActivity(
-        Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
-            putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
-        },
-    )
-}.isSuccess

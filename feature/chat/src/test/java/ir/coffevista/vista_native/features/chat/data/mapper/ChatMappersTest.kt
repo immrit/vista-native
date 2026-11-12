@@ -292,6 +292,17 @@ class ChatMappersTest {
         assertNull(partial.resolvedIsVerified)
     }
 
+    @Test
+    fun `music and audio transport types map separately from voice`() {
+        val voice = dto().copy(messageType = "voice", mediaUrl = "https://cdn.example.com/v.m4a").toDomain("account")
+        val audio = dto().copy(messageType = "audio", mediaUrl = "https://cdn.example.com/s.mp3", audioTitle = "Song").toDomain("account")
+        val music = dto().copy(messageType = "music", mediaUrl = "https://cdn.example.com/m.mp3", audioTitle = "Track").toDomain("account")
+
+        assertEquals(ir.coffevista.vista_native.features.chat.domain.model.AttachmentKind.VOICE, voice.attachment?.kind)
+        assertEquals(ir.coffevista.vista_native.features.chat.domain.model.AttachmentKind.AUDIO, audio.attachment?.kind)
+        assertEquals(ir.coffevista.vista_native.features.chat.domain.model.AttachmentKind.AUDIO, music.attachment?.kind)
+    }
+
     private fun dto() = MessageDto(
         id = "message-1",
         conversationId = "conversation-1",

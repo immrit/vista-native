@@ -1135,6 +1135,13 @@ fun VistaApp(
                             )
                         },
                         chatBadgeCount = chatBadgeCount,
+                        globalTopOverlay = { glassState, currentRoute, onOpenChat ->
+                            GlobalAudioMiniPlayerOverlay(
+                                glassState = glassState,
+                                currentRoute = currentRoute,
+                                onOpenChat = onOpenChat,
+                            )
+                        },
                     ),
                 )
             }

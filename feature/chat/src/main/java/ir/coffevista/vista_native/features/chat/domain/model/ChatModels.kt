@@ -88,6 +88,8 @@ data class SharedPostDraft(
     val content: String = "",
     val mediaUrls: List<String> = emptyList(),
     val postVideoUrl: String? = null,
+    val musicUrl: String? = null,
+    val musicTitle: String? = null,
     val likesCount: Long = 0L,
     val commentsCount: Long = 0L,
     val createdAt: String,
@@ -266,14 +268,17 @@ fun chatMessageTypePreview(type: String?, secret: Boolean = false): String? {
         else -> "🔒 پیام محرمانه"
     }
     return when (normalized) {
-        "voice", "audio" -> "🎤 پیام صوتی"
+        "voice" -> "🎤 پیام صوتی"
+        "audio", "music" -> "🎵 فایل صوتی"
         "image", "photo" -> "📷 تصویر"
         "video" -> "🎬 ویدیو"
-        "file", "document", "unknown" -> "📎 فایل"
+        "file", "document", "pdf", "archive", "attachment", "unknown" -> "📎 فایل"
         "gif" -> "🎞️ گیف"
-        "post", "shared_post" -> "📮 پست اشتراک‌گذاری شده"
-        "gameinvite", "game_invite" -> "🎮 دعوت به دوئل ویستا کوییز"
-        "sticker" -> "😀 استیکر"
+        "post", "sharedpost", "shared_post", "share_post", "feed_post", "repost" -> "📮 پست اشتراک‌گذاری شده"
+        "storyreply", "story_reply" -> "📖 پاسخ به استوری"
+        "storyshare", "story_share", "story" -> "📖 استوری اشتراک‌گذاری شده"
+        "gameinvite", "game_invite", "duel", "duel_invite" -> "🎮 دعوت به دوئل ویستا کوییز"
+        "sticker" -> "✨ استیکر"
         "location" -> "📍 موقعیت مکانی"
         "contact" -> "👤 مخاطب"
         "poll" -> "📊 نظرسنجی"
@@ -287,16 +292,21 @@ fun Message.inboxPreviewText(): String = attachment?.let { value ->
     is MessageContent.Text -> {
         DuelInviteParser.formatPreviewIfDuel(value.value, transportType)
             ?: SharedPostParser.tryParse(value.value)?.let { post ->
-                "پست اشتراک‌گذاری‌شده: ${post.authorName}"
+                "📮 پست از ${post.authorName}"
             }
-            ?: value.value
+            ?: if (value.value.trim().startsWith("{") && value.value.trim().endsWith("}")) {
+                chatMessageTypePreview(transportType, secret = false) ?: "پیام جدید"
+            } else {
+                value.value
+            }
     }
     is MessageContent.Structured -> {
         DuelInviteParser.formatPreviewIfDuel(value.payload, transportType)
             ?: SharedPostParser.tryParse(value.payload)?.let { post ->
-                "پست اشتراک‌گذاری‌شده: ${post.authorName}"
+                "📮 پست از ${post.authorName}"
             }
-            ?: value.payload
+            ?: chatMessageTypePreview(value.kind, secret = false)
+            ?: "پیام جدید"
     }
     MessageContent.Deleted -> "این پیام حذف شده است"
     MessageContent.EncryptedUnavailable -> "🔒 پیام رمزگذاری‌شده"
@@ -312,15 +322,22 @@ fun Conversation.inboxPreviewText(): String? = lastMessage
     ?.let { preview ->
         DuelInviteParser.formatPreviewIfDuel(preview)
             ?: SharedPostParser.tryParse(preview)?.let { post ->
-                "پست اشتراک‌گذاری‌شده: ${post.authorName}"
+                "📮 پست از ${post.authorName}"
             }
-            ?: if (preview.looksLikeOpaqueConversationPreview()) "پیام جدید" else preview
+            ?: when {
+                preview.startsWith("wf:") -> "🎤 پیام صوتی"
+                preview.startsWith("{") && preview.endsWith("}") ->
+                    chatMessageTypePreview(lastMessageType, secret = false) ?: "پیام جدید"
+                preview.looksLikeOpaqueConversationPreview() -> if (type == ConversationType.SECRET) "🔒 پیام محرمانه" else "پیام جدید"
+                else -> preview
+            }
     }
 
 private fun String.looksLikeOpaqueConversationPreview(): Boolean {
     if (startsWith("VE2E1:") || startsWith("VE2E2:") || startsWith("e2ee:v1:")) return true
     return length >= 32 && all { char ->
-        char.isLetterOrDigit() || char == '+' || char == '/' || char == '_' || char == '-' || char == '='
+        char in 'A'..'Z' || char in 'a'..'z' || char in '0'..'9' ||
+            char == '+' || char == '/' || char == '_' || char == '-' || char == '='
     }
 }
 
@@ -358,6 +375,8 @@ data class ChatAttachmentDraft(
     val caption: String = "",
     val mediaGroupId: String? = null,
     val waveform: String? = null,
+    val audioTitle: String? = null,
+    val audioArtist: String? = null,
 )
 
 @Immutable

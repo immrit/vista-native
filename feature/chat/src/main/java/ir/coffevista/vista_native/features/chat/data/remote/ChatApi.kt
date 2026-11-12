@@ -603,5 +603,6 @@ data class DuelPreviewDto(
     val viewerAtLimit: Boolean = false,
     val createdAt: Long = 0L,
     val expiresAt: Long = 0L,
+    val isExpired: Boolean = false,
     val cancelReason: String? = null,
 )

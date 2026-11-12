@@ -20,8 +20,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.EmojiEvents
+import androidx.compose.material.icons.rounded.Group
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.SportsEsports
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -89,28 +92,32 @@ fun DuelInviteCard(
         ?: "بازیکن ویستا"
     val inviterAvatar = preview?.player1?.avatarUrl?.takeIf { it.isNotBlank() }
         ?: invite.inviterAvatar
+    val player2 = preview?.player2
     val entryFee = preview?.entryFee ?: invite.entryFee ?: 0L
     val winBonus = preview?.winCoinBonus ?: 0L
 
     val isLoading = previewStatus == DuelPreviewLoadStatus.LOADING || previewStatus == DuelPreviewLoadStatus.IDLE
-    val isMissing = previewStatus == DuelPreviewLoadStatus.EXPIRED_OR_NOT_FOUND
+    val isExpired = previewStatus == DuelPreviewLoadStatus.EXPIRED_OR_NOT_FOUND ||
+        preview?.isEffectivelyExpired() == true
     val status = preview?.status.orEmpty()
     val isCancelled = status == "cancelled"
     val isFinished = status == "finished"
-    val isInProgress = status == "in_progress"
-    val isWaiting = status == "waiting"
+    val isStartedWithOpponent = player2 != null && !isFinished && !isCancelled && !isExpired
+    val isInProgress = status == "in_progress" || isStartedWithOpponent
+    val isWaiting = !isExpired && player2 == null && (status == "waiting" || status == "waiting_for_opponent")
     val isParticipant = preview?.isParticipant == true
-    val canJoin = preview?.canJoin == true
+    val canJoin = preview?.canJoin == true && !isExpired && player2 == null
+    val remainingText = if (isWaiting) preview?.remainingText()?.toPersianDigits() else null
 
     val (badgeText, badgeBg, badgeFg) = when {
         isLoading && preview == null -> Triple("در حال بررسی...", Color.White.copy(alpha = 0.22f), Color.White)
-        isMissing -> Triple("منقضی شده", Color(0xFF475569), Color.White)
+        isExpired -> Triple("منقضی شده", Color(0xFF475569), Color.White)
         isCancelled -> Triple("لغو شده", Color(0xFFBE123C), Color.White)
         isFinished -> Triple("تمام شده", Color(0xFF4B5563), Color.White)
         isInProgress -> if (isParticipant) {
             Triple("نوبت / در جریان", Color(0xFF047857), Color.White)
         } else {
-            Triple("تکمیل شده", Color(0xFFD97706), Color.White)
+            Triple("شروع شد (۲ نفر)", Color(0xFFD97706), Color.White)
         }
         isWaiting -> if (isParticipant) {
             Triple("در انتظار حریف", Color(0xFF6D28D9), Color.White)
@@ -120,19 +127,31 @@ fun DuelInviteCard(
         else -> Triple("دعوت دوئل", Color.White.copy(alpha = 0.22f), Color.White)
     }
 
-    val ctaEnabled = !isMissing && !isCancelled && !(preview != null && isInProgress && !isParticipant)
+    val ctaEnabled = when {
+        isExpired || isCancelled -> false
+        isParticipant -> true
+        canJoin -> true
+        else -> false
+    }
     val ctaLabel = when {
-        isMissing || isCancelled -> "دعوت منقضی شده"
+        isExpired -> "دعوت منقضی شده"
+        isCancelled -> "دوئل لغو شده"
         isParticipant -> if (isWaiting) "ورود به اتاق انتظار" else "ادامه بازی"
         canJoin -> "شروع بازی"
-        preview != null && isInProgress -> "دوئل پر شده است"
-        preview != null && isFinished -> "مشاهده نتیجه"
+        preview != null && isFinished -> "پایان دوئل (۲ نفر)"
+        preview != null && (player2 != null || isInProgress) -> "ظرفیت تکمیل شد (۲ نفر)"
         else -> "شروع بازی"
     }
 
     val targetGamePath = when {
         preview != null && (isParticipant || !canJoin) -> "/game/match/${invite.matchId}"
         else -> invite.targetGamePath
+    }
+
+    val headerGradient = if (isExpired || isCancelled) {
+        listOf(Color(0xFF64748B), Color(0xFF475569))
+    } else {
+        listOf(Color(0xFFEC4899), Color(0xFF7C3AED))
     }
 
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
@@ -150,7 +169,7 @@ fun DuelInviteCard(
                     .fillMaxWidth()
                     .background(
                         Brush.horizontalGradient(
-                            colors = listOf(Color(0xFFEC4899), Color(0xFF7C3AED)),
+                            colors = headerGradient,
                         ),
                     )
                     .padding(horizontal = 12.dp, vertical = 9.dp),
@@ -217,52 +236,207 @@ fun DuelInviteCard(
                 modifier = Modifier.padding(12.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                // Challenger Row
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
+                // Challenger / Versus Section
+                if (player2 != null) {
+                    Column(
                         modifier = Modifier
-                            .size(40.dp)
-                            .clip(CircleShape)
-                            .background(chipBg)
-                            .border(1.5.dp, Color(0xFFC4B5FD), CircleShape),
-                        contentAlignment = Alignment.Center,
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(if (isDark) Color(0xFF282242) else Color.White)
+                            .border(0.8.dp, cardBorder, RoundedCornerShape(12.dp))
+                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        if (!inviterAvatar.isNullOrBlank()) {
-                            AsyncImage(
-                                model = inviterAvatar,
-                                contentDescription = inviterName,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.matchParentSize().clip(CircleShape),
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.weight(1f),
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(34.dp)
+                                        .clip(CircleShape)
+                                        .background(chipBg)
+                                        .border(1.5.dp, Color(0xFFC4B5FD), CircleShape),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    if (!inviterAvatar.isNullOrBlank()) {
+                                        AsyncImage(
+                                            model = inviterAvatar,
+                                            contentDescription = inviterName,
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier.matchParentSize().clip(CircleShape),
+                                        )
+                                    } else {
+                                        Text(
+                                            text = inviterName.take(1),
+                                            color = primaryText,
+                                            fontFamily = VistaFontFamily,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 13.sp,
+                                        )
+                                    }
+                                }
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    text = inviterName,
+                                    color = primaryText,
+                                    fontFamily = VistaFontFamily,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 11.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+
+                            Box(
+                                modifier = Modifier
+                                    .padding(horizontal = 4.dp)
+                                    .clip(RoundedCornerShape(999.dp))
+                                    .background(chipBg)
+                                    .padding(horizontal = 7.dp, vertical = 2.dp),
+                            ) {
+                                Text(
+                                    text = "VS",
+                                    color = secondaryText,
+                                    fontFamily = VistaFontFamily,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 10.sp,
+                                )
+                            }
+
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.End,
+                                modifier = Modifier.weight(1f),
+                            ) {
+                                Text(
+                                    text = player2.name.ifBlank { "حریف" },
+                                    color = primaryText,
+                                    fontFamily = VistaFontFamily,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 11.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .size(34.dp)
+                                        .clip(CircleShape)
+                                        .background(if (isDark) Color(0xFF42213F) else Color(0xFFFCE7F3))
+                                        .border(1.5.dp, Color(0xFFF9A8D4), CircleShape),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    if (!player2.avatarUrl.isNullOrBlank()) {
+                                        AsyncImage(
+                                            model = player2.avatarUrl,
+                                            contentDescription = player2.name,
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier.matchParentSize().clip(CircleShape),
+                                        )
+                                    } else {
+                                        Text(
+                                            text = player2.name.take(1).ifBlank { "؟" },
+                                            color = primaryText,
+                                            fontFamily = VistaFontFamily,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 13.sp,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(chipBg)
+                                .padding(horizontal = 8.dp, vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Group,
+                                contentDescription = null,
+                                tint = secondaryText,
+                                modifier = Modifier.size(13.dp),
                             )
-                        } else {
+                            Spacer(Modifier.width(5.dp))
                             Text(
-                                text = inviterName.take(1),
-                                color = primaryText,
+                                text = if (isFinished) {
+                                    "مسابقه بین «$inviterName» و «${player2.name}» به پایان رسید"
+                                } else {
+                                    "بازی بین «$inviterName» و «${player2.name}» شروع شد"
+                                },
+                                color = secondaryText,
                                 fontFamily = VistaFontFamily,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 15.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 10.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                             )
                         }
                     }
-                    Spacer(Modifier.width(9.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = inviterName,
-                            color = primaryText,
-                            fontFamily = VistaFontFamily,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Text(
-                            text = if (isMine) "دعوت دوئل ارسال شد" else "شما را به دوئل دعوت کرده است",
-                            color = secondaryText,
-                            fontFamily = VistaFontFamily,
-                            fontSize = 11.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+                } else {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(chipBg)
+                                .border(1.5.dp, Color(0xFFC4B5FD), CircleShape),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            if (!inviterAvatar.isNullOrBlank()) {
+                                AsyncImage(
+                                    model = inviterAvatar,
+                                    contentDescription = inviterName,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.matchParentSize().clip(CircleShape),
+                                )
+                            } else {
+                                Text(
+                                    text = inviterName.take(1),
+                                    color = primaryText,
+                                    fontFamily = VistaFontFamily,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 15.sp,
+                                )
+                            }
+                        }
+                        Spacer(Modifier.width(9.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = inviterName,
+                                color = primaryText,
+                                fontFamily = VistaFontFamily,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(
+                                text = when {
+                                    isExpired -> preview?.cancelReason?.takeIf { it.isNotBlank() }
+                                        ?: "مهلت پذیرش این دعوت دوئل به پایان رسید"
+                                    isCancelled -> preview?.cancelReason?.takeIf { it.isNotBlank() }
+                                        ?: "این دوئل لغو شده است"
+                                    isMine -> "دعوت دوئل ارسال شد"
+                                    else -> "شما را به دوئل دعوت کرده است"
+                                },
+                                color = secondaryText,
+                                fontFamily = VistaFontFamily,
+                                fontSize = 11.sp,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
                     }
                 }
 
@@ -330,6 +504,35 @@ fun DuelInviteCard(
                     }
                 }
 
+                if (remainingText != null) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(chipBg)
+                            .border(0.7.dp, chipBorder, RoundedCornerShape(10.dp))
+                            .padding(horizontal = 8.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Schedule,
+                            contentDescription = null,
+                            tint = secondaryText,
+                            modifier = Modifier.size(13.dp),
+                        )
+                        Spacer(Modifier.width(5.dp))
+                        Text(
+                            text = "مهلت باقی‌مانده: $remainingText",
+                            color = secondaryText,
+                            fontFamily = VistaFontFamily,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 10.sp,
+                            maxLines = 1,
+                        )
+                    }
+                }
+
                 if (!invite.captionText.isNullOrBlank()) {
                     Text(
                         text = invite.captionText,
@@ -380,7 +583,7 @@ fun DuelInviteCard(
                         } else {
                             Icon(
                                 imageVector = when {
-                                    isMissing || isCancelled -> Icons.Rounded.Close
+                                    isExpired || isCancelled -> Icons.Rounded.Close
                                     !ctaEnabled -> Icons.Rounded.Lock
                                     else -> Icons.Rounded.PlayArrow
                                 },
@@ -396,6 +599,35 @@ fun DuelInviteCard(
                             fontFamily = VistaFontFamily,
                             fontWeight = FontWeight.Bold,
                             fontSize = 13.sp,
+                        )
+                    }
+                }
+
+                if (isExpired && isMine) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(34.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(if (isDark) Color(0xFF282242) else Color.White)
+                            .border(1.dp, cardBorder, RoundedCornerShape(10.dp))
+                            .clickable(role = Role.Button) { onStartGame("/game/duel/create") },
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Refresh,
+                            contentDescription = null,
+                            tint = secondaryText,
+                            modifier = Modifier.size(14.dp),
+                        )
+                        Spacer(Modifier.width(5.dp))
+                        Text(
+                            text = "ساخت دعوت جدید",
+                            color = secondaryText,
+                            fontFamily = VistaFontFamily,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp,
                         )
                     }
                 }

@@ -1,19 +1,20 @@
 package ir.coffevista.vista_native.features.chat.presentation.components
 
-import android.content.Context
-import android.media.AudioAttributes
-import android.media.AudioFocusRequest
-import android.media.AudioManager
-import android.media.MediaPlayer
-import android.media.PlaybackParams
-import android.os.Build
+import android.text.format.Formatter
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -36,21 +37,26 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.Role
@@ -58,16 +64,24 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaBrandColors
 import ir.coffevista.vista_native.features.chat.domain.model.DownloadState
 import ir.coffevista.vista_native.features.chat.domain.model.DownloadTask
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
+import ir.coffevista.vista_native.features.chat.presentation.audio.AudioWaveformExtractor
+import ir.coffevista.vista_native.features.chat.presentation.audio.ChatAudioKind
+import ir.coffevista.vista_native.features.chat.presentation.audio.ChatAudioPlayer
+import ir.coffevista.vista_native.features.chat.presentation.audio.ChatAudioTrack
+import java.util.Locale
 
 /**
- * حباب اختصاصی پخش پیام صوتی با Waveform لمسی، دکمه دانلود تلگرامی و کنترل سرعت.
+ * حباب حرفه‌ای پخش پیام صوتی با الگوبرداری از `SeekBarWaveform` و `MediaController` تلگرام:
+ * - موج صدای واقعی استخراج‌شده از فایل صوتی (بدون موج تکراری ساختگی)
+ * - برش پیکسلی دقیق روی میله‌ها هنگام پخش و کشیدن (Pixel-accurate progress clip)
+ * - پخش متوالی خودکار، حفظ موقعیت مکث، و سرعت جهانی (1X / 1.5X / 2X)
+ * - نقطه خوانده‌نشده برای پیام‌های صوتی دریافتی
  */
 @Composable
 fun VoicePlayerBubble(
@@ -79,106 +93,103 @@ fun VoicePlayerBubble(
     downloadTask: DownloadTask? = null,
     waveformAmplitudes: List<Float> = emptyList(),
     messageId: String? = null,
+    fallbackUrl: String? = null,
+    senderName: String = if (isOutgoing) "شما" else "پیام صوتی",
+    conversationId: String = "",
+    conversationTitle: String? = null,
+    createdAtEpochMillis: Long = 0L,
+    sizeBytes: Long? = null,
+    voiceQueue: List<ChatAudioTrack> = emptyList(),
     onStartDownload: () -> Unit = {},
     onCancelDownload: (String) -> Unit = {},
     onPlaybackFinished: () -> Unit = {},
 ) {
     val context = LocalContext.current
-    val audioManager = remember(context) {
-        context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-    }
-    val activeVoiceId by VoicePlaybackCoordinator.activeMessageId.collectAsState()
-    val globalSpeed by VoicePlaybackCoordinator.playbackSpeed.collectAsState()
+    LaunchedEffect(context) { ChatAudioPlayer.attach(context) }
 
-    var isPlaying by remember { mutableStateOf(false) }
-    var isPreparing by remember { mutableStateOf(false) }
-    var currentPositionMs by remember { mutableIntStateOf(0) }
-    var totalDurationMs by remember { mutableIntStateOf(durationSeconds * 1000) }
-    var playbackSpeed by remember { mutableFloatStateOf(globalSpeed) }
-    var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
-    var audioFocusRequest by remember { mutableStateOf<AudioFocusRequest?>(null) }
-
+    val trackId = messageId ?: audioUrl
+    val effectiveUrl = downloadTask?.localUri?.takeIf(String::isNotBlank) ?: audioUrl
     val isDownloading = downloadTask?.state == DownloadState.DOWNLOADING || downloadTask?.state == DownloadState.QUEUED
-    val readyToPlay = isOutgoing || isDownloaded || (downloadTask?.state == DownloadState.COMPLETE && !downloadTask.localUri.isNullOrBlank())
+    val readyToPlay = isOutgoing || isDownloaded ||
+        (downloadTask?.state == DownloadState.COMPLETE && !downloadTask.localUri.isNullOrBlank())
 
-    fun abandonAudioFocus() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            audioFocusRequest?.let(audioManager::abandonAudioFocusRequest)
-        } else {
-            @Suppress("DEPRECATION")
-            audioManager.abandonAudioFocus(null)
-        }
-        audioFocusRequest = null
+    val track = remember(trackId, effectiveUrl, fallbackUrl, durationSeconds, senderName, conversationId, conversationTitle, createdAtEpochMillis) {
+        ChatAudioTrack(
+            id = trackId,
+            url = effectiveUrl,
+            kind = ChatAudioKind.VOICE,
+            title = senderName,
+            artist = null,
+            durationMs = durationSeconds.coerceAtLeast(1) * 1000L,
+            senderName = senderName,
+            conversationId = conversationId,
+            createdAtEpochMillis = createdAtEpochMillis,
+            fallbackUrl = fallbackUrl?.takeIf { it.isNotBlank() && it != effectiveUrl },
+            conversationTitle = conversationTitle,
+        )
     }
 
-    fun requestAudioFocus(): Boolean {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
-                .setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_MEDIA)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                        .build(),
-                )
-                .setOnAudioFocusChangeListener { focusChange ->
-                    if (focusChange != AudioManager.AUDIOFOCUS_GAIN) {
-                        runCatching { mediaPlayer?.pause() }
-                        isPlaying = false
-                    }
-                }
-                .build()
-            audioFocusRequest = request
-            audioManager.requestAudioFocus(request) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
-        } else {
-            @Suppress("DEPRECATION")
-            audioManager.requestAudioFocus(
-                null,
-                AudioManager.STREAM_MUSIC,
-                AudioManager.AUDIOFOCUS_GAIN,
-            ) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
-        }
+    val playerState by ChatAudioPlayer.state.collectAsState()
+    val globalPositionMs by ChatAudioPlayer.position.collectAsState()
+    val listenedIds by ChatAudioPlayer.listened.collectAsState()
+    val voiceSpeed by ChatAudioPlayer.voiceSpeedFlow.collectAsState()
+
+    val isActive = playerState.isActive(trackId)
+    val isPlaying = isActive && playerState.isPlaying
+    val isBuffering = isActive && playerState.isBuffering
+    val isListened = isOutgoing || (trackId in listenedIds)
+
+    val totalDurationMs = if (isActive && playerState.durationMs > 0L) {
+        playerState.durationMs
+    } else {
+        (durationSeconds.coerceAtLeast(1) * 1000L)
+    }
+    val currentPositionMs = if (isActive) {
+        globalPositionMs
+    } else {
+        ChatAudioPlayer.savedPositionMs(trackId)
     }
 
-    DisposableEffect(audioUrl) {
-        onDispose {
-            mediaPlayer?.runCatching {
-                if (isPlaying) stop()
-                release()
-            }
-            abandonAudioFocus()
-            mediaPlayer = null
-        }
-    }
+    var isScrubbing by remember(trackId) { mutableStateOf(false) }
+    var scrubFraction by remember(trackId) { mutableFloatStateOf(0f) }
 
-    LaunchedEffect(isPlaying) {
-        while (isActive && isPlaying && mediaPlayer != null) {
-            val pos = runCatching { mediaPlayer?.currentPosition ?: 0 }.getOrDefault(0)
-            currentPositionMs = pos
-            delay(50)
-        }
+    val liveProgress = if (totalDurationMs > 0L) {
+        (currentPositionMs.toFloat() / totalDurationMs.toFloat()).coerceIn(0f, 1f)
+    } else {
+        0f
     }
+    val displayProgress = if (isScrubbing) scrubFraction else liveProgress
 
-    LaunchedEffect(activeVoiceId) {
-        if (messageId != null && activeVoiceId != messageId && isPlaying) {
-            mediaPlayer?.let { player ->
-                runCatching { player.pause() }
-                isPlaying = false
+    // Extract real waveform from local audio file if server/message didn't supply meaningful samples.
+    val hasSuppliedWaveform = remember(waveformAmplitudes) {
+        AudioWaveformExtractor.hasMeaningfulVariation(waveformAmplitudes)
+    }
+    var extractedWaveform by remember(effectiveUrl) {
+        mutableStateOf(AudioWaveformExtractor.getCached(effectiveUrl))
+    }
+    LaunchedEffect(effectiveUrl, hasSuppliedWaveform, readyToPlay) {
+        if (!hasSuppliedWaveform && readyToPlay && extractedWaveform == null) {
+            val decoded = AudioWaveformExtractor.extract(context, effectiveUrl, targetBars = 52)
+            if (!decoded.isNullOrEmpty()) {
+                extractedWaveform = decoded
             }
         }
     }
 
-    LaunchedEffect(globalSpeed) {
-        if (playbackSpeed != globalSpeed) {
-            playbackSpeed = globalSpeed
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && mediaPlayer != null) {
-                runCatching {
-                    mediaPlayer?.playbackParams = PlaybackParams().setSpeed(globalSpeed)
-                }
+    val resolvedAmplitudes = remember(waveformAmplitudes, hasSuppliedWaveform, extractedWaveform) {
+        when {
+            hasSuppliedWaveform -> {
+                val min = waveformAmplitudes.minOrNull() ?: 0f
+                val max = waveformAmplitudes.maxOrNull() ?: 1f
+                val range = (max - min).coerceAtLeast(0.01f)
+                waveformAmplitudes.map { ((it - min) / range * 0.85f + 0.15f).coerceIn(0.10f, 1f) }
             }
+            !extractedWaveform.isNullOrEmpty() -> extractedWaveform!!
+            else -> List(44) { 0.22f }
         }
     }
 
-    fun togglePlay() {
+    fun handlePrimaryAction() {
         if (!readyToPlay) {
             if (isDownloading) {
                 downloadTask?.let { onCancelDownload(it.messageId) }
@@ -187,145 +198,69 @@ fun VoicePlayerBubble(
             }
             return
         }
-        if (isPreparing) return
-        if (mediaPlayer == null) {
-            val effectiveUrl = downloadTask?.localUri?.takeIf(String::isNotBlank) ?: audioUrl
-            val player = MediaPlayer()
-            try {
-                player.setDataSource(effectiveUrl)
-                player.setOnCompletionListener {
-                    isPlaying = false
-                    currentPositionMs = 0
-                    abandonAudioFocus()
-                    if (messageId != null) {
-                        VoicePlaybackCoordinator.stopPlaying(messageId)
-                        val nextId = VoicePlaybackCoordinator.nextVoiceId(messageId)
-                        if (nextId != null) {
-                            VoicePlaybackCoordinator.startPlaying(nextId)
-                        }
-                    }
-                    onPlaybackFinished()
-                }
-                player.setOnPreparedListener { preparedPlayer ->
-                    totalDurationMs = preparedPlayer.duration.coerceAtLeast(durationSeconds * 1000)
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                        preparedPlayer.playbackParams = PlaybackParams().setSpeed(playbackSpeed)
-                    }
-                    if (requestAudioFocus()) {
-                        preparedPlayer.start()
-                        isPlaying = true
-                        if (messageId != null) {
-                            VoicePlaybackCoordinator.startPlaying(messageId)
-                        }
-                    }
-                    isPreparing = false
-                }
-                player.setOnErrorListener { failedPlayer, _, _ ->
-                    failedPlayer.release()
-                    if (mediaPlayer === failedPlayer) mediaPlayer = null
-                    isPreparing = false
-                    isPlaying = false
-                    abandonAudioFocus()
-                    if (messageId != null) {
-                        VoicePlaybackCoordinator.stopPlaying(messageId)
-                    }
-                    true
-                }
-                mediaPlayer = player
-                isPreparing = true
-                player.prepareAsync()
-            } catch (e: Exception) {
-                player.release()
-                mediaPlayer = null
-                isPreparing = false
-                isPlaying = false
-                if (messageId != null) {
-                    VoicePlaybackCoordinator.stopPlaying(messageId)
-                }
-            }
-        } else {
-            mediaPlayer?.let { player ->
-                if (isPlaying) {
-                    runCatching { player.pause() }
-                    isPlaying = false
-                    if (messageId != null) {
-                        VoicePlaybackCoordinator.stopPlaying(messageId)
-                    }
-                } else {
-                    if (requestAudioFocus()) {
-                        runCatching { player.start() }
-                        isPlaying = true
-                        if (messageId != null) {
-                            VoicePlaybackCoordinator.startPlaying(messageId)
-                        }
-                    }
-                }
-            }
-        }
+        val queue = voiceQueue.takeIf { it.isNotEmpty() } ?: listOf(track)
+        ChatAudioPlayer.toggle(track, queue)
     }
-
-    fun seekToFraction(fraction: Float) {
-        if (!readyToPlay) return
-        val clamped = fraction.coerceIn(0f, 1f)
-        val targetMs = (clamped * totalDurationMs).toInt()
-        currentPositionMs = targetMs
-        mediaPlayer?.let { player ->
-            runCatching { player.seekTo(targetMs) }
-        }
-    }
-
-    fun toggleSpeed() {
-        val nextSpeed = VoicePlaybackCoordinator.cycleSpeed()
-        playbackSpeed = nextSpeed
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && mediaPlayer != null) {
-            runCatching {
-                mediaPlayer?.playbackParams = PlaybackParams().setSpeed(nextSpeed)
-            }
-        }
-    }
-
-    val progress = if (totalDurationMs > 0) (currentPositionMs.toFloat() / totalDurationMs.toFloat()).coerceIn(0f, 1f) else 0f
 
     val activeColor = if (isOutgoing) Color.White else VistaBrandColors.VioletDeep
-    val inactiveColor = if (isOutgoing) Color.White.copy(alpha = 0.38f) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.28f)
+    val inactiveColor = if (isOutgoing) {
+        Color.White.copy(alpha = 0.36f)
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.26f)
+    }
+    val unreadAccent = Color(0xFF2AABEE)
 
     Row(
         modifier = modifier
-            .widthIn(min = 210.dp, max = 270.dp)
+            .widthIn(min = 224.dp, max = 286.dp)
             .padding(horizontal = 4.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // دکمه دایره‌ای پخش / دانلود / چرخش دانلود
         Box(
             modifier = Modifier
-                .size(40.dp)
+                .size(44.dp)
                 .clip(CircleShape)
-                .background(if (isOutgoing) Color.White.copy(alpha = 0.25f) else VistaBrandColors.VioletDeep.copy(alpha = 0.12f))
-            .clickable(role = Role.Button, onClick = ::togglePlay)
-            .semantics {
-                contentDescription = when {
-                    !readyToPlay && isDownloading -> "لغو دانلود پیام صوتی"
-                    !readyToPlay -> "دانلود پیام صوتی"
-                    isPreparing -> "در حال آماده‌سازی پیام صوتی"
-                    isPlaying -> "مکث پیام صوتی"
-                    else -> "پخش پیام صوتی"
-                }
-            },
+                .background(
+                    if (isOutgoing) {
+                        Brush.linearGradient(
+                            listOf(
+                                Color.White.copy(alpha = 0.28f),
+                                Color.White.copy(alpha = 0.18f),
+                            ),
+                        )
+                    } else {
+                        Brush.linearGradient(
+                            listOf(
+                                VistaBrandColors.Indigo,
+                                VistaBrandColors.VioletDeep,
+                            ),
+                        )
+                    },
+                )
+                .clickable(role = Role.Button, onClick = ::handlePrimaryAction)
+                .semantics {
+                    contentDescription = when {
+                        !readyToPlay && isDownloading -> "لغو دانلود پیام صوتی"
+                        !readyToPlay -> "دانلود پیام صوتی"
+                        isPlaying -> "مکث پیام صوتی"
+                        else -> "پخش پیام صوتی"
+                    }
+                },
             contentAlignment = Alignment.Center,
         ) {
             when {
                 !readyToPlay && isDownloading -> {
                     CircularProgressIndicator(
-                        progress = { downloadTask?.progress ?: 0f },
+                        progress = { downloadTask?.progress?.takeIf { it > 0f } ?: 0.12f },
                         strokeWidth = 2.5.dp,
-                        color = if (isOutgoing) Color.White else VistaBrandColors.VioletDeep,
-                        trackColor = (if (isOutgoing) Color.White else VistaBrandColors.VioletDeep).copy(alpha = 0.25f),
-                        modifier = Modifier.size(34.dp),
+                        color = Color.White,
+                        trackColor = Color.White.copy(alpha = 0.25f),
+                        modifier = Modifier.size(38.dp),
                     )
                     Icon(
                         imageVector = Icons.Default.Close,
                         contentDescription = "لغو دانلود",
-                        tint = if (isOutgoing) Color.White else VistaBrandColors.VioletDeep,
+                        tint = Color.White,
                         modifier = Modifier.size(16.dp),
                     )
                 }
@@ -333,152 +268,212 @@ fun VoicePlayerBubble(
                     Icon(
                         imageVector = Icons.Default.ArrowDownward,
                         contentDescription = "دانلود صدا",
-                        tint = if (isOutgoing) Color.White else VistaBrandColors.VioletDeep,
+                        tint = Color.White,
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
+                isBuffering -> {
+                    CircularProgressIndicator(
+                        strokeWidth = 2.dp,
+                        color = Color.White,
                         modifier = Modifier.size(22.dp),
                     )
                 }
                 else -> {
-                    Icon(
-                        imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                        contentDescription = null,
-                        tint = if (isOutgoing) Color.White else VistaBrandColors.VioletDeep,
-                        modifier = Modifier.size(24.dp),
-                    )
+                    AnimatedContent(
+                        targetState = isPlaying,
+                        transitionSpec = {
+                            (fadeIn(tween(140)) + scaleIn(tween(140), initialScale = 0.72f))
+                                .togetherWith(fadeOut(tween(100)) + scaleOut(tween(100), targetScale = 0.72f))
+                        },
+                        label = "voice-play-pause-icon",
+                    ) { playing ->
+                        Icon(
+                            imageVector = if (playing) Icons.Default.Pause else Icons.Default.PlayArrow,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
                 }
             }
         }
 
         Spacer(Modifier.width(10.dp))
 
-        // ستون فرم‌موج تعاملی و زمان/سرعت
         Column(modifier = Modifier.weight(1f)) {
-            // نوار فرم‌موج لمسی و قابل جابجایی
-            BoxWithConstraints(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(28.dp)
-                    .testTag("voice-playback-waveform")
-                    .semantics {
-                        progressBarRangeInfo = ProgressBarRangeInfo(progress, 0f..1f)
-                        contentDescription = "نوار موقعیت پیام صوتی"
-                    }
-                    .pointerInput(totalDurationMs, readyToPlay) {
-                        if (readyToPlay) {
+            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(30.dp)
+                        .testTag("voice-playback-waveform")
+                        .semantics {
+                            progressBarRangeInfo = ProgressBarRangeInfo(displayProgress, 0f..1f)
+                            contentDescription = "نوار موقعیت پیام صوتی"
+                        }
+                        .pointerInput(trackId, totalDurationMs, readyToPlay) {
+                            if (!readyToPlay) return@pointerInput
                             detectTapGestures { offset ->
                                 if (size.width > 0) {
-                                    seekToFraction(offset.x / size.width.toFloat())
+                                    val frac = (offset.x / size.width.toFloat()).coerceIn(0f, 1f)
+                                    val queue = voiceQueue.takeIf { it.isNotEmpty() } ?: listOf(track)
+                                    ChatAudioPlayer.seekAndPlay(track, queue, frac)
                                 }
                             }
                         }
-                    }
-                    .pointerInput(totalDurationMs, readyToPlay) {
-                        if (readyToPlay) {
-                            detectDragGestures { change, _ ->
-                                change.consume()
-                                if (size.width > 0) {
-                                    seekToFraction(change.position.x / size.width.toFloat())
-                                }
-                            }
-                        }
-                    },
-                contentAlignment = Alignment.CenterStart,
-            ) {
-                val resolvedAmplitudes = remember(waveformAmplitudes, messageId) {
-                    val isFlat = waveformAmplitudes.isEmpty() ||
-                        ((waveformAmplitudes.maxOrNull() ?: 0f) - (waveformAmplitudes.minOrNull() ?: 0f) < 0.08f)
-                    if (!isFlat) {
-                        val min = waveformAmplitudes.minOrNull() ?: 0f
-                        val max = waveformAmplitudes.maxOrNull() ?: 1f
-                        val range = (max - min).coerceAtLeast(0.01f)
-                        waveformAmplitudes.map { ((it - min) / range * 0.74f + 0.16f).coerceIn(0.12f, 1f) }
-                    } else {
-                        val seed = (messageId?.hashCode() ?: audioUrl.hashCode()).let { if (it == 0) 42 else it }
-                        val random = java.util.Random(seed.toLong())
-                        val count = 28
-                        List(count) { idx ->
-                            val phase = idx % 7
-                            val base = when (phase) {
-                                0 -> 0.18f
-                                1 -> 0.45f
-                                2 -> 0.88f
-                                3 -> 0.65f
-                                4 -> 0.82f
-                                5 -> 0.38f
-                                else -> 0.16f
-                            }
-                            val jitter = (random.nextFloat() * 0.16f) - 0.08f
-                            (base + jitter).coerceIn(0.14f, 0.95f)
-                        }
-                    }
-                }
-                val totalBars = 28
-                val barWidth = 2.5.dp
-
-                Row(
-                    modifier = Modifier.fillMaxSize(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
+                        .pointerInput(trackId, totalDurationMs, readyToPlay) {
+                            if (!readyToPlay) return@pointerInput
+                            detectDragGestures(
+                                onDragStart = { offset ->
+                                    isScrubbing = true
+                                    if (size.width > 0) {
+                                        scrubFraction = (offset.x / size.width.toFloat()).coerceIn(0f, 1f)
+                                    }
+                                },
+                                onDrag = { change, _ ->
+                                    change.consume()
+                                    if (size.width > 0) {
+                                        scrubFraction = (change.position.x / size.width.toFloat()).coerceIn(0f, 1f)
+                                    }
+                                },
+                                onDragEnd = {
+                                    val queue = voiceQueue.takeIf { it.isNotEmpty() } ?: listOf(track)
+                                    ChatAudioPlayer.seekAndPlay(track, queue, scrubFraction)
+                                    isScrubbing = false
+                                },
+                                onDragCancel = {
+                                    isScrubbing = false
+                                },
+                            )
+                        },
                 ) {
-                    for (i in 0 until totalBars) {
-                        val barFraction = (i.toFloat() + 0.5f) / totalBars.toFloat()
-                        val isFilled = readyToPlay && barFraction <= progress
-                        val sampleIndex = ((i.toFloat() / totalBars.toFloat()) * resolvedAmplitudes.size).toInt().coerceIn(0, resolvedAmplitudes.lastIndex)
-                        val amp = resolvedAmplitudes[sampleIndex]
-                        val barHeight = (4f + (amp * 20f)).dp
+                    Canvas(modifier = Modifier.fillMaxSize()) {
+                        val w = size.width
+                        val h = size.height
+                        if (w <= 0f || h <= 0f) return@Canvas
 
-                        Box(
-                            modifier = Modifier
-                                .width(barWidth)
-                                .height(barHeight)
-                                .clip(RoundedCornerShape(1.2.dp))
-                                .background(if (isFilled) activeColor else inactiveColor),
-                        )
+                        val barWidth = 2.dp.toPx()
+                        val barPitch = 3.4.dp.toPx()
+                        val barCount = (w / barPitch).toInt().coerceIn(16, 72)
+                        val totalDrawnWidth = (barCount - 1) * barPitch + barWidth
+                        val startX = ((w - totalDrawnWidth) / 2f).coerceAtLeast(0f)
+                        val maxBarHeight = (h - 4.dp.toPx()).coerceAtLeast(6.dp.toPx())
+                        val minBarHeight = 3.dp.toPx()
+                        val corner = CornerRadius(barWidth / 2f, barWidth / 2f)
+
+                        fun drawBars(color: Color) {
+                            for (i in 0 until barCount) {
+                                val samplePos = if (barCount > 1) {
+                                    (i.toFloat() / (barCount - 1).toFloat()) * (resolvedAmplitudes.size - 1)
+                                } else 0f
+                                val lo = samplePos.toInt().coerceIn(0, resolvedAmplitudes.lastIndex)
+                                val hi = (lo + 1).coerceIn(0, resolvedAmplitudes.lastIndex)
+                                val frac = samplePos - lo
+                                val amp = resolvedAmplitudes[lo] * (1f - frac) + resolvedAmplitudes[hi] * frac
+                                val barH = (minBarHeight + amp * (maxBarHeight - minBarHeight)).coerceIn(minBarHeight, maxBarHeight)
+                                val x = startX + i * barPitch
+                                val top = (h - barH) / 2f
+                                drawRoundRect(
+                                    color = color,
+                                    topLeft = Offset(x, top),
+                                    size = Size(barWidth, barH),
+                                    cornerRadius = corner,
+                                )
+                            }
+                        }
+
+                        val splitX = if (readyToPlay) (w * displayProgress).coerceIn(0f, w) else 0f
+                        if (splitX > 0f) {
+                            clipRect(left = 0f, top = 0f, right = splitX, bottom = h) {
+                                drawBars(activeColor)
+                            }
+                        }
+                        if (splitX < w) {
+                            clipRect(left = splitX, top = 0f, right = w, bottom = h) {
+                                drawBars(inactiveColor)
+                            }
+                        }
                     }
                 }
             }
 
             Spacer(Modifier.height(4.dp))
 
-            // زمان سپری‌شده و دکمه سرعت پخش یا وضعیت دانلود
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (!readyToPlay) {
+                    val sizeLabel = sizeBytes?.takeIf { it > 0L }?.let { Formatter.formatShortFileSize(context, it) }
                     val statusText = if (isDownloading) {
                         "${((downloadTask?.progress ?: 0f) * 100).toInt()}٪ • در حال دریافت"
+                    } else if (sizeLabel != null) {
+                        "${formatVoiceSeconds(durationSeconds)} • $sizeLabel"
                     } else {
-                        "${durationSeconds} ثانیه • لمس برای دانلود"
+                        "${formatVoiceSeconds(durationSeconds)} • لمس برای دانلود"
                     }
                     Text(
                         text = statusText,
                         fontSize = 11.sp,
                         color = if (isOutgoing) Color.White.copy(alpha = 0.85f) else MaterialTheme.colorScheme.onSurfaceVariant,
                         fontWeight = FontWeight.Medium,
+                        modifier = Modifier.testTag("voice-playback-position"),
                     )
                 } else {
-                    val displaySecs = if (currentPositionMs > 0) currentPositionMs / 1000 else (totalDurationMs / 1000)
-                    val mins = displaySecs / 60
-                    val secs = displaySecs % 60
-                    Text(
-                        text = String.format("%02d:%02d", mins, secs),
-                        fontSize = 11.sp,
-                        color = if (isOutgoing) Color.White.copy(alpha = 0.85f) else MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontWeight = FontWeight.Medium,
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        val displaySecs = if (isScrubbing) {
+                            ((scrubFraction * totalDurationMs) / 1000L).toInt()
+                        } else if (currentPositionMs > 0L) {
+                            (currentPositionMs / 1000L).toInt()
+                        } else {
+                            (totalDurationMs / 1000L).toInt()
+                        }
+                        val totalSecs = (totalDurationMs / 1000L).toInt().coerceAtLeast(1)
+                        val timeText = if (isActive || currentPositionMs > 0L || isScrubbing) {
+                            "${formatVoiceSeconds(displaySecs)} / ${formatVoiceSeconds(totalSecs)}"
+                        } else {
+                            formatVoiceSeconds(totalSecs)
+                        }
+                        Text(
+                            text = timeText,
+                            fontSize = 11.sp,
+                            color = if (isOutgoing) Color.White.copy(alpha = 0.88f) else MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.testTag("voice-playback-position"),
+                        )
+                        if (!isListened && !isActive) {
+                            Spacer(Modifier.width(6.dp))
+                            Box(
+                                modifier = Modifier
+                                    .size(6.dp)
+                                    .clip(CircleShape)
+                                    .background(unreadAccent),
+                            )
+                        }
+                    }
 
-                    // دکمه انتخاب سرعت (1x, 1.5x, 2x)
+                    val speedLabel = formatSpeedLabel(voiceSpeed)
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(8.dp))
-                            .background(if (isOutgoing) Color.White.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant)
-                            .clickable(role = Role.Button, onClick = ::toggleSpeed)
+                            .background(
+                                if (isOutgoing) Color.White.copy(alpha = 0.22f)
+                                else MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                            )
+                            .clickable(role = Role.Button) {
+                                if (!isActive) {
+                                    val queue = voiceQueue.takeIf { it.isNotEmpty() } ?: listOf(track)
+                                    ChatAudioPlayer.play(track, queue)
+                                }
+                                ChatAudioPlayer.cycleSpeed()
+                            }
                             .padding(horizontal = 6.dp, vertical = 2.dp)
-                            .semantics { contentDescription = "تغییر سرعت پخش به ${playbackSpeed} برابر" },
+                            .semantics { contentDescription = "تغییر سرعت پخش صدا" },
                     ) {
                         Text(
-                            text = if (playbackSpeed == 1.0f) "1X" else "${playbackSpeed}X",
+                            text = speedLabel,
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
                             color = if (isOutgoing) Color.White else VistaBrandColors.VioletDeep,
@@ -488,4 +483,16 @@ fun VoicePlayerBubble(
             }
         }
     }
+}
+
+private fun formatVoiceSeconds(seconds: Int): String {
+    val safe = seconds.coerceAtLeast(0)
+    return String.format(Locale.US, "%02d:%02d", safe / 60, safe % 60)
+}
+
+internal fun formatSpeedLabel(speed: Float): String = when {
+    kotlin.math.abs(speed - 1f) < 0.05f -> "1X"
+    kotlin.math.abs(speed - 1.5f) < 0.05f -> "1.5X"
+    kotlin.math.abs(speed - 2f) < 0.05f -> "2X"
+    else -> "${String.format(Locale.US, "%.1f", speed)}X"
 }

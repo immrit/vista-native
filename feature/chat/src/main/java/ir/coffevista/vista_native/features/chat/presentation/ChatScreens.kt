@@ -21,6 +21,13 @@ import androidx.activity.result.contract.ActivityResultContracts
 import ir.coffevista.vista_native.features.chat.presentation.components.VoiceRecorderDock
 import ir.coffevista.vista_native.features.chat.presentation.components.SwipeToReplyLayout
 import ir.coffevista.vista_native.features.chat.presentation.components.VoicePlayerBubble
+import ir.coffevista.vista_native.features.chat.presentation.audio.ChatAudioKind
+import ir.coffevista.vista_native.features.chat.presentation.audio.ChatAudioPlayer
+import ir.coffevista.vista_native.features.chat.presentation.audio.ChatAudioPlayerSheet
+import ir.coffevista.vista_native.features.chat.presentation.audio.ChatAudioTrack
+import ir.coffevista.vista_native.features.chat.presentation.audio.ChatMiniAudioPlayer
+import ir.coffevista.vista_native.features.chat.presentation.audio.MusicPlayerBubble
+import ir.coffevista.vista_native.core.designsystem.component.resolveMusicTitle
 import ir.coffevista.vista_native.core.designsystem.component.VistaBadgeDefaults
 import ir.coffevista.vista_native.core.designsystem.glass.vistaGlassSource
 import ir.coffevista.vista_native.core.designsystem.glass.vistaGlass
@@ -1733,9 +1740,12 @@ fun MessageDetailScreen(
     val focusManager = LocalFocusManager.current
     val keyboardController = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
 
+    LaunchedEffect(context) {
+        ChatAudioPlayer.attach(context)
+    }
     LaunchedEffect(state.messages) {
         val voiceIds = state.messages
-            .filter { it.attachment?.kind == AttachmentKind.VOICE || it.attachment?.kind == AttachmentKind.AUDIO }
+            .filter { it.attachment?.kind == AttachmentKind.VOICE }
             .map { it.stableKey }
         ir.coffevista.vista_native.features.chat.presentation.components.VoicePlaybackCoordinator.updateVoiceQueue(voiceIds)
     }
@@ -1886,11 +1896,66 @@ fun MessageDetailScreen(
     var blockingPeerId by remember { mutableStateOf<String?>(null) }
     var terminalGroupAction by remember { mutableStateOf<String?>(null) }
     var viewedAttachment by remember { mutableStateOf<ir.coffevista.vista_native.features.chat.domain.model.Attachment?>(null) }
+    var audioPlayerSheetVisible by remember { mutableStateOf(false) }
     var searchVisible by rememberSaveable { mutableStateOf(false) }
     var searchResultIndex by rememberSaveable { mutableStateOf(0) }
     val clipboard = LocalClipboardManager.current
     val listState = rememberLazyListState()
     val messageRenderItems = remember(state.messages) { buildMessageRenderItems(state.messages) }
+    val groupMemberById = remember(state.groupMembers) {
+        state.groupMembers.associateBy(GroupMember::userId)
+    }
+    val conversationTitleFallback = state.conversation?.title?.takeIf(String::isNotBlank) ?: title
+    val (voiceQueue, musicQueue) = remember(state.messages, state.downloads, groupMemberById, conversationTitleFallback) {
+        val voices = mutableListOf<ChatAudioTrack>()
+        val musics = mutableListOf<ChatAudioTrack>()
+        state.messages.asReversed().forEach { msg ->
+            if (msg.content == MessageContent.Deleted) return@forEach
+            val att = msg.attachment ?: return@forEach
+            val dl = state.downloads[msg.serverId ?: msg.clientId]
+            val local = dl?.localUri?.takeIf(String::isNotBlank) ?: att.localUri?.takeIf(String::isNotBlank)
+            val url = local ?: att.remoteUrl?.takeIf(String::isNotBlank) ?: return@forEach
+            val senderLabel = when {
+                msg.isMine -> "شما"
+                state.conversation?.type == ConversationType.GROUP -> groupMemberById[msg.senderId]?.displayName ?: "کاربر"
+                else -> conversationTitleFallback
+            }
+            when (att.kind) {
+                AttachmentKind.VOICE -> voices.add(
+                    ChatAudioTrack(
+                        id = msg.stableKey,
+                        url = url,
+                        kind = ChatAudioKind.VOICE,
+                        title = senderLabel,
+                        artist = null,
+                        durationMs = (att.durationSeconds ?: 1).coerceAtLeast(1) * 1000L,
+                        senderName = senderLabel,
+                        conversationId = msg.conversationId,
+                        createdAtEpochMillis = msg.createdAtEpochMillis,
+                        fallbackUrl = att.remoteUrl?.takeIf { it.isNotBlank() && it != url },
+                        conversationTitle = conversationTitleFallback,
+                    ),
+                )
+                AttachmentKind.AUDIO -> musics.add(
+                    ChatAudioTrack(
+                        id = msg.stableKey,
+                        url = url,
+                        kind = ChatAudioKind.MUSIC,
+                        title = resolveMusicTitle(att.audioTitle, att.fileName ?: att.remoteUrl),
+                        artist = att.audioArtist?.trim()?.takeIf(String::isNotEmpty),
+                        durationMs = (att.durationSeconds ?: 0).coerceAtLeast(0) * 1000L,
+                        senderName = senderLabel,
+                        conversationId = msg.conversationId,
+                        createdAtEpochMillis = msg.createdAtEpochMillis,
+                        fallbackUrl = att.remoteUrl?.takeIf { it.isNotBlank() && it != url },
+                        conversationTitle = conversationTitleFallback,
+                    ),
+                )
+                else -> Unit
+            }
+        }
+        voices.toList() to musics.toList()
+    }
     var initialMessageHandled by rememberSaveable(state.conversationId, initialMessageId) {
         mutableStateOf(false)
     }
@@ -2069,9 +2134,6 @@ fun MessageDetailScreen(
                             }
                         }
                     }
-                }
-                val groupMemberById = remember(state.groupMembers) {
-                    state.groupMembers.associateBy(GroupMember::userId)
                 }
                 val latestRenderItems by rememberUpdatedState(displayedRenderItems)
                 val latestInteraction by rememberUpdatedState(messageInteraction)
@@ -2317,6 +2379,14 @@ fun MessageDetailScreen(
                                                 onOpenGame = { targetPath ->
                                                     internalNavigator?.openUrl("https://cafevista.ir$targetPath")
                                                 },
+                                                voiceQueue = voiceQueue,
+                                                musicQueue = musicQueue,
+                                                senderDisplayName = when {
+                                                    message.isMine -> "شما"
+                                                    state.conversation?.type == ConversationType.GROUP -> groupSender?.displayName ?: "کاربر"
+                                                    else -> conversationTitleFallback
+                                                },
+                                                onOpenAudioPlayer = { audioPlayerSheetVisible = true },
                                             )
                                         }
                                     }
@@ -2952,6 +3022,16 @@ fun MessageDetailScreen(
                 )
             }
         }
+            if (!inSelectionMode && !searchVisible) {
+                ChatMiniAudioPlayer(
+                    glassState = chatGlassState,
+                    onOpenFullPlayer = { audioPlayerSheetVisible = true },
+                    onJumpToMessage = { targetKey ->
+                        val idx = renderItemIndexForMessage(messageRenderItems, targetKey)
+                        if (idx >= 0) coroutineScope.launch { listState.animateScrollToItem(idx) }
+                    },
+                )
+            }
     }
         SnackbarHost(snackbarHostState, Modifier.align(Alignment.BottomCenter))
         if (autoDeleteDialogVisible) {
@@ -3113,6 +3193,10 @@ fun MessageDetailScreen(
                 deletingMessage = message
                 dismissMessageInteraction()
             },
+            onRetry = {
+                onRetry(message)
+                dismissMessageInteraction()
+            },
         )
     }
 
@@ -3202,21 +3286,51 @@ fun MessageDetailScreen(
             dismissButton = { TextButton(onClick = { terminalGroupAction = null }) { Text("انصراف") } },
         )
     }
+    if (audioPlayerSheetVisible) {
+        ChatAudioPlayerSheet(
+            onDismiss = { audioPlayerSheetVisible = false },
+            onJumpToMessage = { targetKey ->
+                audioPlayerSheetVisible = false
+                val idx = renderItemIndexForMessage(messageRenderItems, targetKey)
+                if (idx >= 0) coroutineScope.launch { listState.animateScrollToItem(idx) }
+            },
+        )
+    }
     viewedAttachment?.let { attachment ->
-        val activeMediaList = remember(state.messages) {
-            state.messages.mapNotNull { msg ->
+        val activeMediaList = remember(state.messages, state.downloads, groupMemberById, conversationTitleFallback) {
+            state.messages.asReversed().mapNotNull { msg ->
+                if (msg.content == MessageContent.Deleted) return@mapNotNull null
                 msg.attachment?.takeIf {
                     it.kind == AttachmentKind.IMAGE || it.kind == AttachmentKind.GIF || it.kind == AttachmentKind.VIDEO
                 }?.let { att ->
-                    val url = att.localUri?.takeIf(String::isNotBlank) ?: att.remoteUrl?.takeIf(String::isNotBlank)
-                    if (url != null) {
-                        MediaViewerItem(
-                            url = url,
-                            isVideo = att.kind == AttachmentKind.VIDEO,
-                            title = att.fileName,
-                            caption = (msg.content as? MessageContent.Text)?.value,
-                        )
-                    } else null
+                    val dl = state.downloads[msg.serverId ?: msg.clientId]
+                    val url = dl?.localUri?.takeIf(String::isNotBlank)
+                        ?: att.localUri?.takeIf(String::isNotBlank)
+                        ?: att.remoteUrl?.takeIf(String::isNotBlank)
+                        ?: return@let null
+                    val rawText = (msg.content as? MessageContent.Text)?.value?.trim().orEmpty()
+                    val cleanCaption = rawText.takeIf {
+                        it.isNotEmpty() &&
+                            !it.startsWith("wf:") &&
+                            SharedPostParser.tryParse(it) == null &&
+                            DuelInviteParser.tryParse(it, msg.transportType) == null
+                    }
+                    val senderLabel = when {
+                        msg.isMine -> "شما"
+                        state.conversation?.type == ConversationType.GROUP -> groupMemberById[msg.senderId]?.displayName ?: "کاربر"
+                        else -> conversationTitleFallback
+                    }
+                    MediaViewerItem(
+                        url = url,
+                        isVideo = att.kind == AttachmentKind.VIDEO,
+                        title = att.fileName,
+                        caption = cleanCaption,
+                        isGif = att.kind == AttachmentKind.GIF,
+                        messageKey = msg.stableKey,
+                        senderName = senderLabel,
+                        epochMillis = msg.createdAtEpochMillis,
+                        isMine = msg.isMine,
+                    )
                 }
             }
         }
@@ -3230,10 +3344,29 @@ fun MessageDetailScreen(
                         url = targetUrl.orEmpty(),
                         isVideo = attachment.kind == AttachmentKind.VIDEO,
                         title = attachment.fileName,
-                    )
+                        isGif = attachment.kind == AttachmentKind.GIF,
+                    ),
                 ),
                 initialIndex = initialIndex,
                 onDismiss = { viewedAttachment = null },
+                onForward = if (isSecretConversation) null else { item ->
+                    val target = state.messages.firstOrNull { it.stableKey == item.messageKey }
+                    viewedAttachment = null
+                    if (target != null) forwardingMessage = target
+                },
+                onDelete = { item ->
+                    val target = state.messages.firstOrNull { it.stableKey == item.messageKey }
+                    viewedAttachment = null
+                    if (target != null) deletingMessage = target
+                },
+                onShowInChat = { item ->
+                    val key = item.messageKey
+                    viewedAttachment = null
+                    if (key != null) {
+                        val idx = renderItemIndexForMessage(messageRenderItems, key)
+                        if (idx >= 0) coroutineScope.launch { listState.animateScrollToItem(idx) }
+                    }
+                },
             )
         } else {
             AttachmentViewer(attachment = attachment, onDismiss = { viewedAttachment = null })
@@ -3883,6 +4016,10 @@ private fun MessageBubble(
     duelPreviews: Map<String, DuelPreviewUiState> = emptyMap(),
     onRequestDuelPreview: (String) -> Unit = {},
     onOpenGame: (String) -> Unit = {},
+    voiceQueue: List<ChatAudioTrack> = emptyList(),
+    musicQueue: List<ChatAudioTrack> = emptyList(),
+    senderDisplayName: String = if (message.isMine) "شما" else "مخاطب",
+    onOpenAudioPlayer: () -> Unit = {},
 ) {
     val isDeleted = message.content == MessageContent.Deleted
     val duelInvite = remember(message.content, message.transportType) {
@@ -4017,14 +4154,30 @@ private fun MessageBubble(
                             duelInvite != null -> {
                                 val previewEntry = duelPreviews[duelInvite.matchId]
                                 val preview = previewEntry?.preview
-                                val targetPath = if (preview != null && (preview.isParticipant || !preview.canJoin)) {
-                                    "/game/match/${duelInvite.matchId}"
-                                } else {
-                                    duelInvite.targetGamePath
+                                val isExpired =
+                                    previewEntry?.status == ir.coffevista.vista_native.features.chat.presentation.components.DuelPreviewLoadStatus.EXPIRED_OR_NOT_FOUND ||
+                                        preview?.isEffectivelyExpired() == true
+                                val isCancelled = preview?.status == "cancelled"
+                                val isLockedOut =
+                                    preview != null && !preview.isParticipant && !preview.canJoin
+                                when {
+                                    isExpired && message.isMine -> onOpenGame("/game/duel/create")
+                                    isExpired || isCancelled || isLockedOut -> Unit
+                                    preview != null && (preview.isParticipant || !preview.canJoin) ->
+                                        onOpenGame("/game/match/${duelInvite.matchId}")
+                                    else -> onOpenGame(duelInvite.targetGamePath)
                                 }
-                                onOpenGame(targetPath)
                             }
                             sharedPost != null -> onOpenPost(sharedPost.postId)
+                            attachment?.kind == AttachmentKind.AUDIO -> {
+                                if (task?.state == DownloadState.DOWNLOADING) onPauseDownload(task.messageId)
+                                else if (task != null && task.state in setOf(DownloadState.PAUSED, DownloadState.FAILED, DownloadState.CANCELLED, DownloadState.QUEUED)) onResumeDownload(task.messageId)
+                                else if (attachment.transferState == TransferState.COMPLETE && attachment.localUri.isNullOrBlank() && task?.state != DownloadState.COMPLETE && !message.isMine && !attachment.remoteUrl.isNullOrBlank()) onStartDownload(message)
+                                else onOpenAudioPlayer()
+                            }
+                            attachment?.kind == AttachmentKind.VOICE -> {
+                                onOpenContextMenu(coordinatesHolder.coordinates?.takeIf { it.isAttached }?.boundsInWindow())
+                            }
                             task?.state == DownloadState.COMPLETE && !task.localUri.isNullOrBlank() && attachment != null ->
                                 onAttachmentClick(attachment.copy(localUri = task.localUri))
                             attachment?.transferState == TransferState.COMPLETE && !attachment.localUri.isNullOrBlank() ->
@@ -4244,6 +4397,10 @@ private fun MessageBubble(
                         message = message,
                         attachment = attachment,
                         downloadTask = downloadTask,
+                        senderDisplayName = senderDisplayName,
+                        voiceQueue = voiceQueue,
+                        musicQueue = musicQueue,
+                        onOpenAudioPlayer = onOpenAudioPlayer,
                         onCancel = { onCancelTransfer(message) },
                         onStartDownload = { onStartDownload(message) },
                         onPauseDownload = onPauseDownload,
@@ -5323,6 +5480,10 @@ private fun AttachmentBubble(
     message: Message,
     attachment: ir.coffevista.vista_native.features.chat.domain.model.Attachment,
     downloadTask: DownloadTask? = null,
+    senderDisplayName: String = if (message.isMine) "شما" else "مخاطب",
+    voiceQueue: List<ChatAudioTrack> = emptyList(),
+    musicQueue: List<ChatAudioTrack> = emptyList(),
+    onOpenAudioPlayer: () -> Unit = {},
     onCancel: () -> Unit,
     onStartDownload: () -> Unit = {},
     onPauseDownload: (String) -> Unit = {},
@@ -5552,7 +5713,7 @@ private fun AttachmentBubble(
                     }
                 }
             }
-            AttachmentKind.VOICE, AttachmentKind.AUDIO -> {
+            AttachmentKind.VOICE -> {
                 val audioUrl = effectiveLocalUri ?: attachment.remoteUrl
                 if (!audioUrl.isNullOrBlank()) {
                     VoicePlayerBubble(
@@ -5563,6 +5724,13 @@ private fun AttachmentBubble(
                         downloadTask = downloadTask,
                         waveformAmplitudes = attachment.parsedWaveform,
                         messageId = message.stableKey,
+                        fallbackUrl = attachment.remoteUrl,
+                        senderName = senderDisplayName,
+                        conversationId = message.conversationId,
+                        conversationTitle = voiceQueue.firstOrNull()?.conversationTitle,
+                        createdAtEpochMillis = message.createdAtEpochMillis,
+                        sizeBytes = attachment.sizeBytes,
+                        voiceQueue = voiceQueue,
                         onStartDownload = onStartDownload,
                         onCancelDownload = onCancelDownload,
                     )
@@ -5574,7 +5742,39 @@ private fun AttachmentBubble(
                     ) {
                         Icon(Icons.Default.PlayArrow, contentDescription = "پخش صدا", tint = foreground, modifier = Modifier.size(24.dp))
                         Column(Modifier.weight(1f)) {
-                            Text(attachment.audioTitle ?: attachment.fileName ?: "پیام صوتی", color = foreground, maxLines = 1)
+                            Text("پیام صوتی", color = foreground, maxLines = 1)
+                            Text(formatDuration(attachment.durationSeconds), color = foreground.copy(alpha = 0.7f), fontSize = 11.sp)
+                        }
+                    }
+                }
+            }
+            AttachmentKind.AUDIO -> {
+                val audioUrl = effectiveLocalUri ?: attachment.remoteUrl
+                if (!audioUrl.isNullOrBlank()) {
+                    MusicPlayerBubble(
+                        attachment = attachment,
+                        messageId = message.stableKey,
+                        isOutgoing = message.isMine,
+                        isDownloaded = isDownloaded,
+                        downloadTask = downloadTask,
+                        senderName = senderDisplayName,
+                        conversationId = message.conversationId,
+                        conversationTitle = musicQueue.firstOrNull()?.conversationTitle,
+                        createdAtEpochMillis = message.createdAtEpochMillis,
+                        musicQueue = musicQueue,
+                        onStartDownload = onStartDownload,
+                        onCancelDownload = onCancelDownload,
+                        onOpenFullPlayer = onOpenAudioPlayer,
+                    )
+                } else {
+                    Row(
+                        Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Icon(Icons.Default.MusicNote, contentDescription = "موسیقی", tint = foreground, modifier = Modifier.size(24.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(resolveMusicTitle(attachment.audioTitle, attachment.fileName), color = foreground, maxLines = 1)
                             Text(formatDuration(attachment.durationSeconds), color = foreground.copy(alpha = 0.7f), fontSize = 11.sp)
                         }
                     }
@@ -6723,19 +6923,48 @@ private fun android.content.ContentResolver.toChatAttachmentDraft(
     }.getOrNull()?.takeIf { it > 0 } ?: return null
     val resolvedName = fileName?.trim()?.takeIf(String::isNotEmpty) ?: "attachment"
     val lowerName = resolvedName.lowercase(Locale.US)
+    val audioExtensions = setOf(".mp3", ".m4a", ".aac", ".wav", ".ogg", ".flac")
     val kind = when {
         mimeType.equals("image/gif", true) || lowerName.endsWith(".gif") -> AttachmentKind.GIF
         mimeType.startsWith("image/") -> AttachmentKind.IMAGE
         mimeType.startsWith("video/") -> AttachmentKind.VIDEO
-        mimeType.startsWith("audio/") -> AttachmentKind.AUDIO
+        mimeType.startsWith("audio/") || audioExtensions.any(lowerName::endsWith) -> AttachmentKind.AUDIO
         else -> AttachmentKind.DOCUMENT
     }
+    var durationSeconds: Int? = null
+    var audioTitle: String? = null
+    var audioArtist: String? = null
+    if (kind == AttachmentKind.AUDIO || kind == AttachmentKind.VIDEO) {
+        val retriever = android.media.MediaMetadataRetriever()
+        runCatching {
+            openFileDescriptor(uri, "r")?.use { pfd ->
+                retriever.setDataSource(pfd.fileDescriptor)
+                val durMs = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()
+                if (durMs != null && durMs > 0L) {
+                    durationSeconds = (durMs / 1000L).toInt().coerceAtLeast(1)
+                }
+                if (kind == AttachmentKind.AUDIO) {
+                    audioTitle = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_TITLE)
+                        ?.trim()?.takeIf(String::isNotEmpty)
+                    audioArtist = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_ARTIST)
+                        ?.trim()?.takeIf(String::isNotEmpty)
+                }
+            }
+        }
+        runCatching { retriever.release() }
+    }
+    val resolvedAudioTitle = if (kind == AttachmentKind.AUDIO) {
+        audioTitle ?: resolvedName.substringBeforeLast('.').takeIf(String::isNotBlank)
+    } else null
     return ChatAttachmentDraft(
         uri = uri.toString(),
         fileName = resolvedName,
         mimeType = mimeType,
         sizeBytes = resolvedSize,
         kind = kind,
+        durationSeconds = durationSeconds,
+        audioTitle = resolvedAudioTitle,
+        audioArtist = audioArtist,
     )
 }
 

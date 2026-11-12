@@ -72,8 +72,12 @@ class VistaFirebaseMessagingService : FirebaseMessagingService() {
             return
         }
 
-        val title = notification?.title ?: data["title"] ?: "ویستا"
-        val body = notification?.body ?: data["body"] ?: data["content"] ?: data["message"] ?: "اعلان جدید"
+        val title = notification?.title?.takeIf(String::isNotBlank)
+            ?: data["title"]?.takeIf(String::isNotBlank)
+            ?: "ویستا"
+        val rawBody = listOf(notification?.body, data["body"], data["content"], data["message"])
+            .firstOrNull { !it.isNullOrBlank() }
+        val body = ChatNotificationContentFormatter.sanitizeSocialBody(rawBody)
         val soundEnabled = data["sound_enabled"]?.toBooleanStrictOrNull() ?: true
         val vibrationEnabled = data["vibration_enabled"]?.toBooleanStrictOrNull() ?: true
         val deeplink = data["deeplink"]?.trim()?.takeIf(String::isNotEmpty)
@@ -93,15 +97,23 @@ class VistaFirebaseMessagingService : FirebaseMessagingService() {
                 val peerId = (data["sender_id"] ?: data["peer_id"]).orEmpty()
                 val senderName = data["sender_name"]?.takeIf(String::isNotBlank) ?: title
                 val isGroup = data["conversation_type"].equals("group", ignoreCase = true)
+                val isSecret = data["is_secret"]?.toBooleanStrictOrNull() == true ||
+                    data["conversation_type"].equals("secret", ignoreCase = true)
                 val groupName = data["group_name"]?.takeIf(String::isNotBlank)
                 val avatarUrl = if (isGroup && !data["group_avatar"].isNullOrBlank()) {
                     data["group_avatar"]
                 } else {
                     data["sender_avatar"]
                 }
+                val chatMessageText = ChatNotificationContentFormatter.format(
+                    rawBody = rawBody,
+                    messageType = data["chat_message_type"] ?: data["attachment_type"],
+                    fileName = data["file_name"] ?: data["attachment_file_name"],
+                    isSecret = isSecret,
+                )
                 val notificationId = VistaNotificationManager.stableNotificationId(
                     namespace = "chat",
-                    rawKey = conversationId.ifBlank { peerId.ifBlank { body } },
+                    rawKey = conversationId.ifBlank { peerId.ifBlank { chatMessageText } },
                 )
                 val timestampMillis = data["timestamp"]?.toLongOrNull() ?: System.currentTimeMillis()
                 val avatarBitmap = fetchCircularBitmapBounded(avatarUrl)
@@ -109,7 +121,7 @@ class VistaFirebaseMessagingService : FirebaseMessagingService() {
                 notificationManager.showChatNotification(
                     notificationId = notificationId,
                     senderName = senderName,
-                    messageText = body,
+                    messageText = chatMessageText,
                     conversationId = conversationId,
                     peerId = peerId,
                     avatarBitmap = avatarBitmap,
