@@ -236,6 +236,38 @@ class StoryEditorViewModel @Inject constructor(
         }
     }
 
+    fun onMediaSelectedWithSticker(baseMediaUri: Uri, stickerUri: Uri) {
+        if (!StorySecurityGuard.isSafeReadableMediaUri(context, baseMediaUri) ||
+            !StorySecurityGuard.isSafeReadableMediaUri(context, stickerUri)
+        ) {
+            _uiState.update { it.copy(errorMessage = "دسترسی به فایل استوری مجاز نیست") }
+            return
+        }
+        undoStack.clear()
+        redoStack.clear()
+        val cardSticker = StoryElement(
+            id = UUID.randomUUID().toString(),
+            type = "photo",
+            content = stickerUri.toString(),
+            schema = 2,
+            xNorm = 0.5f,
+            yNorm = 0.48f,
+            scale = 1f,
+            variant = ir.coffevista.vista_native.features.stories.ui.render.PHOTO_VARIANT_CARD_STICKER,
+        )
+        _uiState.update {
+            it.copy(
+                mediaUri = baseMediaUri,
+                isVideo = false,
+                mediaTransform = StoryTransform(cx = 0.5f, cy = 0.5f, scale = 1f, rotation = 0f),
+                elements = listOf(cardSticker),
+                canUndo = false,
+                canRedo = false,
+                errorMessage = null,
+            )
+        }
+    }
+
     internal fun updateMediaTransform(transform: StoryTransform) {
         mutateCanvas { state ->
             state.copy(mediaTransform = transform)
@@ -603,7 +635,9 @@ class StoryEditorViewModel @Inject constructor(
         mutateCanvas { state ->
             state.copy(
                 elements = state.elements.map { el ->
-                    if (el.id == id) el.copy(schema = 2, variant = (el.variant + 1) % 4) else el
+                    if (el.id == id && el.variant != ir.coffevista.vista_native.features.stories.ui.render.PHOTO_VARIANT_CARD_STICKER) {
+                        el.copy(schema = 2, variant = (el.variant + 1) % 4)
+                    } else el
                 },
             )
         }
@@ -958,7 +992,11 @@ class StoryEditorViewModel @Inject constructor(
                                 rawUriStr.startsWith("file://", ignoreCase = true)
                             ) {
                                 _uiState.update { it.copy(uploadStatus = "در حال آپلود برش تصویر…") }
-                                val cutoutUploaded = uploader.uploadImage(userId, Uri.parse(rawUriStr))
+                                val cutoutUploaded = if (element.variant == ir.coffevista.vista_native.features.stories.ui.render.PHOTO_VARIANT_CARD_STICKER) {
+                                    uploader.uploadStickerPng(userId, Uri.parse(rawUriStr))
+                                } else {
+                                    uploader.uploadImage(userId, Uri.parse(rawUriStr))
+                                }
                                 element.copy(content = cutoutUploaded.url)
                             } else {
                                 element

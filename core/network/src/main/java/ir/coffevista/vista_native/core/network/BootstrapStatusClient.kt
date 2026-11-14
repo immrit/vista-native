@@ -156,15 +156,20 @@ class BootstrapStatusClient @Inject constructor(
             (raw["updated_at"] as? JsonPrimitive)?.contentOrNull,
         )
         val current = tlsPolicyStore.current()
+        val maxAllowedRevision = maxOf(
+            current.revision + 100L,
+            (System.currentTimeMillis() / 1_000L) + 3_600L,
+        )
         val explicitRevision = (raw["revision"] as? JsonPrimitive)?.longOrNull
-            ?.takeIf { it > 0L }
+            ?.takeIf { it in 1L..maxAllowedRevision }
         val payloadChanged = mode != current.mode ||
             fingerprints.getOrNull(0) != current.currentPinSha256 ||
             fingerprints.getOrNull(1) != current.nextPinSha256 ||
             expiresAtEpochSeconds != current.expiresAtEpochSeconds
         val resolvedRevision = when {
             explicitRevision != null -> explicitRevision
-            updatedAtEpochSeconds != null && updatedAtEpochSeconds > current.revision -> updatedAtEpochSeconds
+            updatedAtEpochSeconds != null &&
+                updatedAtEpochSeconds in (current.revision + 1L)..maxAllowedRevision -> updatedAtEpochSeconds
             payloadChanged -> current.revision + 1L
             current.revision > 0L -> current.revision
             else -> 1L
@@ -181,7 +186,7 @@ class BootstrapStatusClient @Inject constructor(
             nextPinSha256 = fingerprints.getOrNull(1),
             expiresAtEpochSeconds = expiresAtEpochSeconds,
         )
-        val signatureVerified = controlPlaneVerified || rawMode in setOf("off", "monitor", "enforce")
+        val signatureVerified = controlPlaneVerified && (mode != TlsMode.ENFORCE || fingerprints.isNotEmpty())
         return tlsPolicyStore.update(candidate, signatureVerified = signatureVerified)
     }
 

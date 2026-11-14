@@ -917,10 +917,13 @@ internal fun StoryReactionWidget(
     }
 }
 
+internal const val PHOTO_VARIANT_CARD_STICKER = 4
+
 /**
  * Photo-on-Photo Cutout Overlay Widget:
  * Single-tapping cycles shape mask (variant 0..3):
  * 0 = Squircle, 1 = Circle, 2 = Smooth 5-Point Star, 3 = Smooth Heart
+ * Variant 4 ([PHOTO_VARIANT_CARD_STICKER]) renders an unclipped transparent PNG Post/Profile card sticker.
  */
 @Composable
 internal fun StoryPhotoCutoutWidget(
@@ -928,6 +931,15 @@ internal fun StoryPhotoCutoutWidget(
     variant: Int,
     modifier: Modifier = Modifier,
 ) {
+    if (variant == PHOTO_VARIANT_CARD_STICKER) {
+        AsyncImage(
+            model = imageUri,
+            contentDescription = "کارت استوری ویستا",
+            modifier = modifier.fillMaxWidth(0.84f),
+            contentScale = ContentScale.Fit,
+        )
+        return
+    }
     val shapeMode = Math.floorMod(variant, 4)
     val clipShape = remember(shapeMode) { PhotoCutoutShape(shapeMode) }
     Box(

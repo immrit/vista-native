@@ -164,4 +164,19 @@ class PostStoryTemplateGeneratorTest {
             blackBitmap.recycle()
         }
     }
+
+    @Test
+    fun buildVistaStoryLaunchUri_encodesSeparateBackgroundAndStickerUris() = runTest {
+        val assets = PostStoryTemplateGenerator.generateInstagramStoryAssets(context, samplePost)
+        try {
+            val launchUri = PostStoryTemplateGenerator.buildVistaStoryLaunchUri(assets)
+            val stickerParam = launchUri.getQueryParameter("stickerUri")
+            assertNotNull(stickerParam)
+            assertEquals(android.net.Uri.fromFile(assets.stickerFile).toString(), stickerParam)
+            assertEquals(assets.backgroundFile.absolutePath, launchUri.buildUpon().clearQuery().build().path)
+        } finally {
+            assets.backgroundFile.delete()
+            assets.stickerFile.delete()
+        }
+    }
 }

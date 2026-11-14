@@ -374,6 +374,7 @@ internal fun OtherUserProfileContent(
                     onDismiss = { showShareSheet = false },
                     onSendDirectMessage = onMessage,
                     onShowQrCard = null,
+                    onNavigateToStoryEditor = onNavigateToStoryEditor,
                 )
             }
 

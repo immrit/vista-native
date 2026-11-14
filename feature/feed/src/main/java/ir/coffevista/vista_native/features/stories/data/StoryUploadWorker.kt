@@ -149,7 +149,11 @@ class StoryUploadWorker @AssistedInject constructor(
                             rawUriStr.startsWith("file://", ignoreCase = true)
                         ) {
                             updateProgressState(0.40f, "در حال آپلود برش تصویر…")
-                            val cutoutRes = uploader.uploadImage(userId, Uri.parse(rawUriStr))
+                            val cutoutRes = if (element.variant == ir.coffevista.vista_native.features.stories.ui.render.PHOTO_VARIANT_CARD_STICKER) {
+                                uploader.uploadStickerPng(userId, Uri.parse(rawUriStr))
+                            } else {
+                                uploader.uploadImage(userId, Uri.parse(rawUriStr))
+                            }
                             uploadedObjectKeys.add(cutoutRes.objectKey)
                             element.copy(content = cutoutRes.url)
                         } else {

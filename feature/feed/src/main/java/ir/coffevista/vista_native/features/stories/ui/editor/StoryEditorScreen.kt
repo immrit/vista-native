@@ -177,10 +177,18 @@ fun StoryEditorScreen(
 ) {
     LaunchedEffect(initialSharedContentId, initialMediaUri, initialMediaMimeType) {
         initialMediaUri?.let { uri ->
-            viewModel.onMediaSelected(
-                uri,
-                isVideo = initialMediaMimeType?.startsWith("video/", ignoreCase = true) == true,
-            )
+            val stickerUri = uri.getQueryParameter("stickerUri")
+                ?.takeIf { it.isNotBlank() }
+                ?.let(Uri::parse)
+            if (stickerUri != null) {
+                val baseMediaUri = uri.buildUpon().clearQuery().build()
+                viewModel.onMediaSelectedWithSticker(baseMediaUri, stickerUri)
+            } else {
+                viewModel.onMediaSelected(
+                    uri,
+                    isVideo = initialMediaMimeType?.startsWith("video/", ignoreCase = true) == true,
+                )
+            }
             initialSharedContentId?.let(onInitialSharedContentConsumed)
         }
     }
@@ -686,9 +694,11 @@ fun StoryEditorScreen(
                                                 editingTextElementId = el.id
                                                 textEditorInitialSpec = el.toTextSpec()
                                                 showTextEditor = true
-                                            } else {
+                                            } else if (el.variant != ir.coffevista.vista_native.features.stories.ui.render.PHOTO_VARIANT_CARD_STICKER) {
                                                 // Tap-to-Cycle Visual Theme or Photo Cutout Shape Mask
                                                 viewModel.cycleWidgetVariant(el.id)
+                                                haptics.boundary()
+                                            } else {
                                                 haptics.boundary()
                                             }
                                         }

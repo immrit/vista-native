@@ -449,6 +449,19 @@ object StoryRasterizer {
         variant: Int,
         stageScale: Float,
     ) {
+        if (variant == PHOTO_VARIANT_CARD_STICKER) {
+            val w = cutoutBitmap.width.toFloat().coerceAtLeast(1f)
+            val h = cutoutBitmap.height.toFloat().coerceAtLeast(1f)
+            val targetW = EXPORT_WIDTH * 0.80f
+            val targetH = targetW * (h / w)
+            canvas.drawBitmap(
+                cutoutBitmap,
+                null,
+                RectF(-targetW * 0.5f, -targetH * 0.5f, targetW * 0.5f, targetH * 0.5f),
+                Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG),
+            )
+            return
+        }
         val boxSize = 164f * stageScale
         val half = boxSize * 0.5f
         val path = Path()

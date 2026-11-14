@@ -16,6 +16,7 @@ import android.graphics.Shader
 import android.graphics.Typeface
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
+import android.net.Uri
 import android.text.Layout
 import android.text.SpannableString
 import android.text.Spanned
@@ -62,6 +63,15 @@ object PostStoryTemplateGenerator {
         val stickerFile: File,
     )
 
+    /**
+     * Encodes separate background and transparent sticker URIs into a single launch [Uri]
+     * accepted by [StoryEditorScreen] so cards remain movable over the Vista background.
+     */
+    fun buildVistaStoryLaunchUri(assets: InstagramStoryAssets): Uri =
+        Uri.fromFile(assets.backgroundFile).buildUpon()
+            .appendQueryParameter("stickerUri", Uri.fromFile(assets.stickerFile).toString())
+            .build()
+
     suspend fun generateTemplate(
         context: Context,
         post: FeedPost,
@@ -104,8 +114,9 @@ object PostStoryTemplateGenerator {
         val verifiedDrawable = loadVerifiedDrawable(context)
 
         val stamp = System.currentTimeMillis()
+        val safePostId = post.id.replace(Regex("[^A-Za-z0-9_.-]"), "_").ifBlank { "post" }
         val backgroundBitmap = renderVistaBackgroundBitmap()
-        val backgroundFile = saveBitmapToTempFile(context, backgroundBitmap, "story_bg_${post.id}_$stamp.png")
+        val backgroundFile = saveBitmapToTempFile(context, backgroundBitmap, "story_bg_${safePostId}_$stamp.png")
 
         val stickerBitmap = renderPostStickerBitmap(
             post = post,
@@ -114,7 +125,7 @@ object PostStoryTemplateGenerator {
             logoBitmap = logoBitmap,
             verifiedDrawable = verifiedDrawable,
         )
-        val stickerFile = saveBitmapToTempFile(context, stickerBitmap, "story_sticker_${post.id}_$stamp.png")
+        val stickerFile = saveBitmapToTempFile(context, stickerBitmap, "story_sticker_${safePostId}_$stamp.png")
 
         InstagramStoryAssets(backgroundFile = backgroundFile, stickerFile = stickerFile)
     }

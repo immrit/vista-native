@@ -41,6 +41,16 @@ interface PostMediaUploadGateway {
         onProgress: (Float) -> Unit = {},
     ): UploadedMediaResult
 
+    /**
+     * Uploads a transparent PNG sticker (e.g., Post/Profile story card) preserving alpha channel.
+     */
+    suspend fun uploadStickerPng(
+        userId: String,
+        uri: Uri,
+        maxBytes: Long = 15L * 1024 * 1024,
+        onProgress: (Float) -> Unit = {},
+    ): UploadedMediaResult = uploadImage(userId, uri, maxBytes, onProgress)
+
     suspend fun uploadVideo(
         userId: String,
         videoFile: File,
@@ -107,6 +117,87 @@ class PostMediaUploader @Inject constructor(
             )
         } finally {
             temporaryJpeg.delete()
+        }
+    }
+
+    override suspend fun uploadStickerPng(
+        userId: String,
+        uri: Uri,
+        maxBytes: Long,
+        onProgress: (Float) -> Unit,
+    ): UploadedMediaResult = withContext(Dispatchers.IO) {
+        require(userId.isNotBlank()) { "شناسه کاربر نامعتبر است" }
+        val temporaryPng = copyOrCompressPng(uri, maxBytes)
+        try {
+            val objectKey = "posts/${userId.safeSegment()}/${System.currentTimeMillis()}_sticker.png"
+            val presign = api.presignUpload(
+                PostPresignRequestDto(
+                    objectKey = objectKey,
+                    contentType = "image/png",
+                    fileSize = temporaryPng.length(),
+                ),
+            )
+            val request = Request.Builder()
+                .url(presign.url)
+                .put(ProgressRequestBody(temporaryPng, "image/png", onProgress))
+            presign.headers.forEach { (name, value) ->
+                if (!name.equals("host", ignoreCase = true) && !name.equals("content-length", ignoreCase = true)) {
+                    request.header(name, value)
+                }
+            }
+            externalClient.newCall(request.build()).execute().use { response ->
+                if (!response.isSuccessful) throw IOException("آپلود استیکر با خطای ${response.code} متوقف شد")
+            }
+            onProgress(1f)
+            UploadedMediaResult(
+                url = presign.objectUrl,
+                objectKey = presign.objectKey,
+                isVideo = false,
+            )
+        } catch (_: Throwable) {
+            uploadImage(userId, uri, maxBytes, onProgress)
+        } finally {
+            temporaryPng.delete()
+        }
+    }
+
+    private fun copyOrCompressPng(uri: Uri, maxBytes: Long): File {
+        val decoded = (openInputStream(uri) ?: throw IOException("فایل استیکر قابل خواندن نیست")).use {
+            BitmapFactory.decodeStream(it)
+        } ?: throw IOException("دیکود استیکر ناموفق بود")
+
+        val scaled = if (decoded.width > MAX_IMAGE_DIMENSION || decoded.height > MAX_IMAGE_DIMENSION) {
+            val ratio = decoded.width.toFloat() / decoded.height.toFloat()
+            val targetW: Int
+            val targetH: Int
+            if (ratio > 1f) {
+                targetW = MAX_IMAGE_DIMENSION
+                targetH = (MAX_IMAGE_DIMENSION / ratio).toInt().coerceAtLeast(1)
+            } else {
+                targetH = MAX_IMAGE_DIMENSION
+                targetW = (MAX_IMAGE_DIMENSION * ratio).toInt().coerceAtLeast(1)
+            }
+            Bitmap.createScaledBitmap(decoded, targetW, targetH, true).also {
+                if (it != decoded) decoded.recycle()
+            }
+        } else decoded
+
+        val file = File.createTempFile("story-sticker-", ".png", cacheDir)
+        return try {
+            file.outputStream().use { output ->
+                if (!scaled.compress(Bitmap.CompressFormat.PNG, 100, output)) {
+                    throw IOException("ذخیره استیکر ناموفق بود")
+                }
+            }
+            if (file.length() > maxBytes) {
+                throw IOException("حجم استیکر بیش از حد مجاز است")
+            }
+            file
+        } catch (e: Throwable) {
+            file.delete()
+            throw e
+        } finally {
+            scaled.recycle()
         }
     }
 

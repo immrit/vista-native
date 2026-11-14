@@ -500,6 +500,7 @@ fun OwnProfileScreen(
                         onDismiss = { showShareSheet = false },
                         onSendDirectMessage = null,
                         onShowQrCard = { showVistaIdCard = true },
+                        onNavigateToStoryEditor = onNavigateToStoryEditor,
                     )
                 }
 
