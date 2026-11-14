@@ -208,6 +208,11 @@ data class Message(
             // Keep it out of the transcript as Flutter does for handshake frames.
             (transportType.equals("text", ignoreCase = true) &&
                 (content as? MessageContent.Text)?.value == SECRET_HANDSHAKE_NOTICE)
+
+    val isSystemNotice: Boolean
+        get() = senderId == "system" ||
+            transportType.equals("security_notice", ignoreCase = true) ||
+            transportType.equals("system_notice", ignoreCase = true)
 }
 
 const val SECRET_HANDSHAKE_NOTICE = "🔒 ارتباط رمزنگاری‌شده (E2EE) برقرار شد."

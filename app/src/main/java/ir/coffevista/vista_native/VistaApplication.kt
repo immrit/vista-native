@@ -22,6 +22,9 @@ class VistaApplication : Application(), Configuration.Provider, ImageLoaderFacto
     @ExternalMedia
     lateinit var externalMediaClient: OkHttpClient
 
+    @Inject
+    lateinit var directShareGateway: ir.coffevista.vista_native.share.AppDirectShareGateway
+
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder()
             .setWorkerFactory(workerFactory)
@@ -43,6 +46,8 @@ class VistaApplication : Application(), Configuration.Provider, ImageLoaderFacto
         }
         ir.coffevista.vista_native.core.common.DeviceIdProvider.current =
             ir.coffevista.vista_native.core.common.DeviceIdProvider { deviceId }
+        ir.coffevista.vista_native.core.designsystem.component.VistaDirectShareRegistry.current =
+            directShareGateway
         ir.coffevista.vista_native.crash.VistaCrashReporter.install(this)
     }
 

@@ -852,6 +852,23 @@ fun VistaShell(
                         {
                             navController.navigate(ShellRoutes.AddPost)
                         },
+                        { uri ->
+                            navController.navigate(ShellRoutes.storyCreate(uri.toString()))
+                        },
+                        {
+                            navController.navigate(ShellRoutes.PricingPage)
+                        },
+                        { uid ->
+                            navController.navigate(
+                                if (uid == context.userId) ShellRoutes.OwnProfileOverlay else ShellRoutes.userProfile(uid),
+                            )
+                        },
+                        { tag ->
+                            navController.navigate(ShellRoutes.hashtag(tag))
+                        },
+                        { url ->
+                            navController.navigate(ShellRoutes.servicesWeb(url, "پیوند"))
+                        },
                     )
                 }
                 composable(ShellRoutes.SettingsRoot) {
@@ -1036,6 +1053,23 @@ fun VistaShell(
                     { postId ->
                         navController.navigate(ShellRoutes.reels(postId))
                     },
+                    { uri ->
+                        navController.navigate(ShellRoutes.storyCreate(uri.toString()))
+                    },
+                    {
+                        navController.navigate(ShellRoutes.PricingPage)
+                    },
+                    { uid ->
+                        navController.navigate(
+                            if (uid == context.userId) ShellRoutes.OwnProfileOverlay else ShellRoutes.userProfile(uid),
+                        )
+                    },
+                    { tag ->
+                        navController.navigate(ShellRoutes.hashtag(tag))
+                    },
+                    { url ->
+                        navController.navigate(ShellRoutes.servicesWeb(url, "پیوند"))
+                    },
                 )
             }
             composable(ShellRoutes.OwnProfileOverlay) {
@@ -1064,6 +1098,23 @@ fun VistaShell(
                     },
                     {
                         navController.navigate(ShellRoutes.AddPost)
+                    },
+                    { uri ->
+                        navController.navigate(ShellRoutes.storyCreate(uri.toString()))
+                    },
+                    {
+                        navController.navigate(ShellRoutes.PricingPage)
+                    },
+                    { uid ->
+                        navController.navigate(
+                            if (uid == context.userId) ShellRoutes.OwnProfileOverlay else ShellRoutes.userProfile(uid),
+                        )
+                    },
+                    { tag ->
+                        navController.navigate(ShellRoutes.hashtag(tag))
+                    },
+                    { url ->
+                        navController.navigate(ShellRoutes.servicesWeb(url, "پیوند"))
                     },
                 )
             }

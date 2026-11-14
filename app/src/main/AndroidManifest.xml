@@ -29,7 +29,14 @@
     <queries>
         <package android:name="com.farsitel.bazaar" />
         <package android:name="com.instagram.android" />
+        <package android:name="com.instagram.barcelona" />
         <package android:name="com.whatsapp" />
+        <package android:name="com.whatsapp.w4b" />
+        <package android:name="org.telegram.messenger" />
+        <package android:name="org.telegram.messenger.web" />
+        <package android:name="org.thunderdog.challegram" />
+        <package android:name="com.twitter.android" />
+        <package android:name="com.twitter.android.lite" />
         <package android:name="com.google.android.gm" />
         <package android:name="app.rubika.im" />
         <package android:name="ir.resaneh1.iptv" />

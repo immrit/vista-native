@@ -19,4 +19,5 @@ interface AuthRepository {
     suspend fun completeRecovery(token: String, newPassword: String): Outcome<Unit>
     suspend fun refresh(refreshToken: String): Outcome<AuthPayload>
     suspend fun maintenanceMode(): Outcome<Boolean>
+    suspend fun logout(refreshToken: String? = null): Outcome<Unit> = Outcome.Success(Unit)
 }

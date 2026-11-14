@@ -5,28 +5,18 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.size
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.MailOutline
-import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
-import ir.coffevista.vista_native.core.designsystem.component.VistaShareActionRail
-import ir.coffevista.vista_native.core.designsystem.component.VistaShareModalSheet
-import ir.coffevista.vista_native.core.designsystem.component.VistaShareSheetActionRowTile
+import ir.coffevista.vista_native.core.designsystem.component.VistaSharePostPayload
+import ir.coffevista.vista_native.core.designsystem.component.VistaUnifiedShareSheet
 import ir.coffevista.vista_native.core.designsystem.component.buildVistaStandardShareActions
 import ir.coffevista.vista_native.core.designsystem.component.shareTextToTelegram
 import ir.coffevista.vista_native.core.designsystem.component.shareTextToThreads
@@ -134,69 +124,83 @@ fun PostShareBottomSheet(
         }
     }
 
-    VistaShareModalSheet(
-        title = "اشتراک‌گذاری پست",
-        onDismiss = onDismiss,
-    ) {
-        if (onSendDirectMessage != null) {
-            VistaShareSheetActionRowTile(
-                title = "ارسال از طریق پیام مستقیم",
-                subtitle = "ارسال مستقیم پست به گفتگوهای ویستا",
-                onClick = {
-                    onDismiss()
-                    onSendDirectMessage.invoke(post)
-                },
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Outlined.MailOutline,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(20.dp),
-                    )
-                },
-            )
-            Spacer(Modifier.height(14.dp))
-        }
-
-        val railActions = buildVistaStandardShareActions(
-            isBusy = isGeneratingStory,
-            showAddToVistaStory = onNavigateToStoryEditor != null || onAddToStory != null,
-            onAddToVistaStory = handleAddToVistaStory,
-            onShareInstagramStory = handleShareInstagramStory,
-            onCopyLink = {
-                clipboard.setText(AnnotatedString(url))
-                Toast.makeText(context, "لینک پست کپی شد", Toast.LENGTH_SHORT).show()
-                onShared()
-                onDismiss()
-            },
-            onShareTelegram = {
-                onShared()
-                onDismiss()
-                shareTextToTelegram(context, text, url)
-            },
-            onShareWhatsApp = {
-                onShared()
-                onDismiss()
-                shareTextToWhatsApp(context, text)
-            },
-            onShareThreads = {
-                onShared()
-                onDismiss()
-                shareTextToThreads(context, text)
-            },
-            onShareX = {
-                onShared()
-                onDismiss()
-                shareTextToX(context, text)
-            },
-            onShareMore = {
-                onShared()
-                onDismiss()
-                shareTextViaSystemChooser(context, text, "اشتراک‌گذاری پست")
-            },
+    val directPayload = remember(post) {
+        VistaSharePostPayload(
+            postId = post.id,
+            authorName = post.authorFullName,
+            authorUsername = post.authorUsername.orEmpty(),
+            authorAvatar = post.authorAvatarUrl,
+            content = post.content.orEmpty(),
+            mediaUrls = post.imageUrls.ifEmpty { listOfNotNull(post.imageUrl) },
+            postVideoUrl = post.videoUrl,
+            musicUrl = post.musicUrl,
+            musicTitle = post.musicTitle,
+            likesCount = post.likeCount,
+            commentsCount = post.commentCount,
+            createdAt = post.createdAt,
+            isVerified = post.authorIsVerified,
+            verificationType = post.authorVerificationType.orEmpty().ifBlank { "none" },
+            role = null,
+            hashtags = post.tags,
+            authorId = post.userId,
         )
-        VistaShareActionRail(actions = railActions)
     }
+
+    val railActions = buildVistaStandardShareActions(
+        isBusy = isGeneratingStory,
+        showAddToVistaStory = onNavigateToStoryEditor != null || onAddToStory != null,
+        onAddToVistaStory = handleAddToVistaStory,
+        onShareInstagramStory = handleShareInstagramStory,
+        onCopyLink = {
+            clipboard.setText(AnnotatedString(url))
+            Toast.makeText(context, "لینک پست کپی شد", Toast.LENGTH_SHORT).show()
+            onShared()
+            onDismiss()
+        },
+        onShareTelegram = {
+            onShared()
+            onDismiss()
+            shareTextToTelegram(context, text, url)
+        },
+        onShareWhatsApp = {
+            onShared()
+            onDismiss()
+            shareTextToWhatsApp(context, text)
+        },
+        onShareThreads = {
+            onShared()
+            onDismiss()
+            shareTextToThreads(context, text)
+        },
+        onShareX = {
+            onShared()
+            onDismiss()
+            shareTextToX(context, text)
+        },
+        onShareMore = {
+            onShared()
+            onDismiss()
+            shareTextViaSystemChooser(context, text, "اشتراک‌گذاری پست")
+        },
+    )
+
+    VistaUnifiedShareSheet(
+        onDismiss = onDismiss,
+        actions = railActions,
+        onSendToRecipients = { gateway, recipients ->
+            recipients.count { recipient -> gateway.sendPost(recipient, directPayload) }
+        },
+        onSentSuccess = { sentCount, recipients ->
+            onShared()
+            val message = if (sentCount == 1) {
+                "پست برای ${recipients.first().displayName} ارسال شد"
+            } else {
+                "پست برای $sentCount مخاطب ارسال شد"
+            }
+            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        },
+        sendFailureMessage = "ارسال پست انجام نشد. دوباره تلاش کنید.",
+    )
 }
 
 private fun shareExternal(context: Context, text: String) {
@@ -287,7 +291,8 @@ fun shareAssetsToInstagramStory(
         // 3. Fallback when Instagram is not installed
         Toast.makeText(context, "برنامه اینستاگرام بر روی دستگاه شما نصب نیست", Toast.LENGTH_SHORT).show()
         shareStoryImageFile(context, fallbackCombinedFile, shareText)
-    } catch (_: Exception) {
+    } catch (e: Exception) {
+        android.util.Log.w("VistaShare", "Instagram story launch failed; falling back to image share", e)
         shareStoryImageFile(context, fallbackCombinedFile, shareText)
     }
 }
@@ -306,65 +311,8 @@ private fun shareStoryImageFile(context: Context, file: File, caption: String) {
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
         context.startActivity(Intent.createChooser(intent, "اشتراک‌گذاری در استوری"))
-    } catch (_: Exception) {
+    } catch (e: Exception) {
+        android.util.Log.w("VistaShare", "Image share failed; falling back to text share", e)
         shareExternal(context, caption)
-    }
-}
-
-private fun shareToWhatsApp(context: Context, text: String) {
-    try {
-        val intent = Intent(Intent.ACTION_SEND).apply {
-            type = "text/plain"
-            `package` = "com.whatsapp"
-            putExtra(Intent.EXTRA_TEXT, text)
-        }
-        context.startActivity(intent)
-    } catch (_: Exception) {
-        shareExternal(context, text)
-    }
-}
-
-private fun shareToGmail(context: Context, text: String) {
-    try {
-        val intent = Intent(Intent.ACTION_SEND).apply {
-            type = "text/plain"
-            `package` = "com.google.android.gm"
-            putExtra(Intent.EXTRA_SUBJECT, "Vista - اشتراک‌گذاری پست")
-            putExtra(Intent.EXTRA_TEXT, text)
-        }
-        context.startActivity(intent)
-    } catch (_: Exception) {
-        val mailtoIntent = Intent(Intent.ACTION_SENDTO).apply {
-            data = Uri.parse("mailto:")
-            putExtra(Intent.EXTRA_SUBJECT, "Vista - اشتراک‌گذاری پست")
-            putExtra(Intent.EXTRA_TEXT, text)
-        }
-        try {
-            context.startActivity(mailtoIntent)
-        } catch (_: Exception) {
-            shareExternal(context, text)
-        }
-    }
-}
-
-private fun shareToRubika(context: Context, text: String) {
-    val packages = listOf("app.rubika.im", "ir.resaneh1.iptv")
-    var launched = false
-    for (pkg in packages) {
-        try {
-            val intent = Intent(Intent.ACTION_SEND).apply {
-                type = "text/plain"
-                `package` = pkg
-                putExtra(Intent.EXTRA_TEXT, text)
-            }
-            context.startActivity(intent)
-            launched = true
-            break
-        } catch (_: Exception) {
-            // try next package
-        }
-    }
-    if (!launched) {
-        shareExternal(context, text)
     }
 }

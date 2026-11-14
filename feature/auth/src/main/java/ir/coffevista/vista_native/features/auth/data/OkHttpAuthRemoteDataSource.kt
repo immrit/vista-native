@@ -65,6 +65,9 @@ interface AuthApi {
 
     @POST("v1/auth/refresh")
     suspend fun refresh(@Body body: JsonObject): Response<JsonObject>
+
+    @POST("v1/auth/logout")
+    suspend fun logout(@Body body: JsonObject): Response<Unit>
 }
 
 class OkHttpAuthRemoteDataSource @Inject constructor(
@@ -166,6 +169,15 @@ class OkHttpAuthRemoteDataSource @Inject constructor(
 
     override suspend fun isMaintenanceMode(): Boolean =
         bootstrapStatusClient.fetch().maintenance
+
+    override suspend fun logout(refreshToken: String?) {
+        val body = buildJsonObject {
+            if (!refreshToken.isNullOrBlank()) {
+                put("refresh_token", refreshToken)
+            }
+        }
+        runCatching { executeUnit(api.logout(body)) }
+    }
 
     private fun parseAuthPayload(json: JsonObject): AuthPayload {
         val user = json["user"]?.jsonObject

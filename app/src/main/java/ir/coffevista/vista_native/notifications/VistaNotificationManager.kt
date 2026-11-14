@@ -20,6 +20,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import ir.coffevista.vista.MainActivity
 import ir.coffevista.vista_native.R
 import ir.coffevista.vista_native.core.designsystem.R as DesignSystemR
+import ir.coffevista.vista_native.core.security.SessionStore
 import java.util.zip.CRC32
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -27,9 +28,12 @@ import javax.inject.Singleton
 @Singleton
 class VistaNotificationManager @Inject constructor(
     @ApplicationContext private val context: Context,
+    private val sessionStore: SessionStore? = null,
 ) {
     private val notificationManager: NotificationManager =
         context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+    constructor(context: Context) : this(context, null)
 
     companion object {
         const val CHANNEL_CHAT_MESSAGES = "chat_messages"
@@ -230,32 +234,42 @@ class VistaNotificationManager @Inject constructor(
         val senderPerson = senderPersonBuilder.build()
         val mePerson = Person.Builder().setName("شما").setKey("me").build()
 
+        val appLocked = sessionStore?.isBiometricEnabled() == true
+        val safeMessageText = if (appLocked) {
+            "برای مشاهده محتوای پیام، قفل برنامه را باز کنید"
+        } else {
+            messageText
+        }
+
         // Recover existing unread messages in this conversation's active tray
         // notification so consecutive messages stack cleanly even across process kills.
-        val existingStyle = findExistingMessagingStyle(notificationId)
+        // Never leak plaintext previews or stacked message lines while app lock is active.
         val messagingStyle: NotificationCompat.MessagingStyle = NotificationCompat.MessagingStyle(mePerson)
-        if (isGroup && !groupName.isNullOrBlank()) {
-            messagingStyle.setGroupConversation(true)
-            messagingStyle.setConversationTitle(groupName)
-        } else {
-            messagingStyle.setGroupConversation(false)
+        if (!appLocked) {
+            val existingStyle = findExistingMessagingStyle(notificationId)
+            if (isGroup && !groupName.isNullOrBlank()) {
+                messagingStyle.setGroupConversation(true)
+                messagingStyle.setConversationTitle(groupName)
+            } else {
+                messagingStyle.setGroupConversation(false)
+            }
+            val priorMessages = existingStyle?.messages.orEmpty()
+                .takeLast(MAX_CONVERSATION_LINES - 1)
+            for (msg in priorMessages) {
+                messagingStyle.addMessage(msg)
+            }
         }
-        val priorMessages = existingStyle?.messages.orEmpty()
-            .takeLast(MAX_CONVERSATION_LINES - 1)
-        for (msg in priorMessages) {
-            messagingStyle.addMessage(msg)
-        }
-        messagingStyle.addMessage(messageText, timestampMillis, senderPerson)
+        messagingStyle.addMessage(safeMessageText, timestampMillis, senderPerson)
 
         val displayTitle = if (isGroup && !groupName.isNullOrBlank()) {
             groupName
         } else {
             senderName.ifBlank { "کاربر" }
         }
-        val displaySummary = if (isGroup && !groupName.isNullOrBlank() && senderName.isNotBlank()) {
-            "$senderName: $messageText"
-        } else {
-            messageText
+        val displaySummary = when {
+            appLocked -> "یک پیام جدید دارید"
+            isGroup && !groupName.isNullOrBlank() && senderName.isNotBlank() -> "$senderName: $messageText"
+            else -> messageText
         }
 
         val builder = NotificationCompat.Builder(context, channelId)
@@ -263,7 +277,8 @@ class VistaNotificationManager @Inject constructor(
             .setColor(accentColor)
             .setContentTitle(displayTitle)
             .setContentText(displaySummary)
-            .setStyle(messagingStyle)
+            .setStyle(if (appLocked) NotificationCompat.BigTextStyle().bigText(displaySummary) else messagingStyle)
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .setPriority(priority)
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             .setGroup(GROUP_KEY_CHAT)
@@ -279,7 +294,7 @@ class VistaNotificationManager @Inject constructor(
             builder.setLargeIcon(avatarBitmap)
         }
 
-        if (conversationId.isNotBlank()) {
+        if (conversationId.isNotBlank() && !appLocked) {
             val replyRemoteInput = RemoteInput.Builder(ChatNotificationActionReceiver.KEY_TEXT_REPLY)
                 .setLabel("پاسخ سریع...")
                 .build()

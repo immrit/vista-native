@@ -106,6 +106,38 @@ class ChatE2EEService(
     }
 
     /**
+     * Gets the stored peer public key scoped strictly to [conversationId] (without peerId bleed).
+     */
+    fun getConversationPeerPublicKey(conversationId: String): ByteArray? {
+        val b64 = prefs.getString("e2e_peer_pub_$conversationId", null) ?: return null
+        return try {
+            Base64.decode(b64.trim(), Base64.DEFAULT)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    fun getPeerPublicKeyTimestamp(conversationId: String): Long =
+        prefs.getLong("e2e_peer_pub_ts_$conversationId", 0L)
+
+    /**
+     * Records a one-time deterministic clientId for a key-change divider in [conversationId].
+     * Returns null if a notice for this exact key fingerprint was already recorded.
+     */
+    fun recordSecurityNoticeFingerprint(conversationId: String, keyBytes: ByteArray): String? {
+        val keyHash = MessageDigest.getInstance("SHA-256")
+            .digest(keyBytes)
+            .take(8)
+            .joinToString("") { "%02x".format(it) }
+        val prefKey = "e2e_notice_${conversationId}_$keyHash"
+        if (prefs.getBoolean(prefKey, false)) {
+            return null
+        }
+        prefs.edit().putBoolean(prefKey, true).apply()
+        return "e2e_key_change_${conversationId}_$keyHash"
+    }
+
+    /**
      * Gets the stored peer public key for [conversationId].
      */
     fun getPeerPublicKey(id: String): ByteArray? {
@@ -122,10 +154,21 @@ class ChatE2EEService(
     /**
      * Saves the peer public key for [conversationId] and optional [peerId].
      */
-    fun savePeerPublicKey(conversationId: String, peerPublicKeyB64: String, peerId: String? = null) {
+    fun savePeerPublicKey(
+        conversationId: String,
+        peerPublicKeyB64: String,
+        peerId: String? = null,
+        frameTimestampMillis: Long = 0L,
+    ) {
         val trimmed = peerPublicKeyB64.trim()
         if (trimmed.isNotBlank()) {
             val editor = prefs.edit().putString("e2e_peer_pub_$conversationId", trimmed)
+            if (frameTimestampMillis > 0L) {
+                val existingTs = prefs.getLong("e2e_peer_pub_ts_$conversationId", 0L)
+                if (frameTimestampMillis >= existingTs) {
+                    editor.putLong("e2e_peer_pub_ts_$conversationId", frameTimestampMillis)
+                }
+            }
             if (!peerId.isNullOrBlank()) {
                 editor.putString("e2e_peer_pub_$peerId", trimmed)
                 editor.putString("e2e_pub_$peerId", trimmed)
@@ -134,9 +177,14 @@ class ChatE2EEService(
         }
     }
 
-    fun savePeerPublicKey(conversationId: String, peerPublicKeyBytes: ByteArray, peerId: String? = null) {
+    fun savePeerPublicKey(
+        conversationId: String,
+        peerPublicKeyBytes: ByteArray,
+        peerId: String? = null,
+        frameTimestampMillis: Long = 0L,
+    ) {
         val b64 = Base64.encodeToString(peerPublicKeyBytes, Base64.NO_WRAP)
-        savePeerPublicKey(conversationId, b64, peerId)
+        savePeerPublicKey(conversationId, b64, peerId, frameTimestampMillis)
     }
 
     fun getSecretAutoDeleteSeconds(conversationId: String): Int {
@@ -237,6 +285,22 @@ class ChatE2EEService(
         val generated = generateSenderKey()
         saveGroupSenderKey(groupId, myUserId, generated)
         return generated
+    }
+
+    fun rotateMyGroupSenderKey(groupId: String, myUserId: String): String {
+        val rotated = generateSenderKey()
+        saveGroupSenderKey(groupId, myUserId, rotated)
+        return rotated
+    }
+
+    fun clearGroupSenderKey(groupId: String, senderId: String) {
+        if (groupId.isBlank() || senderId.isBlank()) return
+        runCatching {
+            prefs.edit()
+                .remove("group_sender_key_enc_${groupId}_$senderId")
+                .remove("group_sender_key_${groupId}_$senderId")
+                .apply()
+        }
     }
 
     /**
@@ -505,6 +569,83 @@ class ChatE2EEService(
     }
 
     /**
+     * Forward-secret per-message ephemeral X25519 + static DH hybrid encryption ("VE2E3:").
+     */
+    fun encryptMessageV3(
+        plainText: String,
+        myPrivateKey: ByteArray,
+        peerPublicKey: ByteArray,
+        conversationId: String,
+        senderId: String,
+        messageId: String,
+    ): String = encryptV3Payload(
+        plainText = plainText,
+        myPrivateKey = myPrivateKey,
+        peerPublicKey = peerPublicKey,
+        conversationId = conversationId,
+        senderId = senderId,
+        messageId = messageId,
+        secureRandom = secureRandom,
+    )
+
+    /**
+     * Decrypts a forward-secret "VE2E3:" payload. Returns [encrypted] on failure.
+     */
+    fun decryptMessageV3(
+        encrypted: String,
+        myPrivateKey: ByteArray,
+        peerPublicKey: ByteArray,
+        conversationId: String,
+        senderId: String,
+        messageId: String,
+    ): String = runCatching {
+        decryptV3Payload(
+            encrypted = encrypted,
+            myPrivateKey = myPrivateKey,
+            peerPublicKey = peerPublicKey,
+            conversationId = conversationId,
+            senderId = senderId,
+            messageId = messageId,
+        )
+    }.getOrDefault(encrypted)
+
+    data class GeneratedPreKeyBundle(
+        val identityKey: String,
+        val signedPreKeyId: Long,
+        val signedPreKey: String,
+        val signedPreKeySig: String,
+        val oneTimePreKeys: List<Pair<Long, String>>,
+    )
+
+    fun generatePreKeyBundle(userId: String, oneTimeCount: Int = 20): GeneratedPreKeyBundle {
+        val identity = getOrGenerateKeyPair(userId)
+        val spkId = System.currentTimeMillis() / 1000L
+        val spkPriv = generateRandomClampedScalar(secureRandom)
+        val spkPub = X25519.scalarMultBase(spkPriv)
+        spkPriv.fill(0)
+
+        val sigDigest = MessageDigest.getInstance("SHA-256").apply {
+            update(identity.publicKey)
+            update(spkPub)
+        }.digest()
+
+        val baseOtId = spkId * 100L
+        val otKeys = (1..oneTimeCount).map { idx ->
+            val otPriv = generateRandomClampedScalar(secureRandom)
+            val otPub = X25519.scalarMultBase(otPriv)
+            otPriv.fill(0)
+            (baseOtId + idx) to Base64.encodeToString(otPub, Base64.NO_WRAP)
+        }
+        return GeneratedPreKeyBundle(
+            identityKey = identity.publicKeyB64,
+            signedPreKeyId = spkId,
+            signedPreKey = Base64.encodeToString(spkPub, Base64.NO_WRAP),
+            signedPreKeySig = Base64.encodeToString(sigDigest, Base64.NO_WRAP),
+            oneTimePreKeys = otKeys,
+        )
+    }
+
+    /**
      * Decrypts a message payload (VE2E1:, VE2E2:, e2ee:v1:, or legacy AES-GCM).
      */
     fun decryptMessage(
@@ -640,7 +781,8 @@ class ChatE2EEService(
 
     fun isEncryptedEnvelope(content: String): Boolean {
         val trimmed = content.trim()
-        return trimmed.startsWith(PREFIX_V1) ||
+        return trimmed.startsWith(PREFIX_V3) ||
+            trimmed.startsWith(PREFIX_V1) ||
             trimmed.startsWith(PREFIX_V2) ||
             trimmed.startsWith(PREFIX_LEGACY_V1) ||
             trimmed.startsWith(PREFIX_GROUP_V1)
@@ -824,9 +966,11 @@ class ChatE2EEService(
         val FILE_ENVELOPE_MAGIC = byteArrayOf(0x56, 0x45, 0x32, 0x46) // "VE2F"
         const val PREFIX_V1 = "VE2E1:"
         const val PREFIX_V2 = "VE2E2:"
+        const val PREFIX_V3 = "VE2E3:"
         const val PREFIX_LEGACY_V1 = "e2ee:v1:"
         const val PREFIX_GROUP_V1 = "VE2E_GROUP_V1:"
         const val HKDF_INFO = "vista-e2e-msg-v1"
+        const val HKDF_INFO_V3 = "vista-e2e-msg-v3"
         const val GROUP_HKDF_INFO = "vista-e2e-group-v1"
         const val SALT_LENGTH = 16
         private const val X25519_KEY_LENGTH = 32
@@ -843,7 +987,15 @@ class ChatE2EEService(
             field: String = "content",
         ): String = "vista-e2ee-v2|$conversationId|$senderId|$messageId|$field"
 
-        private fun hkdf(ikm: ByteArray, salt: ByteArray, info: ByteArray, length: Int): ByteArray {
+        fun messageBindingV3(
+            conversationId: String,
+            senderId: String,
+            messageId: String,
+            ephemeralPubB64: String,
+            field: String = "content",
+        ): String = "vista-e2ee-v3|$conversationId|$senderId|$messageId|$field|$ephemeralPubB64"
+
+        internal fun hkdf(ikm: ByteArray, salt: ByteArray, info: ByteArray, length: Int): ByteArray {
             val hmac = Mac.getInstance("HmacSHA256")
             val saltKey = if (salt.isEmpty()) ByteArray(32) else salt
             hmac.init(SecretKeySpec(saltKey, "HmacSHA256"))
@@ -882,6 +1034,155 @@ internal fun hasLegacyEncryptedPayloadShape(bytes: ByteArray): Boolean {
     if (macLength != 16) return false
     val cipherTextOffset = macLengthIndex + 1 + macLength
     return cipherTextOffset < bytes.size
+}
+
+internal fun generateRandomClampedScalar(secureRandom: SecureRandom = SecureRandom()): ByteArray {
+    val scalar = ByteArray(32).also { secureRandom.nextBytes(it) }
+    scalar[0] = (scalar[0].toInt() and 248).toByte()
+    scalar[31] = (scalar[31].toInt() and 127 or 64).toByte()
+    return scalar
+}
+
+internal fun encryptV3Payload(
+    plainText: String,
+    myPrivateKey: ByteArray,
+    peerPublicKey: ByteArray,
+    conversationId: String,
+    senderId: String,
+    messageId: String,
+    secureRandom: SecureRandom = SecureRandom(),
+): String {
+    require(myPrivateKey.size == 32 && peerPublicKey.size == 32) { "Invalid X25519 key size" }
+    val ephPriv = generateRandomClampedScalar(secureRandom)
+    val ephPub = X25519.scalarMultBase(ephPriv)
+    val ephDh = X25519.scalarMult(ephPriv, peerPublicKey)
+    ephPriv.fill(0)
+    val staticDh = X25519.scalarMult(myPrivateKey, peerPublicKey)
+
+    val ikm = ByteArray(64)
+    System.arraycopy(ephDh, 0, ikm, 0, 32)
+    System.arraycopy(staticDh, 0, ikm, 32, 32)
+    ephDh.fill(0)
+    staticDh.fill(0)
+
+    val salt = ByteArray(ChatE2EEService.SALT_LENGTH).also { secureRandom.nextBytes(it) }
+    val nonce = ByteArray(12).also { secureRandom.nextBytes(it) }
+    val msgKey = ChatE2EEService.hkdf(
+        ikm = ikm,
+        salt = salt,
+        info = ChatE2EEService.HKDF_INFO_V3.toByteArray(Charsets.UTF_8),
+        length = 32,
+    )
+    ikm.fill(0)
+
+    val ephPubB64 = java.util.Base64.getEncoder().encodeToString(ephPub)
+    val aad = ChatE2EEService.messageBindingV3(conversationId, senderId, messageId, ephPubB64)
+        .toByteArray(Charsets.UTF_8)
+
+    val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+    cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(msgKey, "AES"), GCMParameterSpec(128, nonce))
+    cipher.updateAAD(aad)
+    val encryptedWithTag = cipher.doFinal(plainText.toByteArray(Charsets.UTF_8))
+    msgKey.fill(0)
+
+    val out = ByteBuffer.allocate(1 + 32 + ChatE2EEService.SALT_LENGTH + 12 + encryptedWithTag.size)
+        .put(0x03.toByte())
+        .put(ephPub)
+        .put(salt)
+        .put(nonce)
+        .put(encryptedWithTag)
+        .array()
+
+    return ChatE2EEService.PREFIX_V3 + java.util.Base64.getEncoder().encodeToString(out)
+}
+
+internal fun decryptV3Payload(
+    encrypted: String,
+    myPrivateKey: ByteArray,
+    peerPublicKey: ByteArray,
+    conversationId: String,
+    senderId: String,
+    messageId: String,
+): String {
+    val trimmed = encrypted.trim()
+    require(trimmed.startsWith(ChatE2EEService.PREFIX_V3)) { "Not a VE2E3 payload" }
+    require(myPrivateKey.size == 32 && peerPublicKey.size == 32) { "Invalid X25519 key size" }
+
+    val raw = java.util.Base64.getDecoder().decode(trimmed.removePrefix(ChatE2EEService.PREFIX_V3))
+    require(raw.size > 1 + 32 + ChatE2EEService.SALT_LENGTH + 12 + 16 && raw[0] == 0x03.toByte()) {
+        "Malformed VE2E3 envelope"
+    }
+
+    var offset = 1
+    val ephPub = raw.copyOfRange(offset, offset + 32)
+    offset += 32
+    val salt = raw.copyOfRange(offset, offset + ChatE2EEService.SALT_LENGTH)
+    offset += ChatE2EEService.SALT_LENGTH
+    val nonce = raw.copyOfRange(offset, offset + 12)
+    offset += 12
+    val cipherAndTag = raw.copyOfRange(offset, raw.size)
+
+    val ephDh = X25519.scalarMult(myPrivateKey, ephPub)
+    val staticDh = X25519.scalarMult(myPrivateKey, peerPublicKey)
+    val ikm = ByteArray(64)
+    System.arraycopy(ephDh, 0, ikm, 0, 32)
+    System.arraycopy(staticDh, 0, ikm, 32, 32)
+    ephDh.fill(0)
+    staticDh.fill(0)
+
+    val msgKey = ChatE2EEService.hkdf(
+        ikm = ikm,
+        salt = salt,
+        info = ChatE2EEService.HKDF_INFO_V3.toByteArray(Charsets.UTF_8),
+        length = 32,
+    )
+    ikm.fill(0)
+
+    val ephPubB64 = java.util.Base64.getEncoder().encodeToString(ephPub)
+    val aad = ChatE2EEService.messageBindingV3(conversationId, senderId, messageId, ephPubB64)
+        .toByteArray(Charsets.UTF_8)
+
+    val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+    cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(msgKey, "AES"), GCMParameterSpec(128, nonce))
+    cipher.updateAAD(aad)
+    val clear = cipher.doFinal(cipherAndTag)
+    msgKey.fill(0)
+    return String(clear, Charsets.UTF_8)
+}
+
+/**
+ * Overwrites and deletes transient plaintext decrypted media caches (`dec_*`, `temp_dec_*`,
+ * `raw_chat_*`, `enc_chat_*`) so decrypted secret attachments do not linger on disk.
+ */
+internal fun wipeDecryptedMediaCache(rootDir: File?) {
+    if (rootDir == null || !rootDir.exists()) return
+    rootDir.walkTopDown().forEach { file ->
+        if (!file.isFile) return@forEach
+        val name = file.name
+        if (
+            name.startsWith("dec_") ||
+            name.startsWith("temp_dec_") ||
+            name.startsWith("raw_chat_") ||
+            name.startsWith("enc_chat_")
+        ) {
+            runCatching {
+                val len = file.length()
+                if (len in 1L..(32L * 1024L * 1024L)) {
+                    java.io.RandomAccessFile(file, "rw").use { raf ->
+                        val zeros = ByteArray(minOf(len.toInt(), 8192))
+                        var remaining = len
+                        while (remaining > 0) {
+                            val chunk = minOf(remaining.toInt(), zeros.size)
+                            raf.write(zeros, 0, chunk)
+                            remaining -= chunk
+                        }
+                        raf.fd.sync()
+                    }
+                }
+            }
+            runCatching { file.delete() }
+        }
+    }
 }
 
 /**

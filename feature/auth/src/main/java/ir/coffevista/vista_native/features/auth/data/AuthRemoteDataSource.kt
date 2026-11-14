@@ -18,6 +18,7 @@ interface AuthRemoteDataSource {
     suspend fun completeRecovery(token: String, newPassword: String)
     suspend fun refresh(refreshToken: String): AuthPayload
     suspend fun isMaintenanceMode(): Boolean
+    suspend fun logout(refreshToken: String? = null) {}
 }
 
 data class RecoveryOption(

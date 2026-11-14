@@ -419,3 +419,155 @@ flowchart TB
 | **`E:/vista-web`** | ۲۲ فایل امنیتی (Middleware، Auth، Payment، Proxy، Sanitizer، Nginx، Docker) | `npx tsc --noEmit` | **PASS (Exit Code 0)** |
 | **`E:/vista_native`** | ۱۲ فایل (Self-Updater، NetworkConfig، E2EE Keystore، WebView، DeepLink، BackupRules، Logging) | بررسی ساختار سینتکس و قوانین Lint/Gradle | **PASS** |
 
+---
+
+## ۷. تست نفوذ دور دوم (Round 2): ممیزی عمیق کلاه سفید برای رسیدن به استاندارد امنیتی تلگرام / سیگنال
+
+در دور دوم ممیزی (به‌دنبال درخواست ارزیابی سخت‌گیرانه نسبت به ادعای امنیت در حد **Telegram / Signal**)، تمرکز منحصراً روی **پروتکل رمزنگاری سرتاسری (E2EE)، ایزولاسیون نشست‌ها، حریم خصوصی داده‌ها (BOLA/IDOR)، متادیتا و نشت‌های سمت کلاینت/پوش‌نوتیفیکیشن** گذاشته شد.
+
+### ۷.۱ پاسخ صریح مهندسی: چقدر تا سطح امنیت تلگرام / سیگنال فاصله داریم؟
+
+در وضعیت قبل از اصلاحات دور دوم، پلتفرم ویستا در لایه‌های وب، احراز هویت و زیرساخت پایه ایمن شده بود؛ اما از منظر **معماری رمزنگاری پیام‌رسان** با تلگرام (MTProto Secret Chats) و سیگنال (Signal Protocol: X3DH + Double Ratchet) فاصله **جدی** وجود داشت:
+
+| معیار امنیتی | وضعیت تلگرام / سیگنال | وضعیت ویستا (پیش از دور دوم) | وضعیت پس از اصلاحات دور دوم |
+| :--- | :---: | :---: | :---: |
+| **Forward Secrecy (رازداری پیشرو)** | کامل (کلیدهای Ephemeral / Double Ratchet در هر پیام) | **ندارد** — کلید ایستای X25519 بدون Ratchet (`ChatE2EEService.kt`, `e2eEncryption.ts`)؛ لو رفتن یک کلید = رمزگشایی تمام تاریخچه | نیازمند پیاده‌سازی کامل **X3DH + Double Ratchet** در فاز ۳ |
+| **Post-Compromise Security** | کامل (DH Ratchet در هر رفت‌وبرگشت پیام) | **ندارد** — اگر کلید خصوصی نشت کند، مهاجم تا ابد پیام‌های آینده را هم می‌خواند | نیازمند پیاده‌سازی **DH Ratchet** در فاز ۳ |
+| **سازگاری E2EE بین اندروید و وب** | یکپارچه و استاندارد | **قطع کامل (`[R2-02]`)** — `vista-web` بدون پیشوند `VE2E2:` و بدون HKDF/AAD ارسال می‌کرد و توسط بک‌اند (`400 E2EE_REQUIRED`) رد می‌شد و پیام‌های `VE2E2:` اندروید را هم باز نمی‌کرد | **برطرف شد**: پشتیبانی کامل `VE2E2:` + `HKDF-SHA256` (`vista-e2e-msg-v1`) + AAD در `vista-web` |
+| **رمزنگاری فایل و کپشن در چت محرمانه** | سرتاسری با کلید اختصاصی و AAD | وب با `!files?.length` E2EE را دور می‌زد و فایل را به صورت خام آپلود می‌کرد (`[R2-03]`) | **برطرف شد**: حذف بای‌پس در وب + Fail-Closed روی فایل در وب + پاک‌سازی متادیتای متنی Secret Chat در بک‌اند |
+| **تایید کلید مخاطب (TOFU & Safety Number)** | هشدار فوری تغییر کلید + QR/Safety Number | در اندروید `savePeerPublicKey` قبل از `redecryptSecretMessages` کلید را بازنویسی می‌کرد و هشدار TOFU هرگز کار نمی‌کرد (`[R2-05]`) | **برطرف شد**: اصلاح ترتیب TOFU با متد `persistPeerPublicKeyWithTofuWarning` در اندروید + اضافه شدن `hasPeerPublicKeyChanged` و `computeSafetyNumber` در وب |
+| **امنیت پیام‌های گروهی** | Sender Keys (Signal) / MTProto | چت گروهی و `VE2E_GROUP_V1:` عملاً کد مرده (Dead Code) و چت گروهی متن باز است (`[R2-04]`) | نیازمند فعال‌سازی **Sender Keys + Key Rotation هنگام خروج عضو** |
+| **ابطال آنی توکن (Session Revocation)** | قطع فوری نشست روی همه نودها | JWT بدون `jti`/`sid` است و پس از Logout/تغییر رمز تا ۱۵ دقیقه معتبر می‌ماند | نیازمند افزودن `sid` + Blacklist توزیع‌شده در Redis |
+| **نشت متادیتا در Push / Notification** | سرور/گوگل هیچ متنی از پیام محرمانه نمی‌بینند | Reaction چت محرمانه ایموجی خام را به FCM می‌فرستاد + Notification وب در پس‌زمینه متن خام را چاپ می‌کرد + Quick-Reply اندروید روی صفحه قفل بدون بیومتریک فعال بود | **برطرف شد** در هر ۳ پروژه (`vista-backend`, `vista-web`, `vista_native`) |
+
+---
+
+### ۷.۲ یافته‌های بحرانی و مهم دور دوم (Round 2 Findings)
+
+| شناسه | شدت | پروژه | فایل و محل دقیق | شرح ریسک و تحلیل کلاه سفید |
+| :--- | :---: | :--- | :--- | :--- |
+| **`[R2-01]`** | **Critical** | `vista_native` + `vista-web` | `ChatE2EEService.kt:43-106, 452-464`<br>`e2eEncryption.ts:36-96` | **نبود X3DH و Double Ratchet (فقدان Forward Secrecy و Break-in Recovery)**: تمام پیام‌های گذشته و آینده هر گفتگو از یک Shared Secret ثابت X25519 استخراج می‌شوند. |
+| **`[R2-02]`** | **Critical** | `vista-web` + `vista-backend` | `e2eEncryption.ts:98-158`<br>`internal/chat/service.go:769-776` | **عدم انطباق پروتکل E2EE وب و اندروید**: وب خروجی Base64 خام بدون پیشوند `VE2E2:` و بدون HKDF/AAD می‌فرستاد که هم توسط بک‌اند رد می‌شد و هم پیام‌های `VE2E2:` اندروید را در UI وب به‌صورت متن درهم نمایش می‌داد. |
+| **`[R2-03]`** | **Critical** | `vista-web` + `vista-backend` | `useMessages.ts:247-253`<br>`internal/chat/service.go:769-776` | **دور زدن E2EE هنگام ارسال فایل + ذخیره متادیتای متنی Secret Chat**: شرط `if (isSecret && !files?.length)` در وب هنگام انتخاب فایل رمزنگاری کپشن را هم رد می‌کرد؛ بک‌اند نیز فیلدهایی مانند `AttachmentFileName`, `ReplyToSenderName`, `AudioTitle` را در Secret Chat پاک‌سازی نمی‌کرد. |
+| **`[R2-04]`** | **Critical** | `vista_native` + `vista-backend` | `ChatE2EEService.kt:163-296`<br>`OfflineFirstChatRepository.kt:1511-1560` | **غیرفعال بودن کامل Group E2EE**: متدهای `VE2E_GROUP_V1:` بدون فراخوانی رها شده‌اند و چت‌های گروهی روی سرور/کلاینت بدون رمزنگاری سرتاسری هستند. |
+| **`[R2-05]`** | **High** | `vista_native` + `vista-web` | `OfflineFirstChatRepository.kt:837, 1040-1068, 1184`<br>`useSecretChat.ts:79, 100` | **از کار افتادن هشدار تغییر کلید (Broken TOFU)**: ذخیره فوری کلید جدید مخاطب قبل از اجرای مقایسه کلید قبلی باعث می‌شد مقایسه همیشه مساوی باشد و حمله MITM جایگزینی کلید بی‌سروصدا پذیرفته شود. |
+| **`[R2-06]`** | **Critical** | `vista-web` + `vista_native` | `uploadService.ts:59-99`<br>`OfflineFirstChatRepository.kt:1696, 3106-3121` | **نبود رمزنگاری فایل در وب و باقی‌ماندن فایل رمزگشایی‌شده `dec_*` در دیسک اندروید**: وب فایل‌های چت را خام به S3 می‌فرستاد و اندروید نسخه رمزگشایی‌شده را در کش دیسک نگه می‌داشت. |
+| **`[R2-07]`** | **High** | `vista-backend` + `vista-web` | `internal/chat/service.go:1139-1176`<br>`useMessages.ts:124-130` | **نشت ایموجی/متن Secret Chat در Push و Web Notification**: واکنش (Reaction) روی پیام‌های محرمانه متن ایموجی را به FCM می‌فرستاد؛ همچنین `vista-web` در تب پس‌زمینه `newMessage.content` را در Notification سیستم‌عامل چاپ می‌کرد. |
+| **`[R2-08]`** | **High** | `vista_native` | `VistaNotificationManager.kt:28, 235-330`<br>`MainActivity.kt:178, 428-435`<br>`ChatScreens.kt:1707-1724` | **دور زدن قفل بیومتریک از طریق Notification Quick-Reply و اسکرین‌شات Recents**: با وجود فعال بودن قفل برنامه، پاسخ سریع (`RemoteInput`) و خوانده‌شدن بدون احراز هویت در نوار اعلان فعال بودند، متن پیام در اعلان نمایش داده می‌شد و در حالت قفل `FLAG_SECURE` قبل از پس‌زمینه شدن ست نمی‌شد. |
+| **`[R2-09]`** | **High** | `vista-backend` | `internal/presence/service.go:52-89`<br>`internal/presence/repository.go:134-171` | **نشت وضعیت آنلاین زنده (`online`) و `updated_at` برخلاف تنظیم `nobody` / `my_contacts` و نبود بررسی `blocked_users`**: با وجود `canView == false`، وضعیت لحظه‌ای آنلاین بودن کاربر برگردانده می‌شد. |
+| **`[R2-10]`** | **High** | `vista-backend` | `internal/posts/repository.go:570-609, 806-850, 1163-1205, 1521-1553`<br>`internal/comments/repository.go:124-159, 293-367` | **نبود فیلتر `blocked_users` و نشت پست‌های Private در `GetSavedPosts` و نظرات (`comments`)**: کاربر بلاک‌شده همچنان می‌توانست با شناسه پست، هشتگ، کامنت‌ها یا لیست Saved Posts به محتوای کاربر بلاک‌کننده دسترسی بگیرد. |
+| **`[R2-11]`** | **High** | `vista-backend` | `internal/chat/service.go:1668-1688` | **دور زدن Block و حریم خصوصی در `AddGroupMembers`**: افزودن اعضا به گروه بدون فراخوانی `s.privacyChecker` انجام می‌شد که اجازه می‌داد کاربر بلاک‌کننده به زور به گروه اضافه شود. |
+| **`[R2-12]`** | **Medium** | `vista-backend` | `internal/nearby/service.go:496-501` | **حمله مثلث‌سازی مکان (Trilateration) با دقت ۱۰۰ متری**: تابع `roundKm` فاصله را تا `0.1 km` رُند می‌کرد که با ارسال ۳ مختصات جعلی به `POST /v1/nearby/location` کشف موقعیت دقیق کاربر ممکن می‌شد. |
+| **`[R2-13]`** | **Medium** | `vista-backend` + `vista-manager` | `internal/auth/service.go:1530-1553`<br>`vista-manager/.../backend/[...path]/route.ts:52` | **فقدان `sid`/`jti` در Access Token برای ابطال آنی و Fallback هدر `X-Forwarded-For` در پروکسی ادمین**: پروکسی `vista-manager` هنگام نبود `req.ip` مجدداً به هدر قابل جعل کلاینت برمی‌گشت؛ همچنین `docker-compose.yml` هنوز پسورد پیش‌فرض Redis/Scylla را اختیاری گذاشته و `docker.sock` را مستقیم مانت کرده است. |
+
+---
+
+### ۷.۳ اصلاحات مهندسی اعمال‌شده در دور دوم
+
+1. **ارتقا و یکپارچه‌سازی پروتکل E2EE در وب (`E:/vista-web`)**:
+   - در [`e2eEncryption.ts`](file:///E:/vista-web/src/lib/chat/e2eEncryption.ts): پیاده‌سازی کامل پاکت **`VE2E2:`** با مشتق‌سازی کلید هر پیام از طریق **HKDF-SHA256 (`vista-e2e-msg-v1`)** و داده احراز اصالت **AAD (`vista-e2ee-v2|<conversationId>|<senderId>|<messageId>|content`)** مطابق byte-by-byte با `ChatE2EEService.kt` اندروید، پشتیبانی از رمزگشایی `VE2E2:`, `VE2E1:`, `e2ee:v1:` و فرمت legacy، افزودن `hasPeerPublicKeyChanged` (TOFU) و `computeSafetyNumber` (اثرانگشت ۶۰ رقمی).
+   - در [`useSecretChat.ts`](file:///E:/vista-web/src/hooks/useSecretChat.ts): اتصال TOFU هنگام تبادل کلید با هشدار امنیتی فارسی، پشتیبانی از رمزگشایی پیام‌های ارسالی خود کاربر هنگام ریلود صفحه با AAD معتبر، و استخراج `safetyNumber`.
+   - در [`useMessages.ts`](file:///E:/vista-web/src/hooks/useMessages.ts): بستن نشت متن محرمانه در Browser `Notification` (نمایش پیام قفل‌شده `🔒 پیام رمزنگاری‌شده جدید`)، حذف بای‌پس `!files?.length` و اعمال Fail-Closed هنگام تلاش برای ارسال فایل بدون رمزنگاری سرتاسری در چت محرمانه وب.
+2. **اصلاح TOFU، نوتیفیکیشن قفل‌صفحه و Recents در اندروید (`E:/vista_native`)**:
+   - در [`OfflineFirstChatRepository.kt`](file:///E:/vista_native/feature/chat/src/main/java/ir/coffevista/vista_native/features/chat/data/repository/OfflineFirstChatRepository.kt): افزودن متد `persistPeerPublicKeyWithTofuWarning` و جایگزینی آن در مسیرهای `ensureSecretChatHandshake`, `redecryptSecretMessages` و `decryptAndMapMessageDto` تا تغییر کلید عمومی مخاطب پیش از بازنویسی تشخیص داده شده و هشدار داخل چت ثبت شود.
+   - در [`VistaNotificationManager.kt`](file:///E:/vista_native/app/src/main/java/ir/coffevista/vista_native/notifications/VistaNotificationManager.kt): تزریق `SessionStore` و پنهان‌سازی کامل متن پیام، جلوگیری از افشای تاریخچه مکالمه در `MessagingStyle` و حذف دکمه‌های Quick-Reply (`RemoteInput`) و «خوانده شد» تا زمانی که قفل بیومتریک فعال است.
+   - در [`MainActivity.kt`](file:///E:/vista_native/app/src/main/java/ir/coffevista/vista/MainActivity.kt): اعمال `FLAG_SECURE` هنگام فعال بودن قفل بیومتریک و قبل از رفتن اپ به پس‌زمینه در `onStop()` جهت مسدود کردن اسنپ‌شات صفحه Recent Apps.
+3. **بستن نشت‌های حریم خصوصی، FCM و BOLA در هسته بک‌اند و پروکسی ادمین (`E:/vista-backend` و `E:/vista-manager`)**:
+   - در [`internal/chat/service.go`](file:///E:/vista-backend/internal/chat/service.go): حذف reaction push برای گفتگوهای محرمانه (`IsSecret` / `secret`) تا ایموجی و متادیتا به FCM/APNs نشت نکند، پاک‌سازی متادیتای متنی Secret Chat قبل از ذخیره در ScyllaDB (`ReplyToSenderName`, `AttachmentFileName`, `AudioTitle`, `AudioArtist`, `AudioAlbum`, `ForwardedFromSenderName`)، و اعمال `privacyChecker` روی `AddGroupMembers`.
+   - در [`internal/presence/service.go`](file:///E:/vista-backend/internal/presence/service.go) و [`internal/presence/repository.go`](file:///E:/vista-backend/internal/presence/repository.go): افزودن بررسی دوطرفه `blocked_users` و مخفی‌سازی اجباری `Status` (بازگرداندن `offline`) و `UpdatedAt` هنگام `canView == false`.
+   - در [`internal/posts/repository.go`](file:///E:/vista-backend/internal/posts/repository.go) و [`internal/comments/repository.go`](file:///E:/vista-backend/internal/comments/repository.go): اعمال فیلتر `blocked_users` در `GetPost`, `GetUserPosts`, `SearchPostsByHashtag`, `GetSavedPosts`, `ListByPost`, `CountByPost`, `Get`, `visiblePostOwner` و اعمال کنترل `is_private`/`follows` در `GetSavedPosts` و افزودن شرط `account_status = 'active'`.
+   - در [`internal/nearby/service.go`](file:///E:/vista-backend/internal/nearby/service.go): کاهش دقت `roundKm` به حداقل `1.0 km` (کوانتایز ۱ کیلومتری) برای خنثی‌سازی مثلث‌سازی مکان، همراه با تست واحد [`internal/nearby/service_test.go`](file:///E:/vista-backend/internal/nearby/service_test.go).
+   - در [`vista-manager/src/app/api/backend/[...path]/route.ts`](file:///E:/vista-manager/src/app/api/backend/[...path]/route.ts): حذف fallback هدرهای `x-forwarded-for`/`x-real-ip` قابل جعل کلاینت و تکیه انحصاری بر `req.ip`.
+
+---
+
+### ۷.۴ نقشه راه معماری برای رسیدن واقعی به سطح تلگرام / سیگنال (Phase 3 Hardening)
+
+برای اینکه بتوان ادعای **«امنیت در تراز Signal / Telegram Secret Chats»** داشت، اجرای ۵ گام زیر در فاز بعدی ضروری است:
+1. **پیاده‌سازی X3DH + Double Ratchet + Safety Number UI**: آپلود PreKeys امضاشده (Signed PreKey + One-Time PreKeys) در سرور برای آغاز نشست ناهمزمان با Forward Secrecy و Post-Compromise Security.
+2. **رمزنگاری فایل سمت وب (`VE2F`) + رمزنگاری دیتابیس محلی اندروید (`SQLCipher`)**: نگهداری کلید دیتابیس در Keystore با `setUserAuthenticationRequired(true)` و `BiometricPrompt.CryptoObject` و پاک‌سازی کش `dec_*` روی دیسک.
+3. **Sender Keys برای E2EE گروه‌ها و Rotation خودکار هنگام اخراج/خروج عضو**.
+4. **ابطال آنی سشن در سطح JWT (`sid` + Redis Blacklist)**، فعال‌سازی پسورد اجباری روی Redis/Scylla در `docker-compose.yml`، جایگزینی `docker.sock` با Docker Socket Proxy فقط-خواندنی، و استفاده از کلید SSH Ed25519 + `HostFingerprint` به‌جای پسورد در `vista-manager`.
+5. **پشتیبانی از Signed-Key Certificate Pinning بدون Fallback غیرمعتبر و Push بدون Payload (Wake-up Silent Push)**.
+
+### ۷.۵ نتایج بیلد و تست پس از اصلاحات دور دوم
+
+| پروژه | دستور تاییدیه اجراشده | نتیجه دقیق خروجی |
+| :--- | :--- | :--- |
+| **`E:/vista_native`** | `.\gradlew.bat :app:compileProductionDebugKotlin :app:testProductionDebugUnitTest :feature:chat:testDebugUnitTest --no-daemon` | **Exit Code 0** (`BUILD SUCCESSFUL` — `280 actionable tasks: 19 executed, 261 up-to-date`) |
+| **`E:/vista-backend`** | `go build ./cmd/api` و `go test -count=1 ./internal/nearby/... ./internal/chat/... ./internal/posts/... ./internal/comments/... ./internal/presence/... ./internal/admin/... ./internal/system/...` | **Exit Code 0** (`nearby` `1.413s`, `chat` `1.944s`, `posts` `0.331s`, `comments` `0.252s`, `admin` `0.402s` پاس؛ `presence` و `system` دارای `[no test files]`) |
+| **`E:/vista-web`** | `npx tsc --noEmit` و `npm run test:security` (`jest tests/security --runInBand`) | **Exit Code 0** (`Test Suites: 2 passed, 2 total`, `Tests: 7 todo, 17 passed, 24 total` شامل تست‌های جدید `tests/security/e2ee.test.ts` و ۷ تست `todo` از پیش موجود) |
+| **`E:/vista-manager`** | `npx tsc --noEmit` و `npm test -- --ci` | **Exit Code 0** (`Test Suites: 4 passed, 4 total`, `Tests: 21 passed, 21 total`) |
+
+---
+
+## ۸. سخت‌سازی جامع امنیتی و ایزولاسیون بین پروژه‌ها (Phase 3 Remediation & Isolation)
+
+در ادامه نقشه راه بخش `۷.۴`، اصلاحات فاز سوم روی هر ۴ مخزن (`vista-backend`، `vista-web`، `vista-manager` و `vista_native`) با تمرکز بر **ابطال آنی نشست (Instant Revocation)**، **رازداری پیشرو (`VE2E3:` Ephemeral X25519 + X3DH PreKey Bundles)**، **رمزنگاری فایل سمت وب (`VE2F`)**، **چرخه‌سازی کلید گروه هنگام خروج عضو (`group_key_rotate`)**، **ایزولاسیون شبکه/سوکت Docker**، **جلوگیری از جعل IP و بای‌پس CSRF در پنل مدیریت**، و **ضد-Downgrade در Pinning TLS + پاک‌سازی امن کش رسانه در اندروید** اجرا و تایید شدند.
+
+---
+
+### ۸.۱ هسته بک‌اند و زیرساخت (`E:/vista-backend`)
+
+1. **ابطال آنی توکن و نشست توزیع‌شده (`RevocationStore`)**:
+   - ایجاد [`internal/auth/revocation.go`](file:///E:/vista-backend/internal/auth/revocation.go) و [`internal/auth/revocation_test.go`](file:///E:/vista-backend/internal/auth/revocation_test.go): ذخیره و بررسی ابطال در Redis همراه با حافظه محدود محلی (`RevokeJTI`, `RevokeUserBefore`, `RevokeDeviceBefore`, `IsTokenRevoked`).
+   - به‌روزرسانی [`internal/auth/service.go`](file:///E:/vista-backend/internal/auth/service.go): تزریق `jti`، `iat_ms` و `did` در `generateAccessToken`، پیاده‌سازی `Logout` (با بررسی `s.repo != nil`) و اعمال `RevokeUserAccessBefore` در `ChangePassword`، `ResetPasswordSMS` و `CompleteRecovery`.
+   - اتصال [`internal/session/service.go`](file:///E:/vista-backend/internal/session/service.go) (`AccessTokenRevoker` در `Terminate`، `TerminateOthers` و `TerminateAllOtherSessions`) و [`internal/admin/service.go`](file:///E:/vista-backend/internal/admin/service.go) (`SetUserAccessRevoker` در `LockUser` و `SetUserStatus` برای وضعیت‌های `suspended`/`inactive`/`banned`).
+   - به‌روزرسانی [`internal/httpapi/auth_context.go`](file:///E:/vista-backend/internal/httpapi/auth_context.go)، [`internal/httpapi/auth_context_test.go`](file:///E:/vista-backend/internal/httpapi/auth_context_test.go)، [`internal/httpapi/auth_handlers.go`](file:///E:/vista-backend/internal/httpapi/auth_handlers.go) و [`internal/httpapi/router.go`](file:///E:/vista-backend/internal/httpapi/router.go): بررسی `IsTokenRevoked` در احراز هویت هر درخواست، راه‌اندازی مسیرهای `POST /v1/auth/logout` و `/api/auth/logout` و اصلاح `handleClientIP` به `clientIP(r)`.
+2. **اجباری‌سازی احراز هویت روی Presence**:
+   - در [`internal/presence/handlers.go`](file:///E:/vista-backend/internal/presence/handlers.go): ارتقای مسیرهای `/v1/presence/` از `optionalAuthMiddleware` به `authMiddleware`.
+3. **زیرساخت X3DH PreKeys، پشتیبانی از `VE2E3:` و چرخش کلید گروه**:
+   - ایجاد [`internal/chat/e2ee_prekeys.go`](file:///E:/vista-backend/internal/chat/e2ee_prekeys.go) و [`internal/chat/e2ee_prekeys_test.go`](file:///E:/vista-backend/internal/chat/e2ee_prekeys_test.go): جداول Postgres `e2ee_prekey_bundles` و `e2ee_one_time_prekeys` با بیرون‌کشیدن اتمیک One-Time PreKey توسط `FOR UPDATE SKIP LOCKED` و بررسی دوطرفه `blocked_users`.
+   - به‌روزرسانی [`internal/chat/repository.go`](file:///E:/vista-backend/internal/chat/repository.go)، [`internal/chat/handlers.go`](file:///E:/vista-backend/internal/chat/handlers.go)، [`internal/chat/hub.go`](file:///E:/vista-backend/internal/chat/hub.go)، [`internal/chat/service.go`](file:///E:/vista-backend/internal/chat/service.go)، [`internal/chat/realtime_test.go`](file:///E:/vista-backend/internal/chat/realtime_test.go) و [`internal/fcm/templates.go`](file:///E:/vista-backend/internal/fcm/templates.go): افزودن مسیرهای `/v1/chat/e2ee/prekeys`، `/v1/chat/e2ee/prekeys/count` و `/v1/chat/e2ee/bundle/{userId}`، شناسایی پیشوند `"VE2E3:"`، و انتشار رویداد `EventGroupKeyRotate` (`"group_key_rotate"`) هنگام `RemoveGroupMember` و `LeaveGroup`.
+4. **ایزولاسیون کانتینر، سوکت Docker و بستن پورت‌های داخلی**:
+   - در [`internal/infra/docker.go`](file:///E:/vista-backend/internal/infra/docker.go)، [`cmd/api/main.go`](file:///E:/vista-backend/cmd/api/main.go) و [`docker-compose.yml`](file:///E:/vista-backend/docker-compose.yml): پشتیبانی از `INFRA_DOCKER_PROXY_URL` از طریق شبکه داخلی `vista-internal` (`internal: true`) با سرویس `tecnativa/docker-socket-proxy:0.3.0` و حذف مانت مستقیم `/var/run/docker.sock` از کانتینر `vista-api`، اجباری‌سازی `${POSTGRES_PASSWORD:?}` و `--requirepass ${REDIS_PASSWORD:?}`، بایند پورت‌های دیتابیس/مانیتورینگ/مترجم به `127.0.0.1:...` و افزودن `no-new-privileges:true`.
+
+---
+
+### ۸.۲ پنل مدیریت (`E:/vista-manager`)
+
+- در [`src/middleware.ts`](file:///E:/vista-manager/src/middleware.ts):
+  1. محدودسازی اندازه کش نرخ درخواست احراز هویت با `AUTH_RATE_STORE_CAP = 5000` برای جلوگیری از رشد بی‌رویه حافظه (OOM/DoS).
+  2. حذف اعتماد پیش‌فرض به هدرهای قابل جعل `x-forwarded-for`/`x-real-ip` در `getClientIp`؛ خواندن IP تنها زمانی فعال است که `TRUSTED_PROXY_HEADERS === 'true'` باشد (و با استخراج hop سمت راست).
+  3. مسدودسازی صریح درخواست‌های تغییردهنده بدون هدر معتبر `host` (`!host`) و محدود کردن استثنای CSRF صرفاً به `POST` مسیرهای `/api/auth/admin-token` و `/api/auth/admin-send-otp` تا متد `DELETE /api/auth/admin-token` نیز مشمول بررسی Origin/Referer شود.
+
+---
+
+### ۸.۳ نسخه وب (`E:/vista-web`)
+
+1. **ابطال نشست سمت سرور هنگام خروج**:
+   - در [`src/app/api/auth/token/route.ts`](file:///E:/vista-web/src/app/api/auth/token/route.ts): متد `DELETE` پیش از پاک‌سازی کوکی‌ها درخواست `POST /v1/auth/logout` را با Bearer Token و Refresh Token به بک‌اند ارسال می‌کند.
+2. **ارتقای پروتکل پیام محرمانه به `VE2E3:` (Forward Secrecy) و رمزنگاری فایل `VE2F`**:
+   - در [`src/lib/chat/e2eEncryption.ts`](file:///E:/vista-web/src/lib/chat/e2eEncryption.ts): پیاده‌سازی `encryptSecretMessageV3` و `decryptSecretMessageV3` (کلید Ephemeral X25519 در هر پیام + Static DH + HKDF با `"vista-e2e-msg-v3"` + `messageBindingV3`)، پیاده‌سازی باینری `encryptFileVE2F` و `decryptFileVE2F` منطبق byte-by-byte با قالب `"VE2F"` اندروید، تابع `buildPreKeyUploadPayload`، و کش موقت پیام‌های ارسالی در سشن (`rememberSentPlaintext` / `recallSentPlaintext`).
+   - در [`src/lib/uploadService.ts`](file:///E:/vista-web/src/lib/uploadService.ts): افزودن `UploadService.uploadEncryptedSecretFile`.
+   - در [`src/hooks/useSecretChat.ts`](file:///E:/vista-web/src/hooks/useSecretChat.ts)، [`src/hooks/useMessages.ts`](file:///E:/vista-web/src/hooks/useMessages.ts)، [`src/components/chat/MessageBubble.tsx`](file:///E:/vista-web/src/components/chat/MessageBubble.tsx) و [`src/components/chat/ChatWindow.tsx`](file:///E:/vista-web/src/components/chat/ChatWindow.tsx): همگام‌سازی PreKeyها با `/v1/chat/e2ee/prekeys` و `/v1/chat/e2ee/bundle/{userId}`، ارسال پیام‌های محرمانه با `VE2E3:` هنگام داشتن `messageId`، رمزنگاری فایل‌های خروجی با `VE2F`، و رمزگشایی فایل‌های `VE2F` در حافظه با `URL.createObjectURL` و آزادسازی پس از استفاده.
+   - گسترش [`tests/security/e2ee.test.ts`](file:///E:/vista-web/tests/security/e2ee.test.ts) با تست‌های round-trip `VE2E3:`، رد دستکاری AAD و round-trip فایل `VE2F`.
+
+---
+
+### ۸.۴ کلاینت بومی اندروید (`E:/vista_native`)
+
+1. **ضد-Downgrade در Pinning TLS**:
+   - در [`TlsPolicy.kt`](file:///E:/vista_native/core/network/src/main/java/ir/coffevista/vista_native/core/network/TlsPolicy.kt) و [`NetworkSecurityPolicyTest.kt`](file:///E:/vista_native/core/network/src/test/java/ir/coffevista/vista_native/core/network/NetworkSecurityPolicyTest.kt): افزودن `TlsPolicyRejection.DOWNGRADE_REJECTED` و مسدودسازی تنزل حالت `ENFORCE` به `OFF`، `MONITOR` یا مجموعه پین خالی در `TlsPolicyStore.update` همراه با تست `enforcedTlsPolicyRejectsSilentDowngrade`.
+2. **ابطال سمت سرور هنگام خروج و پاک‌سازی سشن**:
+   - در [`AuthRepository.kt`](file:///E:/vista_native/feature/auth/src/main/java/ir/coffevista/vista_native/features/auth/domain/AuthRepository.kt)، [`AuthRemoteDataSource.kt`](file:///E:/vista_native/feature/auth/src/main/java/ir/coffevista/vista_native/features/auth/data/AuthRemoteDataSource.kt)، [`DefaultAuthRepository.kt`](file:///E:/vista_native/feature/auth/src/main/java/ir/coffevista/vista_native/features/auth/data/DefaultAuthRepository.kt)، [`OkHttpAuthRemoteDataSource.kt`](file:///E:/vista_native/feature/auth/src/main/java/ir/coffevista/vista_native/features/auth/data/OkHttpAuthRemoteDataSource.kt) و [`MainActivity.kt`](file:///E:/vista_native/app/src/main/java/ir/coffevista/vista/MainActivity.kt): ارسال best-effort به `POST v1/auth/logout` درون `onBeforeClearSession` پیش از پاک‌کردن `sessionStore`.
+3. **پروتکل `VE2E3:`، مدیریت X3DH PreKeys، چرخش کلید گروه و پاک‌سازی دیسک رسانه**:
+   - در [`ChatE2EEService.kt`](file:///E:/vista_native/feature/chat/src/main/java/ir/coffevista/vista_native/features/chat/data/security/ChatE2EEService.kt): افزودن `PREFIX_V3` (`"VE2E3:"`)، `HKDF_INFO_V3`، `messageBindingV3`، `encryptMessageV3`، `decryptMessageV3`، توابع pure-JVM (`encryptV3Payload`, `decryptV3Payload`)، `rotateMyGroupSenderKey`، `clearGroupSenderKey`، `generatePreKeyBundle`، و `wipeDecryptedMediaCache` (بازنویسی با صفر و حذف فایل‌های `dec_*`، `temp_dec_*`، `raw_chat_*`، `enc_chat_*`) و شناسایی `PREFIX_V3` در `isEncryptedEnvelope`.
+   - در [`ChatApi.kt`](file:///E:/vista_native/feature/chat/src/main/java/ir/coffevista/vista_native/features/chat/data/remote/ChatApi.kt): افزودن endpointهای `uploadPreKeys`، `preKeyCount` و `fetchPreKeyBundle` و مدل‌های `OneTimePreKeyDto`، `UploadPreKeysRequest`، `PreKeyCountDto` و `PreKeyBundleDto`.
+   - در [`ChatRealtime.kt`](file:///E:/vista_native/feature/chat/src/main/java/ir/coffevista/vista_native/features/chat/data/realtime/ChatRealtime.kt): افزودن `RealtimeEvent.GroupKeyRotate` و پردازش رویداد `"group_key_rotate"`.
+   - در [`OfflineFirstChatRepository.kt`](file:///E:/vista_native/feature/chat/src/main/java/ir/coffevista/vista_native/features/chat/data/repository/OfflineFirstChatRepository.kt): اجرای پاک‌سازی `wipeDecryptedMediaCache` روی `cacheDir` و `filesDir` در `init` و `clearAccount`، همگام‌سازی PreKeyها با `syncPreKeysBestEffort`، بازیابی X3DH `fetchPreKeyBundle` در `ensureSecretChatHandshake`، رمزگشایی یکپارچه `VE2E3:`/`VE2E2:` در `decryptSecretPayloadWithKey` (`decryptAndMapMessageDto` و `redecryptSecretMessages`)، مهاجرت ارسال/ویرایش/کپشن پیام محرمانه به `encryptMessageV3`، و واکنش به `RealtimeEvent.GroupKeyRotate` با چرخش کلید فرستنده خودی و پاک‌سازی کلید عضو خارج‌شده.
+   - گسترش [`ChatE2EETest.kt`](file:///E:/vista_native/feature/chat/src/test/java/ir/coffevista/vista_native/features/chat/data/security/ChatE2EETest.kt) با تست‌های `encryptV3Payload`/`decryptV3Payload` و `wipeDecryptedMediaCache`.
+
+---
+
+### ۸.۵ نتایج تاییدیه‌های بیلد و تست پس از پایان فاز سوم
+
+| پروژه | دستور اجراشده | نتیجه دقیق مشاهده‌شده |
+| :--- | :--- | :--- |
+| **`E:/vista-backend`** | `go build ./cmd/api` و `go test -count=1 ./internal/auth/... ./internal/httpapi/... ./internal/session/... ./internal/admin/... ./internal/chat/... ./internal/fcm/... ./internal/infra/... ./internal/nearby/... ./internal/posts/... ./internal/comments/... ./internal/presence/... ./internal/system/...` | **Exit Code 0** — تمام ۹ پکیج دارای تست پاس شدند (`auth` `1.637s`، `httpapi` `0.509s`، `session` `1.069s`، `admin` `0.432s`، `chat` `1.426s`، `fcm` `0.339s`، `nearby` `0.570s`، `posts` `0.344s`، `comments` `0.341s`) و ۳ پکیج (`infra`، `presence`، `system`) دارای `[no test files]` هستند. |
+| **`E:/vista-manager`** | `npx tsc --noEmit` و `npm test -- --ci` | **Exit Code 0** — `Test Suites: 4 passed, 4 total`، `Tests: 21 passed, 21 total` (زمان `5.063s`). |
+| **`E:/vista-web`** | `npx tsc --noEmit` و `npm run test:security` (`jest tests/security --runInBand`) | **Exit Code 0** — `Test Suites: 2 passed, 2 total`، `Tests: 7 todo, 19 passed, 26 total` (`e2ee.test.ts` و `security-tests.test.ts`؛ ۷ تست `todo` از پیش موجود). |
+| **`E:/vista_native`** | `.\gradlew.bat :core:network:testDebugUnitTest :feature:chat:testDebugUnitTest :feature:auth:testDebugUnitTest :app:compileProductionDebugKotlin :app:testProductionDebugUnitTest --no-daemon` (و اجرای کامل مجدد `:feature:chat:testDebugUnitTest` و `:core:network:testDebugUnitTest`) | **Exit Code 0** (`BUILD SUCCESSFUL`) — خروجی XML در `.gradle/closure-run4`: `:core:network` (۴ سوئیت / ۱۸ تست، ۰ خطا/ردشده)، `:feature:chat` (۳۶ سوئیت / ۲۲۵ تست، ۰ خطا/ردشده)، `:feature:auth` (۷ سوئیت / ۳۵ تست، ۰ خطا/ردشده)، `:app` (۳ سوئیت / ۱۲ تست، ۰ خطا/ردشده) + کامپایل `:app:compileProductionDebugKotlin` موفق. |
+
+
+

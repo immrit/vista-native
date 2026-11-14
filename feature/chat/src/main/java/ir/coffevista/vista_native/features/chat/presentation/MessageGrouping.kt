@@ -208,6 +208,8 @@ internal fun messageGroupPosition(
 
 private fun messagesShareVisualGroup(current: Message, neighbor: Message?): Boolean =
     neighbor != null &&
+        !current.isSystemNotice &&
+        !neighbor.isSystemNotice &&
         current.senderId == neighbor.senderId &&
         abs(current.createdAtEpochMillis - neighbor.createdAtEpochMillis) < GROUP_WINDOW_MILLIS
 

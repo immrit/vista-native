@@ -228,6 +228,22 @@ data class ProfileNoteEntity(
     val isMine: Boolean,
 )
 
+data class FrequentShareConversationRow(
+    val conversationId: String,
+    val type: String,
+    val title: String,
+    val avatarUrl: String?,
+    val peerId: String?,
+    val isPinned: Boolean,
+    val isVerified: Boolean,
+    val verificationType: String?,
+    val role: String?,
+    val sharedPostSentCount: Int,
+    val messageCount: Int,
+    val lastSharedPostAt: Long,
+    val lastMessageAtEpochMillis: Long,
+)
+
 @Dao
 interface ChatDao {
     @Query(
@@ -238,6 +254,39 @@ interface ChatDao {
         """,
     )
     fun observeConversations(accountId: String, includeArchived: Boolean): Flow<List<ConversationEntity>>
+
+    @Query(
+        """
+        SELECT
+            c.id AS conversationId,
+            c.type AS type,
+            c.title AS title,
+            c.avatarUrl AS avatarUrl,
+            c.peerId AS peerId,
+            c.isPinned AS isPinned,
+            c.isVerified AS isVerified,
+            c.verificationType AS verificationType,
+            c.role AS role,
+            SUM(CASE WHEN m.deletedAtEpochMillis IS NULL AND m.isMine = 1 AND LOWER(m.messageType) IN ('sharedpost', 'shared_post', 'post') THEN 1 ELSE 0 END) AS sharedPostSentCount,
+            COUNT(CASE WHEN m.deletedAtEpochMillis IS NULL AND LOWER(m.messageType) NOT IN ('exchange_key', 'exchange_key_reply') THEN 1 END) AS messageCount,
+            COALESCE(MAX(CASE WHEN m.deletedAtEpochMillis IS NULL AND m.isMine = 1 AND LOWER(m.messageType) IN ('sharedpost', 'shared_post', 'post') THEN m.createdAtEpochMillis ELSE 0 END), 0) AS lastSharedPostAt,
+            COALESCE(MAX(c.lastMessageAtEpochMillis), 0) AS lastMessageAtEpochMillis
+        FROM chat_conversation AS c
+        LEFT JOIN chat_message AS m
+            ON m.accountId = c.accountId AND m.conversationId = c.id
+        WHERE c.accountId = :accountId
+          AND UPPER(c.type) != 'SECRET'
+          AND (UPPER(c.type) = 'GROUP' OR (c.peerId IS NOT NULL AND c.peerId != '' AND c.peerId != :accountId AND c.peerId != '00000000-0000-0000-0000-000000000000'))
+        GROUP BY c.id
+        ORDER BY
+            (sharedPostSentCount * 100 + messageCount * 5 + (CASE WHEN c.isPinned = 1 THEN 25 ELSE 0 END)) DESC,
+            lastSharedPostAt DESC,
+            lastMessageAtEpochMillis DESC,
+            c.id DESC
+        LIMIT :limit
+        """,
+    )
+    fun observeFrequentShareConversations(accountId: String, limit: Int): Flow<List<FrequentShareConversationRow>>
 
     @Query(
         "SELECT * FROM chat_profile_note WHERE accountId = :accountId ORDER BY isMine DESC, createdAtEpochMillis DESC",
@@ -260,6 +309,7 @@ interface ChatDao {
             )
         )
           AND LOWER(messageType) NOT IN ('exchange_key', 'exchange_key_reply')
+          AND NOT (senderId = 'system' AND LOWER(messageType) = 'text')
           AND NOT EXISTS (
             SELECT 1 FROM chat_tombstone AS tombstone
             WHERE tombstone.accountId = chat_message.accountId
@@ -627,6 +677,29 @@ interface ChatDao {
 
     @Query("DELETE FROM chat_tombstone WHERE accountId = :accountId")
     suspend fun deleteTombstones(accountId: String)
+
+    @Query(
+        """
+        DELETE FROM chat_message
+        WHERE accountId = :accountId
+          AND senderId = 'system'
+          AND LOWER(messageType) = 'text'
+        """,
+    )
+    suspend fun purgeLegacySystemNotices(accountId: String)
+
+    @Query(
+        """
+        DELETE FROM chat_message
+        WHERE accountId = :accountId
+          AND (senderId = 'system' OR LOWER(messageType) IN ('security_notice', 'system_notice'))
+          AND conversationId NOT IN (
+              SELECT id FROM chat_conversation
+              WHERE accountId = :accountId AND UPPER(type) = 'SECRET'
+          )
+        """,
+    )
+    suspend fun purgeSecurityNoticesFromNonSecretConversations(accountId: String)
 
     @Query(
         """

@@ -111,6 +111,13 @@ sealed interface RealtimeEvent {
         override val conversationId: String? = null
     }
 
+    data class GroupKeyRotate(
+        override val eventId: String?,
+        override val conversationId: String?,
+        val departedUserId: String? = null,
+        val reason: String? = null,
+    ) : RealtimeEvent
+
     data class Unknown(
         val type: String,
         override val eventId: String?,
@@ -210,6 +217,12 @@ object RealtimeEventParser {
                 eventId = envelope.event_id,
                 sessionId = data.string("session_id"),
                 deviceId = data.string("device_id"),
+            )
+            "group_key_rotate" -> RealtimeEvent.GroupKeyRotate(
+                eventId = envelope.event_id,
+                conversationId = conversationId ?: data.string("conversation_id"),
+                departedUserId = data.string("departed_user_id"),
+                reason = data.string("reason"),
             )
             else -> RealtimeEvent.Unknown(envelope.type, envelope.event_id, conversationId)
         }

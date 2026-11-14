@@ -71,6 +71,7 @@ interface ChatRepository {
     suspend fun refreshConversations(reset: Boolean = true): ChatResult<Page<Conversation>>
     suspend fun loadMoreConversations(): ChatResult<Page<Conversation>>
     fun observeSuggestedUsers(): Flow<List<ChatUser>>
+    fun observeFrequentShareTargets(limit: Int = 18): Flow<List<ChatUser>> = observeSuggestedUsers()
     suspend fun refreshSuggestedUsers(): ChatResult<List<ChatUser>> = ChatResult.Success(emptyList())
     suspend fun searchUsers(query: String): ChatResult<List<ChatUser>>
     suspend fun createConversation(peerId: String, isSecret: Boolean = false): ChatResult<Conversation>

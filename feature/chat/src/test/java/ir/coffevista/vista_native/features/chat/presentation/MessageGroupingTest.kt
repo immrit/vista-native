@@ -214,6 +214,22 @@ class MessageGroupingTest {
         assertEquals(null, outOfBounds)
     }
 
+    @Test
+    fun `system security notices stay standalone and never group with chat bubbles`() {
+        val messages = listOf(
+            message("newest", "alice", 20_000L),
+            message("notice", "system", 15_000L).copy(transportType = "security_notice"),
+            message("older", "system", 10_000L).copy(transportType = "security_notice"),
+        )
+
+        assertTrue(messages[1].isSystemNotice)
+        assertFalse(messages[0].isSystemNotice)
+        val pos0 = messageGroupPosition(messages, 0)
+        val pos1 = messageGroupPosition(messages, 1)
+        assertTrue(pos0.isFirstInGroup && pos0.isLastInGroup)
+        assertTrue(pos1.isFirstInGroup && pos1.isLastInGroup)
+    }
+
     private fun message(
         clientId: String,
         senderId: String,

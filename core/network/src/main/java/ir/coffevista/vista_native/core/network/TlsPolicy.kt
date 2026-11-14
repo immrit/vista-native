@@ -32,6 +32,7 @@ enum class TlsPolicyRejection {
     INVALID_VERSION,
     STALE_REVISION,
     INVALID_PIN,
+    DOWNGRADE_REJECTED,
     PERSISTENCE_FAILURE,
 }
 
@@ -88,6 +89,10 @@ class TlsPolicyStore(
             candidate.contractVersion != SUPPORTED_CONTRACT_VERSION ->
                 TlsPolicyRejection.INVALID_VERSION
             candidate.revision <= retained.revision -> TlsPolicyRejection.STALE_REVISION
+            retained.revision > 0L &&
+                retained.mode == TlsMode.ENFORCE &&
+                (candidate.mode != TlsMode.ENFORCE || candidate.validPins().isEmpty()) ->
+                TlsPolicyRejection.DOWNGRADE_REJECTED
             candidate.mode != TlsMode.OFF && candidate.validPins().isEmpty() ->
                 TlsPolicyRejection.INVALID_PIN
             else -> null

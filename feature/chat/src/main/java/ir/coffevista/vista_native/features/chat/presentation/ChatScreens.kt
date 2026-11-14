@@ -2203,7 +2203,13 @@ fun MessageDetailScreen(
                         itemsIndexed(
                             displayedRenderItems,
                             key = { _, item -> item.stableKey },
-                            contentType = { _, item -> if (item.isAlbum) "media-album" else item.primary.attachment?.kind?.name ?: "text" },
+                            contentType = { _, item ->
+                                when {
+                                    item.isAlbum -> "media-album"
+                                    item.primary.isSystemNotice -> "system-notice"
+                                    else -> item.primary.attachment?.kind?.name ?: "text"
+                                }
+                            },
                         ) { _, renderItem ->
                             val message = renderItem.primary
                             val index = renderItem.primaryIndex
@@ -2242,7 +2248,23 @@ fun MessageDetailScreen(
                                 if (isUnreadBoundary) {
                                     UnreadMessagesDivider(text = "پیام‌های جدید")
                                 }
-                                val groupSender = groupMemberById[message.senderId]
+                                if (message.isSystemNotice) {
+                                    val noticeText = (message.content as? MessageContent.Text)?.value.orEmpty()
+                                    if (noticeText.isNotBlank()) {
+                                        SecuritySystemDivider(
+                                            text = noticeText,
+                                            onClick = if (isSecretConversation) {
+                                                {
+                                                    onComputeSafetyNumber { }
+                                                    safetyNumberDialogVisible = true
+                                                }
+                                            } else {
+                                                null
+                                            },
+                                        )
+                                    }
+                                } else {
+                                    val groupSender = groupMemberById[message.senderId]
                                 GroupSenderFrame(
                                     enabled = state.conversation?.type == ConversationType.GROUP && !message.isMine,
                                     senderId = message.senderId,
@@ -2394,6 +2416,7 @@ fun MessageDetailScreen(
                                             )
                                         }
                                     }
+                                }
                                 }
                             }
                         }
@@ -6691,6 +6714,43 @@ private fun DateDivider(epochMillis: Long) {
                 .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.86f))
                 .padding(horizontal = 14.dp, vertical = 6.dp),
         )
+    }
+}
+
+@Composable
+private fun SecuritySystemDivider(
+    text: String,
+    onClick: (() -> Unit)? = null,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp, horizontal = 20.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Row(
+            modifier = Modifier
+                .shadow(2.dp, RoundedCornerShape(18.dp))
+                .clip(RoundedCornerShape(18.dp))
+                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.86f))
+                .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+                .padding(horizontal = 14.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Default.Lock,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(13.dp),
+            )
+            Text(
+                text = text,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 12.sp,
+                textAlign = TextAlign.Center,
+            )
+        }
     }
 }
 

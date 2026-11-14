@@ -184,6 +184,15 @@ interface ChatApi {
     @POST("v1/me/unblock")
     suspend fun unblockUser(@Body request: TargetUserRequest)
 
+    @POST("v1/chat/e2ee/prekeys")
+    suspend fun uploadPreKeys(@Body request: UploadPreKeysRequest)
+
+    @GET("v1/chat/e2ee/prekeys/count")
+    suspend fun preKeyCount(): PreKeyCountDto
+
+    @GET("v1/chat/e2ee/bundle/{userId}")
+    suspend fun fetchPreKeyBundle(@Path("userId") userId: String): PreKeyBundleDto
+
     @GET("v1/me/block-status/{userId}")
     suspend fun blockStatus(@Path("userId") userId: String): BlockStatusDto
 
@@ -605,4 +614,35 @@ data class DuelPreviewDto(
     val expiresAt: Long = 0L,
     val isExpired: Boolean = false,
     val cancelReason: String? = null,
+)
+
+@Serializable
+data class OneTimePreKeyDto(
+    @SerialName("key_id") val keyId: Long,
+    @SerialName("public_key") val publicKey: String,
+)
+
+@Serializable
+data class UploadPreKeysRequest(
+    @SerialName("identity_key") val identityKey: String,
+    @SerialName("signed_prekey_id") val signedPreKeyId: Long,
+    @SerialName("signed_prekey") val signedPreKey: String,
+    @SerialName("signed_prekey_sig") val signedPreKeySig: String,
+    @SerialName("one_time_prekeys") val oneTimePreKeys: List<OneTimePreKeyDto> = emptyList(),
+)
+
+@Serializable
+data class PreKeyCountDto(
+    val count: Int = 0,
+)
+
+@Serializable
+data class PreKeyBundleDto(
+    @SerialName("user_id") val userId: String = "",
+    @SerialName("identity_key") val identityKey: String = "",
+    @SerialName("signed_prekey_id") val signedPreKeyId: Long = 0L,
+    @SerialName("signed_prekey") val signedPreKey: String = "",
+    @SerialName("signed_prekey_sig") val signedPreKeySig: String = "",
+    @SerialName("one_time_prekey") val oneTimePreKey: OneTimePreKeyDto? = null,
+    @SerialName("remaining_one_time") val remainingOneTime: Int = 0,
 )

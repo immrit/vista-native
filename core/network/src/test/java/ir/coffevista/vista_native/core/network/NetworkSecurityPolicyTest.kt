@@ -212,6 +212,35 @@ class NetworkSecurityPolicyTest {
         assertEquals(2, factory.currentGeneration())
     }
 
+    @Test
+    fun enforcedTlsPolicyRejectsSilentDowngrade() {
+        val store = TlsPolicyStore()
+        val enforced = policy(
+            mode = TlsMode.ENFORCE,
+            current = "a".repeat(64),
+            expiresAt = NOW + 60,
+            revision = 5,
+        )
+        assertTrue(store.update(enforced, signatureVerified = true) is TlsPolicyUpdate.Accepted)
+
+        val downgradeToOff = enforced.copy(revision = 6, mode = TlsMode.OFF)
+        val rejectedOff = store.update(downgradeToOff, signatureVerified = true)
+        assertTrue(rejectedOff is TlsPolicyUpdate.Rejected)
+        assertEquals(TlsPolicyRejection.DOWNGRADE_REJECTED, (rejectedOff as TlsPolicyUpdate.Rejected).reason)
+        assertEquals(enforced, store.current())
+
+        val downgradeToMonitor = enforced.copy(revision = 7, mode = TlsMode.MONITOR)
+        val rejectedMonitor = store.update(downgradeToMonitor, signatureVerified = true)
+        assertTrue(rejectedMonitor is TlsPolicyUpdate.Rejected)
+        assertEquals(TlsPolicyRejection.DOWNGRADE_REJECTED, (rejectedMonitor as TlsPolicyUpdate.Rejected).reason)
+        assertEquals(enforced, store.current())
+
+        // Valid pin rotation within ENFORCE still succeeds
+        val rotated = enforced.copy(revision = 8, currentPinSha256 = "b".repeat(64))
+        assertTrue(store.update(rotated, signatureVerified = true) is TlsPolicyUpdate.Accepted)
+        assertEquals("b".repeat(64), store.current().currentPinSha256)
+    }
+
     private fun policy(
         mode: TlsMode,
         current: String? = null,

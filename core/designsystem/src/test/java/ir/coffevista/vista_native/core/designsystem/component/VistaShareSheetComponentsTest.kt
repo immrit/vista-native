@@ -60,4 +60,22 @@ class VistaShareSheetComponentsTest {
         assertFalse(actions.first { it.id == "instagram_story" }.enabled)
         assertTrue(actions.first { it.id == "copy_link" }.enabled)
     }
+
+    @Test
+    fun buildVistaStandardShareActions_includesQrCardOnlyWhenCallbackProvided() {
+        val actionsWithQr = buildVistaStandardShareActions(
+            isBusy = false,
+            showAddToVistaStory = true,
+            onAddToVistaStory = {},
+            onShareInstagramStory = {},
+            onCopyLink = {},
+            onShareTelegram = {},
+            onShareWhatsApp = {},
+            onShareThreads = {},
+            onShareX = {},
+            onShareMore = {},
+            onShowQrCard = {},
+        )
+        assertTrue(actionsWithQr.any { it.id == "qr_card" })
+    }
 }

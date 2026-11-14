@@ -57,6 +57,9 @@ class DefaultAuthRepository @Inject constructor(
     override suspend fun maintenanceMode() =
         call("بررسی وضعیت سیستم") { remote.isMaintenanceMode() }
 
+    override suspend fun logout(refreshToken: String?) =
+        call("خروج از حساب") { remote.logout(refreshToken) }
+
     private suspend fun <T> call(contextFa: String, block: suspend () -> T): Outcome<T> {
         return withContext(dispatchers.io) {
             try {

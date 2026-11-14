@@ -43,6 +43,8 @@ import ir.coffevista.vista_native.BuildConfig
 import ir.coffevista.vista_native.core.model.session.AuthenticationState
 import ir.coffevista.vista_native.core.network.BootstrapStatusClient
 import ir.coffevista.vista_native.features.auth.AuthenticationStateOwner
+import ir.coffevista.vista_native.features.auth.domain.AuthRepository
+import kotlinx.coroutines.withTimeoutOrNull
 import ir.coffevista.vista_native.features.feed.data.FeedRepository
 import ir.coffevista.vista_native.features.feed.data.FeedApiFixture
 import ir.coffevista.vista_native.features.feed.data.CommentApiFixture
@@ -92,6 +94,9 @@ class MainActivity : FragmentActivity() {
 
     @Inject
     lateinit var sessionStore: SessionStore
+
+    @Inject
+    lateinit var authRepository: AuthRepository
 
     @Inject
     lateinit var biometricAuthenticator: BiometricAuthenticator
@@ -176,6 +181,9 @@ class MainActivity : FragmentActivity() {
             }
         } else {
             biometricUnlockRequired = sessionStore.isBiometricEnabled()
+        }
+        if (sessionStore.isBiometricEnabled()) {
+            window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
         }
         notificationManager.createNotificationChannels()
         configureStartupFixtures(intent)
@@ -298,6 +306,11 @@ class MainActivity : FragmentActivity() {
                                 onCheckForUpdate = { checkForAppUpdate(showUpToDateToast = true) },
                                 onBeforeClearSession = {
                                     pushTokenRegistrar.unregisterTokenBeforeSignOut()
+                                    runCatching {
+                                        withTimeoutOrNull(1_500L) {
+                                            authRepository.logout(sessionStore.read()?.refreshToken)
+                                        }
+                                    }
                                 },
                                 onExitRequested = ::finish,
                             )
@@ -429,6 +442,7 @@ class MainActivity : FragmentActivity() {
         ir.coffevista.vista_native.core.common.NotificationRuntimeCoordinator.setAppForeground(false)
         if (!isChangingConfigurations && sessionStore.isBiometricEnabled()) {
             biometricUnlockRequired = true
+            window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
         }
         lifecycleScope.launch { chatRepository.setForeground(false) }
         super.onStop()

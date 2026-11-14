@@ -652,7 +652,7 @@ fun VistaApp(
                                 onOpenQrScanner = onOpenQrScanner,
                             )
                         },
-                        ownProfile = { onPostClick, onSettingsClick, logout, onOpenFollowers, onOpenQrScanner, onEditProfile, onAddStory, onReelClick, onAddPost ->
+                        ownProfile = { onPostClick, onSettingsClick, logout, onOpenFollowers, onOpenQrScanner, onEditProfile, onAddStory, onReelClick, onAddPost, onNavigateToStoryEditor, onOpenPricing, onOpenUserProfile, onOpenHashtag, onOpenLink ->
                             val postsViewModel = hiltViewModel<ProfilePostsViewModel>()
                             val postsState by postsViewModel.uiState.collectAsStateWithLifecycle()
                             val storyPlayerViewModel = hiltViewModel<StoryPlayerViewModel>()
@@ -690,10 +690,8 @@ fun VistaApp(
                                 onVisibilityChange = { post, hideLike, hideComment ->
                                     postsViewModel.updateEngagementVisibility(post.id, hideLike, hideComment)
                                 },
-                                onNavigateToPricing = { navController.navigate(ShellRoutes.PricingPage) },
-                                onNavigateToStoryEditor = { uri ->
-                                    navController.navigate(ShellRoutes.storyCreate(uri.toString()))
-                                },
+                                onNavigateToPricing = onOpenPricing,
+                                onNavigateToStoryEditor = onNavigateToStoryEditor,
                                 onHighlightClick = { highlight ->
                                     coroutineScope.launch {
                                         val hlResult = storyRepo.getUserHighlights(signedIn.context.userId)
@@ -733,15 +731,15 @@ fun VistaApp(
                                         onClose = { activeHighlightUser = null },
                                         onOpenProfile = { uid ->
                                             activeHighlightUser = null
-                                            navController.navigate(ShellRoutes.userProfile(uid))
+                                            onOpenUserProfile(uid)
                                         },
                                         onOpenLink = { url ->
                                             activeHighlightUser = null
-                                            navController.navigate(ShellRoutes.servicesWeb(url, "پیوند"))
+                                            onOpenLink(url)
                                         },
                                         onOpenHashtag = { tag ->
                                             activeHighlightUser = null
-                                            navController.navigate(ShellRoutes.hashtag(tag))
+                                            onOpenHashtag(tag)
                                         },
                                     )
                                 }
@@ -884,7 +882,7 @@ fun VistaApp(
                                 )
                             }
                         },
-                        userProfile = { userId, onBack, onSelfProfile, onPostClick, onOpenFollowers, onOpenChat, onReelClick ->
+                        userProfile = { userId, onBack, onSelfProfile, onPostClick, onOpenFollowers, onOpenChat, onReelClick, onNavigateToStoryEditor, onOpenPricing, onOpenUserProfile, onOpenHashtag, onOpenLink ->
                             val postsViewModel = hiltViewModel<ProfilePostsViewModel>()
                             val postsState by postsViewModel.uiState.collectAsStateWithLifecycle()
                             val storyPlayerViewModel = hiltViewModel<StoryPlayerViewModel>()
@@ -918,10 +916,8 @@ fun VistaApp(
                                 onVisibilityChange = { post, hideLike, hideComment ->
                                     postsViewModel.updateEngagementVisibility(post.id, hideLike, hideComment)
                                 },
-                                onNavigateToPricing = { navController.navigate(ShellRoutes.PricingPage) },
-                                onNavigateToStoryEditor = { uri ->
-                                    navController.navigate(ShellRoutes.storyCreate(uri.toString()))
-                                },
+                                onNavigateToPricing = onOpenPricing,
+                                onNavigateToStoryEditor = onNavigateToStoryEditor,
                                 onHighlightClick = { highlight ->
                                     coroutineScope.launch {
                                         val hlResult = storyRepo.getUserHighlights(userId)
@@ -977,15 +973,15 @@ fun VistaApp(
                                         onClose = { activeHighlightUser = null },
                                         onOpenProfile = { uid ->
                                             activeHighlightUser = null
-                                            navController.navigate(ShellRoutes.userProfile(uid))
+                                            onOpenUserProfile(uid)
                                         },
                                         onOpenLink = { url ->
                                             activeHighlightUser = null
-                                            navController.navigate(ShellRoutes.servicesWeb(url, "پیوند"))
+                                            onOpenLink(url)
                                         },
                                         onOpenHashtag = { tag ->
                                             activeHighlightUser = null
-                                            navController.navigate(ShellRoutes.hashtag(tag))
+                                            onOpenHashtag(tag)
                                         },
                                     )
                                 }
