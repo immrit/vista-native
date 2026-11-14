@@ -44,6 +44,9 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import ir.coffevista.vista_native.core.designsystem.component.LocalMiniPlayerSlot
+import ir.coffevista.vista_native.core.designsystem.component.VistaMiniPlayerHost
+import androidx.compose.ui.unit.Dp
 import ir.coffevista.vista_native.core.designsystem.glass.VistaGlassScrollSync
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -115,6 +118,8 @@ fun SearchLauncherScreen(
     val launcherListState = rememberLazyListState()
     VistaGlassScrollSync(searchGlassState, launcherListState)
     val isDarkSearch = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val miniExtraHeight = LocalMiniPlayerSlot.current.extraHeight
+    val launcherTopPadding = 76.dp + miniExtraHeight + (if (miniExtraHeight > 0.dp) 8.dp else 0.dp)
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -131,6 +136,7 @@ fun SearchLauncherScreen(
             LauncherContent(
                 state = state,
                 listState = launcherListState,
+                topContentPadding = launcherTopPadding,
                 onHashtag = {
                     viewModel.selectHashtag(it)
                     onOpenWorkspace()
@@ -140,55 +146,67 @@ fun SearchLauncherScreen(
                 onRefresh = viewModel::refreshTrending,
             )
         }
-        Box(
+        Column(
             modifier = Modifier
                 .align(Alignment.TopCenter)
-                .padding(start = 16.dp, top = 12.dp, end = 16.dp, bottom = 8.dp)
                 .fillMaxWidth()
-                .height(56.dp)
-                .vistaGlass(
-                    state = searchGlassState,
-                    shape = SearchFieldShape,
-                    tint = MaterialTheme.colorScheme.surface,
-                    isDark = isDarkSearch,
-                    blurRadius = VistaGlassTokens.PillBlur,
-                    rimWidth = 0.8.dp,
-                    shadowElevation = 6.dp,
-                )
-                .clip(SearchFieldShape)
-                .clickable(
-                    role = Role.Button,
-                    indication = null,
-                    interactionSource = remember { MutableInteractionSource() },
-                    onClick = onOpenWorkspace,
-                )
-                .testTag(SearchTestTags.LauncherField)
-                .padding(horizontal = 16.dp),
-            contentAlignment = Alignment.CenterStart,
+                .padding(start = 16.dp, top = 12.dp, end = 16.dp, bottom = 8.dp),
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                SearchGlyph(
-                    modifier = Modifier.size(23.dp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(Modifier.width(12.dp))
-                Text(
-                    text = "جستجوی کاربران",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(Modifier.weight(1f))
-                IconButton(
-                    onClick = onOpenQrScanner,
-                    modifier = Modifier.testTag(SearchTestTags.LauncherQrScanner),
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.QrCodeScanner,
-                        contentDescription = "اسکن کد QR",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp)
+                    .vistaGlass(
+                        state = searchGlassState,
+                        shape = SearchFieldShape,
+                        tint = MaterialTheme.colorScheme.surface,
+                        isDark = isDarkSearch,
+                        blurRadius = VistaGlassTokens.PillBlur,
+                        rimWidth = 0.8.dp,
+                        shadowElevation = 6.dp,
                     )
+                    .clip(SearchFieldShape)
+                    .clickable(
+                        role = Role.Button,
+                        indication = null,
+                        interactionSource = remember { MutableInteractionSource() },
+                        onClick = onOpenWorkspace,
+                    )
+                    .testTag(SearchTestTags.LauncherField)
+                    .padding(horizontal = 16.dp),
+                contentAlignment = Alignment.CenterStart,
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    SearchGlyph(
+                        modifier = Modifier.size(23.dp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        text = "جستجوی کاربران",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.weight(1f))
+                    IconButton(
+                        onClick = onOpenQrScanner,
+                        modifier = Modifier.testTag(SearchTestTags.LauncherQrScanner),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.QrCodeScanner,
+                            contentDescription = "اسکن کد QR",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
             }
+            if (miniExtraHeight > 0.dp) {
+                Spacer(Modifier.height(8.dp))
+            }
+            VistaMiniPlayerHost(
+                glassState = searchGlassState,
+                shape = RoundedCornerShape(18.dp),
+            )
         }
     }
 }
@@ -303,6 +321,15 @@ internal fun SearchWorkspaceContent(
                 onSelected = onSelectTab,
             )
         }
+        val workspaceMiniExtra = LocalMiniPlayerSlot.current.extraHeight
+        VistaMiniPlayerHost(
+            glassState = null,
+            modifier = Modifier.padding(
+                horizontal = 16.dp,
+                vertical = if (workspaceMiniExtra > 0.dp) 4.dp else 0.dp,
+            ),
+            shape = RoundedCornerShape(16.dp),
+        )
         AnimatedContent(
             targetState = state.phase to state.selectedTab,
             transitionSpec = {
@@ -464,6 +491,7 @@ private fun SearchField(
 private fun LauncherContent(
     state: SearchUiState,
     listState: LazyListState = rememberLazyListState(),
+    topContentPadding: Dp = 76.dp,
     onHashtag: (String) -> Unit,
     onPost: (SearchPost) -> Unit,
     onLoadMoreExplore: () -> Unit,
@@ -477,7 +505,7 @@ private fun LauncherContent(
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(start = 16.dp, top = 76.dp, end = 16.dp, bottom = 96.dp),
+            contentPadding = PaddingValues(start = 16.dp, top = topContentPadding, end = 16.dp, bottom = 96.dp),
         ) {
             item {
                 SectionHeader(title = "ترندهای امروز")

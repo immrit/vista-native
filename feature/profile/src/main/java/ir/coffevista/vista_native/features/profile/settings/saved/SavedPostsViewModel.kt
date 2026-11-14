@@ -106,6 +106,8 @@ class SavedPostsViewModel @Inject constructor(
             authorFullName = author.fullName.orEmpty(),
             authorAvatarUrl = author.avatarUrl,
             authorIsVerified = author.isVerified,
+            authorVerificationType = author.verificationType,
+            authorRole = author.role,
             timeAgo = ir.coffevista.vista_native.core.common.persianRelativeTime(post.createdAt),
             caption = post.caption.orEmpty(),
             mediaUrl = post.imageUrls.firstOrNull() ?: post.imageUrl ?: post.videoThumbnailUrl ?: post.videoUrl,

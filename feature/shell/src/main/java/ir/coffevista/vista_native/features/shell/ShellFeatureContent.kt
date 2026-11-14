@@ -1,6 +1,8 @@
 package ir.coffevista.vista_native.features.shell
 
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Shape
 import ir.coffevista.vista_native.core.designsystem.glass.VistaGlassState
 
 /** Feature UI supplied by the app composition root; Shell owns navigation only. */
@@ -17,7 +19,13 @@ data class ShellFeatureContent(
         onVideoClick: (String) -> Unit,
     ) -> Unit,
     val appeal: (@Composable (postId: String, onBack: () -> Unit) -> Unit),
-    val hashtagPosts: (@Composable (hashtag: String, onBack: () -> Unit, onPostClick: (String) -> Unit, onAuthorClick: (String) -> Unit) -> Unit),
+    val hashtagPosts: (@Composable (
+        hashtag: String,
+        onBack: () -> Unit,
+        onPostClick: (String) -> Unit,
+        onAuthorClick: (String) -> Unit,
+        onNavigateToStoryEditor: ((android.net.Uri) -> Unit)?,
+    ) -> Unit),
     val notifications: @Composable (
         onBack: () -> Unit,
         onPostClick: (String) -> Unit,
@@ -36,7 +44,14 @@ data class ShellFeatureContent(
         onTrimmedVideoConsumed: () -> Unit,
     ) -> Unit),
     val videoTrimmer: (@Composable (videoUri: android.net.Uri, onBack: () -> Unit, onTrimComplete: (java.io.File) -> Unit) -> Unit),
-    val reels: (@Composable (postId: String?, onBack: () -> Unit, onAuthorClick: (String) -> Unit, onCommentsClick: (String) -> Unit, onShareClick: (String) -> Unit) -> Unit)? = null,
+    val reels: (@Composable (
+        postId: String?,
+        onBack: () -> Unit,
+        onAuthorClick: (String) -> Unit,
+        onCommentsClick: (String) -> Unit,
+        onShareClick: (String) -> Unit,
+        onNavigateToStoryEditor: (android.net.Uri) -> Unit,
+    ) -> Unit)? = null,
     val searchRoot: @Composable (
         onOpenWorkspace: () -> Unit,
         onOpenQrScanner: () -> Unit,
@@ -102,7 +117,11 @@ data class ShellFeatureContent(
     val notificationSettings: (@Composable (onBack: () -> Unit) -> Unit),
     val themeSettings: (@Composable (onBack: () -> Unit) -> Unit),
     val dataStorage: (@Composable (onBack: () -> Unit) -> Unit),
-    val savedPosts: (@Composable (onBack: () -> Unit, onPostClick: (String) -> Unit) -> Unit),
+    val savedPosts: (@Composable (
+        onBack: () -> Unit,
+        onPostClick: (String) -> Unit,
+        onNavigateToStoryEditor: ((android.net.Uri) -> Unit)?,
+    ) -> Unit),
     val changePassword: (@Composable (onBack: () -> Unit) -> Unit),
     val verificationRequest: (@Composable (onBack: () -> Unit) -> Unit),
     val termsConditions: (@Composable (onBack: () -> Unit) -> Unit),
@@ -113,7 +132,9 @@ data class ShellFeatureContent(
         onContactUs: () -> Unit,
         onPrivacyPolicy: () -> Unit,
         onFaq: () -> Unit,
+        onTickGuide: () -> Unit,
     ) -> Unit),
+    val tickGuide: (@Composable (onBack: () -> Unit, onUpgradeClick: () -> Unit) -> Unit)? = null,
     val aboutSlideshow: (@Composable (onClose: () -> Unit) -> Unit),
     val contactUs: (@Composable (
         onBack: () -> Unit,
@@ -158,5 +179,12 @@ data class ShellFeatureContent(
         ) -> Unit
     ),
     val chatBadgeCount: Int = 0,
-    val globalTopOverlay: (@Composable (glassState: VistaGlassState, currentRoute: String?, onOpenChat: (conversationId: String, messageId: String?) -> Unit) -> Unit)? = null,
+    val isMiniPlayerActive: (@Composable () -> Boolean)? = null,
+    val miniPlayerContent: (@Composable (
+        glassState: VistaGlassState?,
+        modifier: Modifier,
+        shape: Shape,
+        onOpenChat: (conversationId: String, messageId: String?) -> Unit,
+        onOpenPost: (postId: String) -> Unit,
+    ) -> Unit)? = null,
 )

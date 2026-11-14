@@ -267,10 +267,16 @@ fun StoryViewersBottomSheet(
                                                     color = Color.White,
                                                     maxLines = 1,
                                                     overflow = TextOverflow.Ellipsis,
+                                                    modifier = Modifier.weight(1f, fill = false),
                                                 )
                                                 if (viewer.isVerified) {
                                                     Spacer(modifier = Modifier.width(4.dp))
-                                                    VerifiedMark(modifier = Modifier.size(13.dp))
+                                                    VerifiedMark(
+                                                        modifier = Modifier.size(13.dp),
+                                                        verificationType = viewer.verificationType,
+                                                        role = viewer.role,
+                                                        isDarkSurface = true,
+                                                    )
                                                 }
                                             }
                                             Row(

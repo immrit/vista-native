@@ -1,5 +1,6 @@
 package ir.coffevista.vista_native.features.feed.ui
 
+import android.content.ClipData
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -263,19 +264,31 @@ fun PostShareBottomSheet(
                                 Toast.makeText(context, "در حال تولید تصویر استوری...", Toast.LENGTH_SHORT).show()
                                 coroutineScope.launch {
                                     try {
-                                        val storyFile = PostStoryTemplateGenerator.generateTemplate(
-                                            context,
-                                            post,
-                                            "dark",
+                                        val assets = PostStoryTemplateGenerator.generateInstagramStoryAssets(
+                                            context = context,
+                                            post = post,
                                         )
+                                        val fallbackCombined = if (canResolveInstagramStoryIntent(context)) {
+                                            assets.stickerFile
+                                        } else {
+                                            runCatching {
+                                                PostStoryTemplateGenerator.generateTemplate(context, post, "vista")
+                                            }.getOrDefault(assets.stickerFile)
+                                        }
                                         isGeneratingStory = false
+                                        shareAssetsToInstagramStory(
+                                            context = context,
+                                            backgroundFile = assets.backgroundFile,
+                                            stickerFile = assets.stickerFile,
+                                            fallbackCombinedFile = fallbackCombined,
+                                            contentUrl = url,
+                                            shareText = text,
+                                        )
                                         onShared()
                                         onDismiss()
-                                        shareDirectlyToInstagramStory(context, storyFile, url, text)
                                     } catch (_: Throwable) {
                                         isGeneratingStory = false
                                         Toast.makeText(context, "خطا در تولید تصویر استوری", Toast.LENGTH_SHORT).show()
-                                        shareExternal(context, text)
                                     }
                                 }
                             },
@@ -592,30 +605,48 @@ private fun shareExternal(context: Context, text: String) {
     context.startActivity(Intent.createChooser(intent, "اشتراک‌گذاری پست"))
 }
 
-private fun shareDirectlyToInstagramStory(context: Context, file: File, postUrl: String, text: String) {
+internal fun canResolveInstagramStoryIntent(context: Context): Boolean {
+    val probe = Intent("com.instagram.share.ADD_TO_STORY").apply {
+        setPackage("com.instagram.android")
+        type = "image/png"
+    }
+    return context.packageManager.resolveActivity(probe, 0) != null
+}
+
+fun shareAssetsToInstagramStory(
+    context: Context,
+    backgroundFile: File,
+    stickerFile: File,
+    fallbackCombinedFile: File = stickerFile,
+    contentUrl: String,
+    shareText: String,
+) {
     try {
-        val uri = FileProvider.getUriForFile(
-            context,
-            "${context.packageName}.files",
-            file,
-        )
+        val authority = "${context.packageName}.files"
+        val backgroundUri = FileProvider.getUriForFile(context, authority, backgroundFile)
+        val stickerUri = FileProvider.getUriForFile(context, authority, stickerFile)
 
-        // Explicitly grant read URI permission to Instagram package
-        try {
-            context.grantUriPermission(
-                "com.instagram.android",
-                uri,
-                Intent.FLAG_GRANT_READ_URI_PERMISSION,
-            )
-        } catch (_: Exception) {}
+        // Grant read URI permission for both background (Intent.data) and movable sticker extra.
+        listOf(backgroundUri, stickerUri).forEach { assetUri ->
+            try {
+                context.grantUriPermission(
+                    "com.instagram.android",
+                    assetUri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                )
+            } catch (_: Exception) {}
+        }
 
-        // 1. Official Instagram Story Intent
+        // 1. Official Instagram Story Intent: Vista background + transparent movable Post Card sticker
         val instagramStoryIntent = Intent("com.instagram.share.ADD_TO_STORY").apply {
-            setDataAndType(uri, "image/png")
+            setDataAndType(backgroundUri, "image/png")
             setPackage("com.instagram.android")
-            putExtra("interactive_asset_uri", uri)
-            putExtra("content_url", postUrl)
+            putExtra("interactive_asset_uri", stickerUri)
+            putExtra("content_url", contentUrl)
             putExtra("source_application", context.packageName)
+            clipData = ClipData.newRawUri("", backgroundUri).apply {
+                addItem(ClipData.Item(stickerUri))
+            }
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
@@ -629,12 +660,21 @@ private fun shareDirectlyToInstagramStory(context: Context, file: File, postUrl:
             // Permission or signature issue
         }
 
-        // 2. Direct Send to Instagram app
+        // 2. Direct Send to Instagram app using single combined image
+        val fallbackUri = FileProvider.getUriForFile(context, authority, fallbackCombinedFile)
+        try {
+            context.grantUriPermission(
+                "com.instagram.android",
+                fallbackUri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION,
+            )
+        } catch (_: Exception) {}
+
         val directInstagramIntent = Intent(Intent.ACTION_SEND).apply {
             type = "image/png"
             setPackage("com.instagram.android")
-            putExtra(Intent.EXTRA_STREAM, uri)
-            putExtra(Intent.EXTRA_TEXT, text)
+            putExtra(Intent.EXTRA_STREAM, fallbackUri)
+            putExtra(Intent.EXTRA_TEXT, shareText)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
@@ -648,9 +688,9 @@ private fun shareDirectlyToInstagramStory(context: Context, file: File, postUrl:
 
         // 3. Fallback when Instagram is not installed
         Toast.makeText(context, "برنامه اینستاگرام بر روی دستگاه شما نصب نیست", Toast.LENGTH_SHORT).show()
-        shareStoryImageFile(context, file, text)
+        shareStoryImageFile(context, fallbackCombinedFile, shareText)
     } catch (_: Exception) {
-        shareStoryImageFile(context, file, text)
+        shareStoryImageFile(context, fallbackCombinedFile, shareText)
     }
 }
 

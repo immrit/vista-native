@@ -21,6 +21,7 @@ import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material.icons.outlined.Star
 import androidx.compose.material.icons.outlined.Update
+import androidx.compose.material.icons.outlined.Verified
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -63,6 +64,7 @@ fun AboutSettingsScreen(
     onContactUsClick: () -> Unit,
     onPrivacyPolicyClick: () -> Unit,
     onFaqClick: () -> Unit,
+    onTickGuideClick: () -> Unit = {},
     onCheckForUpdate: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
@@ -126,6 +128,15 @@ fun AboutSettingsScreen(
                         title = "درباره ویستا",
                         subtitle = "اطلاعات کلی درباره برنامه و تیم سازنده",
                         onClick = onSlideshowClick,
+                    )
+                    VistaSettingsDivider()
+                    VistaSettingsTile(
+                        icon = Icons.Outlined.Verified,
+                        iconColor = Color(0xFFF59E0B),
+                        iconContainerColor = Color(0xFFF59E0B).copy(alpha = 0.12f),
+                        title = "قوانین تیک‌ها و جایگاه کاربران",
+                        subtitle = "معرفی تیک آبی، مشکی، طلایی و سطح دسترسی هر کدام",
+                        onClick = onTickGuideClick,
                     )
                     VistaSettingsDivider()
                     VistaSettingsTile(

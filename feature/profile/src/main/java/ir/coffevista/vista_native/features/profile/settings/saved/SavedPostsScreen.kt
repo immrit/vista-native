@@ -45,6 +45,7 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
@@ -66,6 +67,8 @@ data class SavedPostUiModel(
     val authorFullName: String,
     val authorAvatarUrl: String?,
     val authorIsVerified: Boolean = true,
+    val authorVerificationType: String? = null,
+    val authorRole: String? = null,
     val timeAgo: String,
     val caption: String,
     val mediaUrl: String? = null,
@@ -73,19 +76,49 @@ data class SavedPostUiModel(
     val likesCount: Int = 3,
     val commentsCount: Int = 7,
     val isLiked: Boolean = false,
-)
+) {
+    fun toFeedPost(): ir.coffevista.vista_native.features.feed.data.FeedPost =
+        ir.coffevista.vista_native.features.feed.data.FeedPost(
+            id = id,
+            userId = "",
+            content = caption,
+            imageUrl = mediaUrl,
+            imageUrls = listOfNotNull(mediaUrl),
+            videoUrl = if (isVideo) mediaUrl else null,
+            musicUrl = null,
+            aspectRatio = null,
+            musicTitle = null,
+            tags = emptyList(),
+            likeCount = likesCount.toLong(),
+            commentCount = commentsCount.toLong(),
+            isLiked = isLiked,
+            isSaved = true,
+            hideLikeCount = false,
+            hideCommentCount = false,
+            authorUsername = authorUsername,
+            authorFullName = authorFullName.ifBlank { authorUsername },
+            authorAvatarUrl = authorAvatarUrl,
+            authorIsVerified = authorIsVerified,
+            authorVerificationType = authorVerificationType,
+            createdAt = "",
+        )
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SavedPostsScreen(
     onBack: () -> Unit,
     onPostClick: (String) -> Unit,
+    onNavigateToStoryEditor: ((android.net.Uri) -> Unit)? = null,
     modifier: Modifier = Modifier,
     viewModel: SavedPostsViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val savedPosts = uiState.posts
     val context = androidx.compose.ui.platform.LocalContext.current
+    var showShareForPost by androidx.compose.runtime.remember {
+        androidx.compose.runtime.mutableStateOf<ir.coffevista.vista_native.features.feed.data.FeedPost?>(null)
+    }
 
     CompositionLocalProvider(LocalLayoutDirection provides LocalLayoutDirection.current) {
         Scaffold(
@@ -225,11 +258,11 @@ fun SavedPostsScreen(
                                         )
                                         if (post.authorIsVerified) {
                                             Spacer(modifier = Modifier.width(4.dp))
-                                            Icon(
-                                                imageVector = Icons.Outlined.Verified,
-                                                contentDescription = "تایید شده",
-                                                tint = MaterialTheme.colorScheme.primary,
-                                                modifier = Modifier.size(16.dp),
+                                            ir.coffevista.vista_native.core.designsystem.component.VistaVerificationBadge(
+                                                isVerified = true,
+                                                verificationType = post.authorVerificationType,
+                                                role = post.authorRole,
+                                                size = 16.dp,
                                             )
                                         }
                                     }
@@ -347,14 +380,7 @@ fun SavedPostsScreen(
                                     Spacer(modifier = Modifier.width(12.dp))
 
                                     IconButton(
-                                        onClick = {
-                                            val shareIntent = android.content.Intent().apply {
-                                                action = android.content.Intent.ACTION_SEND
-                                                putExtra(android.content.Intent.EXTRA_TEXT, "https://coffevista.ir/p/${post.id}\n${post.caption}")
-                                                type = "text/plain"
-                                            }
-                                            context.startActivity(android.content.Intent.createChooser(shareIntent, "اشتراک‌گذاری پست"))
-                                        },
+                                        onClick = { showShareForPost = post.toFeedPost() },
                                         modifier = Modifier.size(32.dp),
                                     ) {
                                         Icon(
@@ -397,5 +423,14 @@ fun SavedPostsScreen(
             }
             }
         }
+    }
+
+    showShareForPost?.let { post ->
+        ir.coffevista.vista_native.features.feed.ui.PostShareBottomSheet(
+            post = post,
+            onDismiss = { showShareForPost = null },
+            onShared = { showShareForPost = null },
+            onNavigateToStoryEditor = onNavigateToStoryEditor,
+        )
     }
 }

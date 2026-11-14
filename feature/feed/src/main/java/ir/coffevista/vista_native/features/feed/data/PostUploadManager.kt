@@ -44,7 +44,8 @@ data class PendingPostUpload(
     val hideLikeCount: Boolean = false,
     val hideCommentCount: Boolean = false,
     val commentsDisabled: Boolean = false,
-    val maxUploadBytes: Long = 15L * 1024 * 1024,
+    val maxUploadBytes: Long = 10L * 1024 * 1024,
+    val videoDurationMs: Long = 0L,
 )
 
 data class PostUploadState(
@@ -161,6 +162,7 @@ class PostUploadManager @Inject constructor(
             PostUploadWorker.KEY_HIDE_COMMENT_COUNT to upload.hideCommentCount,
             PostUploadWorker.KEY_COMMENTS_DISABLED to upload.commentsDisabled,
             PostUploadWorker.KEY_MAX_BYTES to upload.maxUploadBytes,
+            PostUploadWorker.KEY_VIDEO_DURATION_MS to upload.videoDurationMs,
         )
 
         runCatching {

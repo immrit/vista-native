@@ -47,7 +47,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import ir.coffevista.vista_native.core.designsystem.component.LocalMiniPlayerSlot
 import ir.coffevista.vista_native.core.designsystem.component.VistaEmptyState
+import ir.coffevista.vista_native.core.designsystem.component.VistaMiniPlayerHost
 import ir.coffevista.vista_native.core.designsystem.component.VistaEditPostDialog
 import ir.coffevista.vista_native.core.designsystem.component.VistaErrorState
 import ir.coffevista.vista_native.core.designsystem.component.VistaPremiumPromptDialog
@@ -170,7 +172,7 @@ internal fun OtherUserProfileContent(
     VistaGlassScrollSync(otherProfileGlassState, otherProfileListState)
     val isDarkOtherProfile = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-    val topBarHeight = statusBarTop + 56.dp
+    val topBarHeight = statusBarTop + 56.dp + LocalMiniPlayerSlot.current.extraHeight
 
     Box(
         modifier = modifier
@@ -325,13 +327,16 @@ internal fun OtherUserProfileContent(
                     )
                     .statusBarsPadding(),
             ) {
-                OtherProfileAppBar(
-                    username = state.profile?.username,
-                    verified = state.profile?.isVerified == true,
-                    verificationType = state.profile?.verificationType,
-                    onBack = { onAction(OtherUserProfileAction.BackClicked) },
-                    onMoreClick = { showOptionsSheet = true },
-                )
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    OtherProfileAppBar(
+                        username = state.profile?.username,
+                        verified = state.profile?.isVerified == true,
+                        verificationType = state.profile?.verificationType,
+                        onBack = { onAction(OtherUserProfileAction.BackClicked) },
+                        onMoreClick = { showOptionsSheet = true },
+                    )
+                    VistaMiniPlayerHost(glassState = otherProfileGlassState)
+                }
             }
         }
 
@@ -357,12 +362,15 @@ internal fun OtherUserProfileContent(
 
             if (showShareSheet && state.profile != null) {
                 val profile = state.profile
+                val header = profile.headerModel()
                 ProfileShareBottomSheet(
                     username = profile.username.orEmpty(),
                     fullName = profile.fullName,
                     avatarUrl = profile.avatarUrl,
                     bio = profile.bio,
                     isVerified = profile.isVerified,
+                    verificationType = header.verificationType,
+                    role = header.role,
                     onDismiss = { showShareSheet = false },
                     onSendDirectMessage = onMessage,
                     onShowQrCard = null,

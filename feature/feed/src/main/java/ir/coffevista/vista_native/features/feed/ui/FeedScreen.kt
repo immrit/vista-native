@@ -1,4 +1,4 @@
-package ir.coffevista.vista_native.features.feed.ui
+﻿package ir.coffevista.vista_native.features.feed.ui
 
 import android.net.Uri
 import androidx.compose.animation.AnimatedContent
@@ -25,6 +25,12 @@ import ir.coffevista.vista_native.core.designsystem.component.isBackgroundMusicP
 import ir.coffevista.vista_native.core.designsystem.component.resolveMusicRange
 import ir.coffevista.vista_native.core.designsystem.component.PostHeaderTimeOrMusicBadge
 import ir.coffevista.vista_native.core.designsystem.component.LocalBottomBarVisibility
+import ir.coffevista.vista_native.core.designsystem.component.LocalMiniPlayerSlot
+import ir.coffevista.vista_native.core.designsystem.component.VistaMiniPlayerHost
+import ir.coffevista.vista_native.core.designsystem.audio.VistaAudioPlayer
+import ir.coffevista.vista_native.core.designsystem.component.LocalMusicPlaylist
+import ir.coffevista.vista_native.core.designsystem.component.vistaPostMusicTrack
+import androidx.compose.runtime.collectAsState
 import ir.coffevista.vista_native.core.designsystem.glass.VistaGlassScrollSync
 import ir.coffevista.vista_native.core.designsystem.glass.VistaGlassTokens
 import ir.coffevista.vista_native.core.designsystem.glass.rememberVistaGlassState
@@ -100,6 +106,7 @@ import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.RemoveCircleOutline
 import ir.coffevista.vista_native.core.database.profile.hasBlueBadge
 import ir.coffevista.vista_native.core.database.profile.hasPremiumPrivileges
+import ir.coffevista.vista_native.core.database.profile.tierCapabilities
 import ir.coffevista.vista_native.core.designsystem.component.VistaPremiumPromptDialog
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
@@ -124,6 +131,8 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.TextButton
 import ir.coffevista.vista_native.features.feed.data.PostUploadState
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -204,6 +213,7 @@ fun FeedScreen(
     onCreateStory: () -> Unit = {},
     onSendDirectMessage: (FeedPost) -> Unit = {},
     onNavigateToStoryEditor: (android.net.Uri) -> Unit = {},
+    onNavigateToPremium: () -> Unit = {},
     onVideoClick: (String) -> Unit = onPostClick,
     onBottomBarVisibilityChange: ((Boolean) -> Unit)? = null,
     homeTabClickFlow: SharedFlow<Unit>? = null,
@@ -346,6 +356,7 @@ fun FeedScreen(
             postOwnerId = postOwnerId,
             onAuthorClick = onAuthorClick,
             onHashtagClick = onHashtagClick,
+            onNavigateToPremium = onNavigateToPremium,
         )
     }
     showShareForPost?.let { post ->
@@ -398,7 +409,7 @@ fun FeedScreen(
                 },
             )
         } else {
-            val maxLen = if (viewerHasPremiumEdit) 1000 else 500
+            val maxLen = ownProfile?.tierCapabilities?.maxPostChars ?: 300
             EditPostDialog(
                 initialContent = target.content.orEmpty(),
                 maxCharLength = maxLen,
@@ -419,7 +430,10 @@ fun FeedScreen(
         VistaPremiumPromptDialog(
             feature = feature,
             onDismiss = { premiumPromptFeature = null },
-            onUpgradeClick = { premiumPromptFeature = null },
+            onUpgradeClick = {
+                premiumPromptFeature = null
+                onNavigateToPremium()
+            },
         )
     }
 }
@@ -563,17 +577,35 @@ internal fun FeedScreenContent(
     }
 
     val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-    val topHeaderHeight = statusBarTop + 56.dp + 48.dp
+    val miniPlayerExtra = LocalMiniPlayerSlot.current.extraHeight
+    val topHeaderHeight = statusBarTop + 56.dp + 48.dp + miniPlayerExtra
     val feedGlassState = rememberVistaGlassState()
     VistaGlassScrollSync(feedGlassState, listState)
     val isDarkFeed = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val feedMusicQueue = remember((uiState as? FeedUiState.Content)?.posts) {
+        (uiState as? FeedUiState.Content)?.posts.orEmpty().mapNotNull { p ->
+            val url = p.musicUrl?.trim().orEmpty()
+            if (url.isEmpty() || isBackgroundMusicPost(url)) null
+            else vistaPostMusicTrack(
+                postId = p.id,
+                musicUrl = url,
+                title = resolveMusicTitle(p),
+                artist = p.authorUsername?.takeIf { it.isNotBlank() } ?: p.authorFullName,
+                artworkUrl = p.imageUrl,
+                playlistTitle = "موسیقی پست‌ها",
+            )
+        }
+    }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background),
     ) {
-        CompositionLocalProvider(LocalVistaGlassState provides feedGlassState) {
+        CompositionLocalProvider(
+            LocalVistaGlassState provides feedGlassState,
+            LocalMusicPlaylist provides feedMusicQueue,
+        ) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -593,14 +625,26 @@ internal fun FeedScreenContent(
                         onRetry = onRefresh,
                     )
                 }
-                is FeedUiState.Content -> PullToRefreshBox(
-                    isRefreshing = state.isRefreshing,
-                    onRefresh = onRefresh,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .testTag(FeedTestTags.PullToRefresh),
-                ) {
-                    FeedContent(
+                is FeedUiState.Content -> {
+                    val pullToRefreshState = rememberPullToRefreshState()
+                    PullToRefreshBox(
+                        isRefreshing = state.isRefreshing,
+                        onRefresh = onRefresh,
+                        state = pullToRefreshState,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .testTag(FeedTestTags.PullToRefresh),
+                        indicator = {
+                            PullToRefreshDefaults.Indicator(
+                                state = pullToRefreshState,
+                                isRefreshing = state.isRefreshing,
+                                modifier = Modifier
+                                    .align(Alignment.TopCenter)
+                                    .padding(top = topHeaderHeight),
+                            )
+                        },
+                    ) {
+                        FeedContent(
                         state = state,
                         listState = listState,
                         viewerUserId = viewerUserId,
@@ -658,6 +702,7 @@ internal fun FeedScreenContent(
                             }
                         },
                     )
+                }
                 }
             }
         }
@@ -733,6 +778,7 @@ internal fun FeedScreenContent(
                             onKindSelected(kind)
                         },
                     )
+                    VistaMiniPlayerHost(glassState = feedGlassState)
                     FeedPostUploadBanner(
                         uploadState = postUploadState,
                         onRetry = onRetryUpload,
@@ -949,9 +995,10 @@ internal fun FeedContent(
     }
 
     var activeMusicPostId by remember { mutableStateOf<String?>(null) }
+    val globalAudioState by VistaAudioPlayer.state.collectAsState()
 
-    LaunchedEffect(listState, state.posts, autoplayPostMusic) {
-        if (!autoplayPostMusic) {
+    LaunchedEffect(listState, state.posts, autoplayPostMusic, globalAudioState.isPlaying) {
+        if (!autoplayPostMusic || globalAudioState.isPlaying) {
             activeMusicPostId = null
             if (backgroundMusicPlayer.isPlaying) {
                 backgroundMusicPlayer.pause()
@@ -1714,6 +1761,10 @@ private fun PostMusicBubble(post: FeedPost) {
         musicUrl = musicUrl,
         musicTitle = resolveMusicTitle(post),
         subtitle = "موسیقی پست",
+        postId = post.id,
+        artist = post.authorUsername?.takeIf { it.isNotBlank() } ?: post.authorFullName,
+        artworkUrl = post.imageUrl,
+        playlistTitle = "موسیقی پست‌ها",
     )
 }
 
@@ -2214,13 +2265,27 @@ private fun OfflineBanner() {
 internal fun VerifiedMark(
     modifier: Modifier = Modifier,
     verificationType: String? = null,
+    role: String? = null,
+    isDarkSurface: Boolean? = null,
 ) {
-    ir.coffevista.vista_native.core.designsystem.component.VistaVerificationBadge(
-        isVerified = true,
-        verificationType = verificationType,
-        size = 16.dp,
-        modifier = modifier,
-    )
+    if (isDarkSurface != null) {
+        ir.coffevista.vista_native.core.designsystem.component.VistaVerificationBadge(
+            isVerified = true,
+            verificationType = verificationType,
+            role = role,
+            size = 16.dp,
+            isDarkSurface = isDarkSurface,
+            modifier = modifier,
+        )
+    } else {
+        ir.coffevista.vista_native.core.designsystem.component.VistaVerificationBadge(
+            isVerified = true,
+            verificationType = verificationType,
+            role = role,
+            size = 16.dp,
+            modifier = modifier,
+        )
+    }
 }
 
 @Composable
@@ -2843,4 +2908,5 @@ private fun FeedStoryUploadBanner(
         }
     }
 }
+
 

@@ -209,12 +209,14 @@ fun HashtagPostsScreen(
     onPostClick: (String) -> Unit,
     onAuthorClick: (String) -> Unit,
     onHashtagClick: (String) -> Unit = {},
+    onNavigateToStoryEditor: ((android.net.Uri) -> Unit)? = null,
 ) {
     val viewModel: HashtagPostsViewModel = hiltViewModel()
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val listState = rememberLazyListState()
     val normalized = remember(hashtag) { hashtag.removePrefix("#").trim() }
     var fullscreenMedia by remember { mutableStateOf<Pair<List<String>, Int>?>(null) }
+    var showShareForPost by remember { mutableStateOf<FeedPost?>(null) }
     val effectiveOnHashtagClick: (String) -> Unit = remember(onHashtagClick) {
         { tag ->
             val cleaned = tag.removePrefix("#").trim()
@@ -269,6 +271,7 @@ fun HashtagPostsScreen(
                                 onMediaClick = { imgs, idx -> fullscreenMedia = imgs to idx },
                                 onLikeClick = { viewModel.toggleLike(post) },
                                 onSaveClick = { viewModel.toggleSave(post) },
+                                onShareClick = { showShareForPost = post },
                             )
                         }
                         if (state.isAppending) item { Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(Modifier.size(24.dp)) } }
@@ -284,6 +287,15 @@ fun HashtagPostsScreen(
                 images = imgs,
                 initialIndex = idx,
                 onDismiss = { fullscreenMedia = null },
+            )
+        }
+
+        showShareForPost?.let { post ->
+            ir.coffevista.vista_native.features.feed.ui.PostShareBottomSheet(
+                post = post,
+                onDismiss = { showShareForPost = null },
+                onShared = { showShareForPost = null },
+                onNavigateToStoryEditor = onNavigateToStoryEditor,
             )
         }
     }
@@ -310,6 +322,7 @@ private fun HashtagPostCard(
     onMediaClick: ((List<String>, Int) -> Unit)? = null,
     onLikeClick: () -> Unit,
     onSaveClick: () -> Unit,
+    onShareClick: () -> Unit,
 ) {
     val context = LocalContext.current
     ElevatedCard(
@@ -336,11 +349,24 @@ private fun HashtagPostCard(
                 )
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(
-                        text = post.authorUsername?.takeIf(String::isNotBlank) ?: post.authorFullName,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp,
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Text(
+                            text = post.authorUsername?.takeIf(String::isNotBlank) ?: post.authorFullName,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false),
+                        )
+                        ir.coffevista.vista_native.core.designsystem.component.VistaVerificationBadge(
+                            isVerified = post.authorIsVerified,
+                            verificationType = post.authorVerificationType,
+                            size = 15.dp,
+                        )
+                    }
                     Text(
                         text = persianRelativeTime(post.createdAt),
                         fontSize = 12.sp,
@@ -449,14 +475,7 @@ private fun HashtagPostCard(
                 }
 
                 IconButton(
-                    onClick = {
-                        val shareIntent = Intent().apply {
-                            action = Intent.ACTION_SEND
-                            putExtra(Intent.EXTRA_TEXT, "https://coffevista.ir/p/${post.id}")
-                            type = "text/plain"
-                        }
-                        context.startActivity(Intent.createChooser(shareIntent, "اشتراک‌گذاری پست"))
-                    },
+                    onClick = onShareClick,
                     modifier = Modifier.size(32.dp),
                 ) {
                     Image(

@@ -38,6 +38,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Forum
@@ -112,6 +113,7 @@ private val TelegramAccentBlueDeep = Color(0xFF338CD1)
 fun ChatAudioPlayerSheet(
     onDismiss: () -> Unit,
     onJumpToMessage: ((String) -> Unit)? = null,
+    onJumpToPost: ((String) -> Unit)? = null,
     onShareTrack: ((ChatAudioTrack) -> Unit)? = null,
 ) {
     val context = LocalContext.current
@@ -244,7 +246,8 @@ fun ChatAudioPlayerSheet(
                             .padding(horizontal = 6.dp),
                     ) {
                         Text(
-                            text = track.conversationTitle?.takeIf(String::isNotBlank) ?: "لیست پخش گفتگو",
+                            text = track.conversationTitle?.takeIf(String::isNotBlank)
+                                ?: if (track.postId != null) "لیست پخش پست‌ها" else "لیست پخش گفتگو",
                             color = titleColor,
                             fontSize = 18.sp,
                             fontWeight = FontWeight.SemiBold,
@@ -304,7 +307,16 @@ fun ChatAudioPlayerSheet(
                                 }
                             },
                             onShare = { shareHandler(item) },
-                            onJump = onJumpToMessage?.let { jump -> { jump(item.id) } },
+                            onJump = when {
+                                item.postId != null && onJumpToPost != null -> {
+                                    { onJumpToPost(item.postId!!) }
+                                }
+                                item.conversationId.isNotBlank() && onJumpToMessage != null -> {
+                                    { onJumpToMessage(item.id) }
+                                }
+                                else -> null
+                            },
+                            jumpLabel = if (item.postId != null) "مشاهده پست" else "نمایش در گفتگو",
                         )
                     }
                 }
@@ -323,7 +335,7 @@ fun ChatAudioPlayerSheet(
                         .fillMaxWidth()
                         .padding(start = 18.dp, end = 18.dp, top = 16.dp, bottom = 14.dp),
                 ) {
-                    val activeCover = AudioCoverArtCache.rememberCoverArt(track.url, track.fallbackUrl)
+                    val activeCover = AudioCoverArtCache.rememberCoverArt(track.url, track.fallbackUrl, track.artworkUrl)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
@@ -615,7 +627,16 @@ fun ChatAudioPlayerSheet(
                                             shareHandler(track)
                                         },
                                     )
-                                    if (onJumpToMessage != null) {
+                                    if (track.postId != null && onJumpToPost != null) {
+                                        DropdownMenuItem(
+                                            text = { Text("مشاهده پست") },
+                                            leadingIcon = { Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null) },
+                                            onClick = {
+                                                optionsMenuExpanded = false
+                                                onJumpToPost(track.postId!!)
+                                            },
+                                        )
+                                    } else if (track.conversationId.isNotBlank() && onJumpToMessage != null) {
                                         DropdownMenuItem(
                                             text = { Text("نمایش در گفتگو") },
                                             leadingIcon = { Icon(Icons.Default.Forum, contentDescription = null) },
@@ -646,8 +667,9 @@ private fun PlaylistTrackRow(
     onClick: () -> Unit,
     onShare: () -> Unit,
     onJump: (() -> Unit)?,
+    jumpLabel: String = "نمایش در گفتگو",
 ) {
-    val coverBitmap = AudioCoverArtCache.rememberCoverArt(item.url, item.fallbackUrl)
+    val coverBitmap = AudioCoverArtCache.rememberCoverArt(item.url, item.fallbackUrl, item.artworkUrl)
     var rowMenuExpanded by remember(item.id) { mutableStateOf(false) }
 
     Row(
@@ -760,8 +782,13 @@ private fun PlaylistTrackRow(
                 )
                 if (onJump != null) {
                     DropdownMenuItem(
-                        text = { Text("نمایش در گفتگو") },
-                        leadingIcon = { Icon(Icons.Default.Forum, contentDescription = null) },
+                        text = { Text(jumpLabel) },
+                        leadingIcon = {
+                            Icon(
+                                if (item.postId != null) Icons.AutoMirrored.Filled.OpenInNew else Icons.Default.Forum,
+                                contentDescription = null,
+                            )
+                        },
                         onClick = {
                             rowMenuExpanded = false
                             onJump()

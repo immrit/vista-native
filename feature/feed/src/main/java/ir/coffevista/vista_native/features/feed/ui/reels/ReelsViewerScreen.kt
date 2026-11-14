@@ -253,6 +253,7 @@ fun ReelsViewerScreen(
     onAuthorClick: (String) -> Unit = {},
     onCommentsClick: (String) -> Unit = {},
     onShareClick: (String) -> Unit = {},
+    onNavigateToStoryEditor: ((android.net.Uri) -> Unit)? = null,
     modifier: Modifier = Modifier,
     viewModel: ReelsViewModel = hiltViewModel(),
 ) {
@@ -402,6 +403,7 @@ fun ReelsViewerScreen(
                         viewModel.trackReelEvent(post.id, "share")
                         showShareForPost = null
                     },
+                    onNavigateToStoryEditor = onNavigateToStoryEditor,
                 )
             }
         }

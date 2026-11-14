@@ -15,15 +15,25 @@ import android.graphics.RectF
 import android.graphics.Shader
 import android.graphics.Typeface
 import android.graphics.drawable.BitmapDrawable
+import android.graphics.drawable.Drawable
 import android.text.Layout
+import android.text.SpannableString
+import android.text.Spanned
 import android.text.StaticLayout
 import android.text.TextDirectionHeuristics
 import android.text.TextPaint
 import android.text.TextUtils
+import android.text.style.ForegroundColorSpan
+import android.text.style.StyleSpan
+import androidx.core.content.ContextCompat
+import androidx.core.graphics.drawable.DrawableCompat
 import coil.ImageLoader
 import coil.request.ImageRequest
 import coil.request.SuccessResult
 import ir.coffevista.vista_native.core.designsystem.R as DesignR
+import ir.coffevista.vista_native.core.designsystem.component.ResolvedVerificationBadgeType
+import ir.coffevista.vista_native.core.designsystem.component.resolveVerificationBadgeType
+import ir.coffevista.vista_native.core.designsystem.component.verificationBadgeColorArgb
 import ir.coffevista.vista_native.features.feed.data.FeedPost
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -43,8 +53,14 @@ object PostStoryTemplateGenerator {
     private const val CANVAS_HEIGHT = 1920
     private const val CARD_WIDTH = 860f
     private const val CARD_RADIUS = 28f
+    private const val STICKER_SHADOW_PAD = 36f
     private const val TEMP_DIR_NAME = "story_shares"
     private const val MAX_TEMP_FILE_AGE_MS = 3600_000L // 1 hour
+
+    data class InstagramStoryAssets(
+        val backgroundFile: File,
+        val stickerFile: File,
+    )
 
     suspend fun generateTemplate(
         context: Context,
@@ -56,10 +72,8 @@ object PostStoryTemplateGenerator {
         val avatarBitmap = loadBitmapSafe(context, post.authorAvatarUrl)
         val mediaUrl = post.primaryImageUrl ?: post.videoThumbnailUrl
         val mediaBitmap = loadBitmapSafe(context, mediaUrl)
-
-        val logoBitmap = runCatching {
-            BitmapFactory.decodeResource(context.resources, DesignR.drawable.ic_vista_logo_black)
-        }.getOrNull()
+        val logoBitmap = loadLogoBitmap(context)
+        val verifiedDrawable = loadVerifiedDrawable(context)
 
         val bitmap = renderToBitmap(
             post = post,
@@ -67,16 +81,105 @@ object PostStoryTemplateGenerator {
             avatarBitmap = avatarBitmap,
             mediaBitmap = mediaBitmap,
             logoBitmap = logoBitmap,
+            verifiedDrawable = verifiedDrawable,
         )
 
-        val dir = File(context.cacheDir, TEMP_DIR_NAME).apply { mkdirs() }
-        val file = File(dir, "story_post_${post.id}_${theme}_${System.currentTimeMillis()}.png")
-        FileOutputStream(file).use { out ->
-            bitmap.compress(Bitmap.CompressFormat.PNG, 95, out)
-        }
-        bitmap.recycle()
-        file
+        saveBitmapToTempFile(context, bitmap, "story_post_${post.id}_${theme}_${System.currentTimeMillis()}.png")
     }
+
+    /**
+     * Generates separate Instagram Story background (`vista` pattern, no post) and
+     * transparent-backed movable Post Card sticker matching the exact in-app post layout.
+     */
+    suspend fun generateInstagramStoryAssets(
+        context: Context,
+        post: FeedPost,
+    ): InstagramStoryAssets = withContext(Dispatchers.IO) {
+        cleanOldTempFiles(context)
+
+        val avatarBitmap = loadBitmapSafe(context, post.authorAvatarUrl)
+        val mediaUrl = post.primaryImageUrl ?: post.videoThumbnailUrl
+        val mediaBitmap = loadBitmapSafe(context, mediaUrl)
+        val logoBitmap = loadLogoBitmap(context)
+        val verifiedDrawable = loadVerifiedDrawable(context)
+
+        val stamp = System.currentTimeMillis()
+        val backgroundBitmap = renderVistaBackgroundBitmap()
+        val backgroundFile = saveBitmapToTempFile(context, backgroundBitmap, "story_bg_${post.id}_$stamp.png")
+
+        val stickerBitmap = renderPostStickerBitmap(
+            post = post,
+            avatarBitmap = avatarBitmap,
+            mediaBitmap = mediaBitmap,
+            logoBitmap = logoBitmap,
+            verifiedDrawable = verifiedDrawable,
+        )
+        val stickerFile = saveBitmapToTempFile(context, stickerBitmap, "story_sticker_${post.id}_$stamp.png")
+
+        InstagramStoryAssets(backgroundFile = backgroundFile, stickerFile = stickerFile)
+    }
+
+    /**
+     * Generates separate Instagram Story background (`vista` pattern) and a transparent-backed
+     * Profile Card sticker for sharing user profiles directly to Instagram Stories.
+     */
+    suspend fun generateProfileInstagramStoryAssets(
+        context: Context,
+        username: String,
+        fullName: String?,
+        avatarUrl: String?,
+        bio: String?,
+        isVerified: Boolean,
+        verificationType: String?,
+        role: String?,
+    ): InstagramStoryAssets = withContext(Dispatchers.IO) {
+        cleanOldTempFiles(context)
+
+        val avatarBitmap = loadBitmapSafe(context, avatarUrl)
+        val logoBitmap = loadLogoBitmap(context)
+        val verifiedDrawable = loadVerifiedDrawable(context)
+        val stamp = System.currentTimeMillis()
+        val safeHandle = username.replace(Regex("[^A-Za-z0-9_.-]"), "_").ifBlank { "profile" }
+
+        val backgroundBitmap = renderVistaBackgroundBitmap()
+        val backgroundFile = saveBitmapToTempFile(context, backgroundBitmap, "story_profile_bg_${safeHandle}_$stamp.png")
+
+        val stickerBitmap = renderProfileStickerBitmap(
+            username = username,
+            fullName = fullName,
+            bio = bio,
+            isVerified = isVerified,
+            verificationType = verificationType,
+            role = role,
+            avatarBitmap = avatarBitmap,
+            logoBitmap = logoBitmap,
+            verifiedDrawable = verifiedDrawable,
+        )
+        val stickerFile = saveBitmapToTempFile(context, stickerBitmap, "story_profile_sticker_${safeHandle}_$stamp.png")
+
+        InstagramStoryAssets(backgroundFile = backgroundFile, stickerFile = stickerFile)
+    }
+
+    private fun saveBitmapToTempFile(context: Context, bitmap: Bitmap, fileName: String): File {
+        val dir = File(context.cacheDir, TEMP_DIR_NAME).apply { mkdirs() }
+        val file = File(dir, fileName)
+        return try {
+            FileOutputStream(file).use { out ->
+                bitmap.compress(Bitmap.CompressFormat.PNG, 95, out)
+            }
+            file
+        } finally {
+            bitmap.recycle()
+        }
+    }
+
+    private fun loadLogoBitmap(context: Context): Bitmap? = runCatching {
+        BitmapFactory.decodeResource(context.resources, DesignR.drawable.ic_vista_logo_black)
+    }.getOrNull()
+
+    private fun loadVerifiedDrawable(context: Context): Drawable? = runCatching {
+        ContextCompat.getDrawable(context, DesignR.drawable.ic_verified_badge)?.mutate()
+    }.getOrNull()
 
     fun cleanOldTempFiles(context: Context) {
         try {
@@ -94,19 +197,62 @@ object PostStoryTemplateGenerator {
         }
     }
 
+    internal fun renderVistaBackgroundBitmap(): Bitmap {
+        val bitmap = Bitmap.createBitmap(CANVAS_WIDTH, CANVAS_HEIGHT, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        drawThemeBackground(canvas, "vista")
+        return bitmap
+    }
+
     internal fun renderToBitmap(
         post: FeedPost,
         theme: String,
         avatarBitmap: Bitmap? = null,
         mediaBitmap: Bitmap? = null,
         logoBitmap: Bitmap? = null,
+        verifiedDrawable: Drawable? = null,
     ): Bitmap {
         val bitmap = Bitmap.createBitmap(CANVAS_WIDTH, CANVAS_HEIGHT, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
 
         drawThemeBackground(canvas, theme)
-        drawPostCard(canvas, post, theme, avatarBitmap, mediaBitmap, logoBitmap)
+        drawPostCard(
+            canvas = canvas,
+            post = post,
+            theme = theme,
+            avatarBitmap = avatarBitmap,
+            mediaBitmap = mediaBitmap,
+            logoBitmap = logoBitmap,
+            verifiedDrawable = verifiedDrawable,
+        )
 
+        return bitmap
+    }
+
+    internal fun renderPostStickerBitmap(
+        post: FeedPost,
+        avatarBitmap: Bitmap? = null,
+        mediaBitmap: Bitmap? = null,
+        logoBitmap: Bitmap? = null,
+        verifiedDrawable: Drawable? = null,
+    ): Bitmap {
+        val layout = measurePostCardLayout(post, mediaBitmap)
+        val stickerWidth = (CARD_WIDTH + STICKER_SHADOW_PAD * 2f).toInt()
+        val stickerHeight = (layout.totalHeight + STICKER_SHADOW_PAD * 2f).toInt()
+        val bitmap = Bitmap.createBitmap(stickerWidth, stickerHeight, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        drawPostCardAt(
+            canvas = canvas,
+            cardLeft = STICKER_SHADOW_PAD,
+            cardTop = STICKER_SHADOW_PAD,
+            layout = layout,
+            post = post,
+            theme = "vista",
+            avatarBitmap = avatarBitmap,
+            mediaBitmap = mediaBitmap,
+            logoBitmap = logoBitmap,
+            verifiedDrawable = verifiedDrawable,
+        )
         return bitmap
     }
 
@@ -313,6 +459,82 @@ object PostStoryTemplateGenerator {
     // POST CARD RENDERING (Exact Flutter Dimensions & Geometry)
     // =========================================================================
 
+    private data class MeasuredPostCardLayout(
+        val textLayout: StaticLayout?,
+        val mediaHeight: Float,
+        val hasMusic: Boolean,
+        val padding: Float,
+        val innerWidth: Float,
+        val headerHeight: Float,
+        val textSectionHeight: Float,
+        val mediaSectionHeight: Float,
+        val musicSectionHeight: Float,
+        val actionRowHeight: Float,
+        val brandFooterHeight: Float,
+        val totalHeight: Float,
+    )
+
+    private fun measurePostCardLayout(
+        post: FeedPost,
+        mediaBitmap: Bitmap?,
+    ): MeasuredPostCardLayout {
+        val padding = 36f
+        val innerWidth = CARD_WIDTH - (padding * 2f)
+        val rawText = post.content.orEmpty().trim()
+        val limitedText = if (rawText.length > 280) "${rawText.take(280)}…" else rawText
+
+        val textPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#141414")
+            textSize = 33f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
+            letterSpacing = -0.01f
+        }
+        val textIsRtl = isPersianText(limitedText)
+        val textLayout = if (limitedText.isNotEmpty()) {
+            val styledText = buildEntityHighlightedText(limitedText)
+            StaticLayout.Builder.obtain(styledText, 0, styledText.length, textPaint, innerWidth.toInt())
+                .setAlignment(Layout.Alignment.ALIGN_NORMAL)
+                .setTextDirection(if (textIsRtl) TextDirectionHeuristics.RTL else TextDirectionHeuristics.LTR)
+                .setLineSpacing(0f, 1.42f)
+                .setMaxLines(9)
+                .setEllipsize(TextUtils.TruncateAt.END)
+                .build()
+        } else null
+
+        val headerHeight = 72f // 36px avatar radius * 2 matching in-app PostAvatar + single-line header
+        val textSectionHeight = if (textLayout != null) textLayout.height.toFloat() + 24f else 0f
+
+        val mediaHeight = if (mediaBitmap != null) {
+            val naturalRatio = (mediaBitmap.width.toFloat() / mediaBitmap.height.coerceAtLeast(1).toFloat())
+                .coerceIn(0.8f, 1.91f)
+            (innerWidth / naturalRatio).coerceIn(240f, 640f)
+        } else 0f
+        val mediaSectionHeight = if (mediaHeight > 0f) mediaHeight + 24f else 0f
+
+        val hasMusic = !post.musicTitle.isNullOrBlank() || !post.musicUrl.isNullOrBlank()
+        val musicSectionHeight = if (hasMusic) 80f + 20f else 0f
+        val actionRowHeight = 24f + 36f + 18f
+        val brandFooterHeight = 56f
+
+        val totalHeight = 28f + headerHeight + textSectionHeight +
+            mediaSectionHeight + musicSectionHeight + actionRowHeight + brandFooterHeight
+
+        return MeasuredPostCardLayout(
+            textLayout = textLayout,
+            mediaHeight = mediaHeight,
+            hasMusic = hasMusic,
+            padding = padding,
+            innerWidth = innerWidth,
+            headerHeight = headerHeight,
+            textSectionHeight = textSectionHeight,
+            mediaSectionHeight = mediaSectionHeight,
+            musicSectionHeight = musicSectionHeight,
+            actionRowHeight = actionRowHeight,
+            brandFooterHeight = brandFooterHeight,
+            totalHeight = totalHeight,
+        )
+    }
+
     private fun drawPostCard(
         canvas: Canvas,
         post: FeedPost,
@@ -320,134 +542,128 @@ object PostStoryTemplateGenerator {
         avatarBitmap: Bitmap?,
         mediaBitmap: Bitmap?,
         logoBitmap: Bitmap?,
+        verifiedDrawable: Drawable? = null,
     ) {
+        val layout = measurePostCardLayout(post, mediaBitmap)
         val cardLeft = (CANVAS_WIDTH - CARD_WIDTH) / 2f
-        val cardRight = cardLeft + CARD_WIDTH
-        val padding = 36f
-        val innerWidth = CARD_WIDTH - (padding * 2)
-
-        val rawText = post.content.orEmpty().trim()
-        val isRtl = isPersianText(rawText) || isPersianText(post.authorFullName)
-
-        // 1. Measure Text
-        val limitedText = if (rawText.length > 280) "${rawText.take(280)}…" else rawText
-        val textPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#141414")
-            textSize = 34f
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
-            letterSpacing = -0.01f
-        }
-
-        val textLayout = if (limitedText.isNotEmpty()) {
-            StaticLayout.Builder.obtain(limitedText, 0, limitedText.length, textPaint, innerWidth.toInt())
-                .setAlignment(Layout.Alignment.ALIGN_NORMAL)
-                .setTextDirection(if (isRtl) TextDirectionHeuristics.RTL else TextDirectionHeuristics.LTR)
-                .setLineSpacing(0f, 1.45f)
-                .setMaxLines(10)
-                .setEllipsize(TextUtils.TruncateAt.END)
-                .build()
-        } else null
-
-        // Dimensions of sections
-        val brandMarkHeight = 36f + 28f // 36px icon + 28px margin
-        val avatarDiameter = 68f // 34px radius * 2
-        val authorRowHeight = avatarDiameter
-        val textSectionHeight = if (textLayout != null) textLayout.height.toFloat() + 28f else 0f
-
-        val hasMedia = mediaBitmap != null
-        // 16 / 10 aspect ratio exactly matching Flutter
-        val mediaSectionHeight = if (hasMedia) (innerWidth * 10f / 16f) + 28f else 0f
-
-        val hasMusic = !post.musicTitle.isNullOrBlank() || !post.musicUrl.isNullOrBlank()
-        val musicSectionHeight = if (hasMusic) 80f + 24f else 0f
-
-        val statsSectionHeight = 28f + 34f + 24f // padding top + stats + padding bottom
-        val brandFooterHeight = 54f // top border + height
-
-        val totalCardHeight = 32f + brandMarkHeight + authorRowHeight + textSectionHeight +
-                musicSectionHeight + mediaSectionHeight + statsSectionHeight + brandFooterHeight
-
-        // Vertical positioning (Alignment(0, -0.08) in Flutter, slightly above center)
         val targetCenterY = (CANVAS_HEIGHT * 0.5f) - (CANVAS_HEIGHT * 0.04f)
-        val cardTop = (targetCenterY - (totalCardHeight / 2f)).coerceAtLeast(60f)
-        val cardBottom = cardTop + totalCardHeight
-        val cardRect = RectF(cardLeft, cardTop, cardRight, cardBottom)
+        val cardTop = (targetCenterY - (layout.totalHeight / 2f)).coerceAtLeast(60f)
+        drawPostCardAt(
+            canvas = canvas,
+            cardLeft = cardLeft,
+            cardTop = cardTop,
+            layout = layout,
+            post = post,
+            theme = theme,
+            avatarBitmap = avatarBitmap,
+            mediaBitmap = mediaBitmap,
+            logoBitmap = logoBitmap,
+            verifiedDrawable = verifiedDrawable,
+        )
+    }
 
-        // 2. Draw Luxurious Multi-Layer Soft Drop Shadow
+    private fun drawPostCardAt(
+        canvas: Canvas,
+        cardLeft: Float,
+        cardTop: Float,
+        layout: MeasuredPostCardLayout,
+        post: FeedPost,
+        theme: String,
+        avatarBitmap: Bitmap?,
+        mediaBitmap: Bitmap?,
+        logoBitmap: Bitmap?,
+        verifiedDrawable: Drawable?,
+    ) {
+        val cardRight = cardLeft + CARD_WIDTH
+        val padding = layout.padding
+        val cardRect = RectF(cardLeft, cardTop, cardRight, cardTop + layout.totalHeight)
+
+        // Drop shadow + crisp card container (subtle border helps white cards on white/vista background)
         drawCardDropShadow(canvas, cardRect, theme)
-
-        // 3. Draw Card Background
-        val cardPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.WHITE
-        }
+        val cardPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
         canvas.drawRoundRect(cardRect, CARD_RADIUS, CARD_RADIUS, cardPaint)
-
-        var currentY = cardTop + 32f
-
-        // 4. Brand Mark (Top-Start)
-        val brandSize = 36f
-        val brandX = if (isRtl) cardRight - padding - brandSize else cardLeft + padding
-        if (logoBitmap != null) {
-            val logoDst = RectF(brandX, currentY, brandX + brandSize, currentY + brandSize)
-            canvas.drawBitmap(logoBitmap, null, logoDst, Paint(Paint.FILTER_BITMAP_FLAG))
-        } else {
-            drawVistaBolt(canvas, brandX + brandSize / 2f, currentY + brandSize / 2f, brandSize, Color.parseColor("#141414"))
+        val cardBorderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#E5E7EB")
+            style = Paint.Style.STROKE
+            strokeWidth = 2f
         }
-        currentY += brandMarkHeight
+        canvas.drawRoundRect(cardRect, CARD_RADIUS, CARD_RADIUS, cardBorderPaint)
 
-        // 5. Author Row
-        val avatarRadius = 34f
-        val avatarCenterX = if (isRtl) cardRight - padding - avatarRadius else cardLeft + padding + avatarRadius
+        var currentY = cardTop + 28f
+
+        // 1. In-App Author Header Row (RTL: Avatar -> Username -> Verification Badge -> "•" -> Relative Time)
+        val avatarRadius = 36f
+        val avatarCenterX = cardRight - padding - avatarRadius
         val avatarCenterY = currentY + avatarRadius
-
         drawAvatar(canvas, avatarBitmap, avatarCenterX, avatarCenterY, avatarRadius, post)
 
-        // Author Name & Handle
         val namePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.parseColor("#141414")
             textSize = 30f
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-            textAlign = if (isRtl) Paint.Align.RIGHT else Paint.Align.LEFT
+            textAlign = Paint.Align.RIGHT
         }
-        val handlePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+        val metaPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.parseColor("#737373")
-            textSize = 24f
+            textSize = 25f
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
-            textAlign = if (isRtl) Paint.Align.RIGHT else Paint.Align.LEFT
+            textAlign = Paint.Align.RIGHT
         }
 
-        val authorName = post.authorFullName.ifBlank { post.authorUsername.orEmpty().ifBlank { "کاربر ویستا" } }
-        val handleText = post.authorUsername?.takeIf { it.isNotBlank() }?.let { "@$it" } ?: ""
+        val primaryNameRaw = post.authorUsername?.takeIf { it.isNotBlank() }
+            ?: post.authorFullName.ifBlank { "کاربر ویستا" }
+        val timeLabel = feedRelativeTime(post.createdAt)
+        val bulletText = "•"
+        val badgeType = resolveVerificationBadgeType(post.authorIsVerified, post.authorVerificationType)
+        val hasBadge = badgeType != ResolvedVerificationBadgeType.NONE
+        val badgeSize = 26f
+        val badgeSpace = if (hasBadge) badgeSize + 10f else 0f
+        val timeWidth = if (timeLabel.isNotBlank()) {
+            metaPaint.measureText(bulletText) + metaPaint.measureText(timeLabel) + 20f
+        } else 0f
 
-        if (isRtl) {
-            val textStartX = avatarCenterX - avatarRadius - 20f
-            canvas.drawText(authorName, textStartX, avatarCenterY - 4f, namePaint)
-            if (post.authorIsVerified) {
-                val nameWidth = namePaint.measureText(authorName)
-                val badgeX = textStartX - nameWidth - 18f
-                drawVerifiedBadge(canvas, badgeX, avatarCenterY - 14f, 11f)
-            }
-            if (handleText.isNotEmpty()) {
-                canvas.drawText(handleText, textStartX, avatarCenterY + 24f, handlePaint)
-            }
-        } else {
-            val textStartX = avatarCenterX + avatarRadius + 20f
-            canvas.drawText(authorName, textStartX, avatarCenterY - 4f, namePaint)
-            if (post.authorIsVerified) {
-                val nameWidth = namePaint.measureText(authorName)
-                val badgeX = textStartX + nameWidth + 18f
-                drawVerifiedBadge(canvas, badgeX, avatarCenterY - 14f, 11f)
-            }
-            if (handleText.isNotEmpty()) {
-                canvas.drawText(handleText, textStartX, avatarCenterY + 24f, handlePaint)
+        val rowRight = avatarCenterX - avatarRadius - 20f
+        val rowLeftLimit = cardLeft + padding
+        val maxNameWidth = (rowRight - rowLeftLimit - badgeSpace - timeWidth).coerceAtLeast(140f)
+        val primaryName = TextUtils.ellipsize(primaryNameRaw, namePaint, maxNameWidth, TextUtils.TruncateAt.END).toString()
+        val measuredNameWidth = namePaint.measureText(primaryName)
+        val textBaselineY = avatarCenterY + 10f
+
+        var cursorX = rowRight
+        canvas.drawText(primaryName, cursorX, textBaselineY, namePaint)
+        cursorX -= measuredNameWidth
+
+        if (hasBadge) {
+            cursorX -= 10f
+            val badgeCenterX = cursorX - (badgeSize / 2f)
+            val badgeColorArgb = verificationBadgeColorArgb(badgeType, isDarkSurface = false)
+            drawVerificationBadgeSeal(
+                canvas = canvas,
+                cx = badgeCenterX,
+                cy = avatarCenterY,
+                size = badgeSize,
+                badgeColorArgb = badgeColorArgb,
+                verifiedDrawable = verifiedDrawable,
+            )
+            cursorX -= badgeSize
+        }
+
+        if (timeLabel.isNotBlank() && cursorX - rowLeftLimit > 60f) {
+            cursorX -= 12f
+            canvas.drawText(bulletText, cursorX, textBaselineY - 1f, metaPaint)
+            cursorX -= metaPaint.measureText(bulletText) + 12f
+            val remainingForTime = (cursorX - rowLeftLimit).coerceAtLeast(0f)
+            if (remainingForTime > 40f) {
+                val ellipsizedTime = TextUtils.ellipsize(timeLabel, metaPaint, remainingForTime, TextUtils.TruncateAt.END).toString()
+                canvas.drawText(ellipsizedTime, cursorX, textBaselineY - 1f, metaPaint)
             }
         }
 
-        currentY += authorRowHeight
+        currentY += layout.headerHeight
 
-        // 6. Post Content Text
-        if (textLayout != null) {
-            currentY += 28f
+        // 2. Post Caption Text (directly below header, matching in-app VistaFeedPostCard)
+        layout.textLayout?.let { textLayout ->
+            currentY += 24f
             canvas.save()
             canvas.translate(cardLeft + padding, currentY)
             textLayout.draw(canvas)
@@ -455,114 +671,231 @@ object PostStoryTemplateGenerator {
             currentY += textLayout.height.toFloat()
         }
 
-        // 7. Media (16:10 with Center-Crop)
-        if (mediaBitmap != null) {
-            currentY += 28f
-            val mediaHeight = innerWidth * 10f / 16f
-            val mediaRect = RectF(cardLeft + padding, currentY, cardRight - padding, currentY + mediaHeight)
-
+        // 3. Post Media
+        if (mediaBitmap != null && layout.mediaHeight > 0f) {
+            currentY += 24f
+            val mediaRect = RectF(cardLeft + padding, currentY, cardRight - padding, currentY + layout.mediaHeight)
             val clipPath = Path().apply {
                 addRoundRect(mediaRect, 18f, 18f, Path.Direction.CW)
             }
             canvas.save()
             canvas.clipPath(clipPath)
-
             val srcCrop = calculateCenterCropSrcRect(mediaBitmap.width, mediaBitmap.height, mediaRect.width(), mediaRect.height())
             canvas.drawBitmap(mediaBitmap, srcCrop, mediaRect, Paint(Paint.FILTER_BITMAP_FLAG))
 
-            // Video Play Button Overlay
             if (!post.videoUrl.isNullOrBlank()) {
-                val overlayPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                    color = Color.argb(45, 0, 0, 0)
-                }
+                val overlayPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(45, 0, 0, 0) }
                 canvas.drawRect(mediaRect, overlayPaint)
                 drawPlayButton(canvas, mediaRect.centerX(), mediaRect.centerY(), 96f)
+            } else if (post.imageUrls.size > 1) {
+                drawMultiImageBadge(canvas, mediaRect, post.imageUrls.size)
             }
             canvas.restore()
-            currentY += mediaHeight
+            currentY += layout.mediaHeight
         }
 
-        // 8. Music Track Banner
-        if (hasMusic) {
-            currentY += 24f
+        // 4. Music Track Bubble (matching PostMusicBubble position below media)
+        if (layout.hasMusic) {
+            currentY += 20f
             val musicRect = RectF(cardLeft + padding, currentY, cardRight - padding, currentY + 80f)
-            drawMusicBanner(canvas, musicRect, post, isRtl)
+            drawMusicBanner(canvas, musicRect, post, isRtl = isPersianText(post.musicTitle) || isPersianText(primaryNameRaw))
             currentY += 80f
         }
 
-        // 9. Stats & Date Row
-        currentY += 28f
-        val statsY = currentY + 18f
+        // 5. In-App Action Row (RTL: Heart + Count, Comment + Count, Bookmark, Send, ... at far left)
+        currentY += 24f
+        val actionCenterY = currentY + 14f
+        val textBaselineActionY = actionCenterY + 9f
+        val actionTint = Color.parseColor("#737373")
+        val heartTint = if (post.isLiked) Color.parseColor("#E0245E") else Color.parseColor("#222222")
         val statPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#737373")
-            textSize = 26f
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            color = actionTint
+            textSize = 25f
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            textAlign = Paint.Align.RIGHT
         }
-        val datePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#999999")
-            textSize = 24f
+
+        var actionX = cardRight - padding
+        // Heart
+        drawHeart(canvas, actionX - 15f, actionCenterY, 32f, heartTint, post.isLiked)
+        actionX -= 38f
+        if (!post.hideLikeCount) {
+            val countText = formatNumber(post.likeCount)
+            statPaint.color = actionTint
+            canvas.drawText(countText, actionX, textBaselineActionY, statPaint)
+            actionX -= statPaint.measureText(countText) + 28f
+        } else {
+            actionX -= 16f
+        }
+
+        // Comment
+        drawCommentBubble(canvas, actionX - 15f, actionCenterY, 30f, actionTint)
+        actionX -= 38f
+        if (!post.hideCommentCount) {
+            val countText = formatNumber(post.commentCount)
+            statPaint.color = actionTint
+            canvas.drawText(countText, actionX, textBaselineActionY, statPaint)
+            actionX -= statPaint.measureText(countText) + 28f
+        } else {
+            actionX -= 16f
+        }
+
+        // Bookmark
+        val bookmarkColor = if (post.isSaved) Color.parseColor("#141414") else actionTint
+        drawBookmarkIcon(canvas, actionX - 14f, actionCenterY, 28f, bookmarkColor, post.isSaved)
+        actionX -= 48f
+
+        // Send / Share
+        drawSendIcon(canvas, actionX - 14f, actionCenterY, 28f, actionTint)
+
+        // Subtle more dots at far left (matching PostActionRow)
+        drawMoreDots(canvas, cardLeft + padding + 18f, actionCenterY, Color.parseColor("#999999"))
+
+        currentY += 36f + 18f
+
+        // 6. Dedicated Brand Footer (Vista logo & cafevista.ir in place)
+        drawCardBrandingFooter(canvas, cardLeft, cardRight, padding, currentY, logoBitmap)
+    }
+
+    internal fun renderProfileStickerBitmap(
+        username: String,
+        fullName: String?,
+        bio: String?,
+        isVerified: Boolean,
+        verificationType: String?,
+        role: String?,
+        avatarBitmap: Bitmap? = null,
+        logoBitmap: Bitmap? = null,
+        verifiedDrawable: Drawable? = null,
+    ): Bitmap {
+        val padding = 36f
+        val innerWidth = CARD_WIDTH - (padding * 2f)
+        val cleanBio = bio.orEmpty().trim().take(160)
+        val bioPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#4B5563")
+            textSize = 27f
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
         }
-        val dateText = feedRelativeTime(post.createdAt)
+        val bioLayout = if (cleanBio.isNotEmpty()) {
+            StaticLayout.Builder.obtain(cleanBio, 0, cleanBio.length, bioPaint, innerWidth.toInt())
+                .setAlignment(Layout.Alignment.ALIGN_NORMAL)
+                .setTextDirection(if (isPersianText(cleanBio)) TextDirectionHeuristics.RTL else TextDirectionHeuristics.LTR)
+                .setLineSpacing(0f, 1.35f)
+                .setMaxLines(3)
+                .setEllipsize(TextUtils.TruncateAt.END)
+                .build()
+        } else null
 
-        if (isRtl) {
-            // Stats on right, date on left
-            var cursorX = cardRight - padding
-            if (!post.hideLikeCount) {
-                drawHeart(canvas, cursorX - 14f, statsY - 8f, 28f, if (post.isLiked) Color.parseColor("#E0245E") else Color.parseColor("#737373"), post.isLiked)
-                cursorX -= 34f
-                val countText = formatNumber(post.likeCount)
-                statPaint.color = if (post.isLiked) Color.parseColor("#E0245E") else Color.parseColor("#737373")
-                statPaint.textAlign = Paint.Align.RIGHT
-                canvas.drawText(countText, cursorX, statsY, statPaint)
-                cursorX -= statPaint.measureText(countText) + 28f
-            }
-            if (!post.hideCommentCount) {
-                drawCommentBubble(canvas, cursorX - 14f, statsY - 8f, 28f, Color.parseColor("#737373"))
-                cursorX -= 34f
-                val countText = formatNumber(post.commentCount)
-                statPaint.color = Color.parseColor("#737373")
-                statPaint.textAlign = Paint.Align.RIGHT
-                canvas.drawText(countText, cursorX, statsY, statPaint)
-            }
-            // Date at left
-            datePaint.textAlign = Paint.Align.LEFT
-            canvas.drawText(dateText, cardLeft + padding, statsY, datePaint)
-        } else {
-            // Stats on left, date on right
-            var cursorX = cardLeft + padding
-            if (!post.hideLikeCount) {
-                drawHeart(canvas, cursorX + 14f, statsY - 8f, 28f, if (post.isLiked) Color.parseColor("#E0245E") else Color.parseColor("#737373"), post.isLiked)
-                cursorX += 34f
-                val countText = formatNumber(post.likeCount)
-                statPaint.color = if (post.isLiked) Color.parseColor("#E0245E") else Color.parseColor("#737373")
-                statPaint.textAlign = Paint.Align.LEFT
-                canvas.drawText(countText, cursorX, statsY, statPaint)
-                cursorX += statPaint.measureText(countText) + 28f
-            }
-            if (!post.hideCommentCount) {
-                drawCommentBubble(canvas, cursorX + 14f, statsY - 8f, 28f, Color.parseColor("#737373"))
-                cursorX += 34f
-                val countText = formatNumber(post.commentCount)
-                statPaint.color = Color.parseColor("#737373")
-                statPaint.textAlign = Paint.Align.LEFT
-                canvas.drawText(countText, cursorX, statsY, statPaint)
-            }
-            // Date at right
-            datePaint.textAlign = Paint.Align.RIGHT
-            canvas.drawText(dateText, cardRight - padding, statsY, datePaint)
+        val headerHeight = 96f
+        val bioSectionHeight = if (bioLayout != null) bioLayout.height.toFloat() + 24f else 0f
+        val footerHeight = 56f
+        val cardHeight = 32f + headerHeight + bioSectionHeight + 24f + footerHeight
+
+        val width = (CARD_WIDTH + STICKER_SHADOW_PAD * 2f).toInt()
+        val height = (cardHeight + STICKER_SHADOW_PAD * 2f).toInt()
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+
+        val cardLeft = STICKER_SHADOW_PAD
+        val cardTop = STICKER_SHADOW_PAD
+        val cardRight = cardLeft + CARD_WIDTH
+        val cardRect = RectF(cardLeft, cardTop, cardRight, cardTop + cardHeight)
+
+        drawCardDropShadow(canvas, cardRect, "vista")
+        canvas.drawRoundRect(cardRect, CARD_RADIUS, CARD_RADIUS, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE })
+        canvas.drawRoundRect(
+            cardRect,
+            CARD_RADIUS,
+            CARD_RADIUS,
+            Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.parseColor("#E5E7EB")
+                style = Paint.Style.STROKE
+                strokeWidth = 2f
+            },
+        )
+
+        var currentY = cardTop + 32f
+        val avatarRadius = 48f
+        val avatarCx = cardRight - padding - avatarRadius
+        val avatarCy = currentY + avatarRadius
+        drawAvatar(
+            canvas = canvas,
+            avatarBitmap = avatarBitmap,
+            cx = avatarCx,
+            cy = avatarCy,
+            radius = avatarRadius,
+            fallbackInitialSource = fullName?.ifBlank { null } ?: username,
+        )
+
+        val displayTitle = fullName?.takeIf { it.isNotBlank() } ?: username.ifBlank { "کاربر ویستا" }
+        val handleText = username.takeIf { it.isNotBlank() }?.let { "@$it" }.orEmpty()
+
+        val namePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#141414")
+            textSize = 32f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            textAlign = Paint.Align.RIGHT
+        }
+        val handlePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#737373")
+            textSize = 25f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
+            textAlign = Paint.Align.RIGHT
         }
 
-        currentY += 34f + 24f
+        val badgeType = resolveVerificationBadgeType(isVerified, verificationType, role)
+        val hasBadge = badgeType != ResolvedVerificationBadgeType.NONE
+        val badgeSize = 26f
+        val rowRight = avatarCx - avatarRadius - 22f
+        val maxNameW = (rowRight - (cardLeft + padding) - if (hasBadge) badgeSize + 12f else 0f).coerceAtLeast(120f)
+        val ellipsizedTitle = TextUtils.ellipsize(displayTitle, namePaint, maxNameW, TextUtils.TruncateAt.END).toString()
 
-        // 10. Brand Footer
+        canvas.drawText(ellipsizedTitle, rowRight, avatarCy - 6f, namePaint)
+        if (hasBadge) {
+            val badgeCx = rowRight - namePaint.measureText(ellipsizedTitle) - 10f - (badgeSize / 2f)
+            drawVerificationBadgeSeal(
+                canvas = canvas,
+                cx = badgeCx,
+                cy = avatarCy - 16f,
+                size = badgeSize,
+                badgeColorArgb = verificationBadgeColorArgb(badgeType, isDarkSurface = false),
+                verifiedDrawable = verifiedDrawable,
+            )
+        }
+        if (handleText.isNotEmpty()) {
+            canvas.drawText(handleText, rowRight, avatarCy + 28f, handlePaint)
+        }
+
+        currentY += headerHeight
+        bioLayout?.let { layout ->
+            currentY += 24f
+            canvas.save()
+            canvas.translate(cardLeft + padding, currentY)
+            layout.draw(canvas)
+            canvas.restore()
+            currentY += layout.height.toFloat()
+        }
+
+        currentY += 24f
+        drawCardBrandingFooter(canvas, cardLeft, cardRight, padding, currentY, logoBitmap)
+        return bitmap
+    }
+
+    private fun drawCardBrandingFooter(
+        canvas: Canvas,
+        cardLeft: Float,
+        cardRight: Float,
+        padding: Float,
+        currentY: Float,
+        logoBitmap: Bitmap?,
+    ) {
         val dividerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.parseColor("#F0F0F0")
             strokeWidth = 1.5f
         }
         canvas.drawLine(cardLeft, currentY, cardRight, currentY, dividerPaint)
 
-        val footerLogoSize = 22f
+        val footerLogoSize = 24f
         val footerY = currentY + 16f
         val footerBrandPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.parseColor("#737373")
@@ -571,7 +904,7 @@ object PostStoryTemplateGenerator {
             letterSpacing = -0.02f
         }
         val sitePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#AAAAAA")
+            color = Color.parseColor("#9CA3AF")
             textSize = 22f
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
             textAlign = Paint.Align.RIGHT
@@ -584,8 +917,37 @@ object PostStoryTemplateGenerator {
             drawVistaBolt(canvas, cardLeft + padding + footerLogoSize / 2f, footerY + footerLogoSize / 2f, footerLogoSize, Color.parseColor("#737373"))
         }
 
-        canvas.drawText("Vista", cardLeft + padding + footerLogoSize + 10f, footerY + 18f, footerBrandPaint)
-        canvas.drawText("cafevista.ir", cardRight - padding, footerY + 18f, sitePaint)
+        canvas.drawText("Vista", cardLeft + padding + footerLogoSize + 10f, footerY + 19f, footerBrandPaint)
+        canvas.drawText("cafevista.ir", cardRight - padding, footerY + 19f, sitePaint)
+    }
+
+    private fun buildEntityHighlightedText(text: String): SpannableString {
+        val spannable = SpannableString(text)
+        val pattern = Regex("""(?<![^\s\n])@([\u0600-\u06FF\w_]+)|#([\u0600-\u06FF\w_]+)""")
+        val entityColor = Color.parseColor("#1E88E5")
+        pattern.findAll(text).forEach { match ->
+            spannable.setSpan(ForegroundColorSpan(entityColor), match.range.first, match.range.last + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            spannable.setSpan(StyleSpan(Typeface.BOLD), match.range.first, match.range.last + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+        return spannable
+    }
+
+    private fun drawMultiImageBadge(canvas: Canvas, mediaRect: RectF, total: Int) {
+        val label = "1/$total"
+        val badgeTextPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            textSize = 22f
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+        }
+        val textW = badgeTextPaint.measureText(label)
+        val pillW = textW + 24f
+        val pillH = 38f
+        val left = mediaRect.left + 16f
+        val top = mediaRect.top + 16f
+        val pillRect = RectF(left, top, left + pillW, top + pillH)
+        val pillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(160, 0, 0, 0) }
+        canvas.drawRoundRect(pillRect, 14f, 14f, pillPaint)
+        canvas.drawText(label, left + 12f, top + 26f, badgeTextPaint)
     }
 
     // =========================================================================
@@ -644,6 +1006,24 @@ object PostStoryTemplateGenerator {
         radius: Float,
         post: FeedPost,
     ) {
+        drawAvatar(
+            canvas = canvas,
+            avatarBitmap = avatarBitmap,
+            cx = cx,
+            cy = cy,
+            radius = radius,
+            fallbackInitialSource = post.authorFullName.ifBlank { post.authorUsername.orEmpty() },
+        )
+    }
+
+    private fun drawAvatar(
+        canvas: Canvas,
+        avatarBitmap: Bitmap?,
+        cx: Float,
+        cy: Float,
+        radius: Float,
+        fallbackInitialSource: String,
+    ) {
         if (avatarBitmap != null) {
             val clipPath = Path().apply {
                 addCircle(cx, cy, radius, Path.Direction.CW)
@@ -660,15 +1040,15 @@ object PostStoryTemplateGenerator {
             }
             canvas.drawCircle(cx, cy, radius, bgPaint)
 
-            val initial = (post.authorFullName.firstOrNull() ?: post.authorUsername?.firstOrNull() ?: 'U')
+            val initial = (fallbackInitialSource.firstOrNull() ?: 'U')
                 .uppercaseChar().toString()
             val initialPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
                 color = Color.parseColor("#666666")
-                textSize = 28f
+                textSize = radius * 0.8f
                 typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
                 textAlign = Paint.Align.CENTER
             }
-            canvas.drawText(initial, cx, cy + 10f, initialPaint)
+            canvas.drawText(initial, cx, cy + (radius * 0.28f), initialPaint)
         }
 
         // Circular border
@@ -680,26 +1060,126 @@ object PostStoryTemplateGenerator {
         canvas.drawCircle(cx, cy, radius, borderPaint)
     }
 
-    private fun drawVerifiedBadge(canvas: Canvas, cx: Float, cy: Float, radius: Float) {
-        val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#1D9BF0")
-            style = Paint.Style.FILL
+    private fun drawVerificationBadgeSeal(
+        canvas: Canvas,
+        cx: Float,
+        cy: Float,
+        size: Float,
+        badgeColorArgb: Int,
+        verifiedDrawable: Drawable?,
+    ) {
+        val half = size / 2f
+        if (verifiedDrawable != null) {
+            val tinted = DrawableCompat.wrap(verifiedDrawable.mutate())
+            DrawableCompat.setTint(tinted, badgeColorArgb)
+            tinted.setBounds(
+                (cx - half).toInt(),
+                (cy - half).toInt(),
+                (cx + half).toInt(),
+                (cy + half).toInt(),
+            )
+            tinted.draw(canvas)
+            return
         }
-        canvas.drawCircle(cx, cy, radius, bgPaint)
+
+        // Fallback scalloped seal path matching ic_verified_badge for off-device/unit rendering.
+        val path = Path()
+        val lobes = 10
+        val outerR = half
+        val innerR = half * 0.80f
+        val totalSteps = lobes * 2
+        for (i in 0 until totalSteps) {
+            val angle = (i.toDouble() / totalSteps) * Math.PI * 2.0
+            val r = if (i % 2 == 0) outerR else innerR
+            val x = cx + (r * cos(angle)).toFloat()
+            val y = cy + (r * sin(angle)).toFloat()
+            if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+        }
+        path.close()
+        canvas.drawPath(path, Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = badgeColorArgb
+            style = Paint.Style.FILL
+        })
 
         val checkPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.WHITE
+            color = if (badgeColorArgb == Color.WHITE) Color.parseColor("#141414") else Color.WHITE
             style = Paint.Style.STROKE
-            strokeWidth = radius * 0.22f
+            strokeWidth = half * 0.22f
             strokeCap = Paint.Cap.ROUND
             strokeJoin = Paint.Join.ROUND
         }
         val checkPath = Path().apply {
-            moveTo(cx - radius * 0.42f, cy)
-            lineTo(cx - radius * 0.10f, cy + radius * 0.32f)
-            lineTo(cx + radius * 0.44f, cy - radius * 0.30f)
+            moveTo(cx - half * 0.38f, cy)
+            lineTo(cx - half * 0.08f, cy + half * 0.28f)
+            lineTo(cx + half * 0.40f, cy - half * 0.28f)
         }
         canvas.drawPath(checkPath, checkPaint)
+    }
+
+    private fun drawBookmarkIcon(
+        canvas: Canvas,
+        cx: Float,
+        cy: Float,
+        size: Float,
+        color: Int,
+        filled: Boolean,
+    ) {
+        val s = size / 24f
+        val path = Path().apply {
+            moveTo(cx - 6.5f * s, cy - 8.5f * s)
+            lineTo(cx + 6.5f * s, cy - 8.5f * s)
+            lineTo(cx + 6.5f * s, cy + 9.0f * s)
+            lineTo(cx, cy + 4.2f * s)
+            lineTo(cx - 6.5f * s, cy + 9.0f * s)
+            close()
+        }
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            this.color = color
+            if (filled) {
+                style = Paint.Style.FILL
+            } else {
+                style = Paint.Style.STROKE
+                strokeWidth = 2.2f * s
+                strokeJoin = Paint.Join.ROUND
+            }
+        }
+        canvas.drawPath(path, paint)
+    }
+
+    private fun drawSendIcon(
+        canvas: Canvas,
+        cx: Float,
+        cy: Float,
+        size: Float,
+        color: Int,
+    ) {
+        val s = size / 24f
+        val path = Path().apply {
+            moveTo(cx + 8.5f * s, cy - 8.5f * s)
+            lineTo(cx - 9.0f * s, cy - 1.5f * s)
+            lineTo(cx - 1.2f * s, cy + 1.5f * s)
+            lineTo(cx + 1.5f * s, cy + 9.0f * s)
+            close()
+        }
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            this.color = color
+            style = Paint.Style.STROKE
+            strokeWidth = 2.1f * s
+            strokeJoin = Paint.Join.ROUND
+            strokeCap = Paint.Cap.ROUND
+        }
+        canvas.drawPath(path, paint)
+        canvas.drawLine(cx + 8.5f * s, cy - 8.5f * s, cx - 1.2f * s, cy + 1.5f * s, paint)
+    }
+
+    private fun drawMoreDots(canvas: Canvas, cx: Float, cy: Float, color: Int) {
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            this.color = color
+            style = Paint.Style.FILL
+        }
+        canvas.drawCircle(cx - 9f, cy, 2.5f, paint)
+        canvas.drawCircle(cx, cy, 2.5f, paint)
+        canvas.drawCircle(cx + 9f, cy, 2.5f, paint)
     }
 
     private fun drawPlayButton(canvas: Canvas, cx: Float, cy: Float, size: Float) {

@@ -21,6 +21,7 @@ import javax.inject.Inject
 import ir.coffevista.vista_native.core.database.profile.OwnProfileDao
 import ir.coffevista.vista_native.core.database.profile.hasBlueBadge
 import ir.coffevista.vista_native.core.database.profile.hasPremiumPrivileges
+import ir.coffevista.vista_native.core.database.profile.tierCapabilities
 
 sealed interface PostDetailUiState {
     data object Loading : PostDetailUiState
@@ -29,6 +30,7 @@ sealed interface PostDetailUiState {
         val viewerUserId: String? = null,
         val viewerIsBlueTick: Boolean = false,
         val viewerHasPremiumEdit: Boolean = false,
+        val viewerMaxPostChars: Int = 300,
         val isRefreshing: Boolean = false,
         val isStale: Boolean = false,
         val refreshError: String? = null,
@@ -58,6 +60,7 @@ class PostDetailViewModel @Inject constructor(
 
     private var isBlueTick: Boolean = false
     private var hasPremium: Boolean = false
+    private var maxPostChars: Int = 300
 
     private val postId: String = savedStateHandle.get<String>("reference") ?: ""
     private val _uiState = MutableStateFlow<PostDetailUiState>(PostDetailUiState.Loading)
@@ -87,11 +90,13 @@ class PostDetailViewModel @Inject constructor(
                 ownProfileDao.getOwnProfile(accountId).collectLatest { profile ->
                     isBlueTick = profile?.hasBlueBadge == true
                     hasPremium = profile?.hasPremiumPrivileges == true
+                    maxPostChars = profile?.tierCapabilities?.maxPostChars ?: 300
                     val current = _uiState.value as? PostDetailUiState.Content
                     if (current != null) {
                         _uiState.value = current.copy(
                             viewerIsBlueTick = isBlueTick,
                             viewerHasPremiumEdit = hasPremium,
+                            viewerMaxPostChars = maxPostChars,
                         )
                     }
                 }
@@ -114,6 +119,7 @@ class PostDetailViewModel @Inject constructor(
                             viewerUserId = accountId,
                             viewerIsBlueTick = isBlueTick,
                             viewerHasPremiumEdit = hasPremium,
+                            viewerMaxPostChars = maxPostChars,
                             isRefreshing = current?.isRefreshing ?: true,
                             isStale = current?.isStale ?: false,
                             refreshError = current?.refreshError,
@@ -143,6 +149,7 @@ class PostDetailViewModel @Inject constructor(
                 viewerUserId = accountId,
                 viewerIsBlueTick = isBlueTick,
                 viewerHasPremiumEdit = hasPremium,
+                viewerMaxPostChars = maxPostChars,
                 isRefreshing = true,
             )
         }
@@ -153,6 +160,7 @@ class PostDetailViewModel @Inject constructor(
                 viewerUserId = accountId,
                 viewerIsBlueTick = isBlueTick,
                 viewerHasPremiumEdit = hasPremium,
+                viewerMaxPostChars = maxPostChars,
             )
         } catch (error: Exception) {
             val current = (_uiState.value as? PostDetailUiState.Content)?.post ?: cached
@@ -162,6 +170,7 @@ class PostDetailViewModel @Inject constructor(
                     viewerUserId = accountId,
                     viewerIsBlueTick = isBlueTick,
                     viewerHasPremiumEdit = hasPremium,
+                    viewerMaxPostChars = maxPostChars,
                     isStale = true,
                     refreshError = error.message ?: "به‌روزرسانی پست ناموفق بود",
                 )

@@ -67,6 +67,7 @@ import ir.coffevista.vista_native.features.profile.settings.saved.SavedPostsScre
 import ir.coffevista.vista_native.features.profile.settings.password.ChangePasswordScreen
 import ir.coffevista.vista_native.features.profile.settings.verification.VerificationRequestScreen
 import ir.coffevista.vista_native.features.profile.settings.about.AboutSettingsScreen
+import ir.coffevista.vista_native.features.profile.settings.about.TickGuideScreen
 import ir.coffevista.vista_native.features.profile.settings.about.VistaAboutSlideshowScreen
 import ir.coffevista.vista_native.features.profile.settings.about.ContactUsScreen
 import ir.coffevista.vista_native.features.profile.settings.about.FAQScreen
@@ -529,12 +530,13 @@ fun VistaApp(
                                 onBack = onBack,
                             )
                         },
-                        hashtagPosts = { hashtag, onBack, onPostClick, onAuthorClick ->
+                        hashtagPosts = { hashtag, onBack, onPostClick, onAuthorClick, onNavigateToStoryEditor ->
                             ir.coffevista.vista_native.features.feed.ui.hashtag.HashtagPostsScreen(
                                 hashtag = hashtag,
                                 onBack = onBack,
                                 onPostClick = onPostClick,
                                 onAuthorClick = onAuthorClick,
+                                onNavigateToStoryEditor = onNavigateToStoryEditor,
                             )
                         },
                         notifications = { onBack, onPostClick, onUserClick, onChatClick, onSuggestionsClick, onAppealClick ->
@@ -605,19 +607,23 @@ fun VistaApp(
                             )
                         },
                         videoTrimmer = { videoUri, onBack, onTrimComplete ->
+                            val addPostVm: ir.coffevista.vista_native.features.feed.ui.create.AddPostViewModel = hiltViewModel()
+                            val addPostState by addPostVm.uiState.collectAsStateWithLifecycle()
                             ir.coffevista.vista_native.features.feed.ui.create.VideoTrimmerScreen(
                                 videoUri = videoUri,
+                                maxDurationMs = addPostState.maxVideoDurationMs,
                                 onBack = onBack,
                                 onTrimComplete = onTrimComplete,
                             )
                         },
-                        reels = { postId, onBack, onAuthorClick, onCommentsClick, onShareClick ->
+                        reels = { postId, onBack, onAuthorClick, onCommentsClick, onShareClick, onNavigateToStoryEditor ->
                             ir.coffevista.vista_native.features.feed.ui.reels.ReelsViewerScreen(
                                 initialPostId = postId,
                                 onBack = onBack,
                                 onAuthorClick = onAuthorClick,
                                 onCommentsClick = onCommentsClick,
                                 onShareClick = onShareClick,
+                                onNavigateToStoryEditor = onNavigateToStoryEditor,
                             )
                         },
                         searchRoot = { onOpenWorkspace, onOpenQrScanner ->
@@ -807,10 +813,11 @@ fun VistaApp(
                         dataStorage = { onBack ->
                             DataStorageSettingsScreen(onBack = onBack)
                         },
-                        savedPosts = { onBack, onPostClick ->
+                        savedPosts = { onBack, onPostClick, onNavigateToStoryEditor ->
                             SavedPostsScreen(
                                 onBack = onBack,
                                 onPostClick = onPostClick,
+                                onNavigateToStoryEditor = onNavigateToStoryEditor,
                             )
                         },
                         changePassword = { onBack ->
@@ -822,7 +829,7 @@ fun VistaApp(
                         termsConditions = { onBack ->
                             TermsAndConditionsScreen(onBack = onBack)
                         },
-                        aboutSettings = { onBack, onSlideshow, onTerms, onContactUs, onPrivacyPolicy, onFaq ->
+                        aboutSettings = { onBack, onSlideshow, onTerms, onContactUs, onPrivacyPolicy, onFaq, onTickGuide ->
                             AboutSettingsScreen(
                                 onBack = onBack,
                                 onSlideshowClick = onSlideshow,
@@ -830,7 +837,14 @@ fun VistaApp(
                                 onContactUsClick = onContactUs,
                                 onPrivacyPolicyClick = onPrivacyPolicy,
                                 onFaqClick = onFaq,
+                                onTickGuideClick = onTickGuide,
                                 onCheckForUpdate = onCheckForUpdate,
+                            )
+                        },
+                        tickGuide = { onBack, onUpgradeClick ->
+                            TickGuideScreen(
+                                onBack = onBack,
+                                onUpgradeClick = onUpgradeClick,
                             )
                         },
                         aboutSlideshow = { onClose ->
@@ -1135,11 +1149,14 @@ fun VistaApp(
                             )
                         },
                         chatBadgeCount = chatBadgeCount,
-                        globalTopOverlay = { glassState, currentRoute, onOpenChat ->
-                            GlobalAudioMiniPlayerOverlay(
+                        isMiniPlayerActive = { isGlobalMiniPlayerActive() },
+                        miniPlayerContent = { glassState, modifier, shape, onOpenChat, onOpenPost ->
+                            GlobalMiniPlayerSlotContent(
                                 glassState = glassState,
-                                currentRoute = currentRoute,
+                                modifier = modifier,
+                                shape = shape,
                                 onOpenChat = onOpenChat,
+                                onOpenPost = onOpenPost,
                             )
                         },
                     ),

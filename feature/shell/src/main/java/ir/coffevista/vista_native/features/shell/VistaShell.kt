@@ -46,6 +46,10 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.draw.clip
 import ir.coffevista.vista_native.core.designsystem.component.LocalBottomBarVisibility
 import ir.coffevista.vista_native.core.designsystem.component.LocalHomeTabClick
+import ir.coffevista.vista_native.core.designsystem.component.LocalMiniPlayerSlot
+import ir.coffevista.vista_native.core.designsystem.component.LocalNavigateToPremium
+import ir.coffevista.vista_native.core.designsystem.component.VistaMiniPlayerSlot
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -399,8 +403,42 @@ fun VistaShell(
         LocalBottomBarVisibility provides { isBottomIslandVisible = it },
         LocalHomeTabClick provides homeTabClickFlow,
         LocalVistaInternalLinkNavigator provides internalLinkNavigator,
+        LocalNavigateToPremium provides { navController.navigate(ShellRoutes.PricingPage) },
     ) {
+        val isMiniPlayerActive = content.isMiniPlayerActive?.invoke() == true
+        val miniPlayerExtraHeight by animateDpAsState(
+            targetValue = if (isMiniPlayerActive) 47.dp else 0.dp,
+            animationSpec = tween(220),
+            label = "mini-player-extra-height",
+        )
+        val openChatFromMiniPlayer: (String, String?) -> Unit = remember(navController) {
+            { conversationId, messageId ->
+                if (conversationId.isNotBlank()) {
+                    selectTab(ShellTab.Chat)
+                    navController.navigate(ShellRoutes.chatDetail(conversationId, messageId))
+                }
+            }
+        }
+        val openPostFromMiniPlayer: (String) -> Unit = remember(navController) {
+            { postId ->
+                if (postId.isNotBlank()) {
+                    navController.navigate(ShellRoutes.postDetail(postId))
+                }
+            }
+        }
+        val miniPlayerSlot = VistaMiniPlayerSlot(
+            extraHeight = miniPlayerExtraHeight,
+        ) { slotGlassState, slotModifier, slotShape ->
+            content.miniPlayerContent?.invoke(
+                slotGlassState,
+                slotModifier,
+                slotShape,
+                openChatFromMiniPlayer,
+                openPostFromMiniPlayer,
+            )
+        }
         Box(modifier = modifier.fillMaxSize()) {
+        CompositionLocalProvider(LocalMiniPlayerSlot provides miniPlayerSlot) {
         NavHost(
             navController = navController,
             startDestination = ShellRoutes.FeedGraph,
@@ -502,6 +540,7 @@ fun VistaShell(
                         { navController.popBackStack() },
                         { postId -> navController.navigate(ShellRoutes.postDetail(postId)) },
                         { userId -> navController.navigate(ShellRoutes.userProfile(userId)) },
+                        { uri -> navController.navigate(ShellRoutes.storyCreate(uri.toString())) },
                     )
                 }
                 composable(
@@ -868,6 +907,7 @@ fun VistaShell(
                     content.savedPosts(
                         { navController.popBackStack() },
                         { postId -> navController.navigate(ShellRoutes.postDetail(postId)) },
+                        { uri -> navController.navigate(ShellRoutes.storyCreate(uri.toString())) },
                     )
                 }
                 composable(ShellRoutes.ChangePassword) {
@@ -887,6 +927,13 @@ fun VistaShell(
                         { navController.navigate(ShellRoutes.ContactUs) },
                         { navController.navigate(ShellRoutes.PrivacyPolicy) },
                         { navController.navigate(ShellRoutes.FAQPage) },
+                        { navController.navigate(ShellRoutes.TickGuide) },
+                    )
+                }
+                composable(ShellRoutes.TickGuide) {
+                    content.tickGuide?.invoke(
+                        { navController.popBackStack() },
+                        { navController.navigate(ShellRoutes.PricingPage) },
                     )
                 }
                 composable(ShellRoutes.AboutSlideshow) {
@@ -928,6 +975,7 @@ fun VistaShell(
                         { userId -> navController.navigate(ShellRoutes.userProfile(userId)) },
                         { pId -> navController.navigate(ShellRoutes.postDetail(pId)) },
                         { _ -> },
+                        { uri -> navController.navigate(ShellRoutes.storyCreate(uri.toString())) },
                     )
                 } else {
                     navController.popBackStack()
@@ -962,6 +1010,7 @@ fun VistaShell(
                     { navController.popBackStack() },
                     { postId -> navController.navigate(ShellRoutes.postDetail(postId)) },
                     { userId -> navController.navigate(ShellRoutes.userProfile(userId)) },
+                    { uri -> navController.navigate(ShellRoutes.storyCreate(uri.toString())) },
                 )
             }
             composable(
@@ -1053,14 +1102,6 @@ fun VistaShell(
                 )
             }
         }
-        content.globalTopOverlay?.invoke(
-            glassState,
-            backStackEntry?.destination?.route,
-        ) { conversationId, messageId ->
-            if (conversationId.isNotBlank()) {
-                selectTab(ShellTab.Chat)
-                navController.navigate(ShellRoutes.chatDetail(conversationId, messageId))
-            }
         }
         val islandVisible = showBottomIsland && isBottomIslandVisible
         val snackbarBottomPadding by animateDpAsState(

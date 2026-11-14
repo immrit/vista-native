@@ -435,6 +435,11 @@ class MainActivity : FragmentActivity() {
     }
 
     private fun submitDeepLink(intent: Intent?) {
+        if (intent?.action == ir.coffevista.vista_native.core.designsystem.audio.VistaMusicPlayerService.ACTION_OPEN_PLAYER) {
+            ir.coffevista.vista_native.core.designsystem.audio.VistaAudioPlayer.attach(applicationContext)
+            ir.coffevista.vista_native.core.designsystem.audio.VistaAudioPlayer.requestOpenFromNotification()
+            return
+        }
         val notificationData = intent?.extras
             ?.keySet()
             ?.mapNotNull { key -> intent.extras?.getString(key)?.let { key to it } }

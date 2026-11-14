@@ -145,6 +145,7 @@ import ir.coffevista.vista_native.features.stories.ui.canvas.StoryTransformMath
 import ir.coffevista.vista_native.features.stories.ui.canvas.StoryTrashZone
 import ir.coffevista.vista_native.features.stories.ui.canvas.detectStoryGestures
 import ir.coffevista.vista_native.features.stories.ui.canvas.resolvedTransform
+import ir.coffevista.vista_native.core.designsystem.component.VistaPremiumBottomSheet
 import ir.coffevista.vista_native.features.stories.ui.render.ElementVisualState
 import ir.coffevista.vista_native.features.stories.ui.render.LinkIcon
 import ir.coffevista.vista_native.features.stories.ui.render.LocalStoryDominantColors
@@ -167,6 +168,7 @@ fun StoryEditorScreen(
     onClose: () -> Unit,
     onStoryPublished: () -> Unit,
     modifier: Modifier = Modifier,
+    onNavigateToPremium: () -> Unit = {},
     initialMediaUri: Uri? = null,
     initialMediaMimeType: String? = null,
     initialSharedContentId: String? = null,
@@ -208,6 +210,7 @@ fun StoryEditorScreen(
     var showTextEditor by remember { mutableStateOf(false) }
     var editingTextElementId by remember { mutableStateOf<String?>(null) }
     var textEditorInitialSpec by remember { mutableStateOf(StoryTextSpec("")) }
+    var showPremiumBottomSheet by remember { mutableStateOf(false) }
 
     var showDrawingEditor by remember { mutableStateOf(false) }
     var showStickerSheet by remember { mutableStateOf(false) }
@@ -996,9 +999,13 @@ fun StoryEditorScreen(
                                         )
                                         .clickable {
                                             haptics.snap()
-                                            viewModel.setDuration(
-                                                if (is48h) StoryDurationType.Hours24 else StoryDurationType.Hours48,
-                                            )
+                                            if (!is48h && uiState.tierCapabilities.maxStoryHours < 48) {
+                                                showPremiumBottomSheet = true
+                                            } else {
+                                                viewModel.setDuration(
+                                                    if (is48h) StoryDurationType.Hours24 else StoryDurationType.Hours48,
+                                                )
+                                            }
                                         }
                                         .padding(horizontal = 11.dp, vertical = 9.dp),
                                     verticalAlignment = Alignment.CenterVertically,
@@ -1672,6 +1679,14 @@ fun StoryEditorScreen(
                         fontSize = 13.sp,
                     )
                 }
+            }
+
+            if (showPremiumBottomSheet) {
+                VistaPremiumBottomSheet(
+                    feature = "استوری ۴۸ ساعته",
+                    onDismiss = { showPremiumBottomSheet = false },
+                    onUpgradeClick = onNavigateToPremium,
+                )
             }
         }
     }

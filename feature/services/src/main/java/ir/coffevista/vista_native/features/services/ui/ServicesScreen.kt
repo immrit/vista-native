@@ -33,6 +33,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import ir.coffevista.vista_native.core.designsystem.component.VistaMiniPlayerHost
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -172,47 +173,50 @@ fun ServicesScreen(
             modifier = modifier.fillMaxSize(),
             containerColor = MaterialTheme.colorScheme.background,
             topBar = {
-                TopAppBar(
-                    modifier = Modifier.vistaGlass(
-                        state = servicesGlassState,
-                        shape = RectangleShape,
-                        tint = MaterialTheme.colorScheme.surface,
-                        isDark = isDarkServices,
-                        blurRadius = VistaGlassTokens.BarBlur,
-                        rimWidth = 0.dp,
-                        shadowElevation = 4.dp,
-                    ),
-                    title = {
-                        Text(
-                            text = "سرویس‌ها",
-                            style = MaterialTheme.typography.headlineMedium.copy(
-                                fontFamily = VistaFontFamily,
-                                fontWeight = FontWeight.Black,
-                                fontSize = 22.sp,
-                                color = MaterialTheme.colorScheme.onBackground,
-                                letterSpacing = (-0.4).sp,
-                            ),
-                        )
-                    },
-                    actions = {
-                        IconButton(
-                            onClick = { viewModel.refresh() },
-                            modifier = Modifier.semantics {
-                                contentDescription = "به‌روزرسانی"
-                            },
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Refresh,
-                                contentDescription = "به‌روزرسانی",
-                                tint = MaterialTheme.colorScheme.onBackground,
-                                modifier = Modifier.size(24.dp),
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    TopAppBar(
+                        modifier = Modifier.vistaGlass(
+                            state = servicesGlassState,
+                            shape = RectangleShape,
+                            tint = MaterialTheme.colorScheme.surface,
+                            isDark = isDarkServices,
+                            blurRadius = VistaGlassTokens.BarBlur,
+                            rimWidth = 0.dp,
+                            shadowElevation = 4.dp,
+                        ),
+                        title = {
+                            Text(
+                                text = "سرویس‌ها",
+                                style = MaterialTheme.typography.headlineMedium.copy(
+                                    fontFamily = VistaFontFamily,
+                                    fontWeight = FontWeight.Black,
+                                    fontSize = 22.sp,
+                                    color = MaterialTheme.colorScheme.onBackground,
+                                    letterSpacing = (-0.4).sp,
+                                ),
                             )
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = Color.Transparent,
-                    ),
-                )
+                        },
+                        actions = {
+                            IconButton(
+                                onClick = { viewModel.refresh() },
+                                modifier = Modifier.semantics {
+                                    contentDescription = "به‌روزرسانی"
+                                },
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Refresh,
+                                    contentDescription = "به‌روزرسانی",
+                                    tint = MaterialTheme.colorScheme.onBackground,
+                                    modifier = Modifier.size(24.dp),
+                                )
+                            }
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = Color.Transparent,
+                        ),
+                    )
+                    VistaMiniPlayerHost(glassState = servicesGlassState)
+                }
             },
         ) { innerPadding ->
             PullToRefreshBox(

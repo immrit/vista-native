@@ -7,8 +7,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import ir.coffevista.vista_native.core.database.profile.OwnProfileDao
+import ir.coffevista.vista_native.core.database.profile.tierCapabilities
 import ir.coffevista.vista_native.core.model.session.AuthenticationState
 import ir.coffevista.vista_native.core.model.session.AuthenticationStateProvider
+import ir.coffevista.vista_native.core.model.tier.UserTier
+import ir.coffevista.vista_native.core.model.tier.UserTierCapabilities
+import ir.coffevista.vista_native.core.model.tier.UserTierPolicy
 import ir.coffevista.vista_native.features.feed.data.PostMediaUploadGateway
 import ir.coffevista.vista_native.features.stories.data.StoryDynamicContextService
 import ir.coffevista.vista_native.features.stories.data.StoryRepository
@@ -55,9 +60,9 @@ internal object StoryVideoUploadPolicy {
     const val MaxBytes: Long = 100L * 1024 * 1024
     const val MaxDurationMs: Long = 60_000L
 
-    fun validateByteCount(byteCount: Long) {
+    fun validateByteCount(byteCount: Long, maxBytes: Long = MaxBytes) {
         require(byteCount > 0) { "فایل ویدیو خالی است" }
-        require(byteCount <= MaxBytes) { "حجم ویدیو بیش از حد مجاز است (حداکثر ۱۰۰ مگابایت)" }
+        require(byteCount <= maxBytes) { "حجم ویدیو بیش از حد مجاز است (حداکثر ${maxBytes / (1024L * 1024L)} مگابایت)" }
     }
 
     fun validateDuration(durationMs: Long?) {
@@ -87,6 +92,7 @@ data class StoryEditorUiState(
     val musicEndMs: Int = 0,
     val saveMusicToLibrary: Boolean = false,
     val durationType: StoryDurationType = StoryDurationType.Hours24,
+    val tierCapabilities: UserTierCapabilities = UserTierPolicy.capabilitiesFor(UserTier.NORMAL),
     val privacyType: StoryPrivacyType = StoryPrivacyType.Everyone,
     val closeFriendCandidates: List<StoryUser> = emptyList(),
     val selectedCloseFriendIds: Set<String> = emptySet(),
@@ -110,10 +116,30 @@ class StoryEditorViewModel @Inject constructor(
     private val authStateProvider: AuthenticationStateProvider,
     @ApplicationContext private val context: Context,
     private val storyUploadManager: ir.coffevista.vista_native.features.stories.data.StoryUploadManager? = null,
+    private val ownProfileDao: OwnProfileDao? = null,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(StoryEditorUiState())
     val uiState: StateFlow<StoryEditorUiState> = _uiState.asStateFlow()
+
+    init {
+        val userId = currentUserId
+        if (userId.isNotBlank() && ownProfileDao != null) {
+            viewModelScope.launch {
+                ownProfileDao.getOwnProfile(userId).collect { profile ->
+                    if (profile != null) {
+                        val caps = profile.tierCapabilities
+                        _uiState.update { current ->
+                            current.copy(
+                                tierCapabilities = caps,
+                                durationType = if (caps.maxStoryHours < 48) StoryDurationType.Hours24 else current.durationType,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     // Transactional UndoStore stacks (lightweight structural references, zero bitmap duplication)
     private val undoStack = ArrayDeque<StoryCanvasHistorySnapshot>()
@@ -631,7 +657,12 @@ class StoryEditorViewModel @Inject constructor(
     }
 
     fun setDuration(duration: StoryDurationType) {
-        _uiState.update { it.copy(durationType = duration) }
+        val allowed = if (duration == StoryDurationType.Hours48 && _uiState.value.tierCapabilities.maxStoryHours < 48) {
+            StoryDurationType.Hours24
+        } else {
+            duration
+        }
+        _uiState.update { it.copy(durationType = allowed) }
     }
 
     fun setPrivacy(privacy: StoryPrivacyType) {
@@ -1090,7 +1121,7 @@ class StoryEditorViewModel @Inject constructor(
         uri: Uri,
         onProgress: (Float) -> Unit,
     ) = withContext(Dispatchers.IO) {
-        val maxBytes = StoryVideoUploadPolicy.MaxBytes
+        val maxBytes = _uiState.value.tierCapabilities.maxUploadBytes
         val temporaryVideo = File.createTempFile("story-video-", ".mp4", context.cacheDir)
         try {
             val input = context.contentResolver.openInputStream(uri)
@@ -1104,10 +1135,10 @@ class StoryEditorViewModel @Inject constructor(
                         val count = source.read(buffer)
                         if (count < 0) break
                         total += count
-                        StoryVideoUploadPolicy.validateByteCount(total)
+                        StoryVideoUploadPolicy.validateByteCount(total, maxBytes)
                         target.write(buffer, 0, count)
                     }
-                    StoryVideoUploadPolicy.validateByteCount(total)
+                    StoryVideoUploadPolicy.validateByteCount(total, maxBytes)
                 }
             }
             val retriever = MediaMetadataRetriever()

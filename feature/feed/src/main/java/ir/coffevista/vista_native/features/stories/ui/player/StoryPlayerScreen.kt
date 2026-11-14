@@ -93,6 +93,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import ir.coffevista.vista_native.core.designsystem.component.VistaVerificationBadge
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
@@ -630,7 +631,8 @@ fun StoryPlayerScreen(
                                             Spacer(modifier = Modifier.width(4.dp))
                                             StoryVerificationBadge(
                                                 isVerified = activeUser.isVerified,
-                                                verificationType = activeUser.verificationType,
+                                                verificationTypeRaw = activeUser.verificationTypeRaw,
+                                                role = activeUser.role ?: activeUser.accountType,
                                                 isPremium = activeUser.isPremium,
                                                 size = 14.dp,
                                             )
@@ -1279,30 +1281,20 @@ fun StoryPlayerScreen(
 @Composable
 private fun StoryVerificationBadge(
     isVerified: Boolean,
-    verificationType: StoryVerificationType,
+    verificationTypeRaw: String?,
+    role: String?,
     isPremium: Boolean,
     size: Dp = 14.dp,
 ) {
     if (!isVerified && !isPremium) return
-    val badgeColor = when (verificationType) {
-        StoryVerificationType.Gold -> Color(0xFFFFA000)
-        StoryVerificationType.Black -> Color.White
-        else -> MaterialTheme.colorScheme.primary
-    }
-    Box(
-        modifier = Modifier
-            .size(size)
-            .clip(CircleShape)
-            .background(badgeColor),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = "✓",
-            color = if (badgeColor == Color.White) Color.Black else Color.White,
-            fontSize = (size.value * 0.55f).sp,
-            fontWeight = FontWeight.Bold,
-        )
-    }
+    val resolvedTypeRaw = verificationTypeRaw ?: if (!isVerified && isPremium) "gold" else null
+    VistaVerificationBadge(
+        isVerified = true,
+        verificationType = resolvedTypeRaw,
+        role = role,
+        size = size,
+        isDarkSurface = true,
+    )
 }
 
 private fun formatStoryTimeAgo(createdAt: String?): String {

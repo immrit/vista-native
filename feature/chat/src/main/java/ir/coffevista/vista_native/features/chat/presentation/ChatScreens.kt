@@ -29,6 +29,7 @@ import ir.coffevista.vista_native.features.chat.presentation.audio.ChatMiniAudio
 import ir.coffevista.vista_native.features.chat.presentation.audio.MusicPlayerBubble
 import ir.coffevista.vista_native.core.designsystem.component.resolveMusicTitle
 import ir.coffevista.vista_native.core.designsystem.component.VistaBadgeDefaults
+import ir.coffevista.vista_native.core.designsystem.component.VistaMiniPlayerHost
 import ir.coffevista.vista_native.core.designsystem.glass.vistaGlassSource
 import ir.coffevista.vista_native.core.designsystem.glass.vistaGlass
 import ir.coffevista.vista_native.core.designsystem.glass.vistaGlassHalo
@@ -459,6 +460,7 @@ fun ConversationListScreen(
         modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
+            Column(modifier = Modifier.fillMaxWidth()) {
             if (selectedConversationIds.isNotEmpty()) {
                 val selected = state.conversations.filter { it.id in selectedConversationIds }
                 val shouldPin = selected.any { !it.isPinned }
@@ -582,6 +584,8 @@ fun ConversationListScreen(
                     }
                 },
             )
+            VistaMiniPlayerHost(glassState = conversationsGlassState)
+            }
         },
     ) { padding ->
         Box(

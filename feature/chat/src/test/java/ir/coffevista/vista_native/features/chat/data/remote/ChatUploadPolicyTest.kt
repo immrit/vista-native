@@ -10,13 +10,14 @@ class ChatUploadPolicyTest {
     private val policy = ChatUploadPolicy(now = { 1_000L })
 
     @Test
-    fun `normal premium and blue badge limits match Flutter`() {
+    fun `normal premium and blue badge limits match tier policy`() {
         assertEquals(ChatUploadPolicy.NORMAL_MAX_BYTES, policy.maxBytes(null))
         assertEquals(
             ChatUploadPolicy.PREMIUM_MAX_BYTES,
             policy.maxBytes(profile(role = "premium", days = 1)),
         )
-        assertNull(
+        assertEquals(
+            ChatUploadPolicy.BLUE_MAX_BYTES,
             policy.maxBytes(
                 profile(
                     verified = true,
@@ -29,13 +30,17 @@ class ChatUploadPolicyTest {
             policy.maxBytes(profile(verified = true, verificationType = "goldTick")),
         )
         assertEquals(
+            ChatUploadPolicy.PREMIUM_MAX_BYTES,
+            policy.maxBytes(profile(verified = true, verificationType = "blackTick")),
+        )
+        assertEquals(
             ChatUploadPolicy.NORMAL_MAX_BYTES,
             policy.maxBytes(profile(role = "premium", days = 0)),
         )
     }
 
     @Test
-    fun `normal account cannot cross 15MB while premium can reach 100MB`() {
+    fun `normal account cannot cross 10MB while gold or black reach 50MB and blue reaches 100MB`() {
         assertRejects {
             validatePdf(size = ChatUploadPolicy.NORMAL_MAX_BYTES + 1, profile = null)
         }
@@ -52,6 +57,13 @@ class ChatUploadPolicyTest {
                 profile = profile(role = "premium", days = 2),
             )
         }
+        assertEquals(
+            AttachmentKind.DOCUMENT,
+            validatePdf(
+                size = ChatUploadPolicy.BLUE_MAX_BYTES,
+                profile = profile(verified = true, verificationType = "blueTick"),
+            ).kind,
+        )
     }
 
     @Test

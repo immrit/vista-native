@@ -68,6 +68,8 @@ data class SavedPostAuthorDto(
     @SerialName("full_name") val fullName: String? = null,
     @SerialName("avatar_url") val avatarUrl: String? = null,
     @SerialName("is_verified") val isVerified: Boolean = false,
+    @SerialName("verification_type") val verificationType: String? = null,
+    val role: String? = null,
 )
 
 @Serializable

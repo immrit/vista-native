@@ -5,11 +5,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.widthIn
+import ir.coffevista.vista_native.core.database.profile.tierCapabilities
 import ir.coffevista.vista_native.core.model.note.ProfileNotePrompts
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import ir.coffevista.vista_native.core.designsystem.glass.VistaGlassScrollSync
+import ir.coffevista.vista_native.core.designsystem.component.LocalMiniPlayerSlot
+import ir.coffevista.vista_native.core.designsystem.component.VistaMiniPlayerHost
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.ui.text.style.TextDirection
 import android.widget.Toast
@@ -88,6 +91,7 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.luminance
 import ir.coffevista.vista_native.features.profile.R
+import ir.coffevista.vista_native.core.database.profile.tierCapabilities
 import ir.coffevista.vista_native.features.profile.data.ProfileHighlightDto
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -184,7 +188,7 @@ fun OwnProfileScreen(
             VistaGlassScrollSync(profileGlassState, profileListState)
             val isDarkProfile = MaterialTheme.colorScheme.background.luminance() < 0.5f
             val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-            val profileTopBarHeight = statusBarTop + 56.dp
+            val profileTopBarHeight = statusBarTop + 56.dp + LocalMiniPlayerSlot.current.extraHeight
             Box(
                 modifier = modifier
                     .fillMaxSize()
@@ -325,18 +329,21 @@ fun OwnProfileScreen(
                         )
                         .statusBarsPadding(),
                 ) {
-                    OwnProfileAppBar(
-                        username = currentUsername,
-                        verified = (uiState as? OwnProfileUiState.Content)?.profile?.isVerified == true,
-                        verificationType = (uiState as? OwnProfileUiState.Content)?.profile?.verificationType,
-                        role = (uiState as? OwnProfileUiState.Content)?.profile?.accountType,
-                        onSettingsClick = {
-                            onSettingsClick?.invoke()
-                        },
-                        onOptionsClick = {
-                            showOptionsSheet = true
-                        },
-                    )
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        OwnProfileAppBar(
+                            username = currentUsername,
+                            verified = (uiState as? OwnProfileUiState.Content)?.profile?.isVerified == true,
+                            verificationType = (uiState as? OwnProfileUiState.Content)?.profile?.verificationType,
+                            role = (uiState as? OwnProfileUiState.Content)?.profile?.accountType,
+                            onSettingsClick = {
+                                onSettingsClick?.invoke()
+                            },
+                            onOptionsClick = {
+                                showOptionsSheet = true
+                            },
+                        )
+                        VistaMiniPlayerHost(glassState = profileGlassState)
+                    }
                 }
 
                 // Highlight Management Dialogs & Bottom Sheet
@@ -488,6 +495,8 @@ fun OwnProfileScreen(
                         avatarUrl = profile.avatarUrl,
                         bio = profile.bio,
                         isVerified = profile.isVerified,
+                        verificationType = profile.verificationType,
+                        role = profile.accountType,
                         onDismiss = { showShareSheet = false },
                         onSendDirectMessage = null,
                         onShowQrCard = { showVistaIdCard = true },
@@ -523,7 +532,7 @@ fun OwnProfileScreen(
                 }
 
                 editPostTarget?.let { target ->
-                    val maxLen = if (postsState.viewerIsBlueTick) 10000 else if (postsState.viewerHasPremiumEdit) 1000 else 500
+                    val maxLen = (uiState as? OwnProfileUiState.Content)?.profile?.let { it.tierCapabilities.maxPostChars } ?: 300
                     val title = if (postsState.viewerIsBlueTick && target.userId != postsState.viewerUserId) "ویرایش ناظر" else "ویرایش پست"
                     VistaEditPostDialog(
                         initialContent = target.content.orEmpty(),

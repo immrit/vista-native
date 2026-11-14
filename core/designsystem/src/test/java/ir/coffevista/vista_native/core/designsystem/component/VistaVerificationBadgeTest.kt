@@ -34,4 +34,28 @@ class VistaVerificationBadgeTest {
         assertEquals(ResolvedVerificationBadgeType.BLUE_TICK, resolveVerificationBadgeType(true, "blueTick"))
         assertEquals(ResolvedVerificationBadgeType.BLUE_TICK, resolveVerificationBadgeType(true, null))
     }
+
+    @Test
+    fun verificationBadgeColorArgb_returnsExpectedTierColors() {
+        assertEquals(
+            0xFF0095F6.toInt(),
+            verificationBadgeColorArgb(ResolvedVerificationBadgeType.BLUE_TICK, isDarkSurface = false),
+        )
+        assertEquals(
+            0xFF0095F6.toInt(),
+            verificationBadgeColorArgb(ResolvedVerificationBadgeType.BLUE_TICK, isDarkSurface = true),
+        )
+        assertEquals(
+            0xFFFFB300.toInt(),
+            verificationBadgeColorArgb(ResolvedVerificationBadgeType.GOLD_TICK, isDarkSurface = false),
+        )
+        assertEquals(
+            0xFF1A1A1A.toInt(),
+            verificationBadgeColorArgb(ResolvedVerificationBadgeType.BLACK_TICK, isDarkSurface = false),
+        )
+        assertEquals(
+            0xFFFFFFFF.toInt(),
+            verificationBadgeColorArgb(ResolvedVerificationBadgeType.BLACK_TICK, isDarkSurface = true),
+        )
+    }
 }

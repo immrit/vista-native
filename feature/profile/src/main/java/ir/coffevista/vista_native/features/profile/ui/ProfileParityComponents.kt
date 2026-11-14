@@ -7,6 +7,11 @@ import androidx.compose.foundation.layout.offset
 import ir.coffevista.vista_native.features.profile.data.ProfileNoteDto
 import ir.coffevista.vista_native.features.profile.ui.components.SoundCloudMusicBubble
 import ir.coffevista.vista_native.core.designsystem.component.isBackgroundMusicPost
+import ir.coffevista.vista_native.core.designsystem.audio.VistaAudioPlayer
+import ir.coffevista.vista_native.core.designsystem.component.LocalMusicPlaylist
+import ir.coffevista.vista_native.core.designsystem.component.vistaPostMusicTrack
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.collectAsState
 import ir.coffevista.vista_native.core.designsystem.component.resolveMusicRange
 import ir.coffevista.vista_native.core.designsystem.component.PostHeaderTimeOrMusicBadge
 import androidx.media3.common.MediaItem
@@ -225,9 +230,10 @@ internal fun ProfileParityList(
     }
 
     var activeMusicPostId by remember { mutableStateOf<String?>(null) }
+    val globalAudioState by VistaAudioPlayer.state.collectAsState()
 
-    LaunchedEffect(listState, postsState.posts, selectedTab) {
-        if (selectedTab != 0) {
+    LaunchedEffect(listState, postsState.posts, selectedTab, globalAudioState.isPlaying) {
+        if (selectedTab != 0 || globalAudioState.isPlaying) {
             activeMusicPostId = null
             if (backgroundMusicPlayer.isPlaying) {
                 backgroundMusicPlayer.pause()
@@ -286,6 +292,26 @@ internal fun ProfileParityList(
             }
     }
 
+    val profilePlaylistTitle = remember(header.username, header.fullName) {
+        header.username?.takeIf { it.isNotBlank() }?.let { "موسیقی @$it" }
+            ?: header.fullName.takeIf { it.isNotBlank() }?.let { "موسیقی $it" }
+            ?: "موسیقی پروفایل"
+    }
+    val profileMusicQueue = remember(postsState.posts, profilePlaylistTitle, header.avatarUrl) {
+        postsState.posts.mapNotNull { p ->
+            val url = p.musicUrl?.trim().orEmpty()
+            if (url.isEmpty() || isBackgroundMusicPost(url)) null
+            else vistaPostMusicTrack(
+                postId = p.id,
+                musicUrl = url,
+                title = p.musicTitle,
+                artist = p.authorUsername?.takeIf { it.isNotBlank() } ?: p.authorFullName,
+                artworkUrl = p.imageUrl ?: header.avatarUrl,
+                playlistTitle = profilePlaylistTitle,
+            )
+        }
+    }
+    CompositionLocalProvider(LocalMusicPlaylist provides profileMusicQueue) {
     LazyColumn(
         state = listState,
         modifier = modifier
@@ -427,6 +453,9 @@ internal fun ProfileParityList(
                                 title = post.musicTitle ?: "موزیک پست",
                                 subtitle = post.authorUsername ?: post.authorFullName,
                                 musicUrl = post.musicUrl,
+                                postId = post.id,
+                                artworkUrl = post.imageUrl ?: header.avatarUrl,
+                                playlistTitle = profilePlaylistTitle,
                                 onClick = { onPostClick(post.id) },
                             )
                             HorizontalDivider(
@@ -464,6 +493,7 @@ internal fun ProfileParityList(
                 )
             }
         }
+    }
     }
 }
 
@@ -1274,6 +1304,10 @@ internal fun ProfilePostCard(
                 musicUrl = post.musicUrl,
                 musicTitle = post.musicTitle ?: "موسیقی پست",
                 subtitle = "موسیقی پست",
+                postId = post.id,
+                artist = post.authorUsername?.takeIf { it.isNotBlank() } ?: post.authorFullName,
+                artworkUrl = post.imageUrl,
+                playlistTitle = post.authorUsername?.takeIf { it.isNotBlank() }?.let { "موسیقی @$it" } ?: "موسیقی پروفایل",
             )
         }
 
@@ -1646,6 +1680,9 @@ internal fun ProfileMusicListItem(
     title: String,
     subtitle: String,
     musicUrl: String? = null,
+    postId: String? = null,
+    artworkUrl: String? = null,
+    playlistTitle: String? = null,
     onClick: () -> Unit,
 ) {
     if (!musicUrl.isNullOrBlank()) {
@@ -1653,6 +1690,10 @@ internal fun ProfileMusicListItem(
             musicUrl = musicUrl,
             musicTitle = title,
             subtitle = subtitle,
+            postId = postId,
+            artist = subtitle,
+            artworkUrl = artworkUrl,
+            playlistTitle = playlistTitle,
         )
     } else {
         Row(
@@ -2170,4 +2211,6 @@ fun ProfileHighlightsRow(
         }
     }
 }
+
+
 

@@ -3,6 +3,9 @@ package ir.coffevista.vista_native.core.database.profile
 import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import ir.coffevista.vista_native.core.model.tier.UserTier
+import ir.coffevista.vista_native.core.model.tier.UserTierCapabilities
+import ir.coffevista.vista_native.core.model.tier.UserTierPolicy
 
 @Entity(tableName = "own_profile")
 data class OwnProfileEntity(
@@ -95,19 +98,30 @@ data class OwnProfileEntity(
     val showMaritalStatus: Boolean = false,
 )
 
+val OwnProfileEntity.userTier: UserTier
+    get() = UserTierPolicy.resolve(
+        role = accountType,
+        verificationType = verificationType,
+        isVerified = isVerified,
+        subscriptionPlan = subscriptionPlan,
+        premiumDaysRemaining = premiumDaysRemaining,
+    )
+
+val OwnProfileEntity.tierCapabilities: UserTierCapabilities
+    get() = UserTierPolicy.capabilitiesFor(userTier)
+
 val OwnProfileEntity.hasBlueBadge: Boolean
-    get() = (isVerified && (verificationType?.contains("blue", ignoreCase = true) == true)) ||
-            accountType.equals("admin", ignoreCase = true) || accountType.equals("moderator", ignoreCase = true)
+    get() = userTier == UserTier.BLUE_TICK
 
 val OwnProfileEntity.hasGoldBadge: Boolean
-    get() = isVerified && (verificationType?.contains("gold", ignoreCase = true) == true)
+    get() = userTier == UserTier.GOLD_TICK
 
 val OwnProfileEntity.hasBlackBadge: Boolean
-    get() = isVerified && (verificationType?.contains("black", ignoreCase = true) == true)
+    get() = userTier == UserTier.BLACK_TICK
 
 val OwnProfileEntity.isPremiumUser: Boolean
-    get() = accountType.equals("premium", ignoreCase = true) || (premiumDaysRemaining != null && premiumDaysRemaining > 0) || !subscriptionPlan.isNullOrBlank()
+    get() = userTier == UserTier.GOLD_TICK
 
 val OwnProfileEntity.hasPremiumPrivileges: Boolean
-    get() = hasBlueBadge || hasGoldBadge || hasBlackBadge || isPremiumUser
+    get() = tierCapabilities.isTickOrPremium
 

@@ -34,8 +34,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Tune
+import ir.coffevista.vista_native.core.designsystem.component.VistaPremiumBottomSheet
 import ir.coffevista.vista_native.features.feed.ui.components.SoundCloudMusicBubble
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -77,6 +80,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -101,6 +105,7 @@ fun AddPostScreen(
     onNavigateToTrimmer: (Uri) -> Unit,
     onPostCreated: () -> Unit,
     modifier: Modifier = Modifier,
+    onNavigateToPremium: () -> Unit = {},
     preloadedText: String? = null,
     preloadedMediaUris: List<Uri> = emptyList(),
     preloadedRequestId: String? = null,
@@ -117,6 +122,8 @@ fun AddPostScreen(
     var showLocationDialog by remember { mutableStateOf(false) }
     var showMusicTrimSheet by remember { mutableStateOf(false) }
     var showDiscardDraftDialog by remember { mutableStateOf(false) }
+    var showPremiumBottomSheet by remember { mutableStateOf(false) }
+    var premiumPromptFeature by remember { mutableStateOf<String?>(null) }
     val captionFocusRequester = remember { FocusRequester() }
 
     val hasUnsavedContent = remember(uiState.content, uiState.selectedImages, uiState.selectedVideo, uiState.selectedMusicUri) {
@@ -295,7 +302,12 @@ fun AddPostScreen(
                             onCaptureCamera = ::launchCamera,
                             onPickVideo = ::pickVideo,
                             onPickMusic = {
-                                activeInAppPickerMode = ir.coffevista.vista_native.core.designsystem.component.VistaInAppPickerMode.AUDIO_SINGLE
+                                if (!uiState.canPostMusic) {
+                                    premiumPromptFeature = "انتشار موسیقی در پست"
+                                    showPremiumBottomSheet = true
+                                } else {
+                                    activeInAppPickerMode = ir.coffevista.vista_native.core.designsystem.component.VistaInAppPickerMode.AUDIO_SINGLE
+                                }
                             },
                             onPickLocation = { showLocationDialog = true },
                         )
@@ -650,6 +662,11 @@ fun AddPostScreen(
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .clickable(enabled = !uiState.canHideEngagementCounts) {
+                                        premiumPromptFeature = "مخفی کردن تعداد لایک‌ها"
+                                        showPremiumBottomSheet = true
+                                    }
                                     .padding(vertical = 6.dp),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically,
@@ -657,7 +674,7 @@ fun AddPostScreen(
                                 Column(modifier = Modifier.weight(1f)) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Text("مخفی کردن تعداد لایک‌ها", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                                        if (!uiState.isPremium) {
+                                        if (!uiState.canHideEngagementCounts) {
                                             Spacer(modifier = Modifier.width(6.dp))
                                             PremiumTag()
                                         }
@@ -667,14 +684,26 @@ fun AddPostScreen(
                                 Spacer(modifier = Modifier.width(12.dp))
                                 ir.coffevista.vista_native.core.designsystem.component.VistaSwitch(
                                     checked = uiState.hideLikeCount,
-                                    enabled = uiState.isPremium,
-                                    onCheckedChange = { if (uiState.isPremium) viewModel.toggleHideLikeCount(it) },
+                                    enabled = uiState.canHideEngagementCounts,
+                                    onCheckedChange = {
+                                        if (uiState.canHideEngagementCounts) {
+                                            viewModel.toggleHideLikeCount(it)
+                                        } else {
+                                            premiumPromptFeature = "مخفی کردن تعداد لایک‌ها"
+                                            showPremiumBottomSheet = true
+                                        }
+                                    },
                                 )
                             }
 
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .clickable(enabled = !uiState.canHideEngagementCounts) {
+                                        premiumPromptFeature = "مخفی کردن تعداد نظرات"
+                                        showPremiumBottomSheet = true
+                                    }
                                     .padding(vertical = 6.dp),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically,
@@ -682,7 +711,7 @@ fun AddPostScreen(
                                 Column(modifier = Modifier.weight(1f)) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Text("مخفی کردن تعداد نظرات", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                                        if (!uiState.isPremium) {
+                                        if (!uiState.canHideEngagementCounts) {
                                             Spacer(modifier = Modifier.width(6.dp))
                                             PremiumTag()
                                         }
@@ -692,8 +721,15 @@ fun AddPostScreen(
                                 Spacer(modifier = Modifier.width(12.dp))
                                 ir.coffevista.vista_native.core.designsystem.component.VistaSwitch(
                                     checked = uiState.hideCommentCount,
-                                    enabled = uiState.isPremium,
-                                    onCheckedChange = { if (uiState.isPremium) viewModel.toggleHideCommentCount(it) },
+                                    enabled = uiState.canHideEngagementCounts,
+                                    onCheckedChange = {
+                                        if (uiState.canHideEngagementCounts) {
+                                            viewModel.toggleHideCommentCount(it)
+                                        } else {
+                                            premiumPromptFeature = "مخفی کردن تعداد نظرات"
+                                            showPremiumBottomSheet = true
+                                        }
+                                    },
                                 )
                             }
 
@@ -720,42 +756,88 @@ fun AddPostScreen(
                     Spacer(modifier = Modifier.height(30.dp))
                 }
 
-                // Promotional upgrade tooltip for standard users (max 500 chars)
-                if (uiState.maxCharLength == 500) {
+                // Promotional upgrade banner ONLY for normal users (clicking opens Vista Premium Bottom Sheet)
+                if (!uiState.tierCapabilities.isTickOrPremium) {
+                    val bannerGradient = Brush.linearGradient(
+                        colors = listOf(
+                            Color(0xFF4F46E5),
+                            Color(0xFF8B5CF6),
+                            Color(0xFFD946EF),
+                        ),
+                    )
                     Column(
                         horizontalAlignment = Alignment.Start,
                         modifier = Modifier
                             .align(Alignment.BottomStart)
-                            .padding(bottom = 6.dp, start = 14.dp),
+                            .padding(bottom = 8.dp, start = 14.dp, end = 14.dp),
                     ) {
                         Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = MaterialTheme.colorScheme.primary,
-                            shadowElevation = 4.dp,
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
-                                horizontalAlignment = Alignment.End,
-                            ) {
-                                Text(
-                                    text = "ارتقا به پریمیوم",
-                                    color = MaterialTheme.colorScheme.onPrimary,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
+                            shape = RoundedCornerShape(16.dp),
+                            color = Color.Transparent,
+                            shadowElevation = 6.dp,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(bannerGradient)
+                                .border(
+                                    width = 1.dp,
+                                    color = Color(0xFFFFD54F).copy(alpha = 0.55f),
+                                    shape = RoundedCornerShape(16.dp),
                                 )
-                                Text(
-                                    text = "تا ۱۰۰۰ کاراکتر بنویسید",
-                                    color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.75f),
-                                    fontSize = 10.sp,
+                                .clickable {
+                                    premiumPromptFeature = null
+                                    showPremiumBottomSheet = true
+                                },
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 13.dp, vertical = 9.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(9.dp),
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(30.dp)
+                                        .clip(CircleShape)
+                                        .background(
+                                            Brush.linearGradient(
+                                                colors = listOf(Color(0xFFFFE082), Color(0xFFFFB300)),
+                                            ),
+                                        ),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Star,
+                                        contentDescription = null,
+                                        tint = Color.White,
+                                        modifier = Modifier.size(18.dp),
+                                    )
+                                }
+                                Column {
+                                    Text(
+                                        text = "ارتقا به ویستا پریمیوم",
+                                        color = Color.White,
+                                        fontSize = 12.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                    )
+                                    Text(
+                                        text = "تا ۱۰۰۰ کاراکتر، موزیک و امکانات ویژه",
+                                        color = Color.White.copy(alpha = 0.88f),
+                                        fontSize = 10.5.sp,
+                                    )
+                                }
+                                Icon(
+                                    imageVector = Icons.Default.ChevronLeft,
+                                    contentDescription = null,
+                                    tint = Color.White.copy(alpha = 0.9f),
+                                    modifier = Modifier.size(18.dp),
                                 )
                             }
                         }
                         Box(
                             modifier = Modifier
-                                .padding(start = 20.dp)
+                                .padding(start = 24.dp)
                                 .size(9.dp)
                                 .graphicsLayer { rotationZ = 45f }
-                                .background(MaterialTheme.colorScheme.primary),
+                                .background(Color(0xFF4F46E5)),
                         )
                     }
                 }
@@ -883,6 +965,17 @@ fun AddPostScreen(
                     showMusicTrimSheet = false
                 },
                 onDismiss = { showMusicTrimSheet = false },
+            )
+        }
+
+        if (showPremiumBottomSheet) {
+            VistaPremiumBottomSheet(
+                feature = premiumPromptFeature,
+                onDismiss = {
+                    showPremiumBottomSheet = false
+                    premiumPromptFeature = null
+                },
+                onUpgradeClick = onNavigateToPremium,
             )
         }
     }

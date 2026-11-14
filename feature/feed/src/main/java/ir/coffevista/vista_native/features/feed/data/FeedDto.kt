@@ -262,6 +262,7 @@ data class CreatePostRequestDto(
     @SerialName("hide_like_count") val hideLikeCount: Boolean = false,
     @SerialName("hide_comment_count") val hideCommentCount: Boolean = false,
     @SerialName("comments_disabled") val commentsDisabled: Boolean = false,
+    @SerialName("video_duration_ms") val videoDurationMs: Int? = null,
 )
 
 @Serializable

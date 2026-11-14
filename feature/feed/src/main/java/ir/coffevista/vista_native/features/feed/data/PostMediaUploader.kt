@@ -397,8 +397,9 @@ class PostMediaUploader @Inject constructor(
         filter { it.isLetterOrDigit() || it == '_' || it == '-' }.ifBlank { "user" }
 
     companion object {
-        const val DEFAULT_MAX_BYTES = 15L * 1024 * 1024 // 15 MB for standard users
-        const val PREMIUM_MAX_BYTES = 100L * 1024 * 1024 // 100 MB for premium users
+        const val DEFAULT_MAX_BYTES = 10L * 1024 * 1024 // 10 MB for normal users
+        const val GOLD_BLACK_MAX_BYTES = 50L * 1024 * 1024 // 50 MB for gold/black tick users
+        const val PREMIUM_MAX_BYTES = 100L * 1024 * 1024 // 100 MB for blue tick users
         const val MAX_IMAGE_DIMENSION = 1440
         const val JPEG_QUALITY = 85
         const val JPEG_MIME = "image/jpeg"

@@ -29,10 +29,13 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
+import ir.coffevista.vista_native.core.designsystem.component.VistaPremiumBottomSheet
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.style.TextOverflow
 import ir.coffevista.vista_native.core.designsystem.component.VistaReportReasonDialog
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -93,11 +96,13 @@ fun CommentsBottomSheet(
     postOwnerId: String? = null,
     onAuthorClick: (String) -> Unit = {},
     onHashtagClick: (String) -> Unit = {},
+    onNavigateToPremium: () -> Unit = {},
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val isDark = isSystemInDarkTheme()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var reportCommentTargetId by remember { mutableStateOf<String?>(null) }
+    var showPremiumBottomSheet by remember { mutableStateOf(false) }
 
     LaunchedEffect(postId) {
         viewModel.loadComments(postId)
@@ -226,6 +231,7 @@ fun CommentsBottomSheet(
                         isCommentAuthor = { viewModel.isCurrentUser(it.authorUserId) },
                         onAuthorClick = onAuthorClick,
                         onHashtagClick = onHashtagClick,
+                        onLockedEditClick = { showPremiumBottomSheet = true },
                     )
                 }
             }
@@ -267,6 +273,17 @@ fun CommentsBottomSheet(
             },
         )
     }
+    if (showPremiumBottomSheet) {
+        VistaPremiumBottomSheet(
+            feature = "ویرایش کامنت",
+            onDismiss = { showPremiumBottomSheet = false },
+            onUpgradeClick = {
+                showPremiumBottomSheet = false
+                onDismissRequest()
+                onNavigateToPremium()
+            },
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -290,6 +307,7 @@ internal fun CommentsList(
     isCommentAuthor: (Comment) -> Boolean,
     onAuthorClick: (String) -> Unit = {},
     onHashtagClick: (String) -> Unit = {},
+    onLockedEditClick: () -> Unit = {},
 ) {
     val listState = rememberLazyListState()
     
@@ -330,6 +348,7 @@ internal fun CommentsList(
                 isCommentAuthor = isCommentAuthor,
                 onAuthorClick = onAuthorClick,
                 onHashtagClick = onHashtagClick,
+                onLockedEditClick = onLockedEditClick,
                 depth = 0,
             )
         }
@@ -364,6 +383,7 @@ internal fun CommentThread(
     isCommentAuthor: (Comment) -> Boolean,
     onAuthorClick: (String) -> Unit = {},
     onHashtagClick: (String) -> Unit = {},
+    onLockedEditClick: () -> Unit = {},
     depth: Int = 0,
 ) {
     val flattenedReplies = remember(comment) { flattenRepliesWithMeta(comment) }
@@ -383,6 +403,7 @@ internal fun CommentThread(
         isCommentAuthor = isCommentAuthor(comment),
         onAuthorClick = onAuthorClick,
         onHashtagClick = onHashtagClick,
+        onLockedEditClick = onLockedEditClick,
         isReply = depth > 0,
         hasLineAbove = depth > 0,
         hasLineBelow = (depth == 0 && hasReplies && visibleReplyCount > 0) || depth > 0,
@@ -405,6 +426,7 @@ internal fun CommentThread(
             isCommentAuthor = isCommentAuthor(replyItem.comment),
             onAuthorClick = onAuthorClick,
             onHashtagClick = onHashtagClick,
+            onLockedEditClick = onLockedEditClick,
             isReply = true,
             hasLineAbove = true,
             hasLineBelow = !isLastReply && !isLoadingReplies,
@@ -526,6 +548,7 @@ private fun CommentItem(
     isCommentAuthor: Boolean,
     onAuthorClick: (String) -> Unit = {},
     onHashtagClick: (String) -> Unit = {},
+    onLockedEditClick: () -> Unit = {},
     modifier: Modifier = Modifier,
     isReply: Boolean = false,
     hasLineAbove: Boolean = false,
@@ -621,6 +644,9 @@ private fun CommentItem(
             ) {
                 VistaEmojiText(
                     text = comment.authorUsername?.takeIf { it.isNotBlank() } ?: comment.authorFullName,
+                    modifier = Modifier.weight(1f, fill = false),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                     style = TextStyle(
                         fontWeight = FontWeight.Bold,
                         fontSize = 14.sp,
@@ -820,6 +846,22 @@ private fun CommentItem(
                                         showMenu = false
                                         editContent = comment.content
                                         isEditingInline = true
+                                    },
+                                )
+                            } else if (isCommentAuthor) {
+                                DropdownMenuItem(
+                                    text = { Text("ویرایش (پریمیوم)") },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = Icons.Default.Lock,
+                                            contentDescription = null,
+                                            tint = Color(0xFFFFB300),
+                                            modifier = Modifier.size(18.dp),
+                                        )
+                                    },
+                                    onClick = {
+                                        showMenu = false
+                                        onLockedEditClick()
                                     },
                                 )
                             }

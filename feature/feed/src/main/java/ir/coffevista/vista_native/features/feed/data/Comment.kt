@@ -28,7 +28,7 @@ fun CommentResponseDto.asExternalModel(replies: List<Comment> = emptyList()) = C
     authorAvatarUrl = profiles.avatarUrl,
     authorIsVerified = profiles.isVerified,
     authorVerificationType = profiles.verificationType,
-    authorRole = profiles.role,
+    authorRole = profiles.role ?: profiles.accountType,
     postOwnerId = postOwnerId ?: ownerId.orEmpty(),
     parentCommentId = parentCommentId,
     replies = replies,

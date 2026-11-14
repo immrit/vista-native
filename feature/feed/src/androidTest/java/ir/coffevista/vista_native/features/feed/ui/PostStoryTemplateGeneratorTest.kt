@@ -107,4 +107,61 @@ class PostStoryTemplateGeneratorTest {
         assertTrue("Fresh file should be retained", newFile.exists())
         newFile.delete()
     }
+
+    @Test
+    fun renderVistaBackgroundBitmap_hasExpectedFullScreenDimensions() {
+        val bg = PostStoryTemplateGenerator.renderVistaBackgroundBitmap()
+        try {
+            assertEquals(1080, bg.width)
+            assertEquals(1920, bg.height)
+        } finally {
+            bg.recycle()
+        }
+    }
+
+    @Test
+    fun renderPostStickerBitmap_isTightCroppedWithTransparentCorners() {
+        val sticker = PostStoryTemplateGenerator.renderPostStickerBitmap(samplePost)
+        try {
+            assertTrue(sticker.width in 900..1080)
+            assertTrue(sticker.height < 1920)
+            assertEquals(android.graphics.Color.TRANSPARENT, sticker.getPixel(0, 0))
+            assertEquals(android.graphics.Color.TRANSPARENT, sticker.getPixel(sticker.width - 1, sticker.height - 1))
+        } finally {
+            sticker.recycle()
+        }
+    }
+
+    @Test
+    fun renderPostStickerBitmap_rendersDistinctPixelsForBlackAndBlueTicks() {
+        val blueBitmap = PostStoryTemplateGenerator.renderPostStickerBitmap(
+            samplePost.copy(authorVerificationType = "blueTick"),
+        )
+        val blackBitmap = PostStoryTemplateGenerator.renderPostStickerBitmap(
+            samplePost.copy(authorVerificationType = "blackTick"),
+        )
+        try {
+            val instagramBlue = android.graphics.Color.parseColor("#0095F6")
+            var hasInstagramBlueInBlueCard = false
+            var hasInstagramBlueInBlackCard = false
+            // Scan top header region where the badge is drawn
+            val maxY = minOf(240, blueBitmap.height, blackBitmap.height)
+            val maxX = minOf(blueBitmap.width, blackBitmap.width)
+            for (y in 0 until maxY) {
+                for (x in 0 until maxX) {
+                    if (blueBitmap.getPixel(x, y) == instagramBlue) {
+                        hasInstagramBlueInBlueCard = true
+                    }
+                    if (blackBitmap.getPixel(x, y) == instagramBlue) {
+                        hasInstagramBlueInBlackCard = true
+                    }
+                }
+            }
+            assertTrue("Blue tick sticker should render #0095F6 badge pixels", hasInstagramBlueInBlueCard)
+            assertFalse("Black tick sticker must not render #0095F6 blue badge pixels", hasInstagramBlueInBlackCard)
+        } finally {
+            blueBitmap.recycle()
+            blackBitmap.recycle()
+        }
+    }
 }

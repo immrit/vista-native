@@ -73,6 +73,8 @@ data class CommentAuthorProfileDto(
     val avatarUrl: String? = null,
     @SerialName("role")
     val role: String? = null,
+    @SerialName("account_type")
+    val accountType: String? = null,
     @SerialName("is_verified")
     val isVerified: Boolean = false,
     @SerialName("verification_type")

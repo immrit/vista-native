@@ -1,4 +1,4 @@
-package ir.coffevista.vista_native.features.chat.presentation.components
+﻿package ir.coffevista.vista_native.features.chat.presentation.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -444,7 +444,7 @@ private fun SharedPostMusicPlayer(
     val resolvedTitle = remember(post.musicTitle, musicUrl) {
         resolveMusicTitle(post.musicTitle, musicUrl)
     }
-    val track = remember(trackId, musicUrl, resolvedTitle, post.authorName) {
+    val track = remember(trackId, post.postId, musicUrl, resolvedTitle, post.authorName, post.mediaUrls.firstOrNull()) {
         ChatAudioTrack(
             id = trackId,
             url = musicUrl,
@@ -455,6 +455,8 @@ private fun SharedPostMusicPlayer(
             senderName = post.authorName.ifBlank { "ویستا" },
             conversationId = "",
             createdAtEpochMillis = 0L,
+            postId = post.postId.takeIf(String::isNotBlank),
+            artworkUrl = post.mediaUrls.firstOrNull()?.takeIf { it.isNotBlank() },
         )
     }
 
@@ -587,3 +589,4 @@ private fun SharedPostMusicPlayer(
 }
 
 val SharedPostParser = ir.coffevista.vista_native.features.chat.domain.model.SharedPostParser
+

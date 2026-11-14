@@ -200,14 +200,14 @@ private fun VistaIdCardFront(
     val effectiveVerification = (user.verificationType ?: "").lowercase()
     val glowColor = when {
         effectiveVerification.contains("gold") -> Color(0xFFFFC107)
-        effectiveVerification.contains("blue") -> Color(0xFF2196F3)
+        effectiveVerification.contains("blue") -> Color(0xFF0095F6)
         effectiveVerification.contains("black") -> Color(0xFF9E9E9E)
         else -> Color(0xFF6366F1)
     }
 
     val gradientColors = when {
         effectiveVerification.contains("gold") -> listOf(Color(0xFFFFC107), Color(0xFFFF9800))
-        effectiveVerification.contains("blue") -> listOf(Color(0xFF2196F3), Color(0xFF00BCD4))
+        effectiveVerification.contains("blue") -> listOf(Color(0xFF0095F6), Color(0xFF38BDF8))
         effectiveVerification.contains("black") -> listOf(Color(0xFF757575), Color(0xFF424242))
         else -> listOf(Color(0xFF6366F1), Color(0xFF8B5CF6))
     }
@@ -307,11 +307,12 @@ private fun VistaIdCardFront(
                             .padding(6.dp),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Icon(
-                            imageVector = Icons.Filled.Verified,
-                            contentDescription = "Verified",
-                            tint = glowColor,
-                            modifier = Modifier.size(18.dp),
+                        ir.coffevista.vista_native.core.designsystem.component.VistaVerificationBadge(
+                            isVerified = true,
+                            verificationType = user.verificationType,
+                            role = user.role,
+                            size = 18.dp,
+                            isDarkSurface = true,
                         )
                     }
                 }

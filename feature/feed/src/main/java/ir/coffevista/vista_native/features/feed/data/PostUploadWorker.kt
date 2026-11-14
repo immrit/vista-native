@@ -52,7 +52,8 @@ class PostUploadWorker @AssistedInject constructor(
             val hideLikeCount = inputData.getBoolean(KEY_HIDE_LIKE_COUNT, false)
             val hideCommentCount = inputData.getBoolean(KEY_HIDE_COMMENT_COUNT, false)
             val commentsDisabled = inputData.getBoolean(KEY_COMMENTS_DISABLED, false)
-            val maxUploadBytes = inputData.getLong(KEY_MAX_BYTES, 15L * 1024 * 1024)
+            val maxUploadBytes = inputData.getLong(KEY_MAX_BYTES, 10L * 1024 * 1024)
+            val videoDurationMs = inputData.getLong(KEY_VIDEO_DURATION_MS, 0L)
 
             updateProgressState(0.05f, "آماده‌سازی فایل‌ها…")
 
@@ -172,6 +173,7 @@ class PostUploadWorker @AssistedInject constructor(
                 hideLikeCount = hideLikeCount,
                 hideCommentCount = hideCommentCount,
                 commentsDisabled = commentsDisabled,
+                videoDurationMs = videoDurationMs.toInt().takeIf { it > 0 && finalVideoUrl != null },
             )
 
             val postDto = api.createPost(createReq)
@@ -302,6 +304,7 @@ class PostUploadWorker @AssistedInject constructor(
         const val KEY_HIDE_COMMENT_COUNT = "hide_comment_count"
         const val KEY_COMMENTS_DISABLED = "comments_disabled"
         const val KEY_MAX_BYTES = "max_bytes"
+        const val KEY_VIDEO_DURATION_MS = "video_duration_ms"
 
         const val KEY_PROGRESS = "progress"
         const val KEY_STATUS = "status"

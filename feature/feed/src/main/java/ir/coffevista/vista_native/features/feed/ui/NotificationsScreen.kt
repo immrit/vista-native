@@ -48,6 +48,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import ir.coffevista.vista_native.core.designsystem.component.VistaMiniPlayerHost
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -166,29 +167,32 @@ internal fun NotificationsScreenContent(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = "اعلان‌ها",
-                        modifier = Modifier.fillMaxWidth(),
-                        textAlign = TextAlign.Center,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "بازگشت")
-                    }
-                },
-                actions = {
-                    IconButton(onClick = onMarkAllAsRead) {
-                        Icon(Icons.Default.DoneAll, contentDescription = "علامت‌گذاری همه به عنوان خوانده شده")
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background,
-                ),
-            )
+            Column(modifier = Modifier.fillMaxWidth()) {
+                TopAppBar(
+                    title = {
+                        Text(
+                            text = "اعلان‌ها",
+                            modifier = Modifier.fillMaxWidth(),
+                            textAlign = TextAlign.Center,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "بازگشت")
+                        }
+                    },
+                    actions = {
+                        IconButton(onClick = onMarkAllAsRead) {
+                            Icon(Icons.Default.DoneAll, contentDescription = "علامت‌گذاری همه به عنوان خوانده شده")
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.background,
+                    ),
+                )
+                VistaMiniPlayerHost()
+            }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { padding ->

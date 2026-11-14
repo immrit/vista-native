@@ -9,8 +9,12 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import ir.coffevista.vista_native.core.database.feed.FeedDao
 import ir.coffevista.vista_native.core.database.profile.OwnProfileDao
+import ir.coffevista.vista_native.core.database.profile.tierCapabilities
 import ir.coffevista.vista_native.core.model.session.AuthenticationState
 import ir.coffevista.vista_native.core.model.session.AuthenticationStateProvider
+import ir.coffevista.vista_native.core.model.tier.UserTier
+import ir.coffevista.vista_native.core.model.tier.UserTierCapabilities
+import ir.coffevista.vista_native.core.model.tier.UserTierPolicy
 import ir.coffevista.vista_native.features.feed.data.CreatePostRequestDto
 import ir.coffevista.vista_native.features.feed.data.FeedApi
 import ir.coffevista.vista_native.features.feed.data.PostMentions
@@ -59,7 +63,8 @@ data class AddPostUiState(
     val isSuccess: Boolean = false,
     val errorMessage: String? = null,
     val isPremium: Boolean = false,
-    val maxCharLength: Int = 500,
+    val tierCapabilities: UserTierCapabilities = UserTierPolicy.capabilitiesFor(UserTier.NORMAL),
+    val maxCharLength: Int = 300,
     val selectedLocation: String? = null,
     val selectedMusicTitle: String? = null,
     val selectedMusicUrl: String? = null,
@@ -72,9 +77,11 @@ data class AddPostUiState(
     val isLoadingHashtagSuggestions: Boolean = false,
     val mentionedUsernames: List<String> = emptyList(),
 ) {
-    val maxGalleryImages: Int get() = if (isPremium) 10 else 3
-    val maxUploadBytes: Long get() = if (isPremium) 100L * 1024 * 1024 else 15L * 1024 * 1024
-    val maxVideoDurationMs: Long get() = if (isPremium) 120_000L else 60_000L
+    val maxGalleryImages: Int get() = tierCapabilities.maxGalleryImages
+    val maxUploadBytes: Long get() = tierCapabilities.maxUploadBytes
+    val maxVideoDurationMs: Long get() = tierCapabilities.maxVideoDurationMs
+    val canPostMusic: Boolean get() = tierCapabilities.canPostMusic
+    val canHideEngagementCounts: Boolean get() = tierCapabilities.canHideEngagementCounts
     val canSubmit: Boolean get() = !isUploading && (
         content.isNotBlank() || selectedImages.isNotEmpty() || selectedVideo != null || selectedVideoUri != null || selectedMusicUri != null || !selectedMusicUrl.isNullOrBlank()
     )
@@ -131,11 +138,7 @@ class AddPostViewModel @Inject constructor(
             if (userId.isNotBlank()) {
                 ownProfileDao.getOwnProfile(userId).collect { profile ->
                     if (profile != null) {
-                        val days = profile.premiumDaysRemaining
-                        val isPrem = profile.subscriptionPlan != null || (days != null && days > 0)
-                        val maxChars = if (profile.verificationType?.lowercase() == "blue") 10000
-                        else if (isPrem || profile.verificationType?.lowercase() in listOf("gold", "black")) 1000
-                        else 500
+                        val caps = profile.tierCapabilities
                         _uiState.update { current ->
                             current.copy(
                                 authorAvatarUrl = profile.avatarUrl,
@@ -143,8 +146,9 @@ class AddPostViewModel @Inject constructor(
                                 authorFullName = profile.fullName,
                                 authorIsVerified = profile.isVerified,
                                 authorVerificationType = profile.verificationType,
-                                isPremium = isPrem,
-                                maxCharLength = maxChars,
+                                isPremium = caps.isTickOrPremium,
+                                tierCapabilities = caps,
+                                maxCharLength = caps.maxPostChars,
                             )
                         }
                     }
@@ -527,6 +531,7 @@ class AddPostViewModel @Inject constructor(
                     hideCommentCount = state.hideCommentCount,
                     commentsDisabled = state.commentsDisabled,
                     maxUploadBytes = state.maxUploadBytes,
+                    videoDurationMs = state.videoDurationMs,
                 )
             )
             _uiState.update { it.copy(isSuccess = true) }
@@ -648,6 +653,7 @@ class AddPostViewModel @Inject constructor(
                     hideLikeCount = state.hideLikeCount,
                     hideCommentCount = state.hideCommentCount,
                     commentsDisabled = state.commentsDisabled,
+                    videoDurationMs = state.videoDurationMs.toInt().takeIf { it > 0 && finalVideoUrl != null },
                 )
 
                 val postDto = api.createPost(createReq)

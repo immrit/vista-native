@@ -240,7 +240,6 @@ internal fun AddPostComposer(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                // Follows the theme's primary color (never a hard-coded blue).
                 VistaVerificationBadge(
                     isVerified = isVerified,
                     verificationType = verificationType,

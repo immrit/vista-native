@@ -1,6 +1,9 @@
 package ir.coffevista.vista_native.features.profile.data
 
 import androidx.annotation.Keep
+import ir.coffevista.vista_native.core.model.tier.UserTier
+import ir.coffevista.vista_native.core.model.tier.UserTierCapabilities
+import ir.coffevista.vista_native.core.model.tier.UserTierPolicy
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -25,6 +28,7 @@ data class ProfileDto(
     @SerialName("is_verified") val isVerified: Boolean = false,
     @SerialName("verification_type") val verificationType: String? = null,
     @SerialName("account_type") val accountType: String? = null,
+    @SerialName("role") val role: String? = null,
     @SerialName("is_private") val isPrivate: Boolean = false,
     @SerialName("post_count") val postCount: Long = 0,
     @SerialName("follower_count") val followerCount: Long = 0,
@@ -38,21 +42,32 @@ data class ProfileDto(
     @SerialName("updated_at") val updatedAt: String? = null
 )
 
+val ProfileDto.userTier: UserTier
+    get() = UserTierPolicy.resolve(
+        role = role ?: accountType,
+        verificationType = verificationType,
+        isVerified = isVerified,
+        subscriptionPlan = subscriptionPlan,
+        premiumDaysRemaining = premiumDaysRemaining,
+    )
+
+val ProfileDto.tierCapabilities: UserTierCapabilities
+    get() = UserTierPolicy.capabilitiesFor(userTier)
+
 val ProfileDto.hasBlueBadge: Boolean
-    get() = (isVerified && (verificationType?.contains("blue", ignoreCase = true) == true)) ||
-            accountType.equals("admin", ignoreCase = true) || accountType.equals("moderator", ignoreCase = true)
+    get() = userTier == UserTier.BLUE_TICK
 
 val ProfileDto.hasGoldBadge: Boolean
-    get() = isVerified && (verificationType?.contains("gold", ignoreCase = true) == true)
+    get() = userTier == UserTier.GOLD_TICK
 
 val ProfileDto.hasBlackBadge: Boolean
-    get() = isVerified && (verificationType?.contains("black", ignoreCase = true) == true)
+    get() = userTier == UserTier.BLACK_TICK
 
 val ProfileDto.isPremiumUser: Boolean
-    get() = accountType.equals("premium", ignoreCase = true) || (premiumDaysRemaining != null && premiumDaysRemaining > 0) || !subscriptionPlan.isNullOrBlank()
+    get() = userTier == UserTier.GOLD_TICK
 
 val ProfileDto.hasPremiumPrivileges: Boolean
-    get() = hasBlueBadge || hasGoldBadge || hasBlackBadge || isPremiumUser
+    get() = tierCapabilities.isTickOrPremium
 
 
 @Keep

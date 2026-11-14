@@ -81,6 +81,7 @@ object ShellRoutes {
     const val VerificationRequest = "verification_request"
     const val TermsConditions = "terms_conditions"
     const val AboutSettings = "about_settings"
+    const val TickGuide = "tick_guide"
     const val AboutSlideshow = "about_slideshow"
     const val ContactUs = "contact_us"
     const val PrivacyPolicy = "privacy_policy"

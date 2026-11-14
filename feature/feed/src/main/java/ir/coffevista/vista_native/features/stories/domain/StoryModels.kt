@@ -1,5 +1,8 @@
 package ir.coffevista.vista_native.features.stories.domain
 
+import ir.coffevista.vista_native.core.designsystem.component.ResolvedVerificationBadgeType
+import ir.coffevista.vista_native.core.designsystem.component.parseVerificationBadgeType
+import ir.coffevista.vista_native.core.designsystem.component.resolveVerificationBadgeType
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -135,6 +138,8 @@ data class StoryUser(
     @SerialName("is_verified") val isVerified: Boolean = false,
     @SerialName("is_premium") val isPremium: Boolean = false,
     @SerialName("verification_type") val verificationTypeRaw: String? = null,
+    @SerialName("role") val role: String? = null,
+    @SerialName("account_type") val accountType: String? = null,
     val stories: List<Story> = emptyList(),
     @SerialName("last_story_at") val lastStoryAt: String? = null,
 ) {
@@ -142,11 +147,14 @@ data class StoryUser(
     val userId: String get() = rawUserId.ifBlank { rawId }
 
     val verificationType: StoryVerificationType
-        get() = when (verificationTypeRaw?.lowercase()?.trim()) {
-            "blue" -> StoryVerificationType.Blue
-            "gold" -> StoryVerificationType.Gold
-            "black" -> StoryVerificationType.Black
-            else -> StoryVerificationType.None
+        get() = when (
+            parseVerificationBadgeType(verificationTypeRaw).takeIf { it != ResolvedVerificationBadgeType.NONE }
+                ?: resolveVerificationBadgeType(isVerified, verificationTypeRaw, role ?: accountType)
+        ) {
+            ResolvedVerificationBadgeType.BLUE_TICK -> StoryVerificationType.Blue
+            ResolvedVerificationBadgeType.GOLD_TICK -> StoryVerificationType.Gold
+            ResolvedVerificationBadgeType.BLACK_TICK -> StoryVerificationType.Black
+            ResolvedVerificationBadgeType.NONE -> StoryVerificationType.None
         }
 
     constructor(
@@ -200,6 +208,8 @@ data class StoryViewDto(
     @SerialName("full_name") val fullName: String = "",
     @SerialName("avatar_url") val avatarUrl: String? = null,
     @SerialName("is_verified") val isVerified: Boolean = false,
+    @SerialName("verification_type") val verificationType: String? = null,
+    @SerialName("role") val role: String? = null,
     @SerialName("viewed_at") val viewedAt: String = "",
     @SerialName("reaction") val reaction: String? = null,
 ) {
@@ -209,12 +219,16 @@ data class StoryViewDto(
         val resolvedFullName = profiles?.fullName?.ifBlank { null } ?: fullName.ifBlank { resolvedUsername }
         val resolvedAvatarUrl = profiles?.avatarUrl ?: avatarUrl
         val resolvedIsVerified = profiles?.isVerified ?: isVerified
+        val resolvedVerificationType = profiles?.verificationType ?: verificationType
+        val resolvedRole = profiles?.role ?: role
         return StoryView(
             userId = resolvedUserId,
             username = resolvedUsername,
             fullName = resolvedFullName,
             avatarUrl = resolvedAvatarUrl,
             isVerified = resolvedIsVerified,
+            verificationType = resolvedVerificationType,
+            role = resolvedRole,
             viewedAt = viewedAt,
             reaction = reaction,
         )
@@ -228,6 +242,8 @@ data class StoryView(
     @SerialName("full_name") val fullName: String = "",
     @SerialName("avatar_url") val avatarUrl: String? = null,
     @SerialName("is_verified") val isVerified: Boolean = false,
+    @SerialName("verification_type") val verificationType: String? = null,
+    @SerialName("role") val role: String? = null,
     @SerialName("viewed_at") val viewedAt: String = "",
     @SerialName("reaction") val reaction: String? = null,
 )

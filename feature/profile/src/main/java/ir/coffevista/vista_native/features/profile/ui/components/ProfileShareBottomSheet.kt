@@ -34,7 +34,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -54,6 +58,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import ir.coffevista.vista_native.core.designsystem.R as DesignR
+import ir.coffevista.vista_native.core.designsystem.component.VistaVerificationBadge
+import ir.coffevista.vista_native.features.feed.ui.PostStoryTemplateGenerator
+import ir.coffevista.vista_native.features.feed.ui.shareAssetsToInstagramStory
+import kotlinx.coroutines.launch
 
 private fun profileShareUrl(username: String): String = "https://cafevista.ir/u/$username"
 
@@ -79,12 +87,16 @@ fun ProfileShareBottomSheet(
     avatarUrl: String? = null,
     bio: String? = null,
     isVerified: Boolean = false,
+    verificationType: String? = null,
+    role: String? = null,
     onDismiss: () -> Unit,
     onSendDirectMessage: (() -> Unit)? = null,
     onShowQrCard: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
+    val coroutineScope = rememberCoroutineScope()
+    var isGeneratingStory by remember { mutableStateOf(false) }
     val shareUrl = remember(username) { profileShareUrl(username) }
     val shareText = remember(username, fullName) { profileShareText(username, fullName) }
 
@@ -176,15 +188,13 @@ fun ProfileShareBottomSheet(
                             )
                             if (isVerified) {
                                 Spacer(Modifier.width(6.dp))
-                                Box(
-                                    modifier = Modifier
-                                        .size(16.dp)
-                                        .clip(CircleShape)
-                                        .background(Color(0xFF1D9BF0)),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    Text("✓", fontSize = 10.sp, color = Color.White, fontWeight = FontWeight.Bold)
-                                }
+                                VistaVerificationBadge(
+                                    isVerified = true,
+                                    verificationType = verificationType,
+                                    role = role,
+                                    size = 16.dp,
+                                    isDarkSurface = true,
+                                )
                             }
                         }
                         Spacer(Modifier.height(2.dp))
@@ -324,10 +334,34 @@ fun ProfileShareBottomSheet(
                     // Story (Instagram)
                     Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
                         ProfileAppIconButton(
-                            label = "استوری",
+                            label = if (isGeneratingStory) "در حال ساخت..." else "استوری",
                             onClick = {
-                                onDismiss()
-                                shareProfileToInstagramStory(context, shareUrl, shareText)
+                                if (isGeneratingStory) return@ProfileAppIconButton
+                                isGeneratingStory = true
+                                coroutineScope.launch {
+                                    try {
+                                        val assets = PostStoryTemplateGenerator.generateProfileInstagramStoryAssets(
+                                            context = context,
+                                            username = username,
+                                            fullName = fullName,
+                                            avatarUrl = avatarUrl,
+                                            bio = bio,
+                                            isVerified = isVerified,
+                                            verificationType = verificationType,
+                                            role = role,
+                                        )
+                                        shareAssetsToInstagramStory(
+                                            context = context,
+                                            backgroundFile = assets.backgroundFile,
+                                            stickerFile = assets.stickerFile,
+                                            contentUrl = shareUrl,
+                                            shareText = shareText,
+                                        )
+                                    } finally {
+                                        isGeneratingStory = false
+                                        onDismiss()
+                                    }
+                                }
                             },
                             iconContent = {
                                 Box(
@@ -516,50 +550,6 @@ private fun shareExternalProfile(context: Context, text: String) {
         putExtra(Intent.EXTRA_TEXT, text)
     }
     context.startActivity(Intent.createChooser(intent, "اشتراک‌گذاری پروفایل"))
-}
-
-private fun shareProfileToInstagramStory(context: Context, profileUrl: String, shareText: String) {
-    try {
-        // Direct Instagram Story Intent
-        val instagramStoryIntent = Intent("com.instagram.share.ADD_TO_STORY").apply {
-            type = "text/plain"
-            setPackage("com.instagram.android")
-            putExtra("content_url", profileUrl)
-            putExtra("source_application", context.packageName)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-
-        try {
-            context.startActivity(instagramStoryIntent)
-            return
-        } catch (_: android.content.ActivityNotFoundException) {
-            // Instagram story action not registered, try standard send
-        } catch (_: SecurityException) {
-            // Permission issue
-        }
-
-        // Direct Send to Instagram app
-        val directInstagramIntent = Intent(Intent.ACTION_SEND).apply {
-            type = "text/plain"
-            setPackage("com.instagram.android")
-            putExtra(Intent.EXTRA_TEXT, shareText)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-
-        try {
-            context.startActivity(directInstagramIntent)
-            return
-        } catch (_: android.content.ActivityNotFoundException) {
-            // Instagram not installed at all
-        }
-
-        // Fallback if not installed
-        Toast.makeText(context, "برنامه اینستاگرام بر روی دستگاه شما نصب نیست", Toast.LENGTH_SHORT).show()
-        shareExternalProfile(context, shareText)
-    } catch (_: Exception) {
-        shareExternalProfile(context, shareText)
-    }
 }
 
 private fun shareProfileToWhatsApp(context: Context, text: String) {

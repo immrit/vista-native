@@ -32,12 +32,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.platform.LocalContext
+import ir.coffevista.vista_native.core.designsystem.audio.VistaAudioPlayer
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import ir.coffevista.vista_native.core.designsystem.component.isBackgroundMusicPost
 import ir.coffevista.vista_native.core.designsystem.component.resolveMusicRange
+import ir.coffevista.vista_native.core.designsystem.component.VistaMiniPlayerHost
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -66,6 +69,7 @@ fun PostDetailScreen(
     onAppealClick: (String) -> Unit = {},
     onSendDirectMessage: (FeedPost) -> Unit = {},
     onNavigateToStoryEditor: (android.net.Uri) -> Unit = {},
+    onNavigateToPremium: () -> Unit = {},
     viewModel: PostDetailViewModel,
     commentsViewModel: CommentsViewModel,
 ) {
@@ -187,8 +191,7 @@ fun PostDetailScreen(
                 },
             )
         } else {
-            val hasPrem = content?.viewerHasPremiumEdit == true
-            val maxLen = if (hasPrem) 1000 else 500
+            val maxLen = content?.viewerMaxPostChars ?: 300
             EditPostDialog(
                 initialContent = currentPost?.content.orEmpty(),
                 maxCharLength = maxLen,
@@ -209,7 +212,10 @@ fun PostDetailScreen(
         VistaPremiumPromptDialog(
             feature = feature,
             onDismiss = { premiumPromptFeature = null },
-            onUpgradeClick = { premiumPromptFeature = null },
+            onUpgradeClick = {
+                premiumPromptFeature = null
+                onNavigateToPremium()
+            },
         )
     }
 }
@@ -254,6 +260,7 @@ internal fun PostDetailContent(
             .background(MaterialTheme.colorScheme.background),
     ) {
         PostDetailAppBar(onBack)
+        VistaMiniPlayerHost()
         Box(modifier = Modifier.fillMaxSize()) {
             when (val state = uiState) {
                 PostDetailUiState.Loading -> {
@@ -393,8 +400,9 @@ private fun ReadOnlyPostDetail(
     }
 
     val postMusicUrl = state.post.musicUrl?.trim()
-    LaunchedEffect(postMusicUrl) {
-        if (!postMusicUrl.isNullOrBlank() && isBackgroundMusicPost(postMusicUrl)) {
+    val globalAudioState by VistaAudioPlayer.state.collectAsState()
+    LaunchedEffect(postMusicUrl, globalAudioState.isPlaying) {
+        if (!globalAudioState.isPlaying && !postMusicUrl.isNullOrBlank() && isBackgroundMusicPost(postMusicUrl)) {
             val range = resolveMusicRange(postMusicUrl)
             val startMs = if (state.post.musicStartMs > 0) state.post.musicStartMs else range.first
             val endMs = state.post.musicEndMs ?: range.second
@@ -514,6 +522,7 @@ private fun ReadOnlyPostDetail(
                   isCommentAuthor = isCommentAuthor,
                   onAuthorClick = onCommentAuthorClick,
                   onHashtagClick = onHashtagClick,
+                  onLockedEditClick = { onPremiumPrompt("ویرایش کامنت") },
                   depth = 0,
               )
             }

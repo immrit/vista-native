@@ -288,7 +288,7 @@ class FeedViewModel @Inject constructor(
             _uiState.value = FeedUiState.Loading
         }
         viewModelScope.launch {
-            launch { storyRepository.refreshActiveStories() }
+            launch { runCatching { storyRepository.refreshActiveStories() } }
             launch { runCatching { notificationRepository.refresh() } }
             refreshFeed(userId, kind)
         }

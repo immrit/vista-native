@@ -18,7 +18,12 @@ dependencies {
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.androidx.media3.exoplayer)
     implementation(libs.kotlinx.coroutines.android)
+
+    constraints {
+        implementation("androidx.exifinterface:exifinterface:1.3.7")
+    }
 
     testImplementation(libs.junit)
 }

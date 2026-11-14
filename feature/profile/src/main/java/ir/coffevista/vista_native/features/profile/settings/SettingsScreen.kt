@@ -42,6 +42,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import ir.coffevista.vista_native.core.designsystem.component.VistaMiniPlayerHost
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -181,31 +182,34 @@ fun SettingsScreen(
             modifier = modifier.fillMaxSize(),
             containerColor = MaterialTheme.colorScheme.background,
             topBar = {
-                TopAppBar(
-                    title = {
-                        Text(
-                            text = copy.settings,
-                            style = MaterialTheme.typography.titleMedium.copy(
-                                fontSize = 17.sp,
-                                fontWeight = FontWeight.Bold,
-                            ),
-                            modifier = Modifier.fillMaxWidth(),
-                            textAlign = TextAlign.Center,
-                        )
-                    },
-                    navigationIcon = {
-                        IconButton(onClick = onBack) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "بازگشت",
-                                tint = MaterialTheme.colorScheme.onSurface,
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    TopAppBar(
+                        title = {
+                            Text(
+                                text = copy.settings,
+                                style = MaterialTheme.typography.titleMedium.copy(
+                                    fontSize = 17.sp,
+                                    fontWeight = FontWeight.Bold,
+                                ),
+                                modifier = Modifier.fillMaxWidth(),
+                                textAlign = TextAlign.Center,
                             )
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.surface,
-                    ),
-                )
+                        },
+                        navigationIcon = {
+                            IconButton(onClick = onBack) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                    contentDescription = "بازگشت",
+                                    tint = MaterialTheme.colorScheme.onSurface,
+                                )
+                            }
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = MaterialTheme.colorScheme.surface,
+                        ),
+                    )
+                    VistaMiniPlayerHost()
+                }
             },
         ) { paddingValues ->
             Column(

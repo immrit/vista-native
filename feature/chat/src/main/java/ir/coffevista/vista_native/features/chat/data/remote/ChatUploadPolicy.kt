@@ -27,9 +27,13 @@ internal class ChatUploadPolicy(
     fun tier(profile: ChatUploadProfile?): ChatUploadTier {
         if (profile == null) return ChatUploadTier.NORMAL
         val badge = profile.verificationType.normalizedToken()
-        if (profile.isVerified && badge in BLUE_BADGES) return ChatUploadTier.UNLIMITED
-        if (profile.isVerified && badge in PREMIUM_BADGES) return ChatUploadTier.PREMIUM
         val role = profile.role.normalizedToken().ifBlank { profile.accountType.normalizedToken() }
+        if (role == "admin" || role == "moderator" || (profile.isVerified && badge in BLUE_BADGES)) {
+            return ChatUploadTier.UNLIMITED
+        }
+        if (profile.isVerified && badge in BLACK_BADGES) return ChatUploadTier.PREMIUM
+        val subExpired = profile.premiumDaysRemaining != null && profile.premiumDaysRemaining <= 0
+        if (profile.isVerified && badge in GOLD_BADGES && !subExpired) return ChatUploadTier.PREMIUM
         val activeSubscription = role == "premium" && (
             profile.premiumDaysRemaining?.let { it > 0 }
                 ?: profile.subscriptionExpiresAtEpochMillis?.let { it > now() }
@@ -41,7 +45,7 @@ internal class ChatUploadPolicy(
     fun maxBytes(profile: ChatUploadProfile?): Long? = when (tier(profile)) {
         ChatUploadTier.NORMAL -> NORMAL_MAX_BYTES
         ChatUploadTier.PREMIUM -> PREMIUM_MAX_BYTES
-        ChatUploadTier.UNLIMITED -> null
+        ChatUploadTier.UNLIMITED -> BLUE_MAX_BYTES
     }
 
     fun validate(
@@ -200,14 +204,16 @@ internal class ChatUploadPolicy(
     }
 
     internal companion object {
-        const val NORMAL_MAX_BYTES = 15L * 1024L * 1024L
-        const val PREMIUM_MAX_BYTES = 100L * 1024L * 1024L
+        const val NORMAL_MAX_BYTES = 10L * 1024L * 1024L
+        const val PREMIUM_MAX_BYTES = 50L * 1024L * 1024L
+        const val BLUE_MAX_BYTES = 100L * 1024L * 1024L
         private val IMAGE_EXTENSIONS = setOf("jpg", "jpeg", "png", "gif", "webp", "bmp", "heic", "heif")
         private val VIDEO_EXTENSIONS = setOf("mp4", "mov", "webm", "mkv", "3gp", "m4v")
         private val AUDIO_EXTENSIONS = setOf("mp3", "m4a", "aac", "wav", "ogg", "flac")
         private val DOCUMENT_EXTENSIONS = setOf("pdf")
-        private val BLUE_BADGES = setOf("bluetick", "blue", "bluebadge")
-        private val PREMIUM_BADGES = setOf("goldtick", "gold", "goldbadge", "blacktick", "black", "blackbadge")
+        private val BLUE_BADGES = setOf("bluetick", "blue", "bluebadge", "official", "identity")
+        private val GOLD_BADGES = setOf("goldtick", "gold", "goldbadge", "premium", "vip")
+        private val BLACK_BADGES = setOf("blacktick", "black", "blackbadge", "dark", "creator", "founder")
         private val HEIF_BRANDS = setOf("heic", "heix", "hevc", "heif", "mif1")
         private val VIDEO_BRANDS = setOf(
             "isom", "iso2", "iso4", "iso5", "iso6",

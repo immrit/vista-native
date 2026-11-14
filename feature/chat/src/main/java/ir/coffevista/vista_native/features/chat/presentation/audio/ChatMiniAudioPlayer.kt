@@ -56,6 +56,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
@@ -88,6 +89,7 @@ fun ChatMiniAudioPlayer(
     onOpenFullPlayer: () -> Unit,
     onJumpToMessage: (String) -> Unit,
     modifier: Modifier = Modifier,
+    shape: Shape = RectangleShape,
 ) {
     val playerState by ChatAudioPlayer.state.collectAsState()
     val positionMs by ChatAudioPlayer.position.collectAsState()
@@ -103,20 +105,22 @@ fun ChatMiniAudioPlayer(
     ) {
         if (track == null) return@AnimatedVisibility
 
+        val isRounded = shape != RectangleShape
         val tintColor = if (isDark) Color(0xFF1C242F) else Color(0xFFFFFFFF)
         val glassModifier = if (glassState != null) {
             Modifier.vistaGlass(
                 state = glassState,
-                shape = RectangleShape,
+                shape = shape,
                 tint = tintColor,
                 isDark = isDark,
-                blurRadius = VistaGlassTokens.BarBlur,
+                blurRadius = if (isRounded) VistaGlassTokens.PillBlur else VistaGlassTokens.BarBlur,
                 tintAlphaOverride = if (isDark) 0.78f else 0.84f,
-                drawHighlight = false,
-                rimWidth = 0.dp,
+                drawHighlight = isRounded,
+                rimWidth = if (isRounded) 0.8.dp else 0.dp,
+                shadowElevation = if (isRounded) 4.dp else 0.dp,
             )
         } else {
-            Modifier.background(tintColor.copy(alpha = 0.94f))
+            Modifier.background(tintColor.copy(alpha = 0.94f), shape)
         }
 
         val durationMs = playerState.durationMs.takeIf { it > 0L } ?: track.durationMs
@@ -126,6 +130,7 @@ fun ChatMiniAudioPlayer(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .clip(shape)
                 .then(glassModifier)
                 .testTag("chat-mini-audio-player"),
         ) {
@@ -330,10 +335,12 @@ fun ChatMiniAudioPlayer(
                 }
             }
 
-            HorizontalDivider(
-                thickness = 0.5.dp,
-                color = if (isDark) Color(0x18FFFFFF) else Color(0x12000000),
-            )
+            if (!isRounded) {
+                HorizontalDivider(
+                    thickness = 0.5.dp,
+                    color = if (isDark) Color(0x18FFFFFF) else Color(0x12000000),
+                )
+            }
         }
     }
 }

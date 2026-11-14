@@ -366,6 +366,8 @@ private fun StoryUserItem(
                 Spacer(modifier = Modifier.width(3.dp))
                 VerifiedMark(
                     modifier = Modifier.size(12.dp),
+                    verificationType = user.verificationTypeRaw ?: if (!user.isVerified && user.isPremium) "gold" else null,
+                    role = user.role ?: user.accountType,
                 )
             }
         }
