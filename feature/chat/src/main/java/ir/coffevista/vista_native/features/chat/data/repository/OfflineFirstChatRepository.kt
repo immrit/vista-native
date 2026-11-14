@@ -169,7 +169,9 @@ class OfflineFirstChatRepository(
         scope.launch {
             realtime.events.collect { event ->
                 runCatching { applyRealtimeEvent(event) }
-                    .onFailure { err -> android.util.Log.e("ChatRepo", "Error applying realtime event $event", err) }
+                    .onFailure { err ->
+                        android.util.Log.e("ChatRepo", "Error applying realtime event ${event::class.simpleName}: ${err::class.simpleName}")
+                    }
             }
         }
     }
@@ -209,7 +211,6 @@ class OfflineFirstChatRepository(
                         .thenByDescending { it.lastMessageAtEpochMillis ?: 0L }
                         .thenByDescending { it.id }
                 )
-            android.util.Log.e("DEDUP_LIVE", "observeConversations raw=${rows.size} dedup=${deduplicatedRows.size} keys=${groups.keys}")
 
             deduplicatedRows.map { row ->
                 row.toDomain(cipher).copy(typingUserIds = typingByConversation[row.id].orEmpty())
@@ -516,7 +517,6 @@ class OfflineFirstChatRepository(
             ) ?: continue
             val redundant = group.filter { it.id != best.id }
             val redundantIds = redundant.map { it.id }
-            android.util.Log.e("DEDUP_LIVE", "purgeDuplicateConversations keeping=${best.id} deleting redundant=${redundantIds}")
             dao.deleteConversations(accountId, redundantIds)
             for (redId in redundantIds) {
                 runCatching { dao.migrateMessages(accountId, redId, best.id) }
@@ -2647,14 +2647,13 @@ class OfflineFirstChatRepository(
                         prepared,
                     )
                 }.onFailure { err ->
-                    android.util.Log.e("ChatRepo", "Failed to retry pending transfer ${transfer.clientId}", err)
+                    android.util.Log.w("ChatRepo", "Failed to retry pending transfer (${err::class.simpleName})")
                 }
             }
             dao.pendingForAccount(accountId).forEach { pending ->
                 runCatching {
                     if (pending.type !in setOf("SEND_TEXT", "SEND_GIF")) return@forEach
                     if (pending.attempts >= 5) {
-                        android.util.Log.e("ChatRepo", "Dropping pending operation ${pending.clientId} after ${pending.attempts} attempts")
                         dao.deletePending(accountId, pending.clientId)
                         return@forEach
                     }
@@ -2679,7 +2678,6 @@ class OfflineFirstChatRepository(
                             pending.payloadCiphertext,
                         )
                     }.getOrNull() ?: run {
-                        android.util.Log.e("ChatRepo", "Dropping un-decryptable pending operation ${pending.clientId}")
                         dao.deletePending(accountId, pending.clientId)
                         return@forEach
                     }
@@ -2692,11 +2690,11 @@ class OfflineFirstChatRepository(
                         )
                     }
                 }.onFailure { err ->
-                    android.util.Log.e("ChatRepo", "Failed to retry pending operation ${pending.clientId}", err)
+                    android.util.Log.w("ChatRepo", "Failed to retry pending operation (${err::class.simpleName})")
                 }
             }
         }.onFailure { err ->
-            android.util.Log.e("ChatRepo", "Failed to retry pending operations for $accountId", err)
+            android.util.Log.w("ChatRepo", "Failed to retry pending operations (${err::class.simpleName})")
         }
     }
 

@@ -305,20 +305,13 @@ class OkHttpChatWebSocketFactory(
         }.build()
         socket = callFactory.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
-                Log.i("VistaChatRealtime", "WebSocket opened successfully proto=${response.protocol} code=${response.code} url=$url")
                 opened.complete(Unit)
             }
             override fun onMessage(webSocket: WebSocket, text: String) { channel.trySend(text) }
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                Log.i("VistaChatRealtime", "WebSocket closed code=$code reason=$reason")
                 channel.close()
             }
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                val bodySnippet = runCatching { response?.peekBody(1024)?.string() }.getOrNull()
-                Log.w(
-                    "VistaChatRealtime",
-                    "WebSocket failure url=$url type=${t.javaClass.simpleName} msg=${t.message} cause=${t.cause?.javaClass?.simpleName} http=${response?.code} proto=${response?.protocol} body=$bodySnippet",
-                )
                 if (!opened.isCompleted) {
                     opened.completeExceptionally(ChatSocketOpenException(response?.code, t))
                 }
@@ -339,13 +332,10 @@ class OkHttpChatWebSocketFactory(
     private suspend fun connectSse(url: String, headers: Map<String, String>): ChatSocket {
         val authHeader = headers["Authorization"] ?: headers["authorization"]
         val token = authHeader?.removePrefix("Bearer ")?.removePrefix("bearer ")?.trim().orEmpty()
-        var sseUrl = url
+        val sseUrl = url
             .replace("/v1/chat/ws", "/v1/chat/stream")
             .replaceFirst("wss://", "https://")
             .replaceFirst("ws://", "http://")
-        if (token.isNotEmpty() && !sseUrl.contains("token=")) {
-            sseUrl += (if (sseUrl.contains("?")) "&" else "?") + "token=$token"
-        }
         val opened = CompletableDeferred<Unit>()
         val channel = Channel<String>(capacity = Channel.BUFFERED)
         val request = Request.Builder()
@@ -371,16 +361,13 @@ class OkHttpChatWebSocketFactory(
                 val response = call.execute()
                 if (!response.isSuccessful) {
                     val code = response.code
-                    val body = runCatching { response.peekBody(512).string() }.getOrNull()
-                    Log.w("VistaChatRealtime", "SSE stream failed http=$code body=$body")
                     if (!opened.isCompleted) {
-                        opened.completeExceptionally(ChatSocketOpenException(code, IOException("SSE HTTP $code: $body")))
+                        opened.completeExceptionally(ChatSocketOpenException(code, IOException("SSE HTTP $code")))
                     }
                     response.close()
                     channel.close(IOException("SSE HTTP $code"))
                     return@launch
                 }
-                Log.i("VistaChatRealtime", "SSE stream connected successfully! code=${response.code}")
                 opened.complete(Unit)
                 response.body?.source()?.use { source ->
                     while (!source.exhausted() && isActive) {
@@ -447,7 +434,12 @@ class ChatRealtimeCoordinator(
     }
 
     suspend fun sendTyping(conversationId: String): Boolean {
-        val payload = """{"type":"typing","conversation_id":"$conversationId","is_typing":true}"""
+        val safeConversationId = conversationId
+            .replace("\\", "\\\\")
+            .replace("\"", "\\\"")
+            .replace("\n", "")
+            .replace("\r", "")
+        val payload = """{"type":"typing","conversation_id":"$safeConversationId","is_typing":true}"""
         return activeSocket?.send(payload) ?: false
     }
 

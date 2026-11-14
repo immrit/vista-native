@@ -166,14 +166,69 @@ class ChatE2EEService(
     }
 
     fun getGroupSenderKey(groupId: String, senderId: String): String? {
-        return prefs.getString("group_sender_key_${groupId}_$senderId", null)
+        if (groupId.isBlank() || senderId.isBlank()) return null
+        val encKeyName = "group_sender_key_enc_${groupId}_$senderId"
+        prefs.getString(encKeyName, null)?.let { encrypted ->
+            val decrypted = runCatching { decryptGroupSenderKeyFromStorage(groupId, senderId, encrypted) }.getOrNull()
+            if (!decrypted.isNullOrBlank()) {
+                return decrypted
+            }
+            runCatching { prefs.edit().remove(encKeyName).apply() }
+        }
+
+        val legacyKeyName = "group_sender_key_${groupId}_$senderId"
+        val legacy = prefs.getString(legacyKeyName, null)?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        runCatching { saveGroupSenderKey(groupId, senderId, legacy) }
+        return legacy
     }
 
     fun saveGroupSenderKey(groupId: String, senderId: String, senderKeyB64: String) {
         val trimmed = senderKeyB64.trim()
-        if (trimmed.isNotBlank()) {
-            prefs.edit().putString("group_sender_key_${groupId}_$senderId", trimmed).apply()
+        if (groupId.isBlank() || senderId.isBlank() || trimmed.isBlank()) return
+        val encKeyName = "group_sender_key_enc_${groupId}_$senderId"
+        val legacyKeyName = "group_sender_key_${groupId}_$senderId"
+        val encrypted = runCatching { encryptGroupSenderKeyForStorage(groupId, senderId, trimmed) }.getOrNull()
+        if (encrypted != null) {
+            prefs.edit()
+                .putString(encKeyName, encrypted)
+                .remove(legacyKeyName)
+                .apply()
+        } else {
+            prefs.edit().putString(legacyKeyName, trimmed).apply()
         }
+    }
+
+    private fun groupSenderKeyAad(groupId: String, senderId: String): ByteArray =
+        "vista-e2ee-group-sender-key-v1|$groupId|$senderId".toByteArray(Charsets.UTF_8)
+
+    private fun encryptGroupSenderKeyForStorage(groupId: String, senderId: String, senderKeyB64: String): String {
+        val cipher = Cipher.getInstance(KEYSTORE_TRANSFORMATION)
+        cipher.init(Cipher.ENCRYPT_MODE, privateKeyEncryptionKey())
+        cipher.updateAAD(groupSenderKeyAad(groupId, senderId))
+        val encrypted = cipher.doFinal(senderKeyB64.toByteArray(Charsets.UTF_8))
+        return Base64.encodeToString(
+            ByteBuffer.allocate(2 + cipher.iv.size + encrypted.size)
+                .put(PRIVATE_KEY_ENVELOPE_VERSION)
+                .put(cipher.iv.size.toByte())
+                .put(cipher.iv)
+                .put(encrypted)
+                .array(),
+            Base64.NO_WRAP,
+        )
+    }
+
+    private fun decryptGroupSenderKeyFromStorage(groupId: String, senderId: String, encoded: String): String {
+        val buffer = ByteBuffer.wrap(Base64.decode(encoded, Base64.NO_WRAP))
+        require(buffer.remaining() > 2) { "Malformed encrypted sender key" }
+        require(buffer.get() == PRIVATE_KEY_ENVELOPE_VERSION) { "Unsupported encrypted sender key version" }
+        val ivSize = buffer.get().toInt() and 0xFF
+        require(ivSize in 12..16 && buffer.remaining() > ivSize) { "Malformed encrypted sender key IV" }
+        val iv = ByteArray(ivSize).also(buffer::get)
+        val encrypted = ByteArray(buffer.remaining()).also(buffer::get)
+        val cipher = Cipher.getInstance(KEYSTORE_TRANSFORMATION)
+        cipher.init(Cipher.DECRYPT_MODE, privateKeyEncryptionKey(), GCMParameterSpec(GCM_TAG_BITS, iv))
+        cipher.updateAAD(groupSenderKeyAad(groupId, senderId))
+        return String(cipher.doFinal(encrypted), Charsets.UTF_8)
     }
 
     fun getOrGenerateMySenderKey(groupId: String, myUserId: String): String {
@@ -464,10 +519,7 @@ class ChatE2EEService(
             val b64 = trimmed.removePrefix(PREFIX_V2)
             val aad = binding?.toByteArray(Charsets.UTF_8) ?: ByteArray(0)
             return runCatching { decryptEnvelope(b64, sharedSecret, aad) }
-                .getOrElse {
-                    runCatching { decryptEnvelope(b64, sharedSecret, ByteArray(0)) }
-                        .getOrDefault(encrypted)
-                }
+                .getOrDefault(encrypted)
         }
 
         if (trimmed.startsWith(PREFIX_V1)) {
@@ -718,23 +770,35 @@ class ChatE2EEService(
                 cipher.updateAAD(binding.toByteArray(Charsets.UTF_8))
             }
 
-            outputFile.outputStream().buffered().use { output ->
-                val buffer = ByteArray(64 * 1024)
-                while (true) {
-                    val read = input.read(buffer)
-                    if (read <= 0) break
-                    val chunk = cipher.update(buffer, 0, read)
-                    if (chunk != null && chunk.isNotEmpty()) {
-                        output.write(chunk)
+            val tempOutputFile = File(outputFile.parentFile, "${outputFile.name}.tmp")
+            try {
+                tempOutputFile.outputStream().buffered().use { output ->
+                    val buffer = ByteArray(64 * 1024)
+                    while (true) {
+                        val read = input.read(buffer)
+                        if (read <= 0) break
+                        val chunk = cipher.update(buffer, 0, read)
+                        if (chunk != null && chunk.isNotEmpty()) {
+                            output.write(chunk)
+                        }
                     }
+                    val finalChunk = cipher.doFinal()
+                    if (finalChunk != null && finalChunk.isNotEmpty()) {
+                        output.write(finalChunk)
+                    }
+                    output.flush()
                 }
-                val finalChunk = cipher.doFinal()
-                if (finalChunk != null && finalChunk.isNotEmpty()) {
-                    output.write(finalChunk)
+                if (outputFile.exists()) outputFile.delete()
+                if (!tempOutputFile.renameTo(outputFile)) {
+                    tempOutputFile.copyTo(outputFile, overwrite = true)
+                    tempOutputFile.delete()
                 }
-                output.flush()
+                return true
+            } catch (e: Exception) {
+                runCatching { tempOutputFile.delete() }
+                runCatching { outputFile.delete() }
+                throw e
             }
-            return true
         }
     }
 

@@ -434,18 +434,45 @@ class MainActivity : FragmentActivity() {
         super.onStop()
     }
 
+    private fun isTrustedNotificationIntent(intent: Intent?): Boolean {
+        if (intent == null) return false
+        val isInternalPackage = intent.`package` == packageName || intent.component?.packageName == packageName
+        if (!isInternalPackage) return false
+        // External browsers/apps invoking ACTION_VIEW with a data URI must not inject push notification extras
+        if (intent.action == Intent.ACTION_VIEW && intent.data != null) return false
+        return true
+    }
+
+    private fun isAllowedNotificationDeepLink(raw: String): Boolean {
+        val uri = runCatching { Uri.parse(raw) }.getOrNull() ?: return false
+        return when (uri.scheme?.lowercase()) {
+            "vista", "coffevista" -> true
+            "https" -> uri.host?.lowercase() in setOf(
+                "cafevista.ir",
+                "www.cafevista.ir",
+                "coffevista.ir",
+                "www.coffevista.ir",
+            )
+            else -> false
+        }
+    }
+
     private fun submitDeepLink(intent: Intent?) {
         if (intent?.action == ir.coffevista.vista_native.core.designsystem.audio.VistaMusicPlayerService.ACTION_OPEN_PLAYER) {
             ir.coffevista.vista_native.core.designsystem.audio.VistaAudioPlayer.attach(applicationContext)
             ir.coffevista.vista_native.core.designsystem.audio.VistaAudioPlayer.requestOpenFromNotification()
             return
         }
-        val notificationData = intent?.extras
-            ?.keySet()
-            ?.mapNotNull { key -> intent.extras?.getString(key)?.let { key to it } }
-            ?.toMap()
-            ?.let(ChatNavigationContract::normalizeNotificationData)
-            .orEmpty()
+        val notificationData = if (isTrustedNotificationIntent(intent)) {
+            intent?.extras
+                ?.keySet()
+                ?.mapNotNull { key -> intent.extras?.getString(key)?.let { key to it } }
+                ?.toMap()
+                ?.let(ChatNavigationContract::normalizeNotificationData)
+                .orEmpty()
+        } else {
+            emptyMap()
+        }
         val chatDestination = ChatNavigationContract.fromNotification(notificationData)
         if (chatDestination != null) pendingChatNotification = notificationData
         val notificationDeepLink = notificationDeepLink(notificationData)
@@ -489,7 +516,7 @@ class MainActivity : FragmentActivity() {
         if (type in setOf("post_admin_edit", "moderation_notice", "appeal_resolved")) {
             data["post_id"]?.takeIf(String::isNotBlank)?.let { return "vista://appeal/$it" }
         }
-        data["deeplink"]?.trim()?.takeIf(String::isNotBlank)?.let { return it }
+        data["deeplink"]?.trim()?.takeIf { it.isNotBlank() && isAllowedNotificationDeepLink(it) }?.let { return it }
         return when {
             type in setOf("post", "like", "comment", "comment_reply", "mention", "suggest_post") ->
                 data["post_id"]?.takeIf(String::isNotBlank)?.let { "vista://post/$it" }

@@ -36,6 +36,26 @@ class VistaUpdateManager @Inject constructor(
     private companion object {
         const val TAG = "VistaUpdateManager"
         const val BAZAAR_PACKAGE = "com.farsitel.bazaar"
+        val SHA256_REGEX = Regex("^[a-fA-F0-9]{64}$")
+        val ALLOWED_UPDATE_HOSTS = setOf(
+            "cafevista.ir",
+            "www.cafevista.ir",
+            "dl.cafevista.ir",
+            "coffevista.ir",
+            "www.coffevista.ir",
+            "api.coffevista.ir",
+        )
+    }
+
+    private fun isAllowedDownloadUrl(rawUrl: String): Boolean {
+        val uri = runCatching { Uri.parse(rawUrl) }.getOrNull() ?: return false
+        if (uri.scheme?.lowercase() != "https") return false
+        val host = uri.host?.lowercase() ?: return false
+        return host in ALLOWED_UPDATE_HOSTS ||
+            host.endsWith(".cafevista.ir") ||
+            host.endsWith(".coffevista.ir") ||
+            host.endsWith(".arvanstorage.ir") ||
+            host.endsWith(".cdn.ir")
     }
 
     suspend fun checkForUpdate(backendBaseUrl: String, currentVersionCode: Long, flavor: String): UpdateCheckResult {
@@ -99,6 +119,16 @@ class VistaUpdateManager @Inject constructor(
     ): Boolean {
         return withContext(Dispatchers.IO) {
             runCatching {
+                val cleanExpectedSha = expectedSha256?.trim().orEmpty()
+                if (!SHA256_REGEX.matches(cleanExpectedSha)) {
+                    Log.e(TAG, "Refusing APK update: valid SHA-256 checksum is required")
+                    return@runCatching false
+                }
+                if (!isAllowedDownloadUrl(downloadUrl)) {
+                    Log.e(TAG, "Refusing APK update: untrusted or non-HTTPS download URL")
+                    return@runCatching false
+                }
+
                 val updatesDir = File(context.cacheDir, "updates").apply { mkdirs() }
                 val targetFile = File(updatesDir, "vista_update.apk")
                 if (targetFile.exists()) targetFile.delete()
@@ -126,15 +156,19 @@ class VistaUpdateManager @Inject constructor(
                     }
                 }
 
-                if (!expectedSha256.isNullOrBlank()) {
-                    val digest = MessageDigest.getInstance("SHA-256")
-                    val fileBytes = targetFile.readBytes()
-                    val actualSha = digest.digest(fileBytes).joinToString("") { "%02x".format(it) }
-                    if (!actualSha.equals(expectedSha256, ignoreCase = true)) {
-                        Log.e(TAG, "SHA256 mismatch! Expected: $expectedSha256, actual: $actualSha")
-                        targetFile.delete()
-                        return@runCatching false
+                val digest = MessageDigest.getInstance("SHA-256")
+                targetFile.inputStream().buffered().use { fis ->
+                    val hashBuf = ByteArray(8 * 1024)
+                    var read: Int
+                    while (fis.read(hashBuf).also { read = it } != -1) {
+                        digest.update(hashBuf, 0, read)
                     }
+                }
+                val actualSha = digest.digest().joinToString("") { "%02x".format(it) }
+                if (!actualSha.equals(cleanExpectedSha, ignoreCase = true)) {
+                    Log.e(TAG, "SHA256 mismatch! Refusing APK installation.")
+                    targetFile.delete()
+                    return@runCatching false
                 }
 
                 installApk(targetFile)

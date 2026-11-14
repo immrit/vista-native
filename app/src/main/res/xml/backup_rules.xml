@@ -1,4 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <full-backup-content>
     <exclude domain="sharedpref" path="vista_secure_session.xml" />
+    <exclude domain="sharedpref" path="vista_e2e_keys.xml" />
+    <exclude domain="sharedpref" path="vista_active_session_prefs.xml" />
+    <exclude domain="sharedpref" path="fcm_token_prefs.xml" />
+    <exclude domain="sharedpref" path="vista_post_draft_store.xml" />
+    <exclude domain="database" path="vista_foundation.db" />
+    <exclude domain="database" path="vista_chat.db" />
 </full-backup-content>

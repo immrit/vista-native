@@ -16,7 +16,6 @@ hilt {
 val keyPropertiesFile = listOf(
     rootProject.file("key.properties"),
     file("key.properties"),
-    File("E:/vista/android/key.properties"),
 ).firstOrNull { it.exists() }
 
 val keyProperties = Properties().apply {
@@ -43,7 +42,6 @@ val resolvedStoreFile = rawStoreFile?.let { path ->
             file(path),
             rootProject.file(path),
             file("src/main/$path"),
-            File("E:/vista/android/app/$path"),
         ).firstOrNull { it.exists() } ?: file(path)
     }
 }
@@ -75,7 +73,7 @@ android {
     namespace = "ir.coffevista.vista_native"
 
     lint {
-        checkReleaseBuilds = false
+        checkReleaseBuilds = true
         abortOnError = false
     }
 
@@ -138,7 +136,9 @@ android {
             isDebuggable = false
             isMinifyEnabled = true
             isShrinkResources = true
-            signingConfig = signingConfigs.findByName("injectedRelease") ?: signingConfigs.getByName("debug")
+            signingConfigs.findByName("injectedRelease")?.let {
+                signingConfig = it
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

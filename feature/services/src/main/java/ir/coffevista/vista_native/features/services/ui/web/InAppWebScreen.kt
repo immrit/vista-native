@@ -225,7 +225,7 @@ fun InAppWebScreen(
                             settings.javaScriptCanOpenWindowsAutomatically = false
 
                             CookieManager.getInstance().setAcceptCookie(true)
-                            CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
+                            CookieManager.getInstance().setAcceptThirdPartyCookies(this, false)
 
                             if (allowedPathPrefix == "/game") {
                                 val bridge = object {
@@ -293,7 +293,9 @@ fun InAppWebScreen(
                                     fun openConversation(conversationId: String?) {
                                         post {
                                             if (!isTrustedGameOrigin(this@apply.url)) return@post
-                                            val cleanId = conversationId?.trim()?.takeIf { it.isNotEmpty() } ?: return@post
+                                            val cleanId = conversationId?.trim()?.takeIf {
+                                                VistaGameUrlHelper.isValidUuid(it)
+                                            } ?: return@post
                                             internalNavigator?.openUrl("vista://chat/$cleanId")
                                         }
                                     }
@@ -727,12 +729,13 @@ internal fun isNavigationAllowed(
     restrictHost: String?,
     allowedPathPrefix: String?,
 ): Boolean {
+    if (url == "about:blank") return true
     if (restrictHost == null) return true
     val uri = runCatching { java.net.URI(url) }.getOrNull() ?: return false
 
     val scheme = uri.scheme.orEmpty().lowercase()
-    if (scheme != "http" && scheme != "https") {
-        return scheme == "about" || scheme == "data"
+    if (scheme != "https") {
+        return false
     }
 
     val host = uri.host.orEmpty().lowercase()
@@ -745,8 +748,11 @@ internal fun isNavigationAllowed(
     if (!isAllowedHost) return false
 
     val prefix = allowedPathPrefix?.takeIf { it.isNotBlank() } ?: return true
-    val path = uri.path.orEmpty().ifBlank { "/" }
-    return path == prefix || path.startsWith("$prefix/")
+    val rawPath = uri.path.orEmpty().ifBlank { "/" }
+    if (rawPath.contains("..")) return false
+    val normalizedPath = runCatching { uri.normalize().path.orEmpty().ifBlank { "/" } }.getOrDefault(rawPath)
+    if (normalizedPath.contains("..")) return false
+    return normalizedPath == prefix || normalizedPath.startsWith("$prefix/")
 }
 
 internal fun isTrustedGameOrigin(currentUrl: String?): Boolean {

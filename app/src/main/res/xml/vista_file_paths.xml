@@ -1,16 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Comprehensive root paths for internal and external storage -->
-    <cache-path name="cache_root" path="." />
-    <files-path name="files_root" path="." />
-    <external-cache-path name="external_cache_root" path="." />
-    <external-files-path name="external_files_root" path="." />
-
-    <!-- Specific paths for backwards-compatibility -->
+    <!-- Scoped paths for FileProvider sharing -->
     <cache-path name="chat_media_cache" path="chat_media/" />
     <cache-path name="chat_voice_cache" path="chat_voice/" />
     <cache-path name="camera_photos" path="camera/" />
     <cache-path name="story_uploads" path="story_uploads/" />
     <cache-path name="updates" path="updates/" />
     <cache-path name="shared_incoming" path="shared_incoming/" />
+    <files-path name="voice_files" path="voice/" />
+    <external-cache-path name="external_shared_media" path="shared_media/" />
 </paths>
