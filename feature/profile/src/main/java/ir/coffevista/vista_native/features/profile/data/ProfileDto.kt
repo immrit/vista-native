@@ -135,3 +135,21 @@ data class VerificationRequestDto(
 data class VerificationResponseDto(
     val success: Boolean = true,
 )
+
+@Keep
+@Serializable
+data class VerificationStatusDto(
+    @SerialName("is_verified") val isVerified: Boolean = false,
+    @SerialName("verification_type") val verificationType: String? = null,
+    @SerialName("latest_status") val latestStatus: String? = null,
+    @SerialName("rejected_count") val rejectedCount: Int = 0,
+    @SerialName("can_submit") val canSubmit: Boolean = true,
+    @SerialName("blocked_reason") val blockedReason: String? = null,
+    @SerialName("cooldown_until") val cooldownUntil: String? = null,
+    @SerialName("cooldown_remaining_seconds") val cooldownRemainingSeconds: Long = 0,
+    @SerialName("last_rejection_reason") val lastRejectionReason: String? = null,
+    @SerialName("last_penalty_coins") val lastPenaltyCoins: Long = 0,
+    @SerialName("next_penalty_days") val nextPenaltyDays: Int = 7,
+    @SerialName("next_penalty_coins") val nextPenaltyCoins: Long = 100,
+    @SerialName("current_coins") val currentCoins: Long = 0,
+)

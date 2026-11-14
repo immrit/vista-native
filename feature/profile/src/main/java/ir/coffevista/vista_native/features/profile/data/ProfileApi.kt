@@ -23,6 +23,9 @@ suspend fun fetchOwnProfile(): Response<ProfileDto>
     @POST("v1/uploads/delete")
     suspend fun deleteUpload(@Body request: ProfileMediaDeleteRequestDto): ProfileMediaDeleteResponseDto
 
+    @GET("v1/me/verify")
+    suspend fun getVerificationStatus(): Response<VerificationStatusDto>
+
     @POST("v1/me/verify")
     suspend fun requestVerification(@Body request: VerificationRequestDto): Response<VerificationResponseDto>
 }

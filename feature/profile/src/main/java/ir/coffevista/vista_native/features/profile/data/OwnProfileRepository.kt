@@ -10,6 +10,7 @@ suspend fun fetchAndCacheOwnProfile(userId: String): Outcome<Unit>
 suspend fun updateOwnProfile(request: ProfileUpdateRequestDto): Outcome<Unit>
 suspend fun updateAvatar(avatarUrl: String): Outcome<Unit>
 suspend fun clearProfileData()
+suspend fun getVerificationStatus(): Outcome<VerificationStatusDto> = Outcome.Success(VerificationStatusDto())
 suspend fun requestVerification(
     category: String,
     documentUrl: String,

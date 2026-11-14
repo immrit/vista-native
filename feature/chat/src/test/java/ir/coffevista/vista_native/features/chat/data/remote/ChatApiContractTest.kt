@@ -162,4 +162,17 @@ class ChatApiContractTest {
         )
         assertEquals(null, ackOnly.reactions)
     }
+
+    @Test
+    fun secretConversationDtoDecodesDeviceBindingFields() {
+        val conv = json.decodeFromString(
+            ConversationDto.serializer(),
+            """{"id":"c1","type":"secret","is_secret":true,"starter_user_id":"u1","starter_device_id":"dev-1","peer_device_id":"dev-2","status":"accepted"}""",
+        )
+        assertTrue(conv.isSecret)
+        assertEquals("u1", conv.starterUserId)
+        assertEquals("dev-1", conv.starterDeviceId)
+        assertEquals("dev-2", conv.peerDeviceId)
+        assertEquals("accepted", conv.status)
+    }
 }

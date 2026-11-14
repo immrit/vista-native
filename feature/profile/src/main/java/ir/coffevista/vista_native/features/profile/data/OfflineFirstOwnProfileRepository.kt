@@ -85,6 +85,20 @@ class OfflineFirstOwnProfileRepository @Inject constructor(
         dao.deleteAll()
     }
 
+    override suspend fun getVerificationStatus(): Outcome<VerificationStatusDto> {
+        return try {
+            val response = api.getVerificationStatus()
+            val body = response.body()
+            if (response.isSuccessful && body != null) {
+                Outcome.Success(body)
+            } else {
+                Outcome.Failure(ErrorClassifier.classify(response.toRemoteFailure(), "وضعیت درخواست تیک مشکی"))
+            }
+        } catch (e: Exception) {
+            Outcome.Failure(ErrorClassifier.classify(e, "وضعیت درخواست تیک مشکی"))
+        }
+    }
+
     override suspend fun requestVerification(
         category: String,
         documentUrl: String,

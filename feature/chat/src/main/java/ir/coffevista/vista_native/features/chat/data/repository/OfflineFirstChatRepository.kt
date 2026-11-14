@@ -696,9 +696,9 @@ class OfflineFirstChatRepository(
         sessionProvider.synchronize()
         val accountId = requireAccount().accountId
         mediaDownloader.recover(accountId)
-        return dao.observeDownloads(accountId, conversationId).map { rows ->
-            rows.map { row -> row.toDownloadTask() }
-        }
+        return dao.observeDownloads(accountId, conversationId)
+            .map { rows -> rows.map { row -> row.toDownloadTask() } }
+            .flowOn(Dispatchers.IO)
     }
 
     override suspend fun startDownload(message: Message): ChatResult<DownloadTask> {
@@ -1862,7 +1862,22 @@ class OfflineFirstChatRepository(
         }
         val caption = draft.caption.trim().take(MAX_TEXT_LENGTH)
 
-        val uploadDraft = if (isSecret) {
+        val plainPrepared = try {
+            mediaUploader.prepare(
+                accountId = account.accountId,
+                conversationId = conversationId,
+                draft = draft.copy(caption = caption),
+                validateContent = true,
+            )
+        } catch (error: Throwable) {
+            return ChatResult.Failure(
+                error.message?.takeIf(String::isNotBlank) ?: "فایل انتخاب‌شده قابل ارسال نیست",
+                retryable = false,
+            )
+        }
+        val clientId = newId()
+        val createdAt = now()
+        val prepared = if (isSecret) {
             val peerPub = resolvePeerPublicKey(account.accountId, conversationId)
                 ?: run {
                     ensureSecretChatHandshake(conversationId)
@@ -1873,10 +1888,11 @@ class OfflineFirstChatRepository(
             val sharedSecret = runCatching { e2eeService.computeSharedSecret(myKeyPair.privateKey, peerPub) }.getOrNull()
                 ?: return ChatResult.Failure("خطا در ایجاد کلید مشترک رسانه", retryable = false)
 
-            val encFile = java.io.File.createTempFile("enc_chat_", ".bin", context.cacheDir)
-            val parsedUri = Uri.parse(draft.uri)
+            val pendingDir = java.io.File(context.filesDir, "secret_pending_uploads").apply { mkdirs() }
+            val encFile = java.io.File(pendingDir, "sec_up_${clientId}.bin")
+            val parsedUri = Uri.parse(plainPrepared.draft.uri)
             val inputStream = if (parsedUri.scheme == "file" || parsedUri.scheme.isNullOrEmpty()) {
-                val f = java.io.File(parsedUri.path ?: draft.uri)
+                val f = java.io.File(parsedUri.path ?: plainPrepared.draft.uri)
                 if (f.exists() && f.canRead()) f.inputStream() else context.contentResolver.openInputStream(parsedUri)
             } else {
                 context.contentResolver.openInputStream(parsedUri)
@@ -1891,30 +1907,30 @@ class OfflineFirstChatRepository(
             } finally {
                 tempPlain.delete()
             }
-            draft.copy(
+            val encDraft = plainPrepared.draft.copy(
                 uri = Uri.fromFile(encFile).toString(),
                 sizeBytes = encFile.length(),
-                caption = caption,
             )
+            try {
+                mediaUploader.prepare(
+                    accountId = account.accountId,
+                    conversationId = conversationId,
+                    draft = encDraft,
+                    existingObjectKey = plainPrepared.objectKey,
+                    validateContent = false,
+                )
+            } catch (error: Throwable) {
+                encFile.delete()
+                return ChatResult.Failure(
+                    error.message?.takeIf(String::isNotBlank) ?: "فایل انتخاب‌شده قابل ارسال نیست",
+                    retryable = false,
+                )
+            }
         } else {
-            draft.copy(caption = caption)
-        }
-
-        val prepared = try {
-            mediaUploader.prepare(
-                accountId = account.accountId,
-                conversationId = conversationId,
-                draft = uploadDraft,
-            )
-        } catch (error: Throwable) {
-            return ChatResult.Failure(
-                error.message?.takeIf(String::isNotBlank) ?: "فایل انتخاب‌شده قابل ارسال نیست",
-                retryable = false,
-            )
+            plainPrepared
         }
         val validatedDraft = prepared.draft
-        val clientId = newId()
-        val createdAt = now()
+        val displayLocalUri = plainPrepared.draft.uri
         val optimistic = Message(
             accountId = account.accountId,
             conversationId = conversationId,
@@ -1926,7 +1942,7 @@ class OfflineFirstChatRepository(
             status = MessageStatus.PENDING,
             attachment = Attachment(
                 kind = validatedDraft.kind,
-                localUri = validatedDraft.uri,
+                localUri = displayLocalUri,
                 fileName = validatedDraft.fileName,
                 mimeType = validatedDraft.mimeType,
                 sizeBytes = validatedDraft.sizeBytes,
@@ -2055,10 +2071,14 @@ class OfflineFirstChatRepository(
             )
             mergeAndPersist(retrying, MergeSource.OPTIMISTIC)
             val prepared = try {
+                val isSecretTransfer = dao.conversation(account.accountId, conversationId)
+                    ?.type?.equals(ConversationType.SECRET.name, ignoreCase = true) == true &&
+                    isEncryptedTransferUri(transfer.localUri)
                 mediaUploader.prepare(
                     accountId = account.accountId,
                     conversationId = conversationId,
                     existingObjectKey = transfer.objectKey,
+                    validateContent = !isSecretTransfer,
                     draft = ChatAttachmentDraft(
                     uri = transfer.localUri,
                     fileName = transfer.fileName,
@@ -2373,9 +2393,13 @@ class OfflineFirstChatRepository(
         )
         check(sessionGeneration.isCurrent(generation)) { "نشست کاربر تغییر کرده است" }
         val server = decryptAndMapMessageDto(dto, local.accountId).copy(isMine = true)
+        val isSecretConversation = dao.conversation(local.accountId, local.conversationId)?.type == ConversationType.SECRET.name
+        val preservedLocalUri = local.attachment?.localUri
+            ?.takeUnless { it.isBlank() || isEncryptedTransferUri(it) }
+            ?: if (!isSecretConversation) draft.uri else null
         val merged = MessageMergeReducer.merge(local, server, MergeSource.REST).copy(
             attachment = server.attachment?.copy(
-                localUri = draft.uri,
+                localUri = preservedLocalUri,
                 audioTitle = server.attachment.audioTitle ?: draft.audioTitle,
                 audioArtist = server.attachment.audioArtist ?: draft.audioArtist,
                 audioAlbum = server.attachment.audioAlbum ?: waveformToSend,
@@ -2383,9 +2407,21 @@ class OfflineFirstChatRepository(
                 transferState = TransferState.COMPLETE,
             ),
         )
+        if (isSecretConversation) {
+            cacheUploadedSecretMediaForPlayback(
+                accountId = local.accountId,
+                conversationId = local.conversationId,
+                messageId = server.serverId ?: local.clientId,
+                remoteUrl = uploaded.objectUrl,
+                fileName = draft.fileName,
+                mimeType = draft.mimeType,
+                encryptedUploadUri = draft.uri,
+            )
+        }
         mergeAndPersist(merged, MergeSource.REST)
         cancelledTransfers.remove(local.clientId)
         dao.deleteTransfer(local.accountId, local.clientId)
+        cleanupSecretPendingUpload(draft.uri)
         merged
     }
     }
@@ -2715,6 +2751,20 @@ class OfflineFirstChatRepository(
             is RealtimeEvent.ConversationUpdated -> {
                 val targetId = event.conversationId ?: event.conversation.id
                 if (targetId.isNotBlank()) {
+                    val isSecretRemote = event.conversation.isSecret ||
+                        event.conversation.type.equals("secret", ignoreCase = true)
+                    val starterDevice = event.conversation.starterDeviceId?.trim().orEmpty()
+                    val peerDevice = event.conversation.peerDeviceId?.trim().orEmpty()
+                    val starterUserId = event.conversation.starterUserId?.trim().orEmpty()
+                    val amStarter = starterUserId.isNotEmpty() && starterUserId.equals(account.accountId, ignoreCase = true)
+                    val claimedByAnotherDevice = isSecretRemote && (
+                        (amStarter && starterDevice.isNotEmpty() && starterDevice != account.deviceId) ||
+                            (!amStarter && peerDevice.isNotEmpty() && peerDevice != account.deviceId)
+                        )
+                    if (claimedByAnotherDevice) {
+                        dao.deleteConversationWithMessages(account.accountId, targetId)
+                        return
+                    }
                     val existing = dao.conversation(account.accountId, targetId)
                     val incomingEntity = event.conversation.toEntity(account.accountId, cipher, now())
                     val merged = if (existing != null) {
@@ -2849,11 +2899,15 @@ class OfflineFirstChatRepository(
                         audioArtist = domainMessage.attachment?.audioArtist,
                     )
                     val prepared = runCatching {
+                        val isSecretTransfer = dao.conversation(accountId, transfer.conversationId)
+                            ?.type?.equals(ConversationType.SECRET.name, ignoreCase = true) == true &&
+                            isEncryptedTransferUri(transfer.localUri)
                         mediaUploader.prepare(
                             accountId = accountId,
                             conversationId = transfer.conversationId,
                             draft = draft,
                             existingObjectKey = transfer.objectKey,
+                            validateContent = !isSecretTransfer,
                         )
                     }.getOrNull() ?: return@forEach
                     if (transfer.objectKey != prepared.objectKey) {
@@ -3332,9 +3386,26 @@ class OfflineFirstChatRepository(
                     if (sharedSecret != null) {
                         val tempDec = File(cachedFile.parentFile, "temp_dec_" + cachedFile.name)
                         val ok = runCatching { e2eeService.decryptFile(cachedFile, tempDec, sharedSecret) }.getOrDefault(false)
-                        if (ok && tempDec.renameTo(decFile)) decFile else cachedFile
-                    } else cachedFile
-                } else cachedFile
+                        if (ok && tempDec.isFile) {
+                            if (tempDec.renameTo(decFile)) {
+                                decFile
+                            } else {
+                                runCatching {
+                                    tempDec.copyTo(decFile, overwrite = true)
+                                    tempDec.delete()
+                                    decFile
+                                }.getOrNull()
+                            }
+                        } else {
+                            tempDec.delete()
+                            null
+                        }
+                    } else {
+                        null
+                    }
+                } else {
+                    null
+                }
             }
         } else {
             cachedFile
@@ -3355,6 +3426,70 @@ class OfflineFirstChatRepository(
             state = effectiveState,
             attempts = attempts,
         )
+    }
+
+    private fun isEncryptedTransferUri(uriString: String?): Boolean {
+        val raw = uriString?.trim()?.takeIf(String::isNotEmpty) ?: return false
+        val parsed = runCatching { Uri.parse(raw) }.getOrNull() ?: return false
+        if (parsed.scheme == "file" || parsed.scheme.isNullOrEmpty()) {
+            val file = File(parsed.path ?: raw)
+            if (file.isFile && e2eeService.isEncryptedFile(file)) {
+                return true
+            }
+        }
+        return raw.contains("sec_up_") || raw.contains("enc_chat_") || raw.contains("secret_pending_uploads")
+    }
+
+    private suspend fun cacheUploadedSecretMediaForPlayback(
+        accountId: String,
+        conversationId: String,
+        messageId: String,
+        remoteUrl: String,
+        fileName: String,
+        mimeType: String,
+        encryptedUploadUri: String,
+    ) {
+        val parsed = runCatching { Uri.parse(encryptedUploadUri) }.getOrNull() ?: return
+        val sourceFile = if (parsed.scheme == "file" || parsed.scheme.isNullOrEmpty()) {
+            File(parsed.path ?: encryptedUploadUri)
+        } else {
+            null
+        } ?: return
+        if (!sourceFile.isFile) return
+        val downloadsDir = File(context.cacheDir, "chat_downloads").apply { mkdirs() }
+        val safeId = messageId.replace(Regex("[^A-Za-z0-9._-]"), "_")
+        val cachedEncFile = File(downloadsDir, "enc_${safeId}.bin")
+        runCatching {
+            sourceFile.copyTo(cachedEncFile, overwrite = true)
+            val total = cachedEncFile.length()
+            dao.upsertDownload(
+                ir.coffevista.vista_native.features.chat.data.local.DownloadTaskEntity(
+                    accountId = accountId,
+                    conversationId = conversationId,
+                    messageId = messageId,
+                    remoteUrlCiphertext = cipher.encrypt(accountId, conversationId, "$messageId:download-url", remoteUrl),
+                    fileNameCiphertext = cipher.encrypt(accountId, conversationId, "$messageId:download-name", fileName),
+                    mimeType = mimeType,
+                    localPath = cachedEncFile.absolutePath,
+                    receivedBytes = total,
+                    totalBytes = total,
+                    eTag = null,
+                    state = DownloadState.COMPLETE.name,
+                    attempts = 0,
+                    updatedAtEpochMillis = now(),
+                ),
+            )
+        }
+    }
+
+    private fun cleanupSecretPendingUpload(uriString: String?) {
+        val raw = uriString?.trim()?.takeIf(String::isNotEmpty) ?: return
+        val parsed = runCatching { Uri.parse(raw) }.getOrNull() ?: return
+        if (parsed.scheme != "file" && !parsed.scheme.isNullOrEmpty()) return
+        val file = File(parsed.path ?: raw)
+        if (file.isFile && (file.parentFile?.name == "secret_pending_uploads" || file.name.startsWith("enc_chat_"))) {
+            file.delete()
+        }
     }
 
     private suspend fun downloadMutation(block: suspend (String) -> Unit): ChatResult<Unit> {

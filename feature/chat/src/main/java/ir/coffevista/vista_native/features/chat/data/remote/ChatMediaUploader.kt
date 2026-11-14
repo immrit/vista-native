@@ -45,6 +45,7 @@ class ChatMediaUploader(
         conversationId: String,
         draft: ChatAttachmentDraft,
         existingObjectKey: String? = null,
+        validateContent: Boolean = true,
     ): PreparedChatUpload = withContext(Dispatchers.IO) {
         val profile = if (draft.sizeBytes > ChatUploadPolicy.NORMAL_MAX_BYTES) {
             runCatching { api.ownUploadProfile().toUploadProfile() }.getOrNull()
@@ -58,6 +59,7 @@ class ChatMediaUploader(
             sizeBytes = draft.sizeBytes,
             header = readHeader(Uri.parse(draft.uri)),
             profile = profile,
+            validateContent = validateContent,
         )
         val normalized = draft.copy(kind = validated.kind, mimeType = validated.mimeType)
         PreparedChatUpload(

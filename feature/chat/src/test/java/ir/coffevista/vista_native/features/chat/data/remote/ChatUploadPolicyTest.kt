@@ -160,4 +160,44 @@ class ChatUploadPolicyTest {
             Unit
         }
     }
+
+    @Test
+    fun `encrypted VE2F secret media bypasses plaintext magic check while still enforcing header and size`() {
+        val ve2fHeader = "VE2F".encodeToByteArray() + ByteArray(28)
+        val validated = policy.validate(
+            fileName = "secret_photo.jpg",
+            declaredMimeType = "image/jpeg",
+            declaredKind = AttachmentKind.IMAGE,
+            sizeBytes = 4096L,
+            header = ve2fHeader,
+            profile = null,
+            validateContent = false,
+        )
+        assertEquals(AttachmentKind.IMAGE, validated.kind)
+        assertEquals("image/jpeg", validated.mimeType)
+        assertEquals("jpg", validated.extension)
+
+        assertRejects {
+            policy.validate(
+                fileName = "secret_photo.jpg",
+                declaredMimeType = "image/jpeg",
+                declaredKind = AttachmentKind.IMAGE,
+                sizeBytes = 4096L,
+                header = png(),
+                profile = null,
+                validateContent = false,
+            )
+        }
+        assertRejects {
+            policy.validate(
+                fileName = "secret_photo.jpg",
+                declaredMimeType = "image/jpeg",
+                declaredKind = AttachmentKind.IMAGE,
+                sizeBytes = ChatUploadPolicy.NORMAL_MAX_BYTES + 1,
+                header = ve2fHeader,
+                profile = null,
+                validateContent = false,
+            )
+        }
+    }
 }

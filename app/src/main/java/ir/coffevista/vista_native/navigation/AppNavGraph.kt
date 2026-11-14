@@ -57,6 +57,7 @@ import ir.coffevista.vista_native.features.profile.data.UserProfileRepository
 import ir.coffevista.vista_native.features.profile.settings.SettingsScreen
 import ir.coffevista.vista_native.features.profile.settings.editprofile.EditProfileScreen
 import ir.coffevista.vista_native.features.profile.settings.pricing.PricingScreen
+import ir.coffevista.vista_native.features.profile.settings.privacy.DeleteAccountScreen
 import ir.coffevista.vista_native.features.profile.settings.privacy.PrivacySecurityScreen
 import ir.coffevista.vista_native.features.profile.settings.privacy.ActiveSessionsScreen
 import ir.coffevista.vista_native.features.profile.settings.privacy.BlockedUsersScreen
@@ -785,7 +786,7 @@ fun VistaApp(
                         badgeStore = { onBack ->
                             PricingScreen(onBack = onBack, initialTab = 2)
                         },
-                        privacySecurity = { onBack, onBlockedUsers, onActiveSessions ->
+                        privacySecurity = { onBack, onBlockedUsers, onActiveSessions, onDeleteAccount ->
                             val profileViewModel = hiltViewModel<OwnProfileViewModel>()
                             val profileState by profileViewModel.uiState.collectAsStateWithLifecycle()
                             val profile = (profileState as? OwnProfileUiState.Content)?.profile
@@ -794,6 +795,17 @@ fun VistaApp(
                                 onBack = onBack,
                                 onBlockedUsersClick = onBlockedUsers,
                                 onActiveSessionsClick = onActiveSessions,
+                                onDeleteAccountClick = onDeleteAccount,
+                            )
+                        },
+                        deleteAccount = { onBack, onAccountDeleted ->
+                            val profileViewModel = hiltViewModel<OwnProfileViewModel>()
+                            val profileState by profileViewModel.uiState.collectAsStateWithLifecycle()
+                            val profile = (profileState as? OwnProfileUiState.Content)?.profile
+                            DeleteAccountScreen(
+                                profile = profile,
+                                onBack = onBack,
+                                onAccountDeleted = onAccountDeleted,
                             )
                         },
                         activeSessions = { onBack ->

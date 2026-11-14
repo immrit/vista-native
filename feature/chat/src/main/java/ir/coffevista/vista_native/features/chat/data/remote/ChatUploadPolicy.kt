@@ -55,13 +55,29 @@ internal class ChatUploadPolicy(
         sizeBytes: Long,
         header: ByteArray,
         profile: ChatUploadProfile?,
+        validateContent: Boolean = true,
     ): ValidatedChatAttachment {
         require(sizeBytes > 0L) { "فایل انتخاب‌شده خالی است" }
-        FileSecurityScanner.verifySafety(fileName, header)
         val maxBytes = maxBytes(profile)
         require(maxBytes == null || sizeBytes <= maxBytes) {
             "حجم فایل بیشتر از ${maxBytes!! / (1024L * 1024L)} مگابایت است"
         }
+        if (!validateContent) {
+            require(header.startsWith(VE2F)) { "فرمت رمزنگاری فایل نامعتبر است" }
+            require(declaredKind != AttachmentKind.UNKNOWN) { "نوع فایل پشتیبانی نمی‌شود" }
+            val ext = fileName.substringAfterLast('.', "")
+                .lowercase(Locale.US)
+                .filter(Char::isLetterOrDigit)
+                .ifBlank { "bin" }
+            val normalizedMime = declaredMimeType.trim().lowercase(Locale.US)
+            val canonicalMime = if (normalizedMime.isNotBlank() && mimeMatchesKind(normalizedMime, declaredKind)) {
+                normalizedMime
+            } else {
+                mimeTypeFor(ext, declaredKind)
+            }
+            return ValidatedChatAttachment(declaredKind, ext, canonicalMime, maxBytes)
+        }
+        FileSecurityScanner.verifySafety(fileName, header)
 
         val extension = fileName.substringAfterLast('.', "")
             .lowercase(Locale.US)
@@ -230,6 +246,7 @@ internal class ChatUploadPolicy(
         private val FLAC = byteArrayOf(0x66, 0x4C, 0x61, 0x43)
         private val ID3 = byteArrayOf(0x49, 0x44, 0x33)
         private val EBML = byteArrayOf(0x1A, 0x45, 0xDF.toByte(), 0xA3.toByte())
+        private val VE2F = byteArrayOf(0x56, 0x45, 0x32, 0x46)
     }
 }
 

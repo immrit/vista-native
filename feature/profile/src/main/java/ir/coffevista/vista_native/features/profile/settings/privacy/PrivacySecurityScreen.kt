@@ -1,7 +1,6 @@
 package ir.coffevista.vista_native.features.profile.settings.privacy
 
 import android.widget.Toast
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -14,7 +13,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.Alignment
-import androidx.compose.material3.RadioButton
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.AccessTime
@@ -78,6 +76,7 @@ fun PrivacySecurityScreen(
     onBack: () -> Unit,
     onBlockedUsersClick: () -> Unit,
     onActiveSessionsClick: () -> Unit,
+    onDeleteAccountClick: () -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: PrivacySettingsViewModel = hiltViewModel(),
 ) {
@@ -97,12 +96,6 @@ fun PrivacySecurityScreen(
     var showEmailVerificationDialog by remember { mutableStateOf(false) }
     var emailInput by remember { mutableStateOf(profile?.email.orEmpty()) }
     var emailCodeInput by remember { mutableStateOf("") }
-
-    var showAccountDeletionDialog by remember { mutableStateOf(false) }
-    var deletionStep by remember { mutableStateOf(1) }
-    var deletionReason by remember { mutableStateOf("not_using") }
-    var deletionOtp by remember { mutableStateOf("") }
-    var deletionPassword by remember { mutableStateOf("") }
 
     CompositionLocalProvider(LocalLayoutDirection provides LocalLayoutDirection.current) {
         Scaffold(
@@ -308,13 +301,8 @@ fun PrivacySecurityScreen(
                     VistaSettingsTile(
                         icon = Icons.Outlined.DeleteForever,
                         title = "حذف حساب کاربری",
-                        subtitle = "حذف دائمی حساب با مهلت بازگردانی ۳۰ روزه",
-                        onClick = {
-                            deletionStep = 1
-                            deletionOtp = ""
-                            deletionPassword = ""
-                            showAccountDeletionDialog = true
-                        },
+                        subtitle = "بررسی سیاست نگهداری، انتخاب علت و ثبت درخواست حذف",
+                        onClick = onDeleteAccountClick,
                     )
                 }
 
@@ -515,112 +503,6 @@ fun PrivacySecurityScreen(
                 },
                 dismissButton = {
                     TextButton(onClick = { showRemove2FADialog = false }) { Text("انصراف") }
-                },
-            )
-        }
-
-        if (showAccountDeletionDialog) {
-            AlertDialog(
-                onDismissRequest = { showAccountDeletionDialog = false },
-                title = { Text("حذف حساب کاربری") },
-                text = {
-                    Column {
-                        if (deletionStep == 1) {
-                            Text(
-                                text = "حساب شما پس از ثبت درخواست به مدت ۳۰ روز در حالت تعلیق قرار می‌گیرد و پس از آن تمام اطلاعات برای همیشه پاک خواهد شد.\n\nعلت حذف حساب را انتخاب کنید:",
-                                style = MaterialTheme.typography.bodySmall,
-                            )
-                            Spacer(modifier = Modifier.height(12.dp))
-                            val reasons = listOf(
-                                "not_using" to "دیگر از برنامه استفاده نمی‌کنم",
-                                "privacy" to "نگرانی حریم خصوصی",
-                                "notifications" to "اعلان‌های زیاد",
-                                "alternative" to "جایگزین پیدا کردم",
-                                "technical_issues" to "مشکلات فنی",
-                                "other" to "سایر موارد",
-                            )
-                            reasons.forEach { (key, label) ->
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable { deletionReason = key }
-                                        .padding(vertical = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    RadioButton(
-                                        selected = deletionReason == key,
-                                        onClick = { deletionReason = key },
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(text = label, style = MaterialTheme.typography.bodyMedium)
-                                }
-                            }
-                        } else {
-                            Text(
-                                text = "کد تایید ارسال‌شده به شماره همراه / ایمیل خود را وارد نمایید:",
-                                style = MaterialTheme.typography.bodyMedium,
-                            )
-                            Spacer(modifier = Modifier.height(12.dp))
-                            OutlinedTextField(
-                                value = deletionOtp,
-                                onValueChange = { deletionOtp = it },
-                                label = { Text("کد تایید پیامک‌شده") },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth(),
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            OutlinedTextField(
-                                value = deletionPassword,
-                                onValueChange = { deletionPassword = it },
-                                label = { Text("رمز عبور حساب (اختیاری)") },
-                                singleLine = true,
-                                visualTransformation = PasswordVisualTransformation(),
-                                modifier = Modifier.fillMaxWidth(),
-                            )
-                        }
-                    }
-                },
-                confirmButton = {
-                    Button(
-                        onClick = {
-                            if (deletionStep == 1) {
-                                viewModel.requestAccountDeletionOtp(
-                                    reason = deletionReason,
-                                    onSent = { deletionStep = 2 },
-                                    onError = { msg -> Toast.makeText(context, msg, Toast.LENGTH_SHORT).show() },
-                                )
-                            } else {
-                                if (deletionOtp.isBlank()) {
-                                    Toast.makeText(context, "لطفاً کد تایید را وارد کنید", Toast.LENGTH_SHORT).show()
-                                    return@Button
-                                }
-                                viewModel.confirmAccountDeletion(
-                                    otpCode = deletionOtp,
-                                    password = deletionPassword,
-                                    reason = deletionReason,
-                                    onSuccess = { graceDays ->
-                                        showAccountDeletionDialog = false
-                                        Toast.makeText(
-                                            context,
-                                            "درخواست حذف ثبت شد. مهلت انصراف: $graceDays روز.",
-                                            Toast.LENGTH_LONG,
-                                        ).show()
-                                        onBack()
-                                    },
-                                    onError = { msg -> Toast.makeText(context, msg, Toast.LENGTH_SHORT).show() },
-                                )
-                            }
-                        },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.error,
-                        ),
-                        enabled = !uiState.isSaving,
-                    ) {
-                        Text(if (deletionStep == 1) "دریافت کد تایید" else "تایید نهایی و حذف حساب")
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showAccountDeletionDialog = false }) { Text("انصراف") }
                 },
             )
         }

@@ -73,6 +73,7 @@ data class RequestAccountDeletionOtpDto(
 data class AccountDeletionOtpResponseDto(
     val success: Boolean = true,
     val message: String? = null,
+    val channel: String? = null,
     @kotlinx.serialization.SerialName("expires_in_seconds") val expiresInSeconds: Long = 120,
 )
 

@@ -903,6 +903,13 @@ fun VistaShell(
                         { navController.popBackStack() },
                         { navController.navigate(ShellRoutes.BlockedUsers) },
                         { navController.navigate(ShellRoutes.ActiveSessions) },
+                        { navController.navigate(ShellRoutes.DeleteAccount) },
+                    )
+                }
+                composable(ShellRoutes.DeleteAccount) {
+                    content.deleteAccount?.invoke(
+                        { navController.popBackStack() },
+                        onLogout,
                     )
                 }
                 composable(ShellRoutes.ActiveSessions) {

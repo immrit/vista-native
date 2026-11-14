@@ -9,6 +9,7 @@ import ir.coffevista.vista_native.core.model.session.AuthenticationState
 import ir.coffevista.vista_native.core.model.session.AuthenticationStateProvider
 import ir.coffevista.vista_native.features.profile.data.OwnProfileRepository
 import ir.coffevista.vista_native.features.profile.data.ProfileAvatarUploader
+import ir.coffevista.vista_native.features.profile.data.VerificationStatusDto
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -20,6 +21,10 @@ data class VerificationRequestUiState(
     val category: String = "",
     val notes: String = "",
     val selectedDocumentUri: Uri? = null,
+    val penaltyAcknowledged: Boolean = false,
+    val isLoadingStatus: Boolean = true,
+    val verificationStatus: VerificationStatusDto? = null,
+    val statusError: String? = null,
     val isUploading: Boolean = false,
     val uploadProgress: Float = 0f,
     val isSubmitting: Boolean = false,
@@ -37,6 +42,35 @@ class VerificationRequestViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(VerificationRequestUiState())
     val uiState: StateFlow<VerificationRequestUiState> = _uiState.asStateFlow()
 
+    init {
+        loadVerificationStatus()
+    }
+
+    fun loadVerificationStatus() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoadingStatus = true, statusError = null) }
+            when (val outcome = ownProfileRepository.getVerificationStatus()) {
+                is Outcome.Success -> {
+                    _uiState.update {
+                        it.copy(
+                            isLoadingStatus = false,
+                            verificationStatus = outcome.value,
+                            statusError = null,
+                        )
+                    }
+                }
+                is Outcome.Failure -> {
+                    _uiState.update {
+                        it.copy(
+                            isLoadingStatus = false,
+                            statusError = outcome.error.messageFa,
+                        )
+                    }
+                }
+            }
+        }
+    }
+
     fun onCategoryChanged(value: String) {
         _uiState.update { it.copy(category = value, errorMessage = null) }
     }
@@ -49,12 +83,29 @@ class VerificationRequestViewModel @Inject constructor(
         _uiState.update { it.copy(selectedDocumentUri = uri, errorMessage = null) }
     }
 
+    fun onPenaltyAcknowledgedChanged(acknowledged: Boolean) {
+        _uiState.update { it.copy(penaltyAcknowledged = acknowledged, errorMessage = null) }
+    }
+
     fun clearError() {
         _uiState.update { it.copy(errorMessage = null) }
     }
 
     fun submit() {
         val state = _uiState.value
+        val status = state.verificationStatus
+        if (status != null && !status.canSubmit) {
+            _uiState.update {
+                it.copy(errorMessage = "در حال حاضر امکان ثبت درخواست جدید برای تیک مشکی وجود ندارد")
+            }
+            return
+        }
+        if (!state.penaltyAcknowledged) {
+            _uiState.update {
+                it.copy(errorMessage = "لطفاً ابتدا قوانین احراز هویت و جریمه درخواست نامعتبر را تایید کنید")
+            }
+            return
+        }
         val category = state.category.trim()
         if (category.isEmpty()) {
             _uiState.update { it.copy(errorMessage = "لطفاً دسته‌بندی فعالیت را وارد کنید") }
@@ -114,6 +165,7 @@ class VerificationRequestViewModel @Inject constructor(
                             errorMessage = outcome.error.messageFa,
                         )
                     }
+                    loadVerificationStatus()
                 }
             }
         }

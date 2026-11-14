@@ -7,6 +7,7 @@ import ir.coffevista.vista_native.core.datastore.PrivacySettingsCache
 import ir.coffevista.vista_native.core.datastore.PrivacySettingsSnapshot
 import ir.coffevista.vista_native.core.model.session.AuthenticationState
 import ir.coffevista.vista_native.core.model.session.AuthenticationStateProvider
+import ir.coffevista.vista_native.core.network.BackendErrorParser
 import ir.coffevista.vista_native.core.security.BiometricAuthenticator
 import ir.coffevista.vista_native.core.security.BiometricAvailability
 import ir.coffevista.vista_native.core.security.SessionStore
@@ -137,19 +138,26 @@ class PrivacySettingsViewModel @Inject constructor(
 
     fun requestAccountDeletionOtp(
         reason: String,
-        onSent: () -> Unit = {},
+        onSent: (channel: String?, expiresInSeconds: Long) -> Unit = { _, _ -> },
         onError: (String) -> Unit = {},
     ) {
         viewModelScope.launch {
             mutableUiState.update { it.copy(isSaving = true, errorMessage = null) }
-            val res = runCatching {
+            val result = runCatching {
                 api.requestAccountDeletionOtp(RequestAccountDeletionOtpDto(reason))
-            }.getOrNull()
+            }
             mutableUiState.update { it.copy(isSaving = false) }
-            if (res?.isSuccessful == true && res.body()?.success != false) {
-                onSent()
+            val res = result.getOrNull()
+            val body = res?.body()
+            if (res?.isSuccessful == true && body?.success != false) {
+                onSent(body?.channel, body?.expiresInSeconds ?: 120L)
             } else {
-                val msg = res?.body()?.message ?: "ارسال کد تایید حذف حساب ناموفق بود"
+                val parsed = res?.errorBody()?.string()?.takeIf { it.isNotBlank() }?.let {
+                    BackendErrorParser.parse(it, res.headers()["Retry-After"])
+                }
+                val msg = parsed?.message
+                    ?: body?.message
+                    ?: "ارسال کد تایید حذف حساب ناموفق بود"
                 mutableUiState.update { it.copy(errorMessage = msg) }
                 onError(msg)
             }
@@ -165,7 +173,7 @@ class PrivacySettingsViewModel @Inject constructor(
     ) {
         viewModelScope.launch {
             mutableUiState.update { it.copy(isSaving = true, errorMessage = null) }
-            val res = runCatching {
+            val result = runCatching {
                 api.confirmAccountDeletion(
                     ConfirmAccountDeletionDto(
                         otpCode = otpCode,
@@ -173,13 +181,20 @@ class PrivacySettingsViewModel @Inject constructor(
                         reason = reason,
                     ),
                 )
-            }.getOrNull()
+            }
             mutableUiState.update { it.copy(isSaving = false) }
-            if (res?.isSuccessful == true && res.body()?.success != false) {
-                val grace = res.body()?.gracePeriodDays ?: 30
+            val res = result.getOrNull()
+            val body = res?.body()
+            if (res?.isSuccessful == true && body?.success != false) {
+                val grace = body?.gracePeriodDays ?: 30
                 onSuccess(grace)
             } else {
-                val msg = res?.body()?.message ?: "کد تایید یا رمز عبور نامعتبر است"
+                val parsed = res?.errorBody()?.string()?.takeIf { it.isNotBlank() }?.let {
+                    BackendErrorParser.parse(it, res.headers()["Retry-After"])
+                }
+                val msg = parsed?.message
+                    ?: body?.message
+                    ?: "کد تایید یا رمز عبور نامعتبر است"
                 mutableUiState.update { it.copy(errorMessage = msg) }
                 onError(msg)
             }

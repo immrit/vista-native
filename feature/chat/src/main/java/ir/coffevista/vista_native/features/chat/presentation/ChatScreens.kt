@@ -4425,6 +4425,7 @@ private fun MessageBubble(
                         attachment = attachment,
                         downloadTask = downloadTask,
                         senderDisplayName = senderDisplayName,
+                        isSecretConversation = isSecretConversation,
                         voiceQueue = voiceQueue,
                         musicQueue = musicQueue,
                         onOpenAudioPlayer = onOpenAudioPlayer,
@@ -5508,6 +5509,7 @@ private fun AttachmentBubble(
     attachment: ir.coffevista.vista_native.features.chat.domain.model.Attachment,
     downloadTask: DownloadTask? = null,
     senderDisplayName: String = if (message.isMine) "شما" else "مخاطب",
+    isSecretConversation: Boolean = false,
     voiceQueue: List<ChatAudioTrack> = emptyList(),
     musicQueue: List<ChatAudioTrack> = emptyList(),
     onOpenAudioPlayer: () -> Unit = {},
@@ -5520,13 +5522,23 @@ private fun AttachmentBubble(
 ) {
     val foreground = if (message.isMine) Color.White else MaterialTheme.colorScheme.onSurface
     val isGif = attachment.kind == AttachmentKind.GIF
-    val isDownloaded = isGif || message.isMine ||
-        !attachment.localUri.isNullOrBlank() ||
-        (downloadTask?.state == DownloadState.COMPLETE && !downloadTask.localUri.isNullOrBlank())
+    val completedDownloadUri = downloadTask
+        ?.takeIf { it.state == DownloadState.COMPLETE }
+        ?.localUri
+        ?.takeIf { it.isNotBlank() }
+    val rawLocalUri = completedDownloadUri ?: attachment.localUri
+    val isEncryptedLocalFile = rawLocalUri?.let {
+        it.contains("sec_up_") || it.contains("enc_chat_") || it.contains("secret_pending_uploads")
+    } == true
+    val usableLocalUri = rawLocalUri?.takeUnless { it.isBlank() || isEncryptedLocalFile }
+    val isDownloaded = isGif ||
+        !usableLocalUri.isNullOrBlank() ||
+        (!isSecretConversation && message.isMine)
     val isDownloading = !isGif && (downloadTask?.state == DownloadState.DOWNLOADING || downloadTask?.state == DownloadState.QUEUED)
     val isFailed = !isGif && (downloadTask?.state == DownloadState.FAILED || downloadTask?.state == DownloadState.CANCELLED)
-    val effectiveLocalUri = downloadTask?.localUri?.takeIf { it.isNotBlank() } ?: attachment.localUri
-    val mediaModel = effectiveLocalUri?.takeIf { it.isNotBlank() } ?: attachment.remoteUrl
+    val effectiveLocalUri = usableLocalUri
+    val mediaModel = effectiveLocalUri?.takeIf { it.isNotBlank() }
+        ?: if (isSecretConversation) null else attachment.remoteUrl
 
     val isActiveUpload = attachment.transferState == TransferState.UPLOADING ||
         attachment.transferState == TransferState.QUEUED
