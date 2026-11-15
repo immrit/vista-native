@@ -78,7 +78,7 @@ import kotlinx.coroutines.delay
 private val suggestedCategories = listOf(
     "هنرمند / موزیسین",
     "چهره عمومی",
-    "تولیدکننده محتوای شاخص",
+    "تولیدکننده محتوا",
     "خبرنگار / رسانه",
     "ورزشکار",
     "برند یا شرکت رسمی",
@@ -114,7 +114,7 @@ fun VerificationRequestScreen(
 
     LaunchedEffect(uiState.isSuccess) {
         if (uiState.isSuccess) {
-            snackbarHostState.showSnackbar("درخواست تیک مشکی با موفقیت ثبت شد و در صف بررسی قرار گرفت.")
+            snackbarHostState.showSnackbar("درخواست تیک مشکی با موفقیت ثبت شد.")
             delay(1500)
             onBack()
         }
@@ -158,7 +158,7 @@ fun VerificationRequestScreen(
                         ) {
                             Icon(
                                 imageVector = Icons.Outlined.Refresh,
-                                contentDescription = "بروزرسانی وضعیت",
+                                contentDescription = "بروزرسانی",
                                 tint = MaterialTheme.colorScheme.onSurface,
                             )
                         }
@@ -174,35 +174,30 @@ fun VerificationRequestScreen(
                     .fillMaxSize()
                     .padding(paddingValues)
                     .navigationBarsPadding()
-                    .padding(horizontal = 16.dp, vertical = 12.dp)
+                    .padding(horizontal = 16.dp, vertical = 10.dp)
                     .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                // Black Tick Identity Hero Card
                 BlackTickHeroCard()
 
-                // Server Status / Block Banner
                 if (uiState.isLoadingStatus) {
                     Card(
-                        shape = RoundedCornerShape(16.dp),
+                        shape = RoundedCornerShape(14.dp),
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Row(
-                            modifier = Modifier.padding(16.dp),
+                            modifier = Modifier.padding(14.dp),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
-                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                            Text(
-                                text = "در حال بررسی سابقه و وضعیت درخواست شما...",
-                                style = MaterialTheme.typography.bodySmall,
-                            )
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                            Text("در حال بررسی وضعیت درخواست...", style = MaterialTheme.typography.bodySmall)
                         }
                     }
                 } else if (uiState.statusError != null && status == null) {
                     Card(
-                        shape = RoundedCornerShape(16.dp),
+                        shape = RoundedCornerShape(14.dp),
                         colors = CardDefaults.cardColors(
                             containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.6f),
                         ),
@@ -211,7 +206,7 @@ fun VerificationRequestScreen(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(14.dp),
+                                .padding(12.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween,
                         ) {
@@ -220,28 +215,19 @@ fun VerificationRequestScreen(
                                 style = MaterialTheme.typography.bodySmall,
                                 modifier = Modifier.weight(1f),
                             )
-                            TextButton(onClick = viewModel::loadVerificationStatus) {
-                                Text("تلاش مجدد")
-                            }
+                            TextButton(onClick = viewModel::loadVerificationStatus) { Text("تلاش مجدد") }
                         }
                     }
                 } else if (status != null) {
                     VerificationServerStatusBanner(status = status)
                 }
 
-                // Eligibility explanation card (prevents frivolous requests)
-                BlackTickEligibilityCard()
+                // Compact Eligibility + Penalty Rules Card
+                BlackTickRulesCard(status = status)
 
-                // Progressive penalty card
-                VerificationPenaltyPolicyCard(status = status)
-
-                // Form inputs (shown or disabled cleanly if blocked)
                 Text(
-                    text = "دسته‌بندی فعالیت رسمی",
-                    style = MaterialTheme.typography.labelLarge.copy(
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 14.sp,
-                    ),
+                    text = "دسته‌بندی فعالیت",
+                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
                 )
 
                 FlowRow(
@@ -253,12 +239,7 @@ fun VerificationRequestScreen(
                             selected = uiState.category.trim() == preset,
                             onClick = { if (formEnabled) viewModel.onCategoryChanged(preset) },
                             enabled = formEnabled,
-                            label = {
-                                Text(
-                                    text = preset,
-                                    style = MaterialTheme.typography.labelMedium,
-                                )
-                            },
+                            label = { Text(text = preset, style = MaterialTheme.typography.labelMedium) },
                         )
                     }
                 }
@@ -267,7 +248,7 @@ fun VerificationRequestScreen(
                     value = uiState.category,
                     onValueChange = viewModel::onCategoryChanged,
                     modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text("یا دسته‌بندی دقیق فعالیت خود را بنویسید") },
+                    placeholder = { Text("یا دسته‌بندی خود را بنویسید") },
                     singleLine = true,
                     shape = RoundedCornerShape(12.dp),
                     colors = OutlinedTextFieldDefaults.colors(
@@ -278,11 +259,8 @@ fun VerificationRequestScreen(
                 )
 
                 Text(
-                    text = "تصویر مدرک هویتی یا مجوز معتبر",
-                    style = MaterialTheme.typography.labelLarge.copy(
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 14.sp,
-                    ),
+                    text = "تصویر مدرک معتبر",
+                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
                 )
 
                 val hasDocument = uiState.selectedDocumentUri != null
@@ -300,10 +278,8 @@ fun VerificationRequestScreen(
                             else MaterialTheme.colorScheme.outlineVariant,
                             shape = RoundedCornerShape(12.dp),
                         )
-                        .clickable(enabled = formEnabled) {
-                            showInAppDocPicker = true
-                        }
-                        .padding(16.dp),
+                        .clickable(enabled = formEnabled) { showInAppDocPicker = true }
+                        .padding(14.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Icon(
@@ -311,10 +287,10 @@ fun VerificationRequestScreen(
                         contentDescription = null,
                         tint = if (hasDocument) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Spacer(modifier = Modifier.size(12.dp))
+                    Spacer(modifier = Modifier.size(10.dp))
                     Text(
-                        text = if (hasDocument) "تصویر مدرک انتخاب شد (برای تغییر کلیک کنید)"
-                        else "بارگذاری مدرک شناسایی معتبر (کارت ملی، کارت مطبوعات، روزنامه رسمی یا مجوز فعالیت)",
+                        text = if (hasDocument) "مدرک انتخاب شد (برای تغییر لمس کنید)"
+                        else "بارگذاری مدرک هویتی یا مجوز فعالیت",
                         modifier = Modifier.weight(1f),
                         style = MaterialTheme.typography.bodyMedium.copy(
                             color = if (hasDocument) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
@@ -337,53 +313,46 @@ fun VerificationRequestScreen(
                     onValueChange = viewModel::onNotesChanged,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(120.dp),
-                    placeholder = { Text("لینک وب‌سایت، رسانه‌های خبری، سوابق شناخته‌شدگی و توضیحات تکمیلی...") },
+                        .height(100.dp),
+                    placeholder = { Text("توضیحات یا لینک سوابق و وب‌سایت (اختیاری)") },
                     shape = RoundedCornerShape(12.dp),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedContainerColor = MaterialTheme.colorScheme.surface,
                         unfocusedContainerColor = MaterialTheme.colorScheme.surface,
                     ),
-                    maxLines = 5,
+                    maxLines = 4,
                     enabled = formEnabled,
                 )
 
-                // Explicit acknowledgment of penalty rules before submission
-                Card(
-                    shape = RoundedCornerShape(14.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-                    ),
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(14.dp))
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
                         .clickable(enabled = formEnabled) {
                             viewModel.onPenaltyAcknowledgedChanged(!uiState.penaltyAcknowledged)
-                        },
+                        }
+                        .padding(horizontal = 8.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Checkbox(
-                            checked = uiState.penaltyAcknowledged,
-                            onCheckedChange = viewModel::onPenaltyAcknowledgedChanged,
-                            enabled = formEnabled,
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = "تأیید می‌کنم شرایط دریافت تیک مشکی را دارم و می‌دانم در صورت رد درخواست، محدودیت زمانی و جریمه سکه اعمال می‌شود.",
-                            style = MaterialTheme.typography.bodySmall.copy(lineHeight = 19.sp),
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
-                    }
+                    Checkbox(
+                        checked = uiState.penaltyAcknowledged,
+                        onCheckedChange = viewModel::onPenaltyAcknowledgedChanged,
+                        enabled = formEnabled,
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "شرایط تیک مشکی و جریمه رد درخواست را می‌پذیرم.",
+                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
                 }
 
                 Button(
                     onClick = viewModel::submit,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(50.dp),
+                        .height(48.dp),
                     shape = RoundedCornerShape(14.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Color(0xFF111827),
@@ -394,21 +363,18 @@ fun VerificationRequestScreen(
                     if (uiState.isSubmitting) {
                         CircularProgressIndicator(
                             color = Color.White,
-                            modifier = Modifier.size(22.dp),
+                            modifier = Modifier.size(20.dp),
                             strokeWidth = 2.dp,
                         )
                     } else {
                         Text(
-                            text = if (canSubmitByServer) "ثبت درخواست تیک مشکی" else "ارسال درخواست غیرفعال است",
-                            style = MaterialTheme.typography.labelLarge.copy(
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 15.sp,
-                            ),
+                            text = if (canSubmitByServer) "ثبت درخواست تیک مشکی" else "ارسال موقتاً غیرفعال است",
+                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
                         )
                     }
                 }
 
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(16.dp))
             }
         }
     }
@@ -418,19 +384,17 @@ fun VerificationRequestScreen(
 private fun BlackTickHeroCard() {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = Color(0xFF111827),
-        ),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF111827)),
     ) {
         Row(
-            modifier = Modifier.padding(18.dp),
+            modifier = Modifier.padding(14.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Box(
                 modifier = Modifier
-                    .size(54.dp)
+                    .size(44.dp)
                     .clip(CircleShape)
                     .background(Color.White.copy(alpha = 0.12f)),
                 contentAlignment = Alignment.Center,
@@ -439,22 +403,21 @@ private fun BlackTickHeroCard() {
                     imageVector = Icons.Outlined.Verified,
                     contentDescription = null,
                     tint = Color.White,
-                    modifier = Modifier.size(30.dp),
+                    modifier = Modifier.size(24.dp),
                 )
             }
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
-                    text = "نشان تایید هویت تیک مشکی",
-                    style = MaterialTheme.typography.titleMedium.copy(
+                    text = "تیک مشکی • نشان تایید اصالت",
+                    style = MaterialTheme.typography.titleSmall.copy(
                         fontWeight = FontWeight.ExtraBold,
                         color = Color.White,
                     ),
                 )
                 Text(
-                    text = "تیک مشکی نشان رسمی اصالت برای شخصیت‌های شناخته‌شده، هنرمندان، رسانه‌ها و برندهای معتبر در ویستا است.",
+                    text = "مخصوص چهره‌های شناخته‌شده، هنرمندان، رسانه‌ها و برندهای رسمی.",
                     style = MaterialTheme.typography.bodySmall.copy(
-                        lineHeight = 19.sp,
-                        color = Color.White.copy(alpha = 0.82f),
+                        color = Color.White.copy(alpha = 0.8f),
                     ),
                 )
             }
@@ -463,7 +426,8 @@ private fun BlackTickHeroCard() {
 }
 
 @Composable
-private fun BlackTickEligibilityCard() {
+private fun BlackTickRulesCard(status: VerificationStatusDto?) {
+    val amber = Color(0xFFB45309)
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
@@ -472,107 +436,59 @@ private fun BlackTickEligibilityCard() {
     ) {
         Column(
             modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.Info,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(20.dp),
-                )
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(
-                    text = "تیک مشکی برای چه کاربرانی صادر می‌شود؟",
+                    text = "شرایط واجدین",
                     style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
                 )
+                Text(
+                    text = "• فعالیت رسمی/عمومی با پروفایل کامل و مدارک معتبر\n" +
+                        "• تیک آبی برای مدیران و تیک طلایی برای اشتراک پریمیوم است.",
+                    style = MaterialTheme.typography.bodySmall.copy(lineHeight = 19.sp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
-            Text(
-                text = "• شخصیت‌های عمومی، هنرمندان، ورزشکاران، روزنامه‌نگاران و تولیدکنندگان محتوای شاخص و اثرگذار.\n" +
-                    "• شرکت‌ها، مؤسسات، کسب‌وکارها و برندهای رسمی با مدارک ثبت یا مجوز معتبر.\n" +
-                    "• پروفایل باید کامل (تصویر واقعی، نام دقیق، بیوگرافی و فعالیت مستمر و اصیل) باشد و احتمال جعل هویت وجود داشته باشد.",
-                style = MaterialTheme.typography.bodySmall.copy(lineHeight = 20.sp),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+
             Surface(
-                shape = RoundedCornerShape(10.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                shape = RoundedCornerShape(12.dp),
+                color = Color(0xFFF59E0B).copy(alpha = 0.1f),
+                border = BorderStroke(1.dp, Color(0xFFF59E0B).copy(alpha = 0.3f)),
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text(
-                    text = "تفاوت نشان‌ها: تیک آبی مخصوص ناظران و تیم رسمی ویستا است. اگر واجد شرایط تیک مشکی نیستید اما امکانات پیشرفته می‌خواهید، می‌توانید از بخش اشتراک، تیک طلایی (پریمیوم) تهیه کنید.",
-                    style = MaterialTheme.typography.bodySmall.copy(lineHeight = 19.sp),
-                    color = MaterialTheme.colorScheme.onSurface,
+                Column(
                     modifier = Modifier.padding(10.dp),
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun VerificationPenaltyPolicyCard(status: VerificationStatusDto?) {
-    val amber = Color(0xFFB45309)
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = Color(0xFFF59E0B).copy(alpha = 0.09f),
-        ),
-        border = BorderStroke(1.dp, Color(0xFFF59E0B).copy(alpha = 0.35f)),
-    ) {
-        Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.WarningAmber,
-                    contentDescription = null,
-                    tint = amber,
-                    modifier = Modifier.size(20.dp),
-                )
-                Text(
-                    text = "جریمه ارسال درخواست بی‌مورد یا نامعتبر",
-                    style = MaterialTheme.typography.labelLarge.copy(
-                        fontWeight = FontWeight.Bold,
-                        color = amber,
-                    ),
-                )
-            }
-            Text(
-                text = "برای جلوگیری از ارسال درخواست‌های تکراری و بررسی سریع‌تر متقاضیان واقعی، در صورت رد شدن درخواست شما جریمه پلکانی اعمال می‌شود:\n" +
-                    "• بار اول رد شدن: ۷ روز مسدودیت ارسال مجدد + کسر ۱۰۰ سکه\n" +
-                    "• بار دوم رد شدن: ۳۰ روز مسدودیت ارسال مجدد + کسر ۲۵۰ سکه\n" +
-                    "• بار سوم به بعد: ۹۰ روز مسدودیت ارسال مجدد + کسر ۵۰۰ سکه",
-                style = MaterialTheme.typography.bodySmall.copy(lineHeight = 20.sp),
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            if (status != null) {
-                Surface(
-                    shape = RoundedCornerShape(10.dp),
-                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
-                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 10.dp, vertical = 8.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
-                        Text(
-                            text = "سابقه رد: ${status.rejectedCount} بار • سکه فعلی: ${status.currentCoins}",
-                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                        Icon(
+                            imageVector = Icons.Outlined.WarningAmber,
+                            contentDescription = null,
+                            tint = amber,
+                            modifier = Modifier.size(16.dp),
                         )
                         Text(
-                            text = "جریمه بعدی: ${status.nextPenaltyDays} روز / ${status.nextPenaltyCoins} سکه",
+                            text = "جریمه درخواست نامعتبر (رد شدن):",
                             style = MaterialTheme.typography.labelMedium.copy(
                                 fontWeight = FontWeight.Bold,
+                                color = amber,
+                            ),
+                        )
+                    }
+                    Text(
+                        text = "بار ۱: ۷ روز + ۱۰۰ سکه  •  بار ۲: ۳۰ روز + ۲۵۰ سکه  •  بار ۳+: ۹۰ روز + ۵۰۰ سکه",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    if (status != null) {
+                        Text(
+                            text = "سابقه رد: ${status.rejectedCount} بار  |  سکه فعلی: ${status.currentCoins}",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontWeight = FontWeight.SemiBold,
                                 color = amber,
                             ),
                         )
@@ -593,8 +509,8 @@ private fun VerificationServerStatusBanner(status: VerificationStatusDto) {
                 borderColor = Color(0xFF10B981).copy(alpha = 0.4f),
                 icon = Icons.Outlined.CheckCircle,
                 tint = Color(0xFF047857),
-                title = "حساب شما هم‌اکنون دارای $badgeName است",
-                body = "نیازی به ارسال درخواست جدید ندارید.",
+                title = "حساب شما دارای $badgeName است",
+                body = "نیازی به ثبت درخواست جدید ندارید.",
             )
         }
         "pending_exists" -> {
@@ -603,41 +519,36 @@ private fun VerificationServerStatusBanner(status: VerificationStatusDto) {
                 borderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.35f),
                 icon = Icons.Outlined.HourglassTop,
                 tint = MaterialTheme.colorScheme.primary,
-                title = "درخواست تیک مشکی شما در حال بررسی است",
-                body = "تا زمان اعلام نتیجه بررسی توسط تیم ویستا، امکان ارسال درخواست جدید وجود ندارد.",
+                title = "درخواست قبلی در حال بررسی است",
+                body = "تا اعلام نتیجه، ارسال درخواست جدید فعال نیست.",
             )
         }
         "cooldown_active" -> {
             val remainingText = formatCooldownRemaining(status.cooldownRemainingSeconds)
             val reasonPart = status.lastRejectionReason?.takeIf { it.isNotBlank() }
-                ?.let { "\nعلت آخرین رد: $it" }
+                ?.let { " — علت: $it" }
                 .orEmpty()
-            val coinsPart = if (status.lastPenaltyCoins > 0) {
-                "\nجریمه سکه اعمال‌شده: ${status.lastPenaltyCoins} سکه"
-            } else {
-                ""
-            }
             StatusBannerCard(
                 containerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.10f),
                 borderColor = MaterialTheme.colorScheme.error.copy(alpha = 0.35f),
                 icon = Icons.Outlined.WarningAmber,
                 tint = MaterialTheme.colorScheme.error,
-                title = "ارسال درخواست موقتاً مسدود است ($remainingText)",
-                body = "به دلیل رد شدن درخواست قبلی، امکان ثبت درخواست جدید فعلاً غیرفعال است.$coinsPart$reasonPart",
+                title = "محدودیت ارسال مجدد ($remainingText)",
+                body = "درخواست قبلی رد شده است$reasonPart.",
             )
         }
         else -> {
             if (status.latestStatus == "rejected" && status.rejectedCount > 0) {
                 val reasonPart = status.lastRejectionReason?.takeIf { it.isNotBlank() }
-                    ?.let { "علت رد قبلی: $it\n" }
-                    .orEmpty()
+                    ?.let { "علت قبلی: $it" }
+                    ?: "پیش از ارسال مجدد مدارک را کامل‌تر بارگذاری کنید."
                 StatusBannerCard(
                     containerColor = Color(0xFFF59E0B).copy(alpha = 0.10f),
                     borderColor = Color(0xFFF59E0B).copy(alpha = 0.35f),
                     icon = Icons.Outlined.Info,
                     tint = Color(0xFFB45309),
-                    title = "درخواست قبلی شما رد شده بود",
-                    body = "${reasonPart}دوره انتظار به پایان رسیده است؛ پیش از ارسال مجدد مدارک و پروفایل خود را تکمیل کنید.",
+                    title = "امکان ارسال مجدد فعال است",
+                    body = reasonPart,
                 )
             }
         }
@@ -655,32 +566,24 @@ private fun StatusBannerCard(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(containerColor = containerColor),
         border = BorderStroke(1.dp, borderColor),
     ) {
         Row(
-            modifier = Modifier.padding(14.dp),
-            verticalAlignment = Alignment.Top,
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = tint,
-                modifier = Modifier.size(22.dp),
-            )
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Icon(imageVector = icon, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
                     text = title,
-                    style = MaterialTheme.typography.labelLarge.copy(
-                        fontWeight = FontWeight.Bold,
-                        color = tint,
-                    ),
+                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold, color = tint),
                 )
                 Text(
                     text = body,
-                    style = MaterialTheme.typography.bodySmall.copy(lineHeight = 19.sp),
+                    style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
             }
@@ -694,8 +597,8 @@ private fun formatCooldownRemaining(seconds: Long): String {
     val hours = (seconds % 86400L) / 3600L
     val minutes = (seconds % 3600L) / 60L
     return when {
-        days > 0 -> "$days روز و $hours ساعت باقی‌مانده"
-        hours > 0 -> "$hours ساعت و $minutes دقیقه باقی‌مانده"
-        else -> "${minutes.coerceAtLeast(1)} دقیقه باقی‌مانده"
+        days > 0 -> "$days روز و $hours ساعت"
+        hours > 0 -> "$hours ساعت و $minutes دقیقه"
+        else -> "${minutes.coerceAtLeast(1)} دقیقه"
     }
 }

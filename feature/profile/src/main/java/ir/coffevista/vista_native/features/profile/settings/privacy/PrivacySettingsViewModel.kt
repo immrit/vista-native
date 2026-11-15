@@ -138,7 +138,7 @@ class PrivacySettingsViewModel @Inject constructor(
 
     fun requestAccountDeletionOtp(
         reason: String,
-        onSent: (channel: String?, expiresInSeconds: Long) -> Unit = { _, _ -> },
+        onSent: (channel: String?, expiresInSeconds: Long, hasPassword: Boolean) -> Unit = { _, _, _ -> },
         onError: (String) -> Unit = {},
     ) {
         viewModelScope.launch {
@@ -150,7 +150,7 @@ class PrivacySettingsViewModel @Inject constructor(
             val res = result.getOrNull()
             val body = res?.body()
             if (res?.isSuccessful == true && body?.success != false) {
-                onSent(body?.channel, body?.expiresInSeconds ?: 120L)
+                onSent(body?.channel, body?.expiresInSeconds ?: 120L, body?.hasPassword ?: true)
             } else {
                 val parsed = res?.errorBody()?.string()?.takeIf { it.isNotBlank() }?.let {
                     BackendErrorParser.parse(it, res.headers()["Retry-After"])
@@ -186,7 +186,7 @@ class PrivacySettingsViewModel @Inject constructor(
             val res = result.getOrNull()
             val body = res?.body()
             if (res?.isSuccessful == true && body?.success != false) {
-                val grace = body?.gracePeriodDays ?: 30
+                val grace = body?.gracePeriodDays ?: 14
                 onSuccess(grace)
             } else {
                 val parsed = res?.errorBody()?.string()?.takeIf { it.isNotBlank() }?.let {

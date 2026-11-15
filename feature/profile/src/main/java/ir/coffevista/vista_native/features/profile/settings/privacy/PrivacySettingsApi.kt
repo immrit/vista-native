@@ -74,6 +74,7 @@ data class AccountDeletionOtpResponseDto(
     val success: Boolean = true,
     val message: String? = null,
     val channel: String? = null,
+    @kotlinx.serialization.SerialName("has_password") val hasPassword: Boolean = true,
     @kotlinx.serialization.SerialName("expires_in_seconds") val expiresInSeconds: Long = 120,
 )
 
@@ -88,7 +89,7 @@ data class ConfirmAccountDeletionDto(
 data class ConfirmAccountDeletionResponseDto(
     val success: Boolean = true,
     val message: String? = null,
-    @kotlinx.serialization.SerialName("grace_period_days") val gracePeriodDays: Int = 30,
+    @kotlinx.serialization.SerialName("grace_period_days") val gracePeriodDays: Int = 14,
 )
 
 @Serializable

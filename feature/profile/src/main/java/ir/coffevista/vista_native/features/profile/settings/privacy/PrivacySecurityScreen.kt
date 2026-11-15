@@ -301,7 +301,7 @@ fun PrivacySecurityScreen(
                     VistaSettingsTile(
                         icon = Icons.Outlined.DeleteForever,
                         title = "حذف حساب کاربری",
-                        subtitle = "بررسی سیاست نگهداری، انتخاب علت و ثبت درخواست حذف",
+                        subtitle = "انتخاب علت و ثبت درخواست با دوره انتظار ۱۴ روزه",
                         onClick = onDeleteAccountClick,
                     )
                 }
