@@ -324,7 +324,10 @@ fun VistaShell(
                 navController.navigate(ShellRoutes.chatDetail(request.reference))
             }
             ShellDeferredKind.PROFILE -> {
-                if (request.reference == "payment_callback") {
+                if (request.reference == "payment_coins") {
+                    selectTab(ShellTab.Profile)
+                    navController.navigate(ShellRoutes.BadgeStore)
+                } else if (request.reference == "payment_callback") {
                     selectTab(ShellTab.Profile)
                     navController.navigate(ShellRoutes.PricingPage)
                 } else if (request.reference == context.userId) {
@@ -709,18 +712,20 @@ fun VistaShell(
                         { navController.popBackStack() },
                         { navController.navigate(ShellRoutes.ServicesNearbyLikes) },
                         { userId, _ -> navController.navigate(ShellRoutes.userProfile(userId)) },
-                        { _, otherUserId, _, _ ->
+                        { convId, otherUserId, _, _ ->
+                            val targetRoute = convId.ifBlank { otherUserId }
                             selectTab(ShellTab.Chat)
-                            navController.navigate(ShellRoutes.chatDetail(otherUserId))
+                            navController.navigate(ShellRoutes.chatDetail(targetRoute))
                         },
                     )
                 }
                 composable(ShellRoutes.ServicesNearbyLikes) {
                     content.servicesNearbyLikes(
                         { navController.popBackStack() },
-                        { _, otherUserId, _, _ ->
+                        { convId, otherUserId, _, _ ->
+                            val targetRoute = convId.ifBlank { otherUserId }
                             selectTab(ShellTab.Chat)
-                            navController.navigate(ShellRoutes.chatDetail(otherUserId))
+                            navController.navigate(ShellRoutes.chatDetail(targetRoute))
                         },
                     )
                 }

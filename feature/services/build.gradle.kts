@@ -36,6 +36,7 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.retrofit)
     implementation(libs.coil.compose)
+    implementation(libs.poolakey)
 
     testImplementation(project(":core:testing"))
     testImplementation(libs.junit)

@@ -94,6 +94,13 @@ import ir.coffevista.vista_native.ui.components.VistaBrandMark
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaBrandColors
 import ir.coffevista.vista_native.core.network.SystemGateMonitor
 import ir.coffevista.vista_native.core.security.SessionStore
+import dagger.hilt.EntryPoint
+import dagger.hilt.InstallIn
+import dagger.hilt.android.EntryPointAccessors
+import dagger.hilt.components.SingletonComponent
+import ir.coffevista.vista_native.features.profile.settings.privacy.ActiveSessionLifecycleManager
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -136,10 +143,35 @@ fun VistaApp(
     val sessionTerminated by SystemGateMonitor.sessionTerminated.collectAsStateWithLifecycle()
     var shellDeepLinkRequest by remember { mutableStateOf<ShellDeepLinkRequest?>(null) }
     val applicationScope = rememberCoroutineScope()
+    val appContext = LocalContext.current.applicationContext
+    val sessionLifecycleManager = remember(appContext) {
+        runCatching {
+            EntryPointAccessors.fromApplication(appContext, ActiveSessionEntryPoint::class.java)
+                .activeSessionLifecycleManager()
+        }.getOrNull()
+    }
+
+    LaunchedEffect(authState, sessionLifecycleManager) {
+        val manager = sessionLifecycleManager ?: return@LaunchedEffect
+        when (val state = authState) {
+            is AuthenticationState.SignedIn -> {
+                if (!state.context.offline) {
+                    manager.ensureCurrentSessionRegistered(state.context.userId)
+                    while (isActive) {
+                        delay(180_000L)
+                        manager.touchCurrentSession()
+                    }
+                }
+            }
+            AuthenticationState.SignedOut -> manager.clearLocalSession()
+            AuthenticationState.Unknown -> Unit
+        }
+    }
 
     LaunchedEffect(sessionTerminated) {
         if (sessionTerminated) {
             SystemGateMonitor.reportSessionTerminated(false)
+            sessionLifecycleManager?.clearLocalSession()
             runCatching(sessionStore::clear)
             authenticationStateOwner.signOut()
             navController.navigate(AppRoute.Authentication) {
@@ -784,7 +816,7 @@ fun VistaApp(
                             PricingScreen(onBack = onBack, initialTab = 0)
                         },
                         badgeStore = { onBack ->
-                            PricingScreen(onBack = onBack, initialTab = 2)
+                            PricingScreen(onBack = onBack, initialTab = 1)
                         },
                         privacySecurity = { onBack, onBlockedUsers, onActiveSessions, onDeleteAccount ->
                             val profileViewModel = hiltViewModel<OwnProfileViewModel>()
@@ -1228,3 +1260,9 @@ private fun FeedPost.toProfilePostUiModel() = ProfilePostUiModel(
     isSaved = isSaved,
     createdAt = createdAt,
 )
+
+@EntryPoint
+@InstallIn(SingletonComponent::class)
+interface ActiveSessionEntryPoint {
+    fun activeSessionLifecycleManager(): ActiveSessionLifecycleManager
+}

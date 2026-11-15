@@ -1630,6 +1630,7 @@ fun MessageDetailRoute(
         onOpenPost = onOpenPost,
         duelPreviews = state.duelPreviews,
         onRequestDuelPreview = viewModel::loadDuelPreview,
+        onSessionAlertAction = viewModel::respondToSessionAlert,
     )
 }
 
@@ -1693,6 +1694,7 @@ fun MessageDetailScreen(
     onOpenPost: (String) -> Unit = {},
     duelPreviews: Map<String, DuelPreviewUiState> = emptyMap(),
     onRequestDuelPreview: (String) -> Unit = {},
+    onSessionAlertAction: (Message, String, String) -> Unit = { _, _, _ -> },
 ) = CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
     val context = LocalContext.current
     val localView = LocalView.current
@@ -2402,6 +2404,8 @@ fun MessageDetailScreen(
                                                 onOpenPost = onOpenPost,
                                                 duelPreviews = duelPreviews,
                                                 onRequestDuelPreview = onRequestDuelPreview,
+                                                pendingSessionAlertActions = state.pendingSessionAlertActions,
+                                                onSessionAlertAction = onSessionAlertAction,
                                                 onOpenGame = { targetPath ->
                                                     internalNavigator?.openUrl("https://cafevista.ir$targetPath")
                                                 },
@@ -4042,6 +4046,8 @@ private fun MessageBubble(
     onOpenPost: (String) -> Unit = {},
     duelPreviews: Map<String, DuelPreviewUiState> = emptyMap(),
     onRequestDuelPreview: (String) -> Unit = {},
+    pendingSessionAlertActions: Set<String> = emptySet(),
+    onSessionAlertAction: (Message, String, String) -> Unit = { _, _, _ -> },
     onOpenGame: (String) -> Unit = {},
     voiceQueue: List<ChatAudioTrack> = emptyList(),
     musicQueue: List<ChatAudioTrack> = emptyList(),
@@ -4057,8 +4063,16 @@ private fun MessageBubble(
             else -> null
         }
     }
-    val sharedPost = remember(message.content, duelInvite) {
+    val sessionAlert = remember(message.content, message.transportType) {
         if (isDeleted || duelInvite != null) null
+        else when (val content = message.content) {
+            is MessageContent.Structured -> ir.coffevista.vista_native.features.chat.domain.model.SessionAlertParser.tryParse(content.payload, message.transportType)
+            is MessageContent.Text -> ir.coffevista.vista_native.features.chat.domain.model.SessionAlertParser.tryParse(content.value, message.transportType)
+            else -> null
+        }
+    }
+    val sharedPost = remember(message.content, duelInvite, sessionAlert) {
+        if (isDeleted || duelInvite != null || sessionAlert != null) null
         else when (val content = message.content) {
             is MessageContent.Structured -> SharedPostParser.tryParse(content.payload)
             is MessageContent.Text -> SharedPostParser.tryParse(content.value)
@@ -4066,18 +4080,18 @@ private fun MessageBubble(
         }
     }
     val text = when (val content = message.content) {
-        is MessageContent.Text -> if (duelInvite != null || sharedPost != null || content.value.trimStart().startsWith("wf:")) "" else content.value
-        is MessageContent.Structured -> if (duelInvite != null || sharedPost != null || content.payload.trimStart().startsWith("wf:")) "" else content.payload
+        is MessageContent.Text -> if (duelInvite != null || sessionAlert != null || sharedPost != null || content.value.trimStart().startsWith("wf:")) "" else content.value
+        is MessageContent.Structured -> if (duelInvite != null || sessionAlert != null || sharedPost != null || content.payload.trimStart().startsWith("wf:")) "" else content.payload
         MessageContent.Deleted -> "این پیام حذف شده است"
         MessageContent.EncryptedUnavailable -> "🔒 پیام رمزگذاری‌شده"
     }
-    val singleEmoji = remember(text, message.attachment, message.isForwarded, message.replyToContent, sharedPost, duelInvite, isDeleted) {
+    val singleEmoji = remember(text, message.attachment, message.isForwarded, message.replyToContent, sharedPost, duelInvite, sessionAlert, isDeleted) {
         SingleEmojiDetector.extractSingleEmoji(
             text = text,
             hasAttachment = message.attachment != null,
             isForwarded = message.isForwarded,
             hasReply = !message.replyToContent.isNullOrBlank(),
-            hasSharedPost = sharedPost != null || duelInvite != null,
+            hasSharedPost = sharedPost != null || duelInvite != null || sessionAlert != null,
             isDeleted = isDeleted,
         )
     }
@@ -4404,6 +4418,7 @@ private fun MessageBubble(
                             )
                             val replyDisplayContent = remember(message.replyToContent) {
                                 DuelInviteParser.formatPreviewIfDuel(message.replyToContent)
+                                    ?: ir.coffevista.vista_native.features.chat.domain.model.SessionAlertParser.formatPreview(message.replyToContent)
                                     ?: SharedPostParser.tryParse(message.replyToContent)?.let { parsedPost ->
                                         "پست از ${parsedPost.authorName}: ${parsedPost.content.ifBlank { "رسانه" }}"
                                     }
@@ -4498,6 +4513,20 @@ private fun MessageBubble(
                             previewStatus = previewState?.status ?: DuelPreviewLoadStatus.IDLE,
                             onRequestPreview = onRequestDuelPreview,
                             onStartGame = onOpenGame,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Box(Modifier.align(AbsoluteAlignment.Right)) {
+                            metaFooter()
+                        }
+                    }
+                } else if (sessionAlert != null) {
+                    Column(modifier = Modifier.align(AbsoluteAlignment.Right)) {
+                        ir.coffevista.vista_native.features.chat.presentation.components.SessionAlertCard(
+                            alert = sessionAlert,
+                            isActionPending = sessionAlert.sessionId in pendingSessionAlertActions,
+                            onAction = { action ->
+                                onSessionAlertAction(message, sessionAlert.sessionId, action)
+                            },
                         )
                         Spacer(Modifier.height(4.dp))
                         Box(Modifier.align(AbsoluteAlignment.Right)) {
@@ -5416,6 +5445,7 @@ private fun MessageInfoDialog(message: Message, onDismiss: () -> Unit) {
 internal fun Message.previewText(): String = when (val value = content) {
     is MessageContent.Text -> {
         DuelInviteParser.formatPreviewIfDuel(value.value, transportType)
+            ?: ir.coffevista.vista_native.features.chat.domain.model.SessionAlertParser.formatPreview(value.value, transportType)
             ?: SharedPostParser.tryParse(value.value)?.let { parsed ->
                 "پست از ${parsed.authorName}: ${parsed.content.ifBlank { "رسانه" }}"
             }
@@ -5424,6 +5454,7 @@ internal fun Message.previewText(): String = when (val value = content) {
     }
     is MessageContent.Structured -> {
         DuelInviteParser.formatPreviewIfDuel(value.payload, transportType)
+            ?: ir.coffevista.vista_native.features.chat.domain.model.SessionAlertParser.formatPreview(value.payload, transportType)
             ?: SharedPostParser.tryParse(value.payload)?.let { parsed ->
                 "پست از ${parsed.authorName}: ${parsed.content.ifBlank { "رسانه" }}"
             }

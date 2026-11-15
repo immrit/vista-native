@@ -635,11 +635,15 @@ class ChatRealtimeCoordinator(
     }
 }
 
-internal fun ChatAccount.realtimeHeaders(): Map<String, String> = mapOf(
-    "Authorization" to "Bearer $accessToken",
+internal fun ChatAccount.realtimeHeaders(): Map<String, String> = buildMap {
+    put("Authorization", "Bearer $accessToken")
     // Some reverse proxies drop Authorization during an HTTP Upgrade. The
     // backend deliberately accepts the same token as the second negotiated
     // WebSocket subprotocol, without exposing it in the URL.
-    "Sec-WebSocket-Protocol" to "Authorization, $accessToken",
-    "X-Device-ID" to deviceId,
-)
+    put("Sec-WebSocket-Protocol", "Authorization, $accessToken")
+    put("X-Device-ID", deviceId)
+    ir.coffevista.vista_native.core.common.SessionCredentialsProvider.current
+        ?.currentSessionId()
+        ?.takeIf(String::isNotBlank)
+        ?.let { put("X-Session-ID", it) }
+}

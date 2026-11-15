@@ -1,13 +1,12 @@
 package ir.coffevista.vista_native.features.profile.settings.privacy
 
 import android.content.Context
-import android.os.Build
+import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
-import androidx.fragment.app.FragmentActivity
-import ir.coffevista.vista_native.core.common.DeviceIdProvider
+import ir.coffevista.vista_native.core.common.SessionCredentialsProvider
 import ir.coffevista.vista_native.core.security.BiometricAuthenticator
 import ir.coffevista.vista_native.core.security.SessionStore
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -15,13 +14,23 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import java.util.UUID
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import org.json.JSONObject
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
+import java.util.Locale
 import javax.inject.Inject
 
 data class ActiveSessionsUiState(
     val sessions: List<SessionItemUiModel> = emptyList(),
+    val autoTerminateDays: Int = 180,
     val isLoading: Boolean = true,
     val isMutating: Boolean = false,
+    val isSavingSettings: Boolean = false,
+    val isApprovingQr: Boolean = false,
     val errorMessage: String? = null,
     val feedbackMessage: String? = null,
 )
@@ -30,133 +39,195 @@ data class ActiveSessionsUiState(
 class ActiveSessionsViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val api: ActiveSessionsApi,
+    private val lifecycleManager: ActiveSessionLifecycleManager,
     private val sessionStore: SessionStore,
     private val biometricAuthenticator: BiometricAuthenticator,
 ) : ViewModel() {
-    private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private val prefs = context.getSharedPreferences(SessionCredentialsProvider.PREFS_NAME, Context.MODE_PRIVATE)
     private val mutableUiState = MutableStateFlow(ActiveSessionsUiState())
     val uiState: StateFlow<ActiveSessionsUiState> = mutableUiState.asStateFlow()
 
-    init { refresh() }
+    init {
+        refresh()
+    }
 
-    private suspend fun ensureCurrentSessionRegistered(): String? {
-        var sessionId = prefs.getString(KEY_SESSION_ID, null)?.takeIf(String::isNotBlank)
-        var sessionToken = prefs.getString(KEY_SESSION_TOKEN, null)?.takeIf(String::isNotBlank)
-
-        val fcmPrefs = context.getSharedPreferences("fcm_token_prefs", Context.MODE_PRIVATE)
-        val cachedFcmToken = fcmPrefs.getString("last_synced_fcm_token", null)
-        val fcmSyncEpoch = fcmPrefs.getLong("last_fcm_resync_epoch", 0L)
-
-        if (sessionId != null && sessionToken != null) {
-            val validated = runCatching {
-                api.validate(ValidateSessionRequestDto(sessionId = sessionId!!, sessionToken = sessionToken!!))
-            }.getOrNull()
-            if (validated != null && validated.isSuccessful && validated.body()?.valid == true) {
-                val touchResponse = runCatching {
-                    api.touch(
-                        TouchSessionRequestDto(
-                            sessionId = sessionId!!,
-                            sessionToken = sessionToken!!,
-                            fcmToken = cachedFcmToken,
-                            fcmSyncEpoch = fcmSyncEpoch,
-                        ),
-                    )
-                }.getOrNull()
-                if (touchResponse?.body()?.requireFcmSync == true) {
-                    ir.coffevista.vista_native.core.common.NotificationRuntimeCoordinator.requestFcmTokenResync()
-                }
-                return sessionId
-            }
-        }
-
-        val newSessionId = UUID.randomUUID().toString()
-        val newSessionToken = UUID.randomUUID().toString()
-        val deviceId = DeviceIdProvider.current?.deviceId().orEmpty()
-        val manufacturer = runCatching { Build.MANUFACTURER }.getOrNull().orEmpty()
-        val model = runCatching { Build.MODEL }.getOrNull() ?: "Android"
-        val deviceName = listOf(manufacturer, model)
-            .filter(String::isNotBlank)
-            .distinct()
-            .joinToString(" ")
-            .ifBlank { "Android Device" }
-        val registered = runCatching {
-            api.register(
-                RegisterSessionRequestDto(
-                    sessionId = newSessionId,
-                    sessionToken = newSessionToken,
-                    deviceInfo = buildMap {
-                        if (deviceId.isNotBlank()) put("device_id", deviceId)
-                        put("device_name", deviceName)
-                        put("model", model)
-                        if (manufacturer.isNotBlank()) put("manufacturer", manufacturer)
-                        put("os_version", runCatching { Build.VERSION.RELEASE }.getOrNull() ?: "14")
-                        put("platform", "android")
-                    },
-                    platform = "android",
-                    fcmToken = cachedFcmToken,
-                ),
-            )
-        }.getOrNull()
-
-        if (registered != null && registered.isSuccessful) {
-            prefs.edit()
-                .putString(KEY_SESSION_ID, newSessionId)
-                .putString(KEY_SESSION_TOKEN, newSessionToken)
-                .apply()
-            return newSessionId
-        }
-        return sessionId
+    fun clearFeedback() {
+        mutableUiState.update { it.copy(feedbackMessage = null) }
     }
 
     fun refresh() = viewModelScope.launch {
         mutableUiState.update { it.copy(isLoading = true, errorMessage = null) }
-        val currentSessionId = ensureCurrentSessionRegistered()
+        val currentSessionId = lifecycleManager.ensureCurrentSessionRegistered(sessionStore.read()?.userId)
+            ?: currentSessionIdFallback()
         runCatching { api.getActiveSessions(currentSessionId = currentSessionId) }
             .onSuccess { response ->
                 val body = response.body()
                 if (response.isSuccessful && body != null) {
                     mutableUiState.update {
-                        it.copy(sessions = body.sessions.map(::toUi), isLoading = false)
+                        it.copy(
+                            sessions = body.sessions.map(::toUi),
+                            autoTerminateDays = body.autoTerminateDays.takeIf { d -> d > 0 } ?: 180,
+                            isLoading = false,
+                        )
                     }
                 } else {
-                    mutableUiState.update { it.copy(isLoading = false, errorMessage = "دریافت نشست‌های فعال ناموفق بود") }
+                    mutableUiState.update {
+                        it.copy(isLoading = false, errorMessage = "دریافت نشست‌های فعال ناموفق بود")
+                    }
                 }
             }
             .onFailure {
-                mutableUiState.update { it.copy(isLoading = false, errorMessage = "اتصال برای دریافت نشست‌های فعال برقرار نشد") }
+                mutableUiState.update {
+                    it.copy(isLoading = false, errorMessage = "اتصال برای دریافت نشست‌های فعال برقرار نشد")
+                }
             }
     }
 
-    fun terminate(session: SessionItemUiModel) {
+    fun terminate(session: SessionItemUiModel, onDone: () -> Unit = {}) {
         if (session.isCurrent) return
-        mutate(listOf(session))
+        viewModelScope.launch {
+            mutableUiState.update { it.copy(isMutating = true, feedbackMessage = null) }
+            val currentSessionId = currentSessionIdFallback()
+            val response = runCatching {
+                api.terminate(
+                    TerminateSessionRequestDto(
+                        targetSessionId = session.id,
+                        currentSessionId = currentSessionId,
+                    ),
+                )
+            }.getOrNull()
+
+            if (response != null && response.isSuccessful && (response.body()?.success ?: true)) {
+                mutableUiState.update { state ->
+                    state.copy(
+                        sessions = state.sessions.filterNot { it.id == session.id },
+                        isMutating = false,
+                        feedbackMessage = "نشست «${session.deviceName}» با موفقیت خاتمه یافت",
+                    )
+                }
+                onDone()
+            } else {
+                val errMsg = parseApiErrorMessage(response?.errorBody()?.string())
+                    ?: "خاتمه نشست انجام نشد. دوباره تلاش کنید"
+                mutableUiState.update { it.copy(isMutating = false, feedbackMessage = errMsg) }
+            }
+        }
+    }
+
+    fun approvePendingSession(session: SessionItemUiModel, onDone: () -> Unit = {}) {
+        viewModelScope.launch {
+            mutableUiState.update { it.copy(isMutating = true, feedbackMessage = null) }
+            val currentSessionId = currentSessionIdFallback()
+            val response = runCatching {
+                api.alertAction(
+                    SessionAlertActionRequestDto(
+                        sessionId = session.id,
+                        action = "approve",
+                        currentSessionId = currentSessionId,
+                    ),
+                )
+            }.getOrNull()
+
+            if (response != null && response.isSuccessful && response.body()?.success == true) {
+                mutableUiState.update { state ->
+                    state.copy(
+                        sessions = state.sessions.map {
+                            if (it.id == session.id) it.copy(approvalStatus = "approved") else it
+                        },
+                        isMutating = false,
+                        feedbackMessage = "ورود «${session.deviceName}» تایید شد",
+                    )
+                }
+                onDone()
+            } else {
+                mutableUiState.update {
+                    it.copy(isMutating = false, feedbackMessage = "تایید نشست انجام نشد")
+                }
+            }
+        }
     }
 
     fun terminateAllOther() {
         val otherSessions = mutableUiState.value.sessions.filterNot(SessionItemUiModel::isCurrent)
         if (otherSessions.isEmpty()) return
-        val currentSessionId = prefs.getString(KEY_SESSION_ID, null)?.takeIf(String::isNotBlank)
-            ?: mutableUiState.value.sessions.firstOrNull(SessionItemUiModel::isCurrent)?.id
-        if (!currentSessionId.isNullOrBlank()) {
-            viewModelScope.launch {
-                mutableUiState.update { it.copy(isMutating = true, feedbackMessage = null) }
-                val res = runCatching {
-                    api.terminateOthers(TerminateOthersRequestDto(currentSessionId = currentSessionId))
-                }.getOrNull()
-                if (res != null && res.isSuccessful) {
-                    mutableUiState.update { state ->
-                        state.copy(
-                            sessions = state.sessions.filter(SessionItemUiModel::isCurrent),
-                            isMutating = false,
-                            feedbackMessage = "تمام نشست‌های دیگر خاتمه یافتند",
-                        )
-                    }
-                } else {
-                    mutate(otherSessions)
+        val currentSessionId = currentSessionIdFallback()
+        if (currentSessionId.isNullOrBlank()) {
+            mutableUiState.update {
+                it.copy(feedbackMessage = "شناسه نشست فعلی هنوز ثبت نشده است")
+            }
+            return
+        }
+        viewModelScope.launch {
+            mutableUiState.update { it.copy(isMutating = true, feedbackMessage = null) }
+            val res = runCatching {
+                api.terminateOthers(TerminateOthersRequestDto(currentSessionId = currentSessionId))
+            }.getOrNull()
+            if (res != null && res.isSuccessful) {
+                mutableUiState.update { state ->
+                    state.copy(
+                        sessions = state.sessions.filter(SessionItemUiModel::isCurrent),
+                        isMutating = false,
+                        feedbackMessage = "تمام نشست‌های دیگر بلافاصله خاتمه یافتند",
+                    )
+                }
+            } else {
+                val errMsg = parseApiErrorMessage(res?.errorBody()?.string())
+                    ?: "خاتمه نشست‌های دیگر انجام نشد"
+                mutableUiState.update { it.copy(isMutating = false, feedbackMessage = errMsg) }
+            }
+        }
+    }
+
+    fun updateAutoTerminateDays(days: Int) {
+        viewModelScope.launch {
+            mutableUiState.update { it.copy(isSavingSettings = true, feedbackMessage = null) }
+            val res = runCatching {
+                api.updateSettings(UpdateSessionSettingsRequestDto(autoTerminateDays = days))
+            }.getOrNull()
+            if (res != null && res.isSuccessful) {
+                val saved = res.body()?.autoTerminateDays ?: days
+                mutableUiState.update {
+                    it.copy(
+                        autoTerminateDays = saved,
+                        isSavingSettings = false,
+                        feedbackMessage = "زمان خاتمه خودکار روی «${formatAutoTerminateLabel(saved)}» تنظیم شد",
+                    )
+                }
+            } else {
+                mutableUiState.update {
+                    it.copy(isSavingSettings = false, feedbackMessage = "ذخیره تنظیمات انجام نشد")
                 }
             }
-        } else {
-            mutate(otherSessions)
+        }
+    }
+
+    fun approveQrToken(rawQrContent: String, onSuccess: () -> Unit = {}) {
+        val trimmed = rawQrContent.trim()
+        if (trimmed.isBlank()) {
+            mutableUiState.update { it.copy(feedbackMessage = "کد ورود نامعتبر است") }
+            return
+        }
+        viewModelScope.launch {
+            mutableUiState.update { it.copy(isApprovingQr = true, feedbackMessage = null) }
+            val res = runCatching {
+                api.approveQr(ApproveQrLoginRequestDto(token = trimmed))
+            }.getOrNull()
+            if (res != null && res.isSuccessful && res.body()?.success == true) {
+                mutableUiState.update {
+                    it.copy(
+                        isApprovingQr = false,
+                        feedbackMessage = "دستگاه جدید با موفقیت متصل شد",
+                    )
+                }
+                onSuccess()
+                refresh()
+            } else {
+                val errMsg = parseApiErrorMessage(res?.errorBody()?.string())
+                    ?: "کد QR نامعتبر یا منقضی شده است"
+                mutableUiState.update {
+                    it.copy(isApprovingQr = false, feedbackMessage = errMsg)
+                }
+            }
         }
     }
 
@@ -174,50 +245,98 @@ class ActiveSessionsViewModel @Inject constructor(
         }
     }
 
-    private fun mutate(targets: List<SessionItemUiModel>) = viewModelScope.launch {
-        mutableUiState.update { it.copy(isMutating = true, feedbackMessage = null) }
-        val currentSessionId = prefs.getString(KEY_SESSION_ID, null)?.takeIf(String::isNotBlank)
+    private fun currentSessionIdFallback(): String? =
+        SessionCredentialsProvider.current?.currentSessionId()
+            ?: prefs.getString(SessionCredentialsProvider.KEY_SESSION_ID, null)?.takeIf(String::isNotBlank)
             ?: mutableUiState.value.sessions.firstOrNull(SessionItemUiModel::isCurrent)?.id
-        val terminatedIds = targets.mapNotNull { session ->
-            runCatching {
-                api.terminate(
-                    TerminateSessionRequestDto(
-                        targetSessionId = session.id,
-                        currentSessionId = currentSessionId,
-                    ),
-                )
-            }
-                .getOrNull()
-                ?.takeIf { response -> response.isSuccessful && (response.body()?.success ?: true) }
-                ?.let { session.id }
-        }.toSet()
-        mutableUiState.update { state ->
-            val failures = targets.size - terminatedIds.size
-            state.copy(
-                sessions = state.sessions.filterNot { it.id in terminatedIds },
-                isMutating = false,
-                feedbackMessage = if (failures == 0) {
-                    if (targets.size == 1) "نشست با موفقیت خاتمه یافت" else "تمام نشست‌های دیگر خاتمه یافتند"
-                } else {
-                    "برخی نشست‌ها خاتمه نیافتند. دوباره تلاش کنید"
-                },
-            )
+
+    private fun toUi(session: ActiveSessionDto): SessionItemUiModel {
+        val rawPlatform = session.platform?.lowercase()?.trim().orEmpty()
+        val osVersion = session.deviceInfo["os_version"]?.jsonPrimitive?.content?.trim().orEmpty()
+        val appVer = session.appVersion?.trim().orEmpty()
+        val subtitle = buildClientSubtitle(rawPlatform, appVer, osVersion)
+        val location = listOfNotNull(
+            session.locationCity?.takeIf(String::isNotBlank),
+            session.locationCountry?.takeIf(String::isNotBlank),
+        ).joinToString("، ").ifBlank {
+            session.ipAddress?.takeIf(String::isNotBlank) ?: "موقعیت نامشخص"
+        }
+
+        return SessionItemUiModel(
+            id = session.id,
+            deviceName = session.deviceName?.takeIf(String::isNotBlank) ?: "دستگاه ناشناس",
+            clientSubtitle = subtitle,
+            platform = rawPlatform,
+            ip = session.ipAddress.orEmpty(),
+            location = location,
+            lastActiveText = if (session.isCurrentSession) "آنلاین" else formatRelativeOrTime(session.lastActivity),
+            createdAtText = formatFullDateTime(session.createdAt),
+            approvalStatus = session.approvalStatus.ifBlank { "approved" },
+            isCurrent = session.isCurrentSession,
+        )
+    }
+
+    private fun buildClientSubtitle(platform: String, appVersion: String, osVersion: String): String {
+        val base = when (platform) {
+            "android" -> "Vista Android"
+            "ios" -> "Vista iOS"
+            "windows", "macos", "linux", "desktop" -> "Vista Desktop"
+            "web" -> "Vista Web"
+            else -> "Vista App"
+        }
+        return when {
+            appVersion.isNotBlank() && osVersion.isNotBlank() -> "$base $appVersion • OS $osVersion"
+            appVersion.isNotBlank() -> "$base $appVersion"
+            osVersion.isNotBlank() -> "$base • $osVersion"
+            else -> base
         }
     }
 
-    private fun toUi(session: ActiveSessionDto): SessionItemUiModel = SessionItemUiModel(
-        id = session.id,
-        deviceName = session.deviceName?.takeIf(String::isNotBlank) ?: "دستگاه ناشناس",
-        platform = session.platform?.lowercase().orEmpty(),
-        ip = session.ipAddress.orEmpty(),
-        location = listOfNotNull(session.locationCity, session.locationCountry).joinToString("، ").ifBlank { "مکان نامشخص" },
-        lastActive = session.lastActivity?.takeIf(String::isNotBlank) ?: "زمان نامشخص",
-        isCurrent = session.isCurrentSession,
-    )
-
-    companion object {
-        const val PREFS_NAME = "vista_active_session_prefs"
-        const val KEY_SESSION_ID = "current_session_id"
-        const val KEY_SESSION_TOKEN = "current_session_token"
+    private fun parseApiErrorMessage(rawBody: String?): String? {
+        if (rawBody.isNullOrBlank()) return null
+        return runCatching {
+            val obj = JSONObject(rawBody)
+            obj.optJSONObject("error")?.optString("message")?.takeIf(String::isNotBlank)
+                ?: obj.optString("message").takeIf(String::isNotBlank)
+        }.getOrNull()
     }
+}
+
+internal fun formatAutoTerminateLabel(days: Int): String = when (days) {
+    7 -> "۱ هفته"
+    30 -> "۱ ماه"
+    90 -> "۳ ماه"
+    180 -> "۶ ماه"
+    365 -> "۱ سال"
+    else -> "$days روز"
+}
+
+private fun formatRelativeOrTime(rawIso: String?): String {
+    if (rawIso.isNullOrBlank()) return "نامشخص"
+    return runCatching {
+        val instant = Instant.parse(rawIso)
+        val now = Instant.now()
+        val minutes = ChronoUnit.MINUTES.between(instant, now).coerceAtLeast(0)
+        when {
+            minutes < 2 -> "آنلاین"
+            minutes < 60 -> "$minutes دقیقه پیش"
+            minutes < 24 * 60 -> {
+                val localTime = instant.atZone(ZoneId.systemDefault()).toLocalTime()
+                DateTimeFormatter.ofPattern("HH:mm", Locale.US).format(localTime)
+            }
+            else -> {
+                val localDate = instant.atZone(ZoneId.systemDefault()).toLocalDate()
+                DateTimeFormatter.ofPattern("yyyy/MM/dd", Locale.US).format(localDate)
+            }
+        }
+    }.getOrElse { rawIso }
+}
+
+private fun formatFullDateTime(rawIso: String?): String {
+    if (rawIso.isNullOrBlank()) return "نامشخص"
+    return runCatching {
+        val instant = Instant.parse(rawIso)
+        val zoned = instant.atZone(ZoneId.systemDefault())
+        DateTimeFormatter.ofPattern("HH:mm • yyyy/MM/dd", Locale.US).format(zoned)
+    }.getOrElse { rawIso }
 }

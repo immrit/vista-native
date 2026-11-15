@@ -110,30 +110,61 @@ fun NearbyCard(
                     )
             )
 
-            // Location & City Chip (Top-Start)
-            if (candidate.locationLine.isNotBlank()) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(16.dp)
-                        .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(20.dp))
-                        .padding(horizontal = 10.dp, vertical = 6.dp)
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Rounded.LocationOn,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(14.dp),
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
+            // Location & Zone Chips (Top-Start)
+            Row(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (candidate.locationLine.isNotBlank()) {
+                    Box(
+                        modifier = Modifier
+                            .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(20.dp))
+                            .padding(horizontal = 10.dp, vertical = 6.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Rounded.LocationOn,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(14.dp),
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = candidate.locationLine,
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    fontFamily = VistaFontFamily,
+                                    color = Color.White,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 12.sp,
+                                ),
+                            )
+                        }
+                    }
+                }
+
+                if (candidate.zoneType == "same_city" || candidate.zoneType == "same_province") {
+                    Box(
+                        modifier = Modifier
+                            .background(
+                                if (candidate.zoneType == "same_city") {
+                                    Color(0xFF10B981).copy(alpha = 0.88f)
+                                } else {
+                                    VistaBrandColors.Indigo.copy(alpha = 0.88f)
+                                },
+                                RoundedCornerShape(20.dp),
+                            )
+                            .padding(horizontal = 10.dp, vertical = 6.dp)
+                    ) {
                         Text(
-                            text = candidate.locationLine,
-                            style = MaterialTheme.typography.bodySmall.copy(
+                            text = if (candidate.zoneType == "same_city") "هم‌شهری" else "هم‌استانی",
+                            style = MaterialTheme.typography.labelSmall.copy(
                                 fontFamily = VistaFontFamily,
                                 color = Color.White,
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 11.sp,
                             ),
                         )
                     }
@@ -255,6 +286,12 @@ fun NearbyCard(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
+                    if (candidate.statusText.isNotBlank()) {
+                        InfoChip(icon = "star", label = candidate.statusText)
+                    }
+                    if (candidate.compatibilityScore > 0) {
+                        InfoChip(icon = "star", label = "تناسب ${candidate.compatibilityScore}%")
+                    }
                     if (candidate.gender.isNotBlank()) {
                         InfoChip(
                             icon = "people",

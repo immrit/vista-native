@@ -30,6 +30,7 @@ interface NearbyApi {
     suspend fun discover(
         @Query("limit") limit: Int = 20,
         @Query("offset") offset: Int = 0,
+        @Query("zone") zone: String? = null,
     ): Response<NearbyDiscoverResponseDto>
 
     @GET("/v1/nearby/random-online")
@@ -69,4 +70,43 @@ interface NearbyApi {
     suspend fun undo(
         @Body request: NearbyUndoRequestDto,
     ): Response<Unit>
+
+    // ── Wallet, Shop & Direct Chat Requests ──────────────────────────────────
+
+    @GET("/v1/nearby/wallet")
+    suspend fun getWallet(): Response<NearbyWalletDto>
+
+    @GET("/v1/nearby/shop")
+    suspend fun getShopCatalog(): Response<NearbyShopCatalogDto>
+
+    @POST("/v1/nearby/shop/buy-requests")
+    suspend fun buyChatRequestPack(
+        @Body request: NearbyBuyRequestsRequestDto,
+    ): Response<NearbyBuyRequestsResponseDto>
+
+    @GET("/v1/nearby/chat-requests")
+    suspend fun getChatRequests(
+        @Query("direction") direction: String = "incoming",
+        @Query("limit") limit: Int = 50,
+    ): Response<NearbyChatRequestsListResponseDto>
+
+    @POST("/v1/nearby/chat-requests")
+    suspend fun sendChatRequest(
+        @Body request: NearbySendChatRequestDto,
+    ): Response<NearbySendChatRequestResponseDto>
+
+    @POST("/v1/nearby/chat-requests/respond")
+    suspend fun respondChatRequest(
+        @Body request: NearbyRespondChatRequestDto,
+    ): Response<NearbyRespondChatRequestResponseDto>
+
+    // ── Payment Coin Packages (Cafe Bazaar) ──────────────────────────────────
+
+    @GET("/v1/payment/packages")
+    suspend fun getCoinPackages(): Response<NearbyCoinPackagesResponseDto>
+
+    @POST("/v1/payment/bazaar-verify")
+    suspend fun verifyBazaarPurchase(
+        @Body request: NearbyBazaarVerifyRequestDto,
+    ): Response<NearbyBazaarVerifyResponseDto>
 }

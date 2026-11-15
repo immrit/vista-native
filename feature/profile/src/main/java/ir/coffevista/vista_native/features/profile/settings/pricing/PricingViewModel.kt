@@ -8,24 +8,22 @@ import ir.coffevista.vista_native.core.model.session.AuthenticationStateProvider
 import ir.coffevista.vista_native.features.profile.data.OwnProfileRepository
 import java.text.NumberFormat
 import java.util.Locale
+import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import javax.inject.Inject
 
 data class PricingUiState(
     val plans: List<PricingPlanUiModel> = emptyList(),
     val coinPackages: List<CoinPackageDto> = emptyList(),
-    val badges: List<VerificationBadgeUiModel> = emptyList(),
     val isLoading: Boolean = true,
     val errorMessage: String? = null,
     val isRequestingPayment: Boolean = false,
     val isVerifyingPayment: Boolean = false,
-    val paymentUrl: String? = null,
-    val pendingTrackId: Long? = null,
     val pendingBazaarVerification: BazaarVerifyRequestDto? = null,
+    val pendingConsumeToken: String? = null,
     val successMessage: String? = null,
 )
 
@@ -67,100 +65,12 @@ class PricingViewModel @Inject constructor(
                     )
                 }
 
-            val defaultBadges = listOf(
-                VerificationBadgeUiModel(
-                    id = "badge_gold",
-                    title = "نشان تأیید طلایی",
-                    description = "با نشان طلایی، حساب کاربری خود را ویژه کنید و از کاربران عادی متمایز شوید. اعتبار نشان به مدت یک ماه می‌باشد.",
-                    priceToman = 80000L,
-                    priceFormatted = "۸۰٬۰۰۰ تومان",
-                    badgeType = "gold",
-                    zarinpalUrl = "https://zarinp.al/694791",
-                ),
-                VerificationBadgeUiModel(
-                    id = "badge_black",
-                    title = "نشان تأیید مشکی (نخبگان)",
-                    description = "نشان مشکی نماد برترین و معتبرترین حساب‌های کاربری در ویستا است. با این نشان، شما در گروه برگزیدگان قرار می‌گیرید.",
-                    priceToman = 50000L,
-                    priceFormatted = "۵۰٬۰۰۰ تومان",
-                    badgeType = "black",
-                    zarinpalUrl = "https://zarinp.al/694791",
-                ),
-            )
-
             mutableUiState.update {
                 it.copy(
                     plans = plans,
                     coinPackages = packages,
-                    badges = defaultBadges,
                     isLoading = false,
                     errorMessage = if (plans.isEmpty() && packages.isEmpty()) "کاتالوگ در دسترس نیست. دوباره تلاش کنید" else null,
-                )
-            }
-        }
-    }
-
-    fun requestPayment(planId: String) {
-        if (mutableUiState.value.isRequestingPayment || planId.isBlank()) return
-        mutableUiState.update { it.copy(isRequestingPayment = true, errorMessage = null, successMessage = null) }
-        viewModelScope.launch {
-            val result = runCatching {
-                api.requestZibal(
-                    ZibalRequestDto(
-                        packageId = planId,
-                        callbackUrl = "https://cafevista.ir/payment/callback",
-                    ),
-                )
-            }.getOrNull()
-            val body = result?.takeIf { it.isSuccessful }?.body()
-            if (body == null || body.trackId <= 0L || !body.url.startsWith("https://")) {
-                mutableUiState.update {
-                    it.copy(
-                        isRequestingPayment = false,
-                        errorMessage = "شروع پرداخت ناموفق بود. دوباره تلاش کنید",
-                    )
-                }
-            } else {
-                mutableUiState.update {
-                    it.copy(
-                        isRequestingPayment = false,
-                        paymentUrl = body.url,
-                        pendingTrackId = body.trackId,
-                    )
-                }
-            }
-        }
-    }
-
-    fun paymentGatewayLaunched() {
-        mutableUiState.update { it.copy(paymentUrl = null) }
-    }
-
-    fun verifyPayment() {
-        val trackId = mutableUiState.value.pendingTrackId ?: return
-        if (mutableUiState.value.isVerifyingPayment) return
-        mutableUiState.update { it.copy(isVerifyingPayment = true, errorMessage = null, successMessage = null) }
-        viewModelScope.launch {
-            val body = runCatching { api.verifyZibal(ZibalVerifyRequestDto(trackId)) }
-                .getOrNull()
-                ?.takeIf { it.isSuccessful }
-                ?.body()
-            if (body?.success != true) {
-                mutableUiState.update {
-                    it.copy(
-                        isVerifyingPayment = false,
-                        errorMessage = body?.message ?: "تایید پرداخت ناموفق بود. دوباره تلاش کنید",
-                    )
-                }
-                return@launch
-            }
-            val accountId = (authenticationStateProvider.state.value as? AuthenticationState.SignedIn)?.context?.userId
-            if (!accountId.isNullOrBlank()) runCatching { ownProfileRepository.fetchAndCacheOwnProfile(accountId) }
-            mutableUiState.update {
-                it.copy(
-                    isVerifyingPayment = false,
-                    pendingTrackId = null,
-                    successMessage = body.message ?: "پرداخت با موفقیت انجام شد.",
                 )
             }
         }
@@ -224,6 +134,10 @@ class PricingViewModel @Inject constructor(
         verifyBazaarRequest(pending)
     }
 
+    fun onPurchaseConsumed() {
+        mutableUiState.update { it.copy(pendingConsumeToken = null) }
+    }
+
     private fun verifyBazaarRequest(request: BazaarVerifyRequestDto) {
         mutableUiState.update {
             it.copy(
@@ -250,11 +164,17 @@ class PricingViewModel @Inject constructor(
             if (!accountId.isNullOrBlank()) {
                 runCatching { ownProfileRepository.fetchAndCacheOwnProfile(accountId) }
             }
+            val isCoinPurchase = request.productId.startsWith("coins_")
             mutableUiState.update {
                 it.copy(
                     isVerifyingPayment = false,
                     pendingBazaarVerification = null,
-                    successMessage = body.message ?: "اشتراک ویژه با موفقیت فعال شد! 🎉",
+                    pendingConsumeToken = if (isCoinPurchase) request.purchaseToken else it.pendingConsumeToken,
+                    successMessage = body.message ?: if (isCoinPurchase) {
+                        "بسته سکه با موفقیت به حساب شما اضافه شد."
+                    } else {
+                        "اشتراک ویژه با موفقیت فعال شد!"
+                    },
                 )
             }
         }

@@ -156,6 +156,8 @@ interface ChatRepository {
     suspend fun acceptMessageRequest(conversationId: String): ChatResult<Unit>
     suspend fun rejectMessageRequest(conversationId: String): ChatResult<Unit>
     suspend fun editMessage(message: Message, content: String): ChatResult<Unit>
+    suspend fun respondToSessionAlert(message: Message, sessionId: String, action: String): ChatResult<String> =
+        ChatResult.Failure("عملیات نشست در دسترس نیست", false)
     suspend fun deleteMessage(message: Message, forEveryone: Boolean): ChatResult<Unit>
     suspend fun forwardMessage(messageId: String, targetConversationId: String): ChatResult<Message>
     suspend fun toggleReaction(message: Message, emoji: String): ChatResult<Unit>

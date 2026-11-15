@@ -3,6 +3,7 @@ package ir.coffevista.vista_native.features.services.ui.nearby
 import android.Manifest
 import android.app.Activity
 import android.content.Context
+import android.content.ContextWrapper
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.location.Location
@@ -10,6 +11,7 @@ import android.location.LocationListener
 import android.location.LocationManager
 import android.net.Uri
 import android.provider.Settings
+import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.app.ActivityCompat
@@ -28,12 +30,15 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -43,10 +48,19 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.ChatBubbleOutline
+import androidx.compose.material.icons.rounded.Forum
+import androidx.compose.material.icons.rounded.GridView
+import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material.icons.rounded.MyLocation
 import androidx.compose.material.icons.rounded.Radar
+import androidx.compose.material.icons.rounded.VerifiedUser
+import androidx.compose.material.icons.rounded.ViewAgenda
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
@@ -60,6 +74,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -67,6 +83,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -91,6 +108,9 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
@@ -104,7 +124,14 @@ import androidx.compose.material.icons.rounded.Replay
 import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.Icon
+import ir.cafebazaar.poolakey.Connection
+import ir.cafebazaar.poolakey.ConnectionState
+import ir.cafebazaar.poolakey.Payment
+import ir.cafebazaar.poolakey.config.PaymentConfiguration
+import ir.cafebazaar.poolakey.config.SecurityCheck
+import ir.cafebazaar.poolakey.request.PurchaseRequest
 import ir.coffevista.vista_native.core.designsystem.component.VistaBadgedBox
+import ir.coffevista.vista_native.core.designsystem.component.VistaCoinIcon
 import ir.coffevista.vista_native.core.designsystem.component.VistaNotificationBadge
 import ir.coffevista.vista_native.core.designsystem.theme.VistaFontFamily
 import ir.coffevista.vista_native.core.designsystem.theme.vistaColors
@@ -113,6 +140,15 @@ import ir.coffevista.vista_native.features.services.data.nearby.NearbyCandidate
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
+
+private const val NEARBY_BAZAAR_RSA_PUBLIC_KEY =
+    "MIHNMA0GCSqGSIb3DQEBAQUAA4G7ADCBtwKBrwDFm5WUUaqhq2Ha3Al1b8OmGNnBCsPNNjbp04bDJUCFo/QTF6P9JPpqAwVeo0MqR84WEo3KKZBwIYA+aJZuVPYjZ5J6S9tJ1McWKY0v4+6s4PR07Z5N55TMCFz0ofi0GsnpQHVp94zLvhYBQqQatLBq0XsmOiPWTHt2UgP7d0ib2anR2LtRE/1J1WPe2/lji4u8b1+CLRgfT3hzdfqv2RkrpAn69GYqEfUuohQyQK8CAwEAAQ=="
+
+private tailrec fun Context.findNearbyComponentActivity(): ComponentActivity? = when (this) {
+    is ComponentActivity -> this
+    is ContextWrapper -> baseContext.findNearbyComponentActivity()
+    else -> null
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -125,9 +161,91 @@ fun NearbyScreen(
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val snackbarHostState = remember { SnackbarHostState() }
     var reportingCandidate by remember { mutableStateOf<NearbyCandidate?>(null) }
+
+    val payment = remember(context) {
+        Payment(
+            context = context.applicationContext,
+            config = PaymentConfiguration(
+                localSecurityCheck = SecurityCheck.Enable(rsaPublicKey = NEARBY_BAZAAR_RSA_PUBLIC_KEY),
+            ),
+        )
+    }
+    var bazaarConnection by remember { mutableStateOf<Connection?>(null) }
+
+    DisposableEffect(payment) {
+        val connection = runCatching {
+            payment.connect {
+                connectionSucceed {}
+                connectionFailed {}
+                disconnected {}
+            }
+        }.getOrNull()
+        bazaarConnection = connection
+        onDispose {
+            runCatching { bazaarConnection?.disconnect() }
+            bazaarConnection = null
+        }
+    }
+
+    fun launchBazaarCoinPurchase(packageId: String) {
+        val activity = context.findNearbyComponentActivity()
+        if (activity == null) {
+            viewModel.onBazaarCoinPurchaseFailed("امکان باز کردن درگاه پرداخت کافه‌بازار وجود ندارد.")
+            return
+        }
+        viewModel.onBazaarCoinPurchaseStarted(packageId)
+        val executePurchase = {
+            runCatching {
+                payment.purchaseProduct(
+                    registry = activity.activityResultRegistry,
+                    request = PurchaseRequest(
+                        productId = packageId,
+                        payload = "vista_coins",
+                    ),
+                ) {
+                    purchaseSucceed { info ->
+                        viewModel.verifyBazaarCoinPurchase(
+                            productId = packageId,
+                            purchaseToken = info.purchaseToken,
+                            packageName = info.packageName.ifBlank { context.packageName },
+                        )
+                    }
+                    purchaseCanceled { viewModel.onBazaarCoinPurchaseCanceled() }
+                    purchaseFailed { throwable -> viewModel.onBazaarCoinPurchaseFailed(throwable.message) }
+                    failedToBeginFlow { throwable ->
+                        viewModel.onBazaarCoinPurchaseFailed(
+                            throwable.message
+                                ?: "برنامه کافه‌بازار روی دستگاه یافت نشد یا به‌روز نیست. لطفاً برنامه بازار را نصب یا به‌روزرسانی کنید.",
+                        )
+                    }
+                }
+            }.onFailure { throwable ->
+                viewModel.onBazaarCoinPurchaseFailed(throwable.message)
+            }
+        }
+        if (bazaarConnection?.getState() == ConnectionState.Connected) {
+            executePurchase()
+        } else {
+            runCatching {
+                bazaarConnection = payment.connect {
+                    connectionSucceed { executePurchase() }
+                    connectionFailed { throwable ->
+                        viewModel.onBazaarCoinPurchaseFailed(
+                            throwable.message
+                                ?: "اتصال به درگاه کافه‌بازار برقرار نشد. از نصب و ورود به برنامه بازار اطمینان حاصل کنید.",
+                        )
+                    }
+                    disconnected {}
+                }
+            }.onFailure { throwable ->
+                viewModel.onBazaarCoinPurchaseFailed(throwable.message)
+            }
+        }
+    }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -173,16 +291,60 @@ fun NearbyScreen(
         }
     }
 
+    state.pendingConsumeToken?.let { token ->
+        LaunchedEffect(token) {
+            runCatching {
+                payment.consumeProduct(token) {
+                    consumeSucceed { viewModel.onBazaarPurchaseConsumed() }
+                    consumeFailed { viewModel.onBazaarPurchaseConsumed() }
+                }
+            }.onFailure { viewModel.onBazaarPurchaseConsumed() }
+        }
+    }
+
+    LaunchedEffect(state.errorMessage, state.infoMessage) {
+        val message = state.errorMessage ?: state.infoMessage ?: return@LaunchedEffect
+        snackbarHostState.showSnackbar(message)
+        if (state.errorMessage != null) viewModel.clearErrorMessage()
+        if (state.infoMessage != null) viewModel.clearInfoMessage()
+    }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                viewModel.refreshWallet()
+                val err = viewModel.uiState.value.locationError
+                if (err == "service_off" || err == "permission_forever" || err == "permission") {
+                    val fine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                    val coarse = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                    val lm = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
+                    val gpsOn = lm?.isProviderEnabled(LocationManager.GPS_PROVIDER) == true ||
+                        lm?.isProviderEnabled(LocationManager.NETWORK_PROVIDER) == true
+                    if ((fine || coarse) && gpsOn) {
+                        checkAndAcquireLocation(context, viewModel)
+                    }
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
         Scaffold(
             modifier = modifier.fillMaxSize(),
             containerColor = MaterialTheme.colorScheme.background,
+            snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
             topBar = {
                 TopAppBar(
                     title = {
-                        Column {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
                             Text(
                                 text = "اطراف من",
+                                maxLines = 1,
                                 style = MaterialTheme.typography.titleLarge.copy(
                                     fontFamily = VistaFontFamily,
                                     fontWeight = FontWeight.ExtraBold,
@@ -191,14 +353,22 @@ fun NearbyScreen(
                                 ),
                             )
                             if (!state.locationCity.isNullOrBlank()) {
-                                Text(
-                                    text = state.locationCity!!,
-                                    style = MaterialTheme.typography.labelSmall.copy(
-                                        fontFamily = VistaFontFamily,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        fontSize = 11.sp,
-                                    ),
-                                )
+                                Surface(
+                                    shape = RoundedCornerShape(50),
+                                    color = VistaBrandColors.Indigo.copy(alpha = 0.10f),
+                                ) {
+                                    Text(
+                                        text = state.locationCity!!,
+                                        maxLines = 1,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            fontFamily = VistaFontFamily,
+                                            color = VistaBrandColors.Indigo,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                        ),
+                                    )
+                                }
                             }
                         }
                     },
@@ -208,32 +378,41 @@ fun NearbyScreen(
                                 imageVector = Icons.AutoMirrored.Rounded.ArrowForward,
                                 contentDescription = "بازگشت",
                                 tint = MaterialTheme.colorScheme.onBackground,
-                                modifier = Modifier.size(24.dp),
+                                modifier = Modifier.size(22.dp),
                             )
                         }
                     },
                     actions = {
-                        // Shuffle / Random Online
+                        // Grid <-> Card Deck Toggle
                         IconButton(
                             onClick = {
-                                viewModel.loadCards(reset = true, setRandomOnline = !state.isRandomOnline)
+                                val nextMode = if (state.viewMode == NearbyViewMode.GRID) {
+                                    NearbyViewMode.DECK
+                                } else {
+                                    NearbyViewMode.GRID
+                                }
+                                viewModel.setViewMode(nextMode)
                             }
                         ) {
                             Icon(
-                                imageVector = Icons.Rounded.Shuffle,
-                                contentDescription = "تصادفی آنلاین",
-                                tint = if (state.isRandomOnline) Color(0xFF10B981) else MaterialTheme.vistaColors.contentSecondary,
-                                modifier = Modifier.size(22.dp),
+                                imageVector = if (state.viewMode == NearbyViewMode.GRID) {
+                                    Icons.Rounded.ViewAgenda
+                                } else {
+                                    Icons.Rounded.GridView
+                                },
+                                contentDescription = if (state.viewMode == NearbyViewMode.GRID) "نمای کارتی" else "نمای شبکه‌ای",
+                                tint = MaterialTheme.colorScheme.onBackground,
+                                modifier = Modifier.size(21.dp),
                             )
                         }
 
-                        // Likes & Matches Badge Button
+                        // Likes, Chat Requests & Matches Badge Button
                         IconButton(onClick = onOpenLikes) {
                             VistaBadgedBox(
                                 badge = {
-                                    if (state.receivedLikesCount > 0) {
+                                    if (state.totalInboxBadge > 0) {
                                         VistaNotificationBadge(
-                                            count = state.receivedLikesCount,
+                                            count = state.totalInboxBadge,
                                             borderColor = MaterialTheme.colorScheme.surface,
                                         )
                                     }
@@ -241,9 +420,9 @@ fun NearbyScreen(
                             ) {
                                 Icon(
                                     imageVector = Icons.Rounded.Favorite,
-                                    contentDescription = "لایک‌ها و مچ‌ها",
+                                    contentDescription = "درخواست‌ها، لایک‌ها و مچ‌ها",
                                     tint = VistaBrandColors.Indigo,
-                                    modifier = Modifier.size(22.dp),
+                                    modifier = Modifier.size(21.dp),
                                 )
                             }
                         }
@@ -254,7 +433,7 @@ fun NearbyScreen(
                                 imageVector = Icons.Rounded.Tune,
                                 contentDescription = "تنظیمات کاوش",
                                 tint = MaterialTheme.colorScheme.onBackground,
-                                modifier = Modifier.size(22.dp),
+                                modifier = Modifier.size(21.dp),
                             )
                         }
                     },
@@ -264,104 +443,305 @@ fun NearbyScreen(
                 )
             },
         ) { innerPadding ->
-            Box(
+            Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding),
             ) {
-                when {
-                    state.isDisabled -> {
-                        DisabledDiscoveryView(
-                            onEnable = { checkAndAcquireLocation(context, viewModel) }
-                        )
-                    }
-                    state.locationError != null -> {
-                        LocationErrorView(
-                            error = state.locationError!!,
-                            onRequestPermission = {
-                                permissionLauncher.launch(
-                                    arrayOf(
-                                        Manifest.permission.ACCESS_FINE_LOCATION,
-                                        Manifest.permission.ACCESS_COARSE_LOCATION,
-                                    )
-                                )
-                            },
-                            onOpenGpsSettings = {
-                                context.startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
-                            },
-                            onOpenAppSettings = {
-                                val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                                    data = Uri.fromParts("package", context.packageName, null)
-                                }
-                                context.startActivity(intent)
-                            },
-                            onRetry = {
-                                checkAndAcquireLocation(context, viewModel)
-                            },
-                        )
-                    }
-                    state.isLocating || (state.isLoading && state.cards.isEmpty()) -> {
-                        NearbyRadarScanningView()
-                    }
-                    state.cards.isEmpty() -> {
-                        NearbyEmptyRadarView(
-                            onRefresh = { checkAndAcquireLocation(context, viewModel) },
-                            onOpenPreferences = { viewModel.setPreferencesSheetVisible(true) },
-                        )
-                    }
-                    else -> {
-                        NearbyDeck(
-                            cards = state.cards,
-                            currentIndex = state.currentIndex,
-                            onSwipeLeft = { viewModel.advance(forward = true) },
-                            onSwipeRight = { viewModel.likeCurrent() },
-                            onRewind = { viewModel.undoLastSwipe() },
-                            onLike = { viewModel.likeCurrent() },
-                            onPass = { viewModel.passCurrent() },
-                            onOpenProfile = { card -> onOpenProfile(card.userId, card.username) },
-                            onReport = { card -> reportingCandidate = card },
-                            zoneTransition = state.zoneTransition,
-                        )
-                    }
-                }
-
-                // Match Celebration Dialog
-                state.matchedResult?.let { matchResult ->
-                    NearbyMatchDialog(
-                        matchResult = matchResult,
-                        candidate = state.matchedCandidate,
-                        onDismiss = { viewModel.clearMatchDialog() },
-                        onStartChat = { matchId, otherUserId, username, avatarUrl ->
-                            viewModel.clearMatchDialog()
-                            onOpenChat(matchId, otherUserId, username, avatarUrl)
-                        },
+                if (!state.isDisabled && state.locationError == null) {
+                    NearbyZoneFilterStrip(
+                        selected = state.zoneFilter,
+                        onSelect = { viewModel.selectZoneFilter(it) },
+                        coins = state.wallet.coins,
+                        requestsAvailable = state.wallet.totalAvailableRequests,
+                        onOpenShop = { viewModel.openShop() },
                     )
                 }
 
-                // Preferences Modal Sheet
-                if (state.isPreferencesSheetVisible) {
-                    NearbyPreferencesSheet(
-                        preferences = state.preferences,
-                        onDismiss = { viewModel.setPreferencesSheetVisible(false) },
-                        onSave = { viewModel.updatePreferences(it) },
-                        onToggleEnable = { enabled ->
-                            if (!enabled) viewModel.disableDiscovery() else viewModel.initBootstrap()
-                        },
-                    )
-                }
-
-                // Report Modal Sheet
-                reportingCandidate?.let { candidate ->
-                    ReportModalSheet(
-                        candidate = candidate,
-                        onDismiss = { reportingCandidate = null },
-                        onReport = { reason ->
-                            viewModel.reportUser(candidate.userId, reason)
-                            reportingCandidate = null
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
+                ) {
+                    when {
+                        state.isDisabled -> {
+                            DisabledDiscoveryView(
+                                onEnable = { checkAndAcquireLocation(context, viewModel) }
+                            )
                         }
-                    )
+                        state.locationError != null -> {
+                            LocationErrorView(
+                                error = state.locationError!!,
+                                onRequestPermission = {
+                                    permissionLauncher.launch(
+                                        arrayOf(
+                                            Manifest.permission.ACCESS_FINE_LOCATION,
+                                            Manifest.permission.ACCESS_COARSE_LOCATION,
+                                        )
+                                    )
+                                },
+                                onOpenGpsSettings = {
+                                    context.startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+                                },
+                                onOpenAppSettings = {
+                                    val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                        data = Uri.fromParts("package", context.packageName, null)
+                                    }
+                                    context.startActivity(intent)
+                                },
+                                onRetry = {
+                                    checkAndAcquireLocation(context, viewModel)
+                                },
+                            )
+                        }
+                        state.isLocating || (state.isLoading && state.cards.isEmpty()) -> {
+                            NearbyRadarScanningView()
+                        }
+                        state.cards.isEmpty() -> {
+                            NearbyEmptyRadarView(
+                                onRefresh = { checkAndAcquireLocation(context, viewModel) },
+                                onOpenPreferences = { viewModel.setPreferencesSheetVisible(true) },
+                            )
+                        }
+                        state.viewMode == NearbyViewMode.GRID -> {
+                            NearbyGridView(
+                                candidates = state.cards,
+                                onCandidateClick = { card -> viewModel.openPreview(card) },
+                                onLikeClick = { card -> viewModel.likeCandidate(card, action = "like") },
+                                onChatRequestClick = { card -> viewModel.openChatRequestComposer(card) },
+                                onLoadMore = { viewModel.loadCards(reset = false) },
+                            )
+                        }
+                        else -> {
+                            NearbyDeck(
+                                cards = state.cards,
+                                currentIndex = state.currentIndex,
+                                onSwipeBrowse = { viewModel.advance(forward = true, wrap = true) },
+                                onLike = { viewModel.likeCurrent() },
+                                onPass = { viewModel.passCurrent() },
+                                onChatRequest = { card -> viewModel.openChatRequestComposer(card) },
+                                onOpenProfile = { card -> viewModel.openPreview(card) },
+                                onReport = { card -> reportingCandidate = card },
+                                zoneTransition = state.zoneTransition,
+                            )
+                        }
+                    }
+
+                    // Match Celebration Dialog
+                    state.matchedResult?.let { matchResult ->
+                        NearbyMatchDialog(
+                            matchResult = matchResult,
+                            candidate = state.matchedCandidate,
+                            onDismiss = { viewModel.clearMatchDialog() },
+                            onStartChat = { matchId, otherUserId, username, avatarUrl ->
+                                viewModel.clearMatchDialog()
+                                viewModel.openMatchChat(matchId, otherUserId) { conversationId ->
+                                    onOpenChat(conversationId, otherUserId, username, avatarUrl)
+                                }
+                            },
+                        )
+                    }
+
+                    // Profile Quick Preview Bottom Sheet
+                    state.previewCandidate?.let { candidate ->
+                        NearbyProfilePreviewSheet(
+                            candidate = candidate,
+                            superlikeCoinCost = state.wallet.superlikeCoinCost,
+                            onDismiss = { viewModel.dismissPreview() },
+                            onOpenFullProfile = {
+                                viewModel.dismissPreview()
+                                onOpenProfile(candidate.userId, candidate.username)
+                            },
+                            onSendChatRequest = {
+                                viewModel.dismissPreview()
+                                viewModel.openChatRequestComposer(candidate)
+                            },
+                            onLike = {
+                                viewModel.dismissPreview()
+                                viewModel.likeCandidate(candidate, action = "like")
+                            },
+                            onSuperlike = {
+                                viewModel.dismissPreview()
+                                viewModel.likeCandidate(candidate, action = "superlike")
+                            },
+                            onReport = {
+                                viewModel.dismissPreview()
+                                reportingCandidate = candidate
+                            },
+                        )
+                    }
+
+                    // Chat Request Composer Bottom Sheet
+                    state.chatRequestTarget?.let { target ->
+                        NearbyChatRequestDialog(
+                            target = target,
+                            wallet = state.wallet,
+                            isSending = state.isSendingChatRequest,
+                            onDismiss = { viewModel.dismissChatRequestComposer() },
+                            onSend = { intro ->
+                                viewModel.sendChatRequest(target.userId, intro)
+                            },
+                            onOpenShop = {
+                                viewModel.dismissChatRequestComposer()
+                                viewModel.openShop()
+                            },
+                        )
+                    }
+
+                    // Coins & Chat Request Shop Bottom Sheet
+                    if (state.isShopVisible) {
+                        NearbyShopSheet(
+                            wallet = state.wallet,
+                            packs = state.shopPacks,
+                            coinPackages = state.coinPackages,
+                            sampleRateLabel = state.sampleRateLabel,
+                            isLoading = state.isShopLoading,
+                            purchasingId = state.shopPurchasingId,
+                            hasPendingVerification = state.pendingBazaarVerification != null,
+                            shopMessage = state.shopMessage,
+                            onDismiss = { viewModel.closeShop() },
+                            onBuyRequestPack = { packId -> viewModel.buyChatRequestPack(packId) },
+                            onBuyCoinPackage = { packageId -> launchBazaarCoinPurchase(packageId) },
+                            onVerifyPendingPayment = { viewModel.retryPendingBazaarVerification() },
+                            onClearMessage = { viewModel.clearShopMessage() },
+                        )
+                    }
+
+                    // Preferences Modal Sheet
+                    if (state.isPreferencesSheetVisible) {
+                        NearbyPreferencesSheet(
+                            preferences = state.preferences,
+                            onDismiss = { viewModel.setPreferencesSheetVisible(false) },
+                            onSave = { viewModel.updatePreferences(it) },
+                            onToggleEnable = { enabled ->
+                                if (!enabled) viewModel.disableDiscovery() else viewModel.initBootstrap()
+                            },
+                        )
+                    }
+
+                    // Report Modal Sheet
+                    reportingCandidate?.let { candidate ->
+                        ReportModalSheet(
+                            candidate = candidate,
+                            onDismiss = { reportingCandidate = null },
+                            onReport = { reason ->
+                                viewModel.reportUser(candidate.userId, reason)
+                                reportingCandidate = null
+                            }
+                        )
+                    }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun NearbyWalletHeaderChip(
+    coins: Long,
+    requestsAvailable: Int,
+    onClick: () -> Unit,
+) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(50),
+        color = VistaBrandColors.Indigo.copy(alpha = 0.12f),
+        border = BorderStroke(1.dp, VistaBrandColors.Indigo.copy(alpha = 0.30f)),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            VistaCoinIcon(size = 16.dp)
+            Text(
+                text = formatFarsiCount(coins),
+                style = MaterialTheme.typography.labelMedium.copy(
+                    fontFamily = VistaFontFamily,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onBackground,
+                ),
+            )
+            Text(
+                text = "|",
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
+                fontSize = 11.sp,
+            )
+            Icon(
+                imageVector = Icons.Rounded.ChatBubbleOutline,
+                contentDescription = "درخواست چت",
+                tint = VistaBrandColors.Indigo,
+                modifier = Modifier.size(14.dp),
+            )
+            Text(
+                text = formatFarsiCount(requestsAvailable),
+                style = MaterialTheme.typography.labelMedium.copy(
+                    fontFamily = VistaFontFamily,
+                    fontWeight = FontWeight.Bold,
+                    color = VistaBrandColors.Indigo,
+                ),
+            )
+        }
+    }
+}
+
+@Composable
+private fun NearbyZoneFilterStrip(
+    selected: NearbyZoneFilter,
+    onSelect: (NearbyZoneFilter) -> Unit,
+    coins: Long,
+    requestsAvailable: Int,
+    onOpenShop: () -> Unit,
+) {
+    LazyRow(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp),
+        contentPadding = PaddingValues(horizontal = 14.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        item {
+            NearbyWalletHeaderChip(
+                coins = coins,
+                requestsAvailable = requestsAvailable,
+                onClick = onOpenShop,
+            )
+        }
+        items(NearbyZoneFilter.entries) { zone ->
+            val isSelected = zone == selected
+            Surface(
+                shape = RoundedCornerShape(50),
+                color = if (isSelected) {
+                    VistaBrandColors.Indigo
+                } else {
+                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+                },
+                border = if (isSelected) null else BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+                modifier = Modifier
+                    .clip(RoundedCornerShape(50))
+                    .clickable { onSelect(zone) },
+            ) {
+                Text(
+                    text = zone.label,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        fontFamily = VistaFontFamily,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                        color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                    ),
+                )
+            }
+        }
+    }
+}
+
+private fun formatFarsiCount(number: Number): String {
+    val digits = listOf('۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹')
+    val raw = java.text.NumberFormat.getNumberInstance(java.util.Locale.US).format(number.toLong())
+    return buildString {
+        for (ch in raw) {
+            if (ch in '0'..'9') append(digits[ch - '0']) else append(ch)
         }
     }
 }
@@ -370,21 +750,18 @@ fun NearbyScreen(
 private fun NearbyDeck(
     cards: List<NearbyCandidate>,
     currentIndex: Int,
-    onSwipeLeft: () -> Unit,
-    onSwipeRight: () -> Unit,
-    onRewind: () -> Unit,
+    onSwipeBrowse: () -> Unit,
     onLike: () -> Unit,
     onPass: () -> Unit,
+    onChatRequest: (NearbyCandidate) -> Unit,
     onOpenProfile: (NearbyCandidate) -> Unit,
     onReport: (NearbyCandidate) -> Unit,
     zoneTransition: String?,
     modifier: Modifier = Modifier,
 ) {
-    val configuration = LocalConfiguration.current
-    val screenWidth = configuration.screenWidthDp.dp
     val safeIndex = currentIndex.coerceIn(0, (cards.size - 1).coerceAtLeast(0))
     val currentCard = cards.getOrNull(safeIndex)
-    val nextCard = cards.getOrNull(safeIndex + 1)
+    val nextCard = if (cards.size > 1) cards.getOrNull((safeIndex + 1) % cards.size) else null
 
     val dragOffset = remember { Animatable(Offset.Zero, Offset.VectorConverter) }
     val scope = rememberCoroutineScope()
@@ -415,15 +792,18 @@ private fun NearbyDeck(
                 )
             }
 
-            // Current Active Card with Drag
+            // Current Active Card with physical-axis Drag (RTL-safe via graphicsLayer translationX)
             if (currentCard != null) {
                 val rotationAngle = (dragOffset.value.x / 380f).coerceIn(-15f, 15f)
 
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .offset { IntOffset(dragOffset.value.x.roundToInt(), dragOffset.value.y.roundToInt()) }
-                        .graphicsLayer { rotationZ = rotationAngle }
+                        .graphicsLayer {
+                            translationX = dragOffset.value.x
+                            translationY = dragOffset.value.y
+                            rotationZ = rotationAngle
+                        }
                         .pointerInput(safeIndex) {
                             detectDragGestures(
                                 onDrag = { change, dragAmount ->
@@ -435,22 +815,22 @@ private fun NearbyDeck(
                                 onDragEnd = {
                                     scope.launch {
                                         val totalX = dragOffset.value.x
-                                        if (totalX > 250f) {
-                                            // Swiped Right -> Like
+                                        if (totalX > 220f) {
+                                            // Pulled physically Right -> animate Right and browse next card (no like/pass action)
                                             dragOffset.animateTo(
                                                 Offset(1200f, dragOffset.value.y),
                                                 animationSpec = tween(220),
                                             )
                                             dragOffset.snapTo(Offset.Zero)
-                                            onSwipeRight()
-                                        } else if (totalX < -250f) {
-                                            // Swiped Left -> Pass
+                                            onSwipeBrowse()
+                                        } else if (totalX < -220f) {
+                                            // Pulled physically Left -> animate Left and browse next card (no like/pass action)
                                             dragOffset.animateTo(
                                                 Offset(-1200f, dragOffset.value.y),
                                                 animationSpec = tween(220),
                                             )
                                             dragOffset.snapTo(Offset.Zero)
-                                            onSwipeLeft()
+                                            onSwipeBrowse()
                                         } else {
                                             dragOffset.animateTo(Offset.Zero, animationSpec = tween(200))
                                         }
@@ -506,11 +886,11 @@ private fun NearbyDeck(
 
         Spacer(modifier = Modifier.height(14.dp))
 
-        // Action Bar (Pass, Rewind, Info, Like)
+        // Clean Action Bar (Pass, Chat Request, Like)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 24.dp, vertical = 4.dp),
+                .padding(horizontal = 44.dp, vertical = 6.dp),
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -531,37 +911,20 @@ private fun NearbyDeck(
                 )
             }
 
-            // Rewind (Yellow)
+            // Direct Chat Request (Purple)
             FloatingActionButton(
-                onClick = onRewind,
+                onClick = { currentCard?.let { onChatRequest(it) } },
                 shape = CircleShape,
-                containerColor = MaterialTheme.colorScheme.surface,
-                contentColor = Color(0xFFF59E0B),
+                containerColor = VistaBrandColors.Indigo,
+                contentColor = Color.White,
                 elevation = FloatingActionButtonDefaults.elevation(4.dp),
-                modifier = Modifier.size(46.dp),
+                modifier = Modifier.size(52.dp),
             ) {
                 Icon(
-                    imageVector = Icons.Rounded.Replay,
-                    contentDescription = "کارت قبلی",
-                    tint = Color(0xFFF59E0B),
-                    modifier = Modifier.size(22.dp),
-                )
-            }
-
-            // Profile / Info (Blue)
-            FloatingActionButton(
-                onClick = { currentCard?.let { onOpenProfile(it) } },
-                shape = CircleShape,
-                containerColor = MaterialTheme.colorScheme.surface,
-                contentColor = VistaBrandColors.Indigo,
-                elevation = FloatingActionButtonDefaults.elevation(4.dp),
-                modifier = Modifier.size(46.dp),
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.Person,
-                    contentDescription = "پروفایل",
-                    tint = VistaBrandColors.Indigo,
-                    modifier = Modifier.size(22.dp),
+                    imageVector = Icons.Rounded.Forum,
+                    contentDescription = "درخواست چت",
+                    tint = Color.White,
+                    modifier = Modifier.size(23.dp),
                 )
             }
 
@@ -646,23 +1009,23 @@ private fun LocationErrorView(
     onOpenAppSettings: () -> Unit,
     onRetry: () -> Unit,
 ) {
-    val msg = when (error) {
-        "service_off" -> "سرویس موقعیت‌مکانی دستگاه خاموش است.\nبرای استفاده از «اطراف من» باید GPS فعال باشه."
-        "permission_forever" -> "دسترسی مکان مسدود شده.\nبرای فعال‌سازی باید از تنظیمات دستگاه اجازه بدی."
-        "permission" -> "برای پیدا کردن آدم‌های نزدیک، به دسترسی موقعیت مکانی نیاز داریم."
-        else -> "خطا در دریافت موقعیت مکانی"
+    val title = when (error) {
+        "service_off" -> "مکان‌یاب گوشی خاموشه!"
+        "permission_forever" -> "اجازه دسترسی مکان نیازه"
+        "permission" -> "بذار بدونیم کجایی!"
+        else -> "نتونستیم موقعیتت رو پیدا کنیم"
+    }
+    val subtitle = when (error) {
+        "service_off" -> "برای پیدا کردن هم‌شهری‌ها و افراد آنلاینِ اطراف، لطفاً GPS دستگاه رو روشن کن تا بقیه هم بتونن تو رو ببینن."
+        "permission_forever" -> "دسترسی مکان مسدود شده؛ از تنظیمات برنامه دسترسی موقعیت رو فعال کن تا آدم‌های واقعی اطرافت رو نشونت بدیم."
+        "permission" -> "بذار بدونیم کجایی تا آدم‌های واقعی و آنلاین اطرافت رو همین الان بهت نشون بدیم و بقیه هم بتونن پیدات کنن و باهات گپ بزنن ✨"
+        else -> "ارتباط با سرویس مکان‌یاب برقرار نشد؛ لطفاً دوباره امتحان کن."
     }
     val actionLabel = when (error) {
-        "service_off" -> "فعال‌سازی GPS"
-        "permission_forever" -> "راهنمای تنظیمات"
-        "permission" -> "فعال‌سازی"
+        "service_off" -> "روشن کردن GPS"
+        "permission_forever" -> "باز کردن تنظیمات دسترسی"
+        "permission" -> "باشه، موقعیتم رو پیدا کن"
         else -> "تلاش مجدد"
-    }
-    val icon = when (error) {
-        "service_off" -> Icons.Rounded.LocationOff
-        "permission_forever" -> Icons.Rounded.Close
-        "permission" -> Icons.Rounded.LocationOff
-        else -> Icons.Rounded.Replay
     }
     val onAction: () -> Unit = when (error) {
         "service_off" -> onOpenGpsSettings
@@ -672,57 +1035,193 @@ private fun LocationErrorView(
     }
 
     Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(32.dp),
+        modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center,
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = VistaBrandColors.Indigo.copy(alpha = 0.65f),
-                modifier = Modifier.size(56.dp),
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                text = msg,
-                style = MaterialTheme.typography.bodyMedium.copy(
-                    fontFamily = VistaFontFamily,
-                    color = MaterialTheme.vistaColors.contentSecondary,
-                    fontSize = 14.sp,
-                    textAlign = TextAlign.Center,
-                    lineHeight = 22.sp,
-                ),
-            )
-            Spacer(modifier = Modifier.height(20.dp))
-            Button(
-                onClick = onAction,
-                shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = VistaBrandColors.Indigo),
+        // Subtle radar backdrop behind the floating prompt window
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer { alpha = 0.25f },
+        ) {
+            NearbyRadarScanningView()
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background.copy(alpha = 0.72f))
+                .padding(horizontal = 24.dp, vertical = 20.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Surface(
+            shape = RoundedCornerShape(28.dp),
+            color = MaterialTheme.colorScheme.surface,
+            border = BorderStroke(1.dp, VistaBrandColors.Indigo.copy(alpha = 0.22f)),
+            tonalElevation = 6.dp,
+            shadowElevation = 10.dp,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp, vertical = 28.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
+                Box(
+                    modifier = Modifier
+                        .size(84.dp)
+                        .background(
+                            brush = Brush.linearGradient(
+                                listOf(
+                                    VistaBrandColors.Indigo.copy(alpha = 0.18f),
+                                    Color(0xFF10B981).copy(alpha = 0.18f),
+                                )
+                            ),
+                            shape = CircleShape,
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = if (error == "service_off") Icons.Rounded.LocationOff else Icons.Rounded.MyLocation,
+                        contentDescription = null,
+                        tint = VistaBrandColors.Indigo,
+                        modifier = Modifier.size(40.dp),
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(18.dp))
+
                 Text(
-                    text = actionLabel,
-                    style = MaterialTheme.typography.labelLarge.copy(
+                    text = title,
+                    style = MaterialTheme.typography.titleLarge.copy(
                         fontFamily = VistaFontFamily,
-                        fontWeight = FontWeight.Bold,
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 20.sp,
+                        color = MaterialTheme.colorScheme.onBackground,
+                        textAlign = TextAlign.Center,
                     ),
                 )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontFamily = VistaFontFamily,
+                        color = MaterialTheme.vistaColors.contentSecondary,
+                        fontSize = 13.5.sp,
+                        textAlign = TextAlign.Center,
+                        lineHeight = 22.sp,
+                    ),
+                )
+
+                Spacer(modifier = Modifier.height(20.dp))
+
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = VistaBrandColors.Indigo.copy(alpha = 0.08f),
+                    border = BorderStroke(1.dp, VistaBrandColors.Indigo.copy(alpha = 0.14f)),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Rounded.VerifiedUser,
+                                contentDescription = null,
+                                tint = Color(0xFF10B981),
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "موقعیت دقیق تو هرگز نمایش داده نمی‌شه؛ فقط شهر و فاصله حدودی!",
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    fontFamily = VistaFontFamily,
+                                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.88f),
+                                    fontSize = 12.sp,
+                                    lineHeight = 18.sp,
+                                ),
+                            )
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Rounded.AutoAwesome,
+                                contentDescription = null,
+                                tint = VistaBrandColors.Indigo,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "آشنایی سریع با هم‌شهری‌ها و کاربران آنلاین واقعی اطرافت",
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    fontFamily = VistaFontFamily,
+                                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.88f),
+                                    fontSize = 12.sp,
+                                    lineHeight = 18.sp,
+                                ),
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(22.dp))
+
+                Button(
+                    onClick = onAction,
+                    shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = VistaBrandColors.Indigo),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(50.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.LocationOn,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = actionLabel,
+                        style = MaterialTheme.typography.labelLarge.copy(
+                            fontFamily = VistaFontFamily,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.5.sp,
+                            color = Color.White,
+                        ),
+                    )
+                }
             }
+        }
         }
     }
 }
 
 private fun resolveCityAndProvince(context: Context, lat: Double, lng: Double): Pair<String?, String?> {
-    return runCatching {
-        @Suppress("DEPRECATION")
-        val geocoder = android.location.Geocoder(context, java.util.Locale("fa"))
-        val addresses = geocoder.getFromLocation(lat, lng, 1)
-        val addr = addresses?.firstOrNull()
-        val city = addr?.locality ?: addr?.subAdminArea
-        val province = addr?.adminArea
-        city to province
-    }.getOrDefault(null to null)
+    fun extract(locale: java.util.Locale): Pair<String?, String?>? {
+        return runCatching {
+            @Suppress("DEPRECATION")
+            val addresses = android.location.Geocoder(context, locale).getFromLocation(lat, lng, 3)
+            val addr = addresses?.firstOrNull { !it.locality.isNullOrBlank() || !it.subAdminArea.isNullOrBlank() }
+                ?: addresses?.firstOrNull()
+                ?: return null
+            val rawCity = addr.locality?.takeIf { it.isNotBlank() }
+                ?: addr.subAdminArea?.takeIf { it.isNotBlank() }
+            val cleanCity = rawCity?.trim()
+                ?.removePrefix("شهرستان ")
+                ?.removePrefix("شهر ")
+                ?.trim()
+            val cleanProvince = addr.adminArea?.trim()?.removePrefix("استان ")?.trim()
+            if (cleanCity.isNullOrBlank() && cleanProvince.isNullOrBlank()) null else cleanCity to cleanProvince
+        }.getOrNull()
+    }
+
+    val fa = extract(java.util.Locale.forLanguageTag("fa-IR"))
+    if (fa != null && !fa.first.isNullOrBlank()) return fa
+    return extract(java.util.Locale.ENGLISH) ?: (fa ?: (null to null))
 }
 
 private fun checkAndAcquireLocation(context: Context, viewModel: NearbyViewModel) {
@@ -740,29 +1239,47 @@ private fun checkAndAcquireLocation(context: Context, viewModel: NearbyViewModel
         return
     }
     try {
-        val lastGps = locationManager?.getLastKnownLocation(LocationManager.GPS_PROVIDER)
-        val lastNetwork = locationManager?.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
-        val loc = lastGps ?: lastNetwork
-        if (loc != null) {
-            val (city, province) = resolveCityAndProvince(context, loc.latitude, loc.longitude)
-            viewModel.onLocationAcquired(loc.latitude, loc.longitude, city, province)
+        val candidates = listOfNotNull(
+            locationManager?.getLastKnownLocation(LocationManager.GPS_PROVIDER),
+            locationManager?.getLastKnownLocation(LocationManager.NETWORK_PROVIDER),
+            locationManager?.getLastKnownLocation(LocationManager.PASSIVE_PROVIDER),
+        )
+        val freshest = candidates.maxByOrNull { it.time }
+        val isRecent = freshest != null && (System.currentTimeMillis() - freshest.time) <= 15 * 60 * 1000L
+
+        if (freshest != null && isRecent) {
+            val (city, province) = resolveCityAndProvince(context, freshest.latitude, freshest.longitude)
+            viewModel.onLocationAcquired(freshest.latitude, freshest.longitude, city, province)
         } else {
-            locationManager?.requestSingleUpdate(
-                LocationManager.NETWORK_PROVIDER,
-                object : LocationListener {
-                    override fun onLocationChanged(location: Location) {
-                        val (city, province) = resolveCityAndProvince(context, location.latitude, location.longitude)
-                        viewModel.onLocationAcquired(location.latitude, location.longitude, city, province)
-                    }
-                    @Deprecated("Deprecated in Java")
-                    override fun onStatusChanged(provider: String?, status: Int, extras: android.os.Bundle?) {}
-                    override fun onProviderEnabled(provider: String) {}
-                    override fun onProviderDisabled(provider: String) {
-                        viewModel.setLocationError("service_off")
-                    }
-                },
-                null
-            )
+            // Emit stale cached location immediately for instant UI if present, and request fresh fix.
+            if (freshest != null) {
+                val (city, province) = resolveCityAndProvince(context, freshest.latitude, freshest.longitude)
+                viewModel.onLocationAcquired(freshest.latitude, freshest.longitude, city, province)
+            }
+            val activeProvider = when {
+                locationManager?.isProviderEnabled(LocationManager.GPS_PROVIDER) == true -> LocationManager.GPS_PROVIDER
+                locationManager?.isProviderEnabled(LocationManager.NETWORK_PROVIDER) == true -> LocationManager.NETWORK_PROVIDER
+                else -> null
+            }
+            if (activeProvider != null) {
+                @Suppress("DEPRECATION")
+                locationManager?.requestSingleUpdate(
+                    activeProvider,
+                    object : LocationListener {
+                        override fun onLocationChanged(location: Location) {
+                            val (city, province) = resolveCityAndProvince(context, location.latitude, location.longitude)
+                            viewModel.onLocationAcquired(location.latitude, location.longitude, city, province)
+                        }
+                        @Deprecated("Deprecated in Java")
+                        override fun onStatusChanged(provider: String?, status: Int, extras: android.os.Bundle?) {}
+                        override fun onProviderEnabled(provider: String) {}
+                        override fun onProviderDisabled(provider: String) {
+                            viewModel.setLocationError("service_off")
+                        }
+                    },
+                    null
+                )
+            }
         }
     } catch (_: SecurityException) {
         viewModel.setLocationError("permission")

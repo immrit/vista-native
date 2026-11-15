@@ -149,6 +149,9 @@ class MainActivity : FragmentActivity() {
     @Inject
     lateinit var notificationSettingsApi: ir.coffevista.vista_native.features.profile.settings.notifications.NotificationSettingsApi
 
+    @Inject
+    lateinit var presenceHeartbeatManager: ir.coffevista.vista_native.presence.PresenceHeartbeatManager
+
     private var lastInAppChimeAtMillis = 0L
 
     private val requestNotificationPermissionLauncher = registerForActivityResult(
@@ -226,6 +229,15 @@ class MainActivity : FragmentActivity() {
             }
         }
         lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                presenceHeartbeatManager.sendHeartbeatIfEligible(force = true)
+                while (true) {
+                    kotlinx.coroutines.delay(55_000L)
+                    presenceHeartbeatManager.sendHeartbeatIfEligible()
+                }
+            }
+        }
+        lifecycleScope.launch {
             authenticationStateOwner.state
                 .map { state ->
                     (state as? AuthenticationState.SignedIn)?.context
@@ -235,6 +247,7 @@ class MainActivity : FragmentActivity() {
                     val userId = context?.userId
                     if (userId != null) {
                         lastSignedInUserId = userId
+                        launch { presenceHeartbeatManager.sendHeartbeatIfEligible(force = true) }
                         pushTokenRegistrar.syncTokenAsync(userId)
                         ownProfileRepository.fetchAndCacheOwnProfile(userId)
                         reconcilePendingChatNotification()
@@ -305,6 +318,11 @@ class MainActivity : FragmentActivity() {
                                 },
                                 onCheckForUpdate = { checkForAppUpdate(showUpToDateToast = true) },
                                 onBeforeClearSession = {
+                                    runCatching {
+                                        withTimeoutOrNull(1_200L) {
+                                            presenceHeartbeatManager.sendOfflineImmediately()
+                                        }
+                                    }
                                     pushTokenRegistrar.unregisterTokenBeforeSignOut()
                                     runCatching {
                                         withTimeoutOrNull(1_500L) {
@@ -445,6 +463,7 @@ class MainActivity : FragmentActivity() {
             window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
         }
         lifecycleScope.launch { chatRepository.setForeground(false) }
+        presenceHeartbeatManager.sendOfflineAsync(isChangingConfigurations)
         super.onStop()
     }
 

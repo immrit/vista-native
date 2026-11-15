@@ -199,6 +199,9 @@ interface ChatApi {
     @POST("v1/profiles/report")
     suspend fun reportUser(@Body request: ReportUserRequest)
 
+    @POST("v1/sessions/alert-action")
+    suspend fun respondToSessionAlert(@Body request: SessionAlertActionRequest): SessionAlertActionResponse
+
     @POST("v1/chat/groups/join/{code}")
     suspend fun joinGroup(@Path("code") code: String): GroupCreatedDto
 
@@ -648,4 +651,20 @@ data class PreKeyBundleDto(
     @SerialName("signed_prekey_sig") val signedPreKeySig: String = "",
     @SerialName("one_time_prekey") val oneTimePreKey: OneTimePreKeyDto? = null,
     @SerialName("remaining_one_time") val remainingOneTime: Int = 0,
+)
+
+@Serializable
+data class SessionAlertActionRequest(
+    @SerialName("session_id") val sessionId: String,
+    val action: String,
+    @SerialName("message_id") val messageId: String? = null,
+    @SerialName("current_session_id") val currentSessionId: String? = null,
+)
+
+@Serializable
+data class SessionAlertActionResponse(
+    val success: Boolean = false,
+    @SerialName("session_id") val sessionId: String = "",
+    @SerialName("approval_status") val approvalStatus: String = "",
+    @SerialName("updated_content") val updatedContent: String = "",
 )

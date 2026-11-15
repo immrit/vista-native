@@ -60,6 +60,14 @@ object DeepLinkParser {
                 ),
             )
         }
+        if (host == "payment" && segments == listOf("coins")) {
+            return DeepLinkParseResult.Supported(
+                PendingDestination(
+                    kind = DeferredFeatureKind.PROFILE,
+                    reference = "payment_coins",
+                ),
+            )
+        }
         if (host == "appeal") {
             val postId = segments.singleOrNull()?.takeIf(REFERENCE_PATTERN::matches)
                 ?: return DeepLinkParseResult.Rejected(DeepLinkFailureReason.INVALID_ARGUMENT)

@@ -1794,6 +1794,7 @@ class OfflineFirstChatRepository(
                 )
             }
             val formattedReplyContent = DuelInviteParser.formatPreviewIfDuel(rawReplyContent, source.transportType)
+                ?: ir.coffevista.vista_native.features.chat.domain.model.SessionAlertParser.formatPreview(rawReplyContent, source.transportType)
                 ?: SharedPostParser.tryParse(rawReplyContent)?.let { post ->
                     "پست ${post.authorName}: ${post.content.ifBlank { "رسانه پیوست" }}"
                 }
@@ -2565,6 +2566,47 @@ class OfflineFirstChatRepository(
                 message.copy(content = MessageContent.Text(normalized), editedAtEpochMillis = now()),
                 MergeSource.REST,
             )
+        }
+    }
+
+    override suspend fun respondToSessionAlert(
+        message: Message,
+        sessionId: String,
+        action: String,
+    ): ChatResult<String> {
+        val cleanSessionId = sessionId.trim()
+        val normalizedAction = action.trim().lowercase()
+        if (cleanSessionId.isEmpty() || (normalizedAction != "approve" && normalizedAction != "reject")) {
+            return ChatResult.Failure("درخواست نامعتبر است", retryable = false)
+        }
+        return remoteCall {
+            val currentSessionId = ir.coffevista.vista_native.core.common.SessionCredentialsProvider.current?.currentSessionId()
+            val response = api.respondToSessionAlert(
+                ir.coffevista.vista_native.features.chat.data.remote.SessionAlertActionRequest(
+                    sessionId = cleanSessionId,
+                    action = normalizedAction,
+                    messageId = message.serverId,
+                    currentSessionId = currentSessionId,
+                ),
+            )
+            if (response.updatedContent.isNotBlank()) {
+                val updatedContent = if (message.content is MessageContent.Structured) {
+                    MessageContent.Structured(
+                        kind = (message.content as MessageContent.Structured).kind,
+                        payload = response.updatedContent,
+                    )
+                } else {
+                    MessageContent.Text(response.updatedContent)
+                }
+                mergeAndPersist(
+                    message.copy(
+                        content = updatedContent,
+                        editedAtEpochMillis = now(),
+                    ),
+                    MergeSource.REST,
+                )
+            }
+            response.approvalStatus
         }
     }
 

@@ -46,6 +46,47 @@ class VistaApplication : Application(), Configuration.Provider, ImageLoaderFacto
         }
         ir.coffevista.vista_native.core.common.DeviceIdProvider.current =
             ir.coffevista.vista_native.core.common.DeviceIdProvider { deviceId }
+        val sessionPrefs = getSharedPreferences(
+            ir.coffevista.vista_native.core.common.SessionCredentialsProvider.PREFS_NAME,
+            MODE_PRIVATE,
+        )
+        ir.coffevista.vista_native.core.common.SessionCredentialsProvider.current =
+            object : ir.coffevista.vista_native.core.common.SessionCredentialsProvider {
+                override fun currentSessionId(): String? = sessionPrefs.getString(
+                    ir.coffevista.vista_native.core.common.SessionCredentialsProvider.KEY_SESSION_ID,
+                    null,
+                )?.takeIf(String::isNotBlank)
+
+                override fun currentSessionToken(): String? = sessionPrefs.getString(
+                    ir.coffevista.vista_native.core.common.SessionCredentialsProvider.KEY_SESSION_TOKEN,
+                    null,
+                )?.takeIf(String::isNotBlank)
+
+                override fun currentUserId(): String? = sessionPrefs.getString(
+                    ir.coffevista.vista_native.core.common.SessionCredentialsProvider.KEY_SESSION_USER_ID,
+                    null,
+                )?.takeIf(String::isNotBlank)
+
+                override fun saveSessionCredentials(sessionId: String, sessionToken: String, userId: String?) {
+                    sessionPrefs.edit()
+                        .putString(ir.coffevista.vista_native.core.common.SessionCredentialsProvider.KEY_SESSION_ID, sessionId)
+                        .putString(ir.coffevista.vista_native.core.common.SessionCredentialsProvider.KEY_SESSION_TOKEN, sessionToken)
+                        .apply {
+                            if (!userId.isNullOrBlank()) {
+                                putString(ir.coffevista.vista_native.core.common.SessionCredentialsProvider.KEY_SESSION_USER_ID, userId)
+                            }
+                        }
+                        .apply()
+                }
+
+                override fun clear() {
+                    sessionPrefs.edit()
+                        .remove(ir.coffevista.vista_native.core.common.SessionCredentialsProvider.KEY_SESSION_ID)
+                        .remove(ir.coffevista.vista_native.core.common.SessionCredentialsProvider.KEY_SESSION_TOKEN)
+                        .remove(ir.coffevista.vista_native.core.common.SessionCredentialsProvider.KEY_SESSION_USER_ID)
+                        .apply()
+                }
+            }
         ir.coffevista.vista_native.core.designsystem.component.VistaDirectShareRegistry.current =
             directShareGateway
         ir.coffevista.vista_native.crash.VistaCrashReporter.install(this)

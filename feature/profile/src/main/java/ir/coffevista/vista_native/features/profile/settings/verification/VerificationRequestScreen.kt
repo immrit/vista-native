@@ -72,6 +72,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import ir.coffevista.vista_native.core.designsystem.component.VistaCoinIcon
 import ir.coffevista.vista_native.features.profile.data.VerificationStatusDto
 import kotlinx.coroutines.delay
 
@@ -485,13 +486,19 @@ private fun BlackTickRulesCard(status: VerificationStatusDto?) {
                         color = MaterialTheme.colorScheme.onSurface,
                     )
                     if (status != null) {
-                        Text(
-                            text = "سابقه رد: ${status.rejectedCount} بار  |  سکه فعلی: ${status.currentCoins}",
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontWeight = FontWeight.SemiBold,
-                                color = amber,
-                            ),
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(5.dp),
+                        ) {
+                            VistaCoinIcon(size = 15.dp)
+                            Text(
+                                text = "سابقه رد: ${status.rejectedCount} بار  |  سکه فعلی: ${status.currentCoins}",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = amber,
+                                ),
+                            )
+                        }
                     }
                 }
             }

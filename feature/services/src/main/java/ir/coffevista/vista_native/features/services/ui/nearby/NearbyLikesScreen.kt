@@ -1,5 +1,6 @@
 package ir.coffevista.vista_native.features.services.ui.nearby
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -18,13 +19,28 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowForward
+import androidx.compose.material.icons.automirrored.rounded.Chat
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.FavoriteBorder
+import androidx.compose.material.icons.rounded.Forum
+import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material.icons.rounded.Verified
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.TabRowDefaults
@@ -45,6 +61,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -55,17 +72,10 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowForward
-import androidx.compose.material.icons.automirrored.rounded.Chat
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.Favorite
-import androidx.compose.material.icons.rounded.FavoriteBorder
-import androidx.compose.material.icons.rounded.Star
-import androidx.compose.material3.Icon
 import ir.coffevista.vista_native.core.designsystem.theme.VistaFontFamily
 import ir.coffevista.vista_native.core.designsystem.theme.vistaColors
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaBrandColors
+import ir.coffevista.vista_native.features.services.data.nearby.NearbyChatRequest
 import ir.coffevista.vista_native.features.services.data.nearby.NearbyLikeResult
 import ir.coffevista.vista_native.features.services.data.nearby.NearbyMatch
 import ir.coffevista.vista_native.features.services.data.nearby.NearbyReceivedLike
@@ -98,7 +108,7 @@ fun NearbyLikesScreen(
                 TopAppBar(
                     title = {
                         Text(
-                            text = "لایک‌ها و مَچ‌ها",
+                            text = "صندوق اطراف من",
                             style = MaterialTheme.typography.titleMedium.copy(
                                 fontFamily = VistaFontFamily,
                                 fontWeight = FontWeight.ExtraBold,
@@ -144,8 +154,8 @@ fun NearbyLikesScreen(
                         onClick = { selectedTab = 0 },
                         text = {
                             Text(
-                                text = "لایک‌های دریافتی (${state.receivedLikes.size})",
-                                style = MaterialTheme.typography.bodyMedium.copy(
+                                text = "درخواست چت (${state.pendingChatRequestsCount})",
+                                style = MaterialTheme.typography.bodySmall.copy(
                                     fontFamily = VistaFontFamily,
                                     fontWeight = if (selectedTab == 0) FontWeight.Bold else FontWeight.Medium,
                                 ),
@@ -157,10 +167,23 @@ fun NearbyLikesScreen(
                         onClick = { selectedTab = 1 },
                         text = {
                             Text(
-                                text = "مَچ‌ها (${state.matches.size})",
-                                style = MaterialTheme.typography.bodyMedium.copy(
+                                text = "لایک‌ها (${state.receivedLikes.size})",
+                                style = MaterialTheme.typography.bodySmall.copy(
                                     fontFamily = VistaFontFamily,
                                     fontWeight = if (selectedTab == 1) FontWeight.Bold else FontWeight.Medium,
+                                ),
+                            )
+                        },
+                    )
+                    Tab(
+                        selected = selectedTab == 2,
+                        onClick = { selectedTab = 2 },
+                        text = {
+                            Text(
+                                text = "مَچ‌ها (${state.matches.size})",
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    fontFamily = VistaFontFamily,
+                                    fontWeight = if (selectedTab == 2) FontWeight.Bold else FontWeight.Medium,
                                 ),
                             )
                         },
@@ -179,7 +202,38 @@ fun NearbyLikesScreen(
                     }
                 } else {
                     when (selectedTab) {
-                        0 -> ReceivedLikesTabContent(
+                        0 -> ChatRequestsTabContent(
+                            incoming = state.incomingChatRequests,
+                            outgoing = state.outgoingChatRequests,
+                            onAccept = { req ->
+                                viewModel.respondToChatRequest(
+                                    request = req,
+                                    action = "accept",
+                                    onAcceptedChat = { convId, peerId, name, avatar ->
+                                        onOpenChat(convId, peerId, name, avatar)
+                                    },
+                                    onError = { msg -> scope.launch { snackbarHostState.showSnackbar(msg) } },
+                                )
+                            },
+                            onReject = { req ->
+                                viewModel.respondToChatRequest(
+                                    request = req,
+                                    action = "reject",
+                                    onError = { msg -> scope.launch { snackbarHostState.showSnackbar(msg) } },
+                                )
+                            },
+                            onCancel = { req ->
+                                viewModel.respondToChatRequest(
+                                    request = req,
+                                    action = "cancel",
+                                    onError = { msg -> scope.launch { snackbarHostState.showSnackbar(msg) } },
+                                )
+                            },
+                            onOpenAcceptedChat = { req ->
+                                onOpenChat(req.conversationId, req.peerId, req.fullName, req.avatarUrl)
+                            },
+                        )
+                        1 -> ReceivedLikesTabContent(
                             likes = state.receivedLikes,
                             onLike = { like ->
                                 viewModel.respondToReceivedLike(
@@ -220,10 +274,12 @@ fun NearbyLikesScreen(
                                 )
                             },
                         )
-                        1 -> MatchesTabContent(
+                        else -> MatchesTabContent(
                             matches = state.matches,
                             onChat = { match ->
-                                onOpenChat(match.matchId, match.userId, match.fullName, match.avatarUrl)
+                                viewModel.openMatchChat(match.matchId, match.userId) { convId ->
+                                    onOpenChat(convId, match.userId, match.fullName, match.avatarUrl)
+                                }
                             },
                             onUnmatch = { viewModel.unmatch(it.matchId) },
                         )
@@ -231,16 +287,290 @@ fun NearbyLikesScreen(
                 }
             }
 
-            matchedResult?.let { (like, result) ->
+            matchedResult?.let { (_, result) ->
                 NearbyMatchDialog(
                     matchResult = result,
                     candidate = null,
                     onDismiss = { matchedResult = null },
                     onStartChat = { matchId, otherUserId, username, avatarUrl ->
                         matchedResult = null
-                        onOpenChat(matchId, otherUserId, username, avatarUrl)
+                        viewModel.openMatchChat(matchId, otherUserId) { convId ->
+                            onOpenChat(convId, otherUserId, username, avatarUrl)
+                        }
                     },
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChatRequestsTabContent(
+    incoming: List<NearbyChatRequest>,
+    outgoing: List<NearbyChatRequest>,
+    onAccept: (NearbyChatRequest) -> Unit,
+    onReject: (NearbyChatRequest) -> Unit,
+    onCancel: (NearbyChatRequest) -> Unit,
+    onOpenAcceptedChat: (NearbyChatRequest) -> Unit,
+) {
+    if (incoming.isEmpty() && outgoing.isEmpty()) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(32.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(
+                    imageVector = Icons.Rounded.Forum,
+                    contentDescription = null,
+                    tint = VistaBrandColors.Indigo.copy(alpha = 0.55f),
+                    modifier = Modifier.size(56.dp),
+                )
+                Spacer(modifier = Modifier.height(14.dp))
+                Text(
+                    text = "هنوز درخواست چتی ثبت نشده است.\nاز صفحه اطراف من می‌توانید مستقیم درخواست چت بفرستید.",
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontFamily = VistaFontFamily,
+                        color = MaterialTheme.vistaColors.contentSecondary,
+                        fontSize = 14.sp,
+                        textAlign = TextAlign.Center,
+                        lineHeight = 22.sp,
+                    ),
+                )
+            }
+        }
+        return
+    }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        if (incoming.isNotEmpty()) {
+            item {
+                Text(
+                    text = "درخواست‌های دریافتی (${incoming.size})",
+                    style = MaterialTheme.typography.titleSmall.copy(
+                        fontFamily = VistaFontFamily,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onBackground,
+                    ),
+                )
+            }
+            items(incoming, key = { "in-${it.id}" }) { req ->
+                ChatRequestCardItem(
+                    req = req,
+                    isIncoming = true,
+                    onAccept = { onAccept(req) },
+                    onReject = { onReject(req) },
+                    onCancel = {},
+                    onOpenChat = { onOpenAcceptedChat(req) },
+                )
+            }
+        }
+
+        if (outgoing.isNotEmpty()) {
+            item {
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = "درخواست‌های ارسالی شما (${outgoing.size})",
+                    style = MaterialTheme.typography.titleSmall.copy(
+                        fontFamily = VistaFontFamily,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onBackground,
+                    ),
+                )
+            }
+            items(outgoing, key = { "out-${it.id}" }) { req ->
+                ChatRequestCardItem(
+                    req = req,
+                    isIncoming = false,
+                    onAccept = {},
+                    onReject = {},
+                    onCancel = { onCancel(req) },
+                    onOpenChat = { onOpenAcceptedChat(req) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChatRequestCardItem(
+    req: NearbyChatRequest,
+    isIncoming: Boolean,
+    onAccept: () -> Unit,
+    onReject: () -> Unit,
+    onCancel: () -> Unit,
+    onOpenChat: () -> Unit,
+) {
+    Surface(
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (req.avatarUrl.isNotBlank()) {
+                    AsyncImage(
+                        model = req.avatarUrl,
+                        contentDescription = req.fullName,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .size(50.dp)
+                            .clip(CircleShape),
+                    )
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .size(50.dp)
+                            .background(VistaBrandColors.Indigo.copy(alpha = 0.14f), CircleShape),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = req.fullName.firstOrNull()?.toString() ?: "؟",
+                            fontFamily = VistaFontFamily,
+                            fontWeight = FontWeight.Bold,
+                            color = VistaBrandColors.Indigo,
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = req.fullName,
+                            fontFamily = VistaFontFamily,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        if (req.isVerified) {
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Icon(
+                                Icons.Rounded.Verified,
+                                contentDescription = null,
+                                tint = Color(0xFF38BDF8),
+                                modifier = Modifier.size(16.dp),
+                            )
+                        }
+                    }
+                    val subtitle = buildString {
+                        if (req.cityName.isNotBlank()) append(req.cityName)
+                        if (req.isOnlineNow) {
+                            if (isNotEmpty()) append(" • ")
+                            append("آنلاین")
+                        }
+                    }
+                    if (subtitle.isNotBlank()) {
+                        Text(
+                            text = subtitle,
+                            fontFamily = VistaFontFamily,
+                            fontSize = 12.sp,
+                            color = MaterialTheme.vistaColors.contentSecondary,
+                        )
+                    }
+                }
+
+                val statusColor = when (req.status) {
+                    "accepted" -> Color(0xFF10B981)
+                    "pending" -> Color(0xFFF59E0B)
+                    else -> Color(0xFF94A3B8)
+                }
+                val statusLabel = when (req.status) {
+                    "accepted" -> "تایید شد"
+                    "pending" -> "در انتظار"
+                    else -> req.status
+                }
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = statusColor.copy(alpha = 0.14f),
+                ) {
+                    Text(
+                        text = statusLabel,
+                        fontFamily = VistaFontFamily,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 11.sp,
+                        color = statusColor,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    )
+                }
+            }
+
+            if (req.introMessage.isNotBlank()) {
+                Spacer(modifier = Modifier.height(10.dp))
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        text = "«${req.introMessage}»",
+                        fontFamily = VistaFontFamily,
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            when {
+                req.status == "accepted" && req.conversationId.isNotBlank() -> {
+                    Button(
+                        onClick = onOpenChat,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = VistaBrandColors.Indigo),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Icon(Icons.AutoMirrored.Rounded.Chat, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("ورود به گفتگو", fontFamily = VistaFontFamily, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    }
+                }
+
+                isIncoming && req.status == "pending" -> {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Button(
+                            onClick = onAccept,
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(5.dp))
+                            Text("قبول و شروع چت", fontFamily = VistaFontFamily, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        }
+                        OutlinedButton(
+                            onClick = onReject,
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.55f)),
+                        ) {
+                            Icon(Icons.Rounded.Close, contentDescription = null, tint = Color(0xFFEF4444), modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("رد", fontFamily = VistaFontFamily, fontSize = 12.sp, color = Color(0xFFEF4444))
+                        }
+                    }
+                }
+
+                !isIncoming && req.status == "pending" -> {
+                    OutlinedButton(
+                        onClick = onCancel,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("لغو درخواست", fontFamily = VistaFontFamily, fontSize = 12.sp)
+                    }
+                }
             }
         }
     }

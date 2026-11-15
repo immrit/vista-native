@@ -2,8 +2,6 @@ package ir.coffevista.vista_native.features.profile.settings.pricing
 
 import android.content.Context
 import android.content.ContextWrapper
-import android.content.Intent
-import android.net.Uri
 import androidx.activity.ComponentActivity
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -30,23 +28,22 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Block
-import androidx.compose.material.icons.outlined.Collections
 import androidx.compose.material.icons.outlined.EditNote
 import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.outlined.TextSnippet
 import androidx.compose.material.icons.outlined.Timelapse
+import androidx.compose.material.icons.outlined.TrendingUp
 import androidx.compose.material.icons.outlined.UploadFile
 import androidx.compose.material.icons.outlined.Verified
+import androidx.compose.material.icons.outlined.Videocam
 import androidx.compose.material.icons.outlined.VisibilityOff
-import androidx.compose.material.icons.outlined.TrendingUp
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -77,11 +74,10 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -92,6 +88,7 @@ import ir.cafebazaar.poolakey.Payment
 import ir.cafebazaar.poolakey.config.PaymentConfiguration
 import ir.cafebazaar.poolakey.config.SecurityCheck
 import ir.cafebazaar.poolakey.request.PurchaseRequest
+import ir.coffevista.vista_native.core.designsystem.component.VistaCoinIcon
 import ir.coffevista.vista_native.features.profile.settings.components.VistaSettingsSection
 
 private const val BAZAAR_RSA_PUBLIC_KEY =
@@ -136,63 +133,58 @@ fun PricingScreen(
     val features = listOf(
         PremiumFeatureUiModel(
             Icons.Outlined.Verified,
-            "نشان تأیید طلایی",
+            "نشان تأیید طلایی ویستا",
             "تیک طلایی کنار نام شما در پروفایل، پست‌ها، کامنت‌ها و چت نمایش داده می‌شود.",
         ),
         PremiumFeatureUiModel(
             Icons.Outlined.Timelapse,
-            "استوری ۴۸ ساعته",
-            "استوری‌های شما تا ۴۸ ساعت در فید باقی می‌مانند (کاربران عادی: ۲۴ ساعت).",
+            "استوری بیش از ۲۴ ساعت (۴۸ ساعته)",
+            "استوری‌های شما تا ۴۸ ساعت فعال می‌مانند (کاربران عادی: حداکثر ۲۴ ساعت).",
         ),
         PremiumFeatureUiModel(
             Icons.Outlined.EditNote,
             "ویرایش پست و کامنت پس از انتشار",
-            "متن پست‌ها و کامنت‌های خود را هر زمان ویرایش کنید.",
+            "متن پست‌ها و کامنت‌های خود را پس از انتشار ویرایش کنید (برای کاربران عادی قفل است).",
         ),
         PremiumFeatureUiModel(
             Icons.Outlined.TextSnippet,
             "پست‌های طولانی‌تر تا ۱٬۰۰۰ کاراکتر",
-            "نوشتن متن تا ۱٬۰۰۰ کاراکتر (کاربران عادی: ۳۰۰ کاراکتر).",
+            "انتشار متن و کپشن تا ۱٬۰۰۰ کاراکتر (کاربران عادی: تا ۳۰۰ کاراکتر).",
         ),
         PremiumFeatureUiModel(
             Icons.Outlined.UploadFile,
-            "ارسال فایل تا ۵۰ مگابایت",
-            "می‌توانید تصویر، کلیپ، موزیک، PDF و فایل‌ها را تا ۵۰ مگابایت در پست و چت شخصی ارسال کنید (کاربران عادی: ۱۰ مگابایت).",
+            "ارسال فایل و کلیپ تا ۵۰ مگابایت",
+            "ارسال ویدیو، تصویر و فایل در پست و چت شخصی تا ۵۰ مگابایت (کاربران عادی: تا ۱۰ مگابایت).",
         ),
         PremiumFeatureUiModel(
-            Icons.Outlined.Collections,
-            "ویدیو تا ۲ دقیقه",
-            "آپلود و برش ویدیو تا ۲ دقیقه در پست‌ها (کاربران عادی: ۱ دقیقه).",
+            Icons.Outlined.Videocam,
+            "انتشار ویدیو تا ۲ دقیقه",
+            "آپلود و انتشار ویدیوهای تا ۲ دقیقه در پست‌ها (کاربران عادی: ۱ دقیقه).",
         ),
         PremiumFeatureUiModel(
             Icons.Outlined.MusicNote,
             "انتشار موسیقی در پست‌ها",
-            "امکان افزودن موزیک روی پست‌ها و برش حرفه‌ای صدا تا ۶۰ ثانیه (برای کاربران عادی غیرفعال است).",
-        ),
-        PremiumFeatureUiModel(
-            Icons.Outlined.Collections,
-            "آلبوم چندعکسی تا ۱۰ عکس",
-            "در هر پست تا ۱۰ عکس به‌صورت اسلایدی منتشر کنید (کاربران عادی: ۳ عکس).",
+            "امکان افزودن موسیقی روی پست‌ها (برای کاربران عادی غیرفعال است).",
         ),
         PremiumFeatureUiModel(
             Icons.Outlined.VisibilityOff,
-            "کنترل آمار لایک و کامنت",
-            "برای هر پست نمایش تعداد لایک و کامنت را روشن یا خاموش کنید.",
+            "کنترل نمایش لایک و کامنت",
+            "امکان باز یا بسته کردن نمایش تعداد لایک و کامنت برای هر پست.",
         ),
         PremiumFeatureUiModel(
             Icons.Outlined.TrendingUp,
-            "اولویت در جستجو",
-            "پروفایل شما در نتایج جستجو بالاتر دیده می‌شود.",
+            "اولویت در نتایج جستجو (رتبه سوم)",
+            "نمایش بالاتر پروفایل شما نسبت به کاربران عادی در نتایج جستجو.",
         ),
         PremiumFeatureUiModel(
             Icons.Outlined.Block,
-            "بدون تبلیغات",
-            "تجربه‌ای تمیزتر بدون نمایش تبلیغ در بخش‌های اصلی برنامه.",
+            "حذف کامل تبلیغات",
+            "استفاده از تمام بخش‌های ویستا بدون نمایش هیچ‌گونه تبلیغ.",
         ),
     )
 
     var selectedPlanIndex by remember { mutableIntStateOf(0) }
-    var selectedTab by remember { mutableIntStateOf(initialTab) }
+    var selectedTab by remember { mutableIntStateOf(initialTab.coerceIn(0, 1)) }
     var showPaymentConfirmation by remember { mutableStateOf(false) }
     val selectedPlan = plans.getOrNull(selectedPlanIndex.coerceAtLeast(0)) ?: plans.firstOrNull()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -308,13 +300,14 @@ fun PricingScreen(
     uiState.successMessage?.let { message ->
         LaunchedEffect(message) { snackbarHostState.showSnackbar(message) }
     }
-    uiState.paymentUrl?.let { url ->
-        LaunchedEffect(url) {
-            val launched = runCatching {
-                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-            }.isSuccess
-            viewModel.paymentGatewayLaunched()
-            if (!launched) snackbarHostState.showSnackbar("امکان باز کردن درگاه پرداخت وجود ندارد")
+    uiState.pendingConsumeToken?.let { token ->
+        LaunchedEffect(token) {
+            runCatching {
+                payment.consumeProduct(token) {
+                    consumeSucceed { viewModel.onPurchaseConsumed() }
+                    consumeFailed { viewModel.onPurchaseConsumed() }
+                }
+            }.onFailure { viewModel.onPurchaseConsumed() }
         }
     }
 
@@ -368,9 +361,9 @@ fun PricingScreen(
                     .padding(paddingValues)
                     .verticalScroll(rememberScrollState()),
             ) {
-                val tabs = listOf("اشتراک ویژه", "بسته‌های سکه", "نشان‌های تأیید")
+                val tabs = listOf("اشتراک ویژه", "بسته‌های سکه")
                 TabRow(
-                    selectedTabIndex = selectedTab,
+                    selectedTabIndex = selectedTab.coerceIn(0, 1),
                     containerColor = MaterialTheme.colorScheme.surface,
                     contentColor = Color(0xFFFFA000),
                 ) {
@@ -609,10 +602,10 @@ fun PricingScreen(
                         // Purchase CTA Button
                         Button(
                             onClick = {
-                                when {
-                                    uiState.pendingBazaarVerification != null -> viewModel.retryBazaarVerification()
-                                    uiState.pendingTrackId != null -> viewModel.verifyPayment()
-                                    else -> showPaymentConfirmation = true
+                                if (uiState.pendingBazaarVerification != null) {
+                                    viewModel.retryBazaarVerification()
+                                } else {
+                                    showPaymentConfirmation = true
                                 }
                             },
                             modifier = Modifier
@@ -635,7 +628,6 @@ fun PricingScreen(
                             } else Text(
                                 text = when {
                                     uiState.pendingBazaarVerification != null -> "تایید مجدد خرید بازار"
-                                    uiState.pendingTrackId != null -> "تایید پرداخت"
                                     else -> selectedPlan?.let { "خرید اشتراک ${it.title} (${it.price})" }
                                         ?: "کاتالوگ اشتراک در دسترس نیست"
                                 },
@@ -660,20 +652,7 @@ fun PricingScreen(
                             contentAlignment = Alignment.Center,
                         ) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(64.dp)
-                                        .clip(CircleShape)
-                                        .background(Color.White.copy(alpha = 0.2f)),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Outlined.Verified,
-                                        contentDescription = null,
-                                        tint = Color.White,
-                                        modifier = Modifier.size(36.dp),
-                                    )
-                                }
+                                VistaCoinIcon(size = 68.dp)
                                 Spacer(modifier = Modifier.height(12.dp))
                                 Text(
                                     text = "بسته‌های سکه ویستا",
@@ -691,6 +670,27 @@ fun PricingScreen(
                                         fontSize = 12.5.sp,
                                     ),
                                     textAlign = TextAlign.Center,
+                                )
+                            }
+                        }
+
+                        if (uiState.pendingBazaarVerification != null) {
+                            Button(
+                                onClick = { viewModel.retryBazaarVerification() },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 6.dp)
+                                    .height(46.dp),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFA000)),
+                                enabled = !uiState.isVerifyingPayment,
+                            ) {
+                                Text(
+                                    text = "تایید مجدد خرید سکه از بازار",
+                                    style = MaterialTheme.typography.labelLarge.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF3E2723),
+                                    ),
                                 )
                             }
                         }
@@ -718,18 +718,7 @@ fun PricingScreen(
                                             .padding(16.dp),
                                         verticalAlignment = Alignment.CenterVertically,
                                     ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(48.dp)
-                                                .clip(CircleShape)
-                                                .background(Color(0xFFFFD54F).copy(alpha = 0.3f)),
-                                            contentAlignment = Alignment.Center,
-                                        ) {
-                                            Text(
-                                                text = "🪙",
-                                                fontSize = 24.sp,
-                                            )
-                                        }
+                                        VistaCoinIcon(size = 48.dp)
                                         Spacer(modifier = Modifier.width(14.dp))
                                         Column(modifier = Modifier.weight(1f)) {
                                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -774,153 +763,13 @@ fun PricingScreen(
                                             colors = ButtonDefaults.buttonColors(
                                                 containerColor = Color(0xFF7E57C2),
                                             ),
-                                            enabled = !uiState.isRequestingPayment,
+                                            enabled = !uiState.isRequestingPayment && !uiState.isVerifyingPayment,
                                         ) {
                                             Text(
                                                 text = "خرید",
                                                 style = MaterialTheme.typography.labelMedium.copy(
                                                     fontWeight = FontWeight.Bold,
                                                     color = Color.White,
-                                                ),
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    2 -> {
-                        // Badge Store Tab
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp)
-                                .clip(RoundedCornerShape(20.dp))
-                                .background(
-                                    Brush.linearGradient(
-                                        listOf(Color(0xFF263238), Color(0xFF37474F)),
-                                    ),
-                                )
-                                .padding(24.dp),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(64.dp)
-                                        .clip(CircleShape)
-                                        .background(Color.White.copy(alpha = 0.15f)),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Outlined.Verified,
-                                        contentDescription = null,
-                                        tint = Color(0xFFFFD54F),
-                                        modifier = Modifier.size(36.dp),
-                                    )
-                                }
-                                Spacer(modifier = Modifier.height(12.dp))
-                                Text(
-                                    text = "فروشگاه نشان‌های ویژه",
-                                    style = MaterialTheme.typography.headlineSmall.copy(
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color.White,
-                                        fontSize = 20.sp,
-                                    ),
-                                )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = "اعتبار رسمی، جایگاه نخبگان و تمایز در سراسر برنامه",
-                                    style = MaterialTheme.typography.bodyMedium.copy(
-                                        color = Color.White.copy(alpha = 0.85f),
-                                        fontSize = 12.5.sp,
-                                    ),
-                                    textAlign = TextAlign.Center,
-                                )
-                            }
-                        }
-
-                        VistaSettingsSection(title = "نشان‌های موجود")
-
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp),
-                            verticalArrangement = Arrangement.spacedBy(14.dp),
-                        ) {
-                            uiState.badges.forEach { badge ->
-                                val isGold = badge.badgeType == "gold"
-                                Card(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .border(
-                                            width = 1.dp,
-                                            color = if (isGold) Color(0xFFFFB300) else Color(0xFF90A4AE),
-                                            shape = RoundedCornerShape(16.dp),
-                                        ),
-                                    shape = RoundedCornerShape(16.dp),
-                                    colors = CardDefaults.cardColors(
-                                        containerColor = if (isGold) Color(0xFFFFFDE7) else Color(0xFFECEFF1),
-                                    ),
-                                ) {
-                                    Column(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(16.dp),
-                                    ) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Icon(
-                                                imageVector = Icons.Outlined.Verified,
-                                                contentDescription = null,
-                                                tint = if (isGold) Color(0xFFFFA000) else Color(0xFF263238),
-                                                modifier = Modifier.size(28.dp),
-                                            )
-                                            Spacer(modifier = Modifier.width(10.dp))
-                                            Text(
-                                                text = badge.title,
-                                                style = MaterialTheme.typography.titleMedium.copy(
-                                                    fontWeight = FontWeight.Bold,
-                                                    fontSize = 16.sp,
-                                                    color = if (isGold) Color(0xFF5D4037) else Color(0xFF263238),
-                                                ),
-                                            )
-                                            Spacer(modifier = Modifier.weight(1f))
-                                            Text(
-                                                text = badge.priceFormatted,
-                                                style = MaterialTheme.typography.bodyMedium.copy(
-                                                    fontWeight = FontWeight.Bold,
-                                                    color = if (isGold) Color(0xFFE65100) else Color(0xFF37474F),
-                                                ),
-                                            )
-                                        }
-
-                                        Spacer(modifier = Modifier.height(10.dp))
-
-                                        Text(
-                                            text = badge.description,
-                                            style = MaterialTheme.typography.bodySmall.copy(
-                                                color = Color(0xFF455A64),
-                                                lineHeight = 20.sp,
-                                            ),
-                                        )
-
-                                        Spacer(modifier = Modifier.height(14.dp))
-
-                                        Button(
-                                            onClick = { viewModel.requestPayment(badge.id) },
-                                            modifier = Modifier.fillMaxWidth().height(44.dp),
-                                            shape = RoundedCornerShape(10.dp),
-                                            colors = ButtonDefaults.buttonColors(
-                                                containerColor = if (isGold) Color(0xFFFFA000) else Color(0xFF263238),
-                                                contentColor = Color.White,
-                                            ),
-                                            enabled = !uiState.isRequestingPayment,
-                                        ) {
-                                            Text(
-                                                text = "خرید و فعال‌سازی نشان",
-                                                style = MaterialTheme.typography.labelMedium.copy(
-                                                    fontWeight = FontWeight.Bold,
                                                 ),
                                             )
                                         }

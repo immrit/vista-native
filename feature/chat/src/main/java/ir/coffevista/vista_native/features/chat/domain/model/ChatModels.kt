@@ -283,6 +283,7 @@ fun chatMessageTypePreview(type: String?, secret: Boolean = false): String? {
         "storyreply", "story_reply" -> "📖 پاسخ به استوری"
         "storyshare", "story_share", "story" -> "📖 استوری اشتراک‌گذاری شده"
         "gameinvite", "game_invite", "duel", "duel_invite" -> "🎮 دعوت به دوئل ویستا کوییز"
+        "session_alert", "sessionalert" -> "🔐 هشدار ورود جدید"
         "sticker" -> "✨ استیکر"
         "location" -> "📍 موقعیت مکانی"
         "contact" -> "👤 مخاطب"
@@ -296,6 +297,7 @@ fun Message.inboxPreviewText(): String = attachment?.let { value ->
 } ?: when (val value = content) {
     is MessageContent.Text -> {
         DuelInviteParser.formatPreviewIfDuel(value.value, transportType)
+            ?: SessionAlertParser.formatPreview(value.value, transportType)
             ?: SharedPostParser.tryParse(value.value)?.let { post ->
                 "📮 پست از ${post.authorName}"
             }
@@ -307,6 +309,7 @@ fun Message.inboxPreviewText(): String = attachment?.let { value ->
     }
     is MessageContent.Structured -> {
         DuelInviteParser.formatPreviewIfDuel(value.payload, transportType)
+            ?: SessionAlertParser.formatPreview(value.payload, transportType)
             ?: SharedPostParser.tryParse(value.payload)?.let { post ->
                 "📮 پست از ${post.authorName}"
             }
@@ -326,6 +329,7 @@ fun Conversation.inboxPreviewText(): String? = lastMessage
     ?.takeIf(String::isNotEmpty)
     ?.let { preview ->
         DuelInviteParser.formatPreviewIfDuel(preview)
+            ?: SessionAlertParser.formatPreview(preview, lastMessageType)
             ?: SharedPostParser.tryParse(preview)?.let { post ->
                 "📮 پست از ${post.authorName}"
             }

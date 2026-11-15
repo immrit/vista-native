@@ -78,6 +78,7 @@ fun PinnedMessagesBar(
     val previewText = when (val content = currentMessage.content) {
         is MessageContent.Text -> {
             DuelInviteParser.formatPreviewIfDuel(content.value, currentMessage.transportType)
+                ?: ir.coffevista.vista_native.features.chat.domain.model.SessionAlertParser.formatPreview(content.value, currentMessage.transportType)
                 ?: SharedPostParser.tryParse(content.value)?.let { post ->
                     "پست ${post.authorName}: ${post.content.ifBlank { "رسانه پیوست" }}"
                 }
@@ -85,6 +86,7 @@ fun PinnedMessagesBar(
         }
         is MessageContent.Structured -> {
             DuelInviteParser.formatPreviewIfDuel(content.payload, currentMessage.transportType)
+                ?: ir.coffevista.vista_native.features.chat.domain.model.SessionAlertParser.formatPreview(content.payload, currentMessage.transportType)
                 ?: SharedPostParser.tryParse(content.payload)?.let { post ->
                     "پست ${post.authorName}: ${post.content.ifBlank { "رسانه پیوست" }}"
                 }

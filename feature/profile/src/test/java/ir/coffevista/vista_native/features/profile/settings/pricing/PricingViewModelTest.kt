@@ -101,6 +101,35 @@ class PricingViewModelTest {
         assertEquals("اشتراک ویژه فعال شد!", viewModel.uiState.value.successMessage)
         assertEquals(1, ownProfileRepository.fetchCount)
     }
+    @Test
+    fun verifyBazaarPurchase_coinsSetsConsumeTokenAndMessage() = runTest {
+        val fakeApi = FakePricingPlansApi(
+            bazaarResponse = BazaarVerifyResponseDto(
+                success = true,
+                message = "1000 سکه به موجودی شما اضافه شد.",
+                type = "coins",
+                coinsAdded = 1000L,
+                newBalance = 2000L,
+            ),
+        )
+        authStateProvider.setSignedIn("user-123")
+        val viewModel = PricingViewModel(fakeApi, authStateProvider, ownProfileRepository)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        viewModel.verifyBazaarPurchase(
+            productId = "coins_1000",
+            purchaseToken = "coin-token-1",
+            packageName = "ir.coffevista.vista",
+        )
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals("coin-token-1", state.pendingConsumeToken)
+        assertEquals("1000 سکه به موجودی شما اضافه شد.", state.successMessage)
+
+        viewModel.onPurchaseConsumed()
+        assertNull(viewModel.uiState.value.pendingConsumeToken)
+    }
 }
 
 private class FakePricingPlansApi(
@@ -118,12 +147,6 @@ private class FakePricingPlansApi(
                 ),
             ),
         )
-
-    override suspend fun requestZibal(request: ZibalRequestDto): Response<ZibalRequestResponseDto> =
-        Response.success(ZibalRequestResponseDto(trackId = 100L, url = "https://gateway.zibal.ir/start/100"))
-
-    override suspend fun verifyZibal(request: ZibalVerifyRequestDto): Response<ZibalVerifyResponseDto> =
-        Response.success(ZibalVerifyResponseDto(success = true, message = "ok"))
 
     override suspend fun verifyBazaar(request: BazaarVerifyRequestDto): Response<BazaarVerifyResponseDto> {
         lastBazaarRequest = request

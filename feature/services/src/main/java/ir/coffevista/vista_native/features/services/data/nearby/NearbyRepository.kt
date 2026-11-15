@@ -12,6 +12,8 @@ interface NearbyRepository {
     suspend fun getPreferences(): NearbyPreferences
     suspend fun updatePreferences(prefs: NearbyPreferences): NearbyPreferences
     suspend fun discover(limit: Int = 20, offset: Int = 0): List<NearbyCandidate>
+    suspend fun discoverFiltered(limit: Int = 20, offset: Int = 0, zone: String? = null): List<NearbyCandidate> =
+        discover(limit = limit, offset = offset)
     suspend fun discoverRandomOnline(limit: Int = 20): List<NearbyCandidate>
     suspend fun like(targetId: String, action: String = "like"): NearbyLikeResult
     suspend fun getMatches(): List<NearbyMatch>
@@ -20,6 +22,23 @@ interface NearbyRepository {
     suspend fun getLikesReceived(limit: Int = 50): NearbyReceivedLikes
     suspend fun report(targetId: String, reason: String)
     suspend fun undo(targetId: String) {}
+
+    suspend fun getWallet(): NearbyWallet = NearbyWallet()
+    suspend fun getShopCatalog(): NearbyShopCatalog = NearbyShopCatalog()
+    suspend fun buyChatRequestPack(packId: String): NearbyBuyRequestsResult =
+        throw UnsupportedOperationException("buyChatRequestPack not implemented")
+    suspend fun getChatRequests(direction: String = "incoming", limit: Int = 50): List<NearbyChatRequest> = emptyList()
+    suspend fun sendChatRequest(targetId: String, introMessage: String = ""): NearbySendChatRequestResult =
+        throw UnsupportedOperationException("sendChatRequest not implemented")
+    suspend fun respondChatRequest(requestId: String, action: String): NearbyRespondChatRequestResult =
+        throw UnsupportedOperationException("respondChatRequest not implemented")
+    suspend fun getCoinPackages(): List<NearbyCoinPackage> = emptyList()
+    suspend fun verifyBazaarPurchase(
+        purchaseToken: String,
+        productId: String,
+        packageName: String,
+    ): NearbyBazaarVerifyResult =
+        throw UnsupportedOperationException("verifyBazaarPurchase not implemented")
 }
 
 @Singleton
@@ -60,13 +79,18 @@ class DefaultNearbyRepository @Inject constructor(
                 maxAge = prefs.maxAge,
                 maxDistanceKm = prefs.maxDistanceKm,
                 maritalPref = prefs.maritalPref,
+                statusText = prefs.statusText,
+                hideDistance = prefs.hideDistance,
             )
         ).bodyOrThrow("update_preferences_failed")
         return resp.toDomain()
     }
 
-    override suspend fun discover(limit: Int, offset: Int): List<NearbyCandidate> {
-        val resp = api.discover(limit = limit, offset = offset).bodyOrThrow("discover_empty")
+    override suspend fun discover(limit: Int, offset: Int): List<NearbyCandidate> =
+        discoverFiltered(limit = limit, offset = offset, zone = null)
+
+    override suspend fun discoverFiltered(limit: Int, offset: Int, zone: String?): List<NearbyCandidate> {
+        val resp = api.discover(limit = limit, offset = offset, zone = zone).bodyOrThrow("discover_empty")
         return resp.candidates.map { it.toDomain() }
     }
 
@@ -106,6 +130,54 @@ class DefaultNearbyRepository @Inject constructor(
     override suspend fun undo(targetId: String) {
         api.undo(NearbyUndoRequestDto(targetId = targetId)).bodyOrThrow("undo_failed")
     }
+
+    override suspend fun getWallet(): NearbyWallet =
+        api.getWallet().bodyOrThrow("wallet_failed").toDomain()
+
+    override suspend fun getShopCatalog(): NearbyShopCatalog =
+        api.getShopCatalog().bodyOrThrow("shop_catalog_failed").toDomain()
+
+    override suspend fun buyChatRequestPack(packId: String): NearbyBuyRequestsResult =
+        api.buyChatRequestPack(NearbyBuyRequestsRequestDto(packId = packId))
+            .bodyOrThrow("buy_requests_failed")
+            .toDomain()
+
+    override suspend fun getChatRequests(direction: String, limit: Int): List<NearbyChatRequest> =
+        api.getChatRequests(direction = direction, limit = limit)
+            .bodyOrThrow("chat_requests_failed")
+            .requests
+            .map { it.toDomain() }
+
+    override suspend fun sendChatRequest(targetId: String, introMessage: String): NearbySendChatRequestResult =
+        api.sendChatRequest(NearbySendChatRequestDto(targetId = targetId, introMessage = introMessage))
+            .bodyOrThrow("send_chat_request_failed")
+            .toDomain()
+
+    override suspend fun respondChatRequest(requestId: String, action: String): NearbyRespondChatRequestResult =
+        api.respondChatRequest(NearbyRespondChatRequestDto(requestId = requestId, action = action))
+            .bodyOrThrow("respond_chat_request_failed")
+            .toDomain()
+
+    override suspend fun getCoinPackages(): List<NearbyCoinPackage> =
+        api.getCoinPackages()
+            .bodyOrThrow("coin_packages_failed")
+            .packages
+            .map { it.toDomain() }
+
+    override suspend fun verifyBazaarPurchase(
+        purchaseToken: String,
+        productId: String,
+        packageName: String,
+    ): NearbyBazaarVerifyResult =
+        api.verifyBazaarPurchase(
+            NearbyBazaarVerifyRequestDto(
+                purchaseToken = purchaseToken,
+                productId = productId,
+                packageName = packageName,
+            ),
+        )
+            .bodyOrThrow("bazaar_verify_failed")
+            .toDomain()
 
     private fun <T> Response<T>.bodyOrThrow(emptyCode: String): T {
         if (isSuccessful) {

@@ -90,6 +90,7 @@ data class MessagesUiState(
     val secretSafetyNumber: String? = null,
     val isSafetyNumberLoading: Boolean = false,
     val duelPreviews: Map<String, DuelPreviewUiState> = emptyMap(),
+    val pendingSessionAlertActions: Set<String> = emptySet(),
 ) {
     val isSecret: Boolean get() = conversation?.type == ConversationType.SECRET
 }
@@ -541,6 +542,7 @@ class MessagesViewModel @Inject constructor(
             MessageContent.EncryptedUnavailable -> "پیام محرمانه"
         }
         val replyContent = DuelInviteParser.formatPreviewIfDuel(rawReplyContent, replyTo.transportType)
+            ?: ir.coffevista.vista_native.features.chat.domain.model.SessionAlertParser.formatPreview(rawReplyContent, replyTo.transportType)
             ?: SharedPostParser.tryParse(rawReplyContent)?.let { post ->
                 "پست ${post.authorName}: ${post.content.ifBlank { "رسانه پیوست" }}"
             }
@@ -764,6 +766,23 @@ class MessagesViewModel @Inject constructor(
                     result.message
                 }
                 mutableState.update { it.copy(error = userMessage) }
+            }
+        }
+    }
+
+    fun respondToSessionAlert(message: Message, sessionId: String, action: String) {
+        val cleanId = sessionId.trim()
+        if (cleanId.isEmpty() || cleanId in mutableState.value.pendingSessionAlertActions) return
+        mutableState.update {
+            it.copy(pendingSessionAlertActions = it.pendingSessionAlertActions + cleanId, error = null)
+        }
+        viewModelScope.launch {
+            val result = repository.respondToSessionAlert(message, cleanId, action)
+            mutableState.update { current ->
+                current.copy(
+                    pendingSessionAlertActions = current.pendingSessionAlertActions - cleanId,
+                    error = (result as? ChatResult.Failure)?.message ?: current.error,
+                )
             }
         }
     }

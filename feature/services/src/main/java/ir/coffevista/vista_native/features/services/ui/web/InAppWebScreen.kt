@@ -309,6 +309,14 @@ fun InAppWebScreen(
                                     }
 
                                     @JavascriptInterface
+                                    fun openCoinStore() {
+                                        post {
+                                            if (!isTrustedGameOrigin(this@apply.url)) return@post
+                                            internalNavigator?.openUrl("vista://payment/coins")
+                                        }
+                                    }
+
+                                    @JavascriptInterface
                                     fun getSafeAreaTopDp(): Int = bridgeTopInsetDp.get()
 
                                     @JavascriptInterface
@@ -362,6 +370,14 @@ fun InAppWebScreen(
                                 override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                                     val requestedUrl = request?.url?.toString()
                                     if (!requestedUrl.isNullOrBlank()) {
+                                        val requestedHost = runCatching { java.net.URI(requestedUrl).host?.lowercase() }.getOrNull()
+                                        if (requestedHost == "gateway.zibal.ir" ||
+                                            requestedHost?.endsWith(".zibal.ir") == true ||
+                                            requestedHost == "zibal.ir"
+                                        ) {
+                                            internalNavigator?.openUrl("vista://payment/coins")
+                                            return true
+                                        }
                                         val isVistaCustomScheme = requestedUrl.startsWith("vista://", ignoreCase = true)
                                         val isNonGameVistaLink =
                                             !isNavigationAllowed(
@@ -369,9 +385,7 @@ fun InAppWebScreen(
                                                 restrictHost = restrictHost,
                                                 allowedPathPrefix = allowedPathPrefix,
                                             ) &&
-                                                VistaGameUrlHelper.isVistaWebHost(
-                                                    runCatching { java.net.URI(requestedUrl).host }.getOrNull(),
-                                                )
+                                                VistaGameUrlHelper.isVistaWebHost(requestedHost)
                                         if ((isVistaCustomScheme || isNonGameVistaLink) &&
                                             internalNavigator?.openUrl(requestedUrl) == true
                                         ) {

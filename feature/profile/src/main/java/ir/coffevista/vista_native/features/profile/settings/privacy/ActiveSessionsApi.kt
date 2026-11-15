@@ -2,10 +2,12 @@ package ir.coffevista.vista_native.features.profile.settings.privacy
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonElement
 import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.POST
+import retrofit2.http.PUT
 import retrofit2.http.Query
 
 interface ActiveSessionsApi {
@@ -36,22 +38,47 @@ interface ActiveSessionsApi {
     suspend fun terminateOthers(
         @Body request: TerminateOthersRequestDto,
     ): Response<TerminateOthersResponseDto>
+
+    @GET("v1/sessions/settings")
+    suspend fun getSettings(): Response<SessionSettingsResponseDto>
+
+    @PUT("v1/sessions/settings")
+    suspend fun updateSettings(
+        @Body request: UpdateSessionSettingsRequestDto,
+    ): Response<SessionSettingsResponseDto>
+
+    @POST("v1/sessions/alert-action")
+    suspend fun alertAction(
+        @Body request: SessionAlertActionRequestDto,
+    ): Response<SessionAlertActionResponseDto>
+
+    @POST("v1/sessions/qr/approve")
+    suspend fun approveQr(
+        @Body request: ApproveQrLoginRequestDto,
+    ): Response<ApproveQrLoginResponseDto>
 }
 
 @Serializable
 data class ActiveSessionsResponseDto(
     val sessions: List<ActiveSessionDto> = emptyList(),
+    @SerialName("auto_terminate_days") val autoTerminateDays: Int = 180,
 )
 
 @Serializable
 data class ActiveSessionDto(
     val id: String,
     @SerialName("device_name") val deviceName: String? = null,
+    @SerialName("device_info") val deviceInfo: Map<String, JsonElement> = emptyMap(),
     val platform: String? = null,
+    @SerialName("app_version") val appVersion: String? = null,
     @SerialName("ip_address") val ipAddress: String? = null,
     @SerialName("location_city") val locationCity: String? = null,
     @SerialName("location_country") val locationCountry: String? = null,
+    @SerialName("location_region") val locationRegion: String? = null,
     @SerialName("last_activity") val lastActivity: String? = null,
+    @SerialName("created_at") val createdAt: String? = null,
+    @SerialName("is_active") val isActive: Boolean = true,
+    @SerialName("approval_status") val approvalStatus: String = "approved",
     @SerialName("is_current_session") val isCurrentSession: Boolean = false,
 )
 
@@ -112,4 +139,41 @@ data class TerminateOthersResponseDto(
 @Serializable
 data class SessionMutationResponseDto(
     val success: Boolean = false,
+)
+
+@Serializable
+data class SessionSettingsResponseDto(
+    @SerialName("auto_terminate_days") val autoTerminateDays: Int = 180,
+)
+
+@Serializable
+data class UpdateSessionSettingsRequestDto(
+    @SerialName("auto_terminate_days") val autoTerminateDays: Int,
+)
+
+@Serializable
+data class SessionAlertActionRequestDto(
+    @SerialName("session_id") val sessionId: String,
+    val action: String,
+    @SerialName("message_id") val messageId: String? = null,
+    @SerialName("current_session_id") val currentSessionId: String? = null,
+)
+
+@Serializable
+data class SessionAlertActionResponseDto(
+    val success: Boolean = false,
+    @SerialName("session_id") val sessionId: String = "",
+    @SerialName("approval_status") val approvalStatus: String = "",
+    @SerialName("updated_content") val updatedContent: String? = null,
+)
+
+@Serializable
+data class ApproveQrLoginRequestDto(
+    val token: String,
+)
+
+@Serializable
+data class ApproveQrLoginResponseDto(
+    val success: Boolean = false,
+    val session: ActiveSessionDto? = null,
 )

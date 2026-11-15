@@ -6,20 +6,26 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RangeSlider
+import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -41,7 +47,7 @@ import ir.coffevista.vista_native.core.designsystem.theme.VistaFontFamily
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaBrandColors
 import ir.coffevista.vista_native.features.services.data.nearby.NearbyPreferences
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun NearbyPreferencesSheet(
     preferences: NearbyPreferences,
@@ -52,6 +58,9 @@ fun NearbyPreferencesSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var currentPrefs by remember(preferences) { mutableStateOf(preferences) }
+    val statusPresets = remember {
+        listOf("پایه گپ و آشنایی", "دنبال دوست خوب", "هم‌صحبت آنلاین", "گپ دوستانه")
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -62,6 +71,7 @@ fun NearbyPreferencesSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp, vertical = 12.dp)
                 .padding(bottom = 24.dp),
         ) {
@@ -205,6 +215,131 @@ fun NearbyPreferencesSheet(
                     modifier = Modifier.weight(1f),
                 )
             }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // Hide Exact Distance Privacy Toggle
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "مخفی‌سازی فاصله دقیق",
+                            style = MaterialTheme.typography.titleSmall.copy(
+                                fontFamily = VistaFontFamily,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.5.sp,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            ),
+                        )
+                        Text(
+                            text = "فاصله کیلومتری شما به دیگران نمایش داده نمی‌شود",
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontFamily = VistaFontFamily,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 11.sp,
+                            ),
+                        )
+                    }
+                    ir.coffevista.vista_native.core.designsystem.component.VistaSwitch(
+                        checked = currentPrefs.hideDistance,
+                        onCheckedChange = { hide ->
+                            currentPrefs = currentPrefs.copy(hideDistance = hide)
+                        },
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Short Nearby Status / Mood Tag
+            Text(
+                text = "وضعیت من در رادار اطراف من",
+                style = MaterialTheme.typography.titleSmall.copy(
+                    fontFamily = VistaFontFamily,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurface,
+                ),
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                statusPresets.forEach { preset ->
+                    val selected = currentPrefs.statusText == preset
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(
+                                if (selected) VistaBrandColors.Indigo else MaterialTheme.colorScheme.surfaceVariant,
+                            )
+                            .clickable {
+                                currentPrefs = currentPrefs.copy(statusText = if (selected) "" else preset)
+                            }
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                    ) {
+                        Text(
+                            text = preset,
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontFamily = VistaFontFamily,
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = if (selected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                            ),
+                        )
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            OutlinedTextField(
+                value = currentPrefs.statusText,
+                onValueChange = { if (it.length <= 60) currentPrefs = currentPrefs.copy(statusText = it) },
+                placeholder = {
+                    Text(
+                        text = "یک متن کوتاه (حداکثر ۶۰ کاراکتر)...",
+                        fontFamily = VistaFontFamily,
+                        fontSize = 12.sp,
+                    )
+                },
+                singleLine = true,
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Max Distance Slider
+            Text(
+                text = "سقف فاصله جستجو: ${currentPrefs.maxDistanceKm} کیلومتر",
+                style = MaterialTheme.typography.titleSmall.copy(
+                    fontFamily = VistaFontFamily,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurface,
+                ),
+            )
+            Slider(
+                value = currentPrefs.maxDistanceKm.toFloat().coerceIn(5f, 200f),
+                onValueChange = { dist ->
+                    currentPrefs = currentPrefs.copy(maxDistanceKm = dist.toInt())
+                },
+                valueRange = 5f..200f,
+                colors = SliderDefaults.colors(
+                    thumbColor = VistaBrandColors.Indigo,
+                    activeTrackColor = VistaBrandColors.Indigo,
+                ),
+            )
 
             Spacer(modifier = Modifier.height(20.dp))
 
