@@ -87,7 +87,7 @@ import ir.coffevista.vista_native.core.designsystem.glass.VistaGlassState
 import ir.coffevista.vista_native.core.designsystem.glass.vistaGlassSource
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaBrandColors
 
-private val TelegramAccentBlue = Color(0xFF2AABEE)
+private val TelegramAccentBlue = VistaBrandColors.Indigo
 
 /**
  * تب موسیقی درون‌برنامه‌ای در باتم‌شیت پیوست چت:
@@ -615,10 +615,10 @@ private fun resolveFileBadgeVisual(extension: String): FileBadgeVisual {
         in VistaMediaBrowserHelpers.CHAT_ALLOWED_AUDIO_EXTENSIONS ->
             FileBadgeVisual(Icons.Default.Audiotrack, Color(0xFF7C3AED))
         in VistaMediaBrowserHelpers.CHAT_ALLOWED_VIDEO_EXTENSIONS ->
-            FileBadgeVisual(Icons.Default.VideoFile, Color(0xFF0284C7))
+            FileBadgeVisual(Icons.Default.VideoFile, VistaBrandColors.Violet)
         in VistaMediaBrowserHelpers.CHAT_ALLOWED_IMAGE_EXTENSIONS ->
             FileBadgeVisual(Icons.Default.Image, Color(0xFF0D9488))
-        else -> FileBadgeVisual(Icons.Default.Description, Color(0xFF2AABEE))
+        else -> FileBadgeVisual(Icons.Default.Description, VistaBrandColors.Indigo)
     }
 }
 

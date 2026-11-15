@@ -375,6 +375,7 @@ fun ConversationListRoute(
         onDeleteConversation = viewModel::deleteConversation,
         onAcceptMessageRequest = viewModel::acceptRequest,
         onRejectMessageRequest = viewModel::rejectRequest,
+        onRejectAndBlockMessageRequest = viewModel::rejectAndBlockRequest,
         onActionFeedbackShown = viewModel::clearActionFeedback,
         onPrepareBlockStatus = viewModel::prepareBlockStatus,
         onToggleBlock = viewModel::toggleBlock,
@@ -398,6 +399,7 @@ fun ConversationListScreen(
     onDeleteConversation: (String, (Boolean) -> Unit) -> Unit = { _, complete -> complete(false) },
     onAcceptMessageRequest: (String) -> Unit = {},
     onRejectMessageRequest: (String) -> Unit = {},
+    onRejectAndBlockMessageRequest: (String) -> Unit = {},
     onActionFeedbackShown: () -> Unit = {},
     onPrepareBlockStatus: (String) -> Unit = {},
     onToggleBlock: (String, (Boolean) -> Unit) -> Unit = { _, complete -> complete(false) },
@@ -660,6 +662,7 @@ fun ConversationListScreen(
                                 onDelete = { deletingConversations = listOf(conversation) },
                                 onAcceptRequest = { onAcceptMessageRequest(conversation.id) },
                                 onRejectRequest = { onRejectMessageRequest(conversation.id) },
+                                onRejectAndBlockRequest = { onRejectAndBlockMessageRequest(conversation.id) },
                                 onBlock = conversation.takeIf { it.type == ConversationType.PRIVATE }
                                     ?.peerId?.takeIf(String::isNotBlank)?.let { peerId ->
                                     {
@@ -834,6 +837,7 @@ private fun ConversationRow(
     showRequestActions: Boolean = false,
     onAcceptRequest: () -> Unit = {},
     onRejectRequest: () -> Unit = {},
+    onRejectAndBlockRequest: () -> Unit = {},
     onBlock: (() -> Unit)? = null,
 ) {
     val typing = conversation.typingUserIds.isNotEmpty()
@@ -1142,6 +1146,7 @@ private fun ConversationRow(
                     loading = requestActionLoading,
                     onAccept = onAcceptRequest,
                     onReject = onRejectRequest,
+                    onRejectAndBlock = onRejectAndBlockRequest,
                 )
             }
             HorizontalDivider(
@@ -1246,27 +1251,40 @@ private fun MessageRequestActions(
     loading: Boolean,
     onAccept: () -> Unit,
     onReject: () -> Unit,
+    onRejectAndBlock: () -> Unit = {},
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.surface)
             .padding(horizontal = 16.dp, vertical = 10.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        OutlinedButton(
+            onClick = onRejectAndBlock,
+            enabled = !loading,
+            modifier = Modifier.weight(1.1f),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.6f)),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+        ) {
+            Text("رد و بلاک", fontSize = 12.sp, maxLines = 1)
+        }
         OutlinedButton(
             onClick = onReject,
             enabled = !loading,
-            modifier = Modifier.weight(1f),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.5f)),
-            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+            modifier = Modifier.weight(0.8f),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant),
         ) {
-            Text("رد")
+            Text("رد", fontSize = 12.sp, maxLines = 1)
         }
         Button(
             onClick = onAccept,
             enabled = !loading,
             modifier = Modifier.weight(1f),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 8.dp),
         ) {
             if (loading) {
                 CircularProgressIndicator(
@@ -1275,7 +1293,7 @@ private fun MessageRequestActions(
                     color = MaterialTheme.colorScheme.onPrimary,
                 )
             } else {
-                Text("قبول")
+                Text("تایید", fontSize = 12.sp, maxLines = 1)
             }
         }
     }
@@ -1631,6 +1649,10 @@ fun MessageDetailRoute(
         duelPreviews = state.duelPreviews,
         onRequestDuelPreview = viewModel::loadDuelPreview,
         onSessionAlertAction = viewModel::respondToSessionAlert,
+        onAcceptMessageRequest = viewModel::acceptMessageRequest,
+        onRejectMessageRequest = { viewModel.rejectMessageRequest(onRejected = onBack) },
+        onRejectAndBlockMessageRequest = { viewModel.rejectAndBlockMessageRequest(onDone = onBack) },
+        onCancelMessageRequest = viewModel::cancelMessageRequest,
     )
 }
 
@@ -1695,6 +1717,10 @@ fun MessageDetailScreen(
     duelPreviews: Map<String, DuelPreviewUiState> = emptyMap(),
     onRequestDuelPreview: (String) -> Unit = {},
     onSessionAlertAction: (Message, String, String) -> Unit = { _, _, _ -> },
+    onAcceptMessageRequest: () -> Unit = {},
+    onRejectMessageRequest: () -> Unit = {},
+    onRejectAndBlockMessageRequest: () -> Unit = {},
+    onCancelMessageRequest: () -> Unit = {},
 ) = CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
     val context = LocalContext.current
     val localView = LocalView.current
@@ -2508,7 +2534,7 @@ fun MessageDetailScreen(
                                         .offset(x = 4.dp, y = (-4).dp)
                                         .defaultMinSize(minWidth = 18.dp, minHeight = 18.dp)
                                         .clip(RoundedCornerShape(9.dp))
-                                        .background(Color(0xFF1E88E5))
+                                        .background(MaterialTheme.colorScheme.primary)
                                         .padding(horizontal = 4.dp, vertical = 2.dp),
                                     contentAlignment = Alignment.Center,
                                 ) {
@@ -2548,57 +2574,151 @@ fun MessageDetailScreen(
                             if (h != composerHeightDp) composerHeightDp = h
                         },
                 ) {
-            ChatComposerBar(
-                conversationId = state.conversationId,
-                title = title,
-                replyingTo = replyingTo,
-                editingMessage = editingMessage,
-                onClearReply = { replyingTo = null },
-                onClearEdit = { editingMessage = null },
-                onSend = { text, onDone ->
-                    onSend(text, onDone)
-                    coroutineScope.launch { listState.animateScrollToItem(0) }
-                },
-                onSendReply = { text, reply, onDone ->
-                    onSendReply(text, reply, onDone)
-                    coroutineScope.launch { listState.animateScrollToItem(0) }
-                },
-                onEdit = onEdit,
-                onComposerChanged = onComposerChanged,
-                composerController = composerController,
-                focusRequester = focusRequester,
-                onAttach = {
-                    emojiPanelVisible = false
-                    focusManager.clearFocus(force = true)
-                    composerController.closeKeyboard()
-                    attachmentSheetVisible = true
-                },
-                onEmoji = {
-                    if (emojiPanelVisible) {
-                        composerController.openKeyboard()
-                    } else {
-                        if (imeBottomDp.value >= 160f) {
-                            composerPanelHeightDp = imeBottomDp.value
-                            KeyboardHeightStore.saveKeyboardHeightDp(context, isLandscape, imeBottomDp.value, screenHeightDp)
+                    val conv = state.conversation
+                    val gateStatus = conv?.requestStatus?.trim()?.lowercase()
+                    val gateLockReason = conv?.lockReason?.trim()?.lowercase()
+                    val isGroupConv = conv?.type == ConversationType.GROUP
+                    val isRecipientDecision = !isGroupConv && conv != null && (
+                        gateLockReason == "recipient_decision_required" ||
+                            (conv.isMessageRequest && (gateStatus == null || gateStatus == "pending")) ||
+                            (gateStatus == "pending" && !conv.initiatorUserId.isNullOrBlank() &&
+                                !conv.initiatorUserId.equals(conv.accountId, ignoreCase = true))
+                        )
+                    val isWaitingApproval = !isGroupConv && conv != null && !isRecipientDecision && (
+                        gateLockReason == "waiting_recipient_approval" ||
+                            (gateStatus == "pending" && !conv.canSendMessage &&
+                                conv.initiatorUserId.equals(conv.accountId, ignoreCase = true))
+                        )
+                    val isTerminalLocked = !isGroupConv && conv != null &&
+                        !isRecipientDecision && !isWaitingApproval && (
+                        gateLockReason in setOf("request_rejected", "request_blocked", "request_cancelled") ||
+                            gateStatus in setOf("rejected", "blocked", "cancelled")
+                        )
+                    val isPreFirstNotice = !isGroupConv && conv != null &&
+                        !isRecipientDecision && !isWaitingApproval && !isTerminalLocked &&
+                        gateLockReason == "pre_first_message" && conv.canSendMessage
+
+                    var confirmRejectBlockVisible by remember { mutableStateOf(false) }
+
+                    LaunchedEffect(isRecipientDecision, isWaitingApproval, isTerminalLocked) {
+                        if (isRecipientDecision || isWaitingApproval || isTerminalLocked) {
+                            emojiPanelVisible = false
+                            focusManager.clearFocus(force = true)
+                            composerController.closeKeyboard()
                         }
-                        emojiPanelVisible = true
-                        composerController.closeKeyboard()
                     }
-                },
-                isEmojiPanelOpen = emojiPanelVisible,
-                onFocusText = {
-                    if (emojiPanelVisible) {
-                        composerController.openKeyboard()
+
+                    if (isRecipientDecision) {
+                        RequestRecipientDecisionBar(
+                            peerTitle = title,
+                            loading = state.isRequestActionInFlight,
+                            onAccept = onAcceptMessageRequest,
+                            onReject = onRejectMessageRequest,
+                            onRejectAndBlock = { confirmRejectBlockVisible = true },
+                        )
+                    } else if (isWaitingApproval) {
+                        RequestWaitingApprovalBar(
+                            peerTitle = title,
+                            loading = state.isRequestActionInFlight,
+                            onCancel = onCancelMessageRequest,
+                        )
+                    } else if (isTerminalLocked) {
+                        RequestTerminalLockedBar(
+                            lockReason = gateLockReason ?: gateStatus ?: "request_rejected",
+                        )
+                    } else {
+                        if (isPreFirstNotice) {
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 4.dp),
+                                shape = RoundedCornerShape(14.dp),
+                                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f),
+                            ) {
+                                Text(
+                                    text = "ارسال اولین پیام به عنوان درخواست گفتگو ثبت می‌شود و تا تایید گیرنده امکان ارسال پیام بعدی نخواهید داشت.",
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                    fontSize = 11.5.sp,
+                                    lineHeight = 16.sp,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                )
+                            }
+                        }
+                        ChatComposerBar(
+                            conversationId = state.conversationId,
+                            title = title,
+                            replyingTo = replyingTo,
+                            editingMessage = editingMessage,
+                            onClearReply = { replyingTo = null },
+                            onClearEdit = { editingMessage = null },
+                            onSend = { text, onDone ->
+                                onSend(text, onDone)
+                                coroutineScope.launch { listState.animateScrollToItem(0) }
+                            },
+                            onSendReply = { text, reply, onDone ->
+                                onSendReply(text, reply, onDone)
+                                coroutineScope.launch { listState.animateScrollToItem(0) }
+                            },
+                            onEdit = onEdit,
+                            onComposerChanged = onComposerChanged,
+                            composerController = composerController,
+                            focusRequester = focusRequester,
+                            onAttach = {
+                                emojiPanelVisible = false
+                                focusManager.clearFocus(force = true)
+                                composerController.closeKeyboard()
+                                attachmentSheetVisible = true
+                            },
+                            onEmoji = {
+                                if (emojiPanelVisible) {
+                                    composerController.openKeyboard()
+                                } else {
+                                    if (imeBottomDp.value >= 160f) {
+                                        composerPanelHeightDp = imeBottomDp.value
+                                        KeyboardHeightStore.saveKeyboardHeightDp(context, isLandscape, imeBottomDp.value, screenHeightDp)
+                                    }
+                                    emojiPanelVisible = true
+                                    composerController.closeKeyboard()
+                                }
+                            },
+                            isEmojiPanelOpen = emojiPanelVisible,
+                            onFocusText = {
+                                if (emojiPanelVisible) {
+                                    composerController.openKeyboard()
+                                }
+                            },
+                            onSendVoice = onSendVoice,
+                            hasRecordPermission = hasRecordAudioPermission,
+                            onPermissionRequired = { recordAudioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO) },
+                            attachmentsEnabled = true,
+                        )
                     }
-                },
-                onSendVoice = onSendVoice,
-                hasRecordPermission = hasRecordAudioPermission,
-                onPermissionRequired = { recordAudioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO) },
-                attachmentsEnabled = true,
-            )
+
+                    if (confirmRejectBlockVisible) {
+                        AlertDialog(
+                            onDismissRequest = { confirmRejectBlockVisible = false },
+                            title = { Text("رد و مسدود کردن کاربر") },
+                            text = { Text("درخواست گفتگو رد می‌شود و کاربر $title برای همیشه مسدود خواهد شد. آیا مطمئن هستید؟") },
+                            confirmButton = {
+                                TextButton(
+                                    onClick = {
+                                        confirmRejectBlockVisible = false
+                                        onRejectAndBlockMessageRequest()
+                                    },
+                                ) {
+                                    Text("رد و بلاک", color = MaterialTheme.colorScheme.error)
+                                }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { confirmRejectBlockVisible = false }) {
+                                    Text("انصراف")
+                                }
+                            },
+                        )
+                    }
             val currentPanelHeight = composerPanelHeightDp.dp
 
-            if (emojiPanelVisible) {
+            if (emojiPanelVisible && !isRecipientDecision && !isWaitingApproval && !isTerminalLocked) {
                 val panelHeight = maxOf(currentPanelHeight, imeBottomDp)
                 Box(
                     modifier = Modifier
@@ -6526,7 +6646,7 @@ private fun Composer(
     var isVoiceActive by remember { mutableStateOf(false) }
     val isDark = isSystemInDarkTheme()
     val composerGlass = LocalVistaGlassState.current
-    val capsuleBg = if (isDark) Color(0xFF1E2732) else Color.White
+    val capsuleBg = if (isDark) Color(0xFF1C1C2E) else Color.White
     val iconTint = if (isDark) Color(0xFF7D8B99) else Color(0xFF707579)
 
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
@@ -6664,7 +6784,7 @@ private fun Composer(
                                     .padding(end = 4.dp)
                                     .size(38.dp)
                                     .clip(CircleShape)
-                                    .background(Color(0xFF2EA6FF))
+                                    .background(MaterialTheme.colorScheme.primary)
                                     .clickable {
                                         onSend()
                                         if (!isEmojiPanelOpen) {
@@ -8028,5 +8148,211 @@ private tailrec fun android.content.Context.findActivity(): android.app.Activity
     is android.app.Activity -> this
     is android.content.ContextWrapper -> baseContext.findActivity()
     else -> null
+}
+
+@Composable
+private fun RequestRecipientDecisionBar(
+    peerTitle: String,
+    loading: Boolean,
+    onAccept: () -> Unit,
+    onReject: () -> Unit,
+    onRejectAndBlock: () -> Unit,
+) {
+    val isDark = isSystemInDarkTheme()
+    val cardBg = if (isDark) Color(0xFF17212E) else Color(0xFFF8FAFC)
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        shape = RoundedCornerShape(20.dp),
+        color = cardBg.copy(alpha = 0.94f),
+        shadowElevation = 6.dp,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Lock,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp),
+                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "$peerTitle درخواست گفتگو ارسال کرده است",
+                        fontSize = 13.5.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = "با تایید این درخواست، امکان گفتگو برای هر دو طرف باز می‌شود.",
+                        fontSize = 11.5.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedButton(
+                    onClick = onRejectAndBlock,
+                    enabled = !loading,
+                    modifier = Modifier.weight(1.1f),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp, vertical = 10.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.65f)),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                ) {
+                    Text("رد و بلاک", fontSize = 12.sp, fontWeight = FontWeight.Medium, maxLines = 1)
+                }
+                OutlinedButton(
+                    onClick = onReject,
+                    enabled = !loading,
+                    modifier = Modifier.weight(0.75f),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp, vertical = 10.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.55f)),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
+                ) {
+                    Text("رد", fontSize = 12.sp, fontWeight = FontWeight.Medium, maxLines = 1)
+                }
+                Button(
+                    onClick = onAccept,
+                    enabled = !loading,
+                    modifier = Modifier.weight(1f),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 10.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF16A34A),
+                        contentColor = Color.White,
+                    ),
+                ) {
+                    if (loading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                            color = Color.White,
+                        )
+                    } else {
+                        Text("تایید", fontSize = 12.5.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RequestWaitingApprovalBar(
+    peerTitle: String,
+    loading: Boolean,
+    onCancel: () -> Unit,
+) {
+    val isDark = isSystemInDarkTheme()
+    val cardBg = if (isDark) Color(0xFF17212E) else Color(0xFFF8FAFC)
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        shape = RoundedCornerShape(20.dp),
+        color = cardBg.copy(alpha = 0.94f),
+        shadowElevation = 6.dp,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Default.Lock,
+                contentDescription = null,
+                tint = Color(0xFFF59E0B),
+                modifier = Modifier.size(20.dp),
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "در انتظار تایید $peerTitle",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = "پیام شما به عنوان درخواست ارسال شده است؛ تا زمان تایید گیرنده امکان ارسال پیام جدید وجود ندارد.",
+                    fontSize = 11.5.sp,
+                    lineHeight = 16.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            TextButton(
+                onClick = onCancel,
+                enabled = !loading,
+            ) {
+                if (loading) {
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                } else {
+                    Text(
+                        text = "لغو درخواست",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RequestTerminalLockedBar(lockReason: String) {
+    val isDark = isSystemInDarkTheme()
+    val cardBg = if (isDark) Color(0xFF1F1B24) else Color(0xFFFEF2F2)
+    val label = when (lockReason.lowercase()) {
+        "blocked", "request_blocked" -> "امکان ارسال پیام در این گفتگو مسدود شده است."
+        "cancelled", "request_cancelled" -> "این درخواست گفتگو لغو شده است."
+        else -> "این درخواست گفتگو توسط گیرنده رد شده است و امکان ارسال پیام جدید وجود ندارد."
+    }
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        shape = RoundedCornerShape(18.dp),
+        color = cardBg.copy(alpha = 0.94f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.35f)),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Default.Lock,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.error,
+                modifier = Modifier.size(18.dp),
+            )
+            Text(
+                text = label,
+                fontSize = 12.sp,
+                lineHeight = 17.sp,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f),
+            )
+        }
+    }
 }
 

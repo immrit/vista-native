@@ -435,7 +435,9 @@ class OfflineFirstChatRepository(
         }
         purgeDuplicateConversations(account.accountId)
         val existing = findConversationByPeer(normalizedPeerId, isSecret)
-        if (existing != null) {
+        if (existing != null &&
+            existing.requestStatus?.trim()?.lowercase() !in setOf("rejected", "cancelled", "blocked")
+        ) {
             if (isSecret) {
                 runCatching { ensureSecretChatHandshake(existing.id) }
             }
@@ -2528,6 +2530,38 @@ class OfflineFirstChatRepository(
         }
     }
 
+    override suspend fun rejectAndBlockMessageRequest(conversationId: String): ChatResult<Unit> {
+        sessionProvider.synchronize()
+        val account = sessionProvider.account.value ?: return loggedOut()
+        val normalizedId = conversationId.trim()
+        if (normalizedId.isEmpty()) return ChatResult.Failure("گفتگو معتبر نیست", retryable = false)
+        return remoteCall {
+            api.rejectAndBlockMessageRequest(normalizedId)
+            dao.deleteConversationWithMessages(account.accountId, normalizedId)
+        }
+    }
+
+    override suspend fun cancelMessageRequest(conversationId: String): ChatResult<Unit> {
+        sessionProvider.synchronize()
+        val account = sessionProvider.account.value ?: return loggedOut()
+        val normalizedId = conversationId.trim()
+        if (normalizedId.isEmpty()) return ChatResult.Failure("گفتگو معتبر نیست", retryable = false)
+        return remoteCall {
+            api.cancelMessageRequest(normalizedId)
+            dao.upsertConversations(
+                listOfNotNull(
+                    dao.conversation(account.accountId, normalizedId)?.copy(
+                        requestStatus = "cancelled",
+                        isMessageRequest = false,
+                        canSendMessage = false,
+                        lockReason = "request_cancelled",
+                        lastSyncedAtEpochMillis = now(),
+                    ),
+                ),
+            )
+        }
+    }
+
     override suspend fun editMessage(message: Message, content: String): ChatResult<Unit> {
         if (message.content is MessageContent.EncryptedUnavailable) {
             return ChatResult.Failure("ویرایش پیام محافظت‌شده در دسترس نیست", retryable = false)
@@ -2837,6 +2871,12 @@ class OfflineFirstChatRepository(
                             isVerified = mergedVerified,
                             verificationType = if (mergedVerified) incomingEntity.verificationType ?: existing.verificationType else null,
                             role = if (mergedVerified) incomingEntity.role ?: existing.role else null,
+                            initiatorUserId = incomingEntity.initiatorUserId ?: existing.initiatorUserId,
+                            sentCountWhilePending = maxOf(incomingEntity.sentCountWhilePending, if (incomingEntity.requestStatus == "accepted") 0 else existing.sentCountWhilePending),
+                            maxPreAcceptMessages = incomingEntity.maxPreAcceptMessages,
+                            canSendMessage = incomingEntity.canSendMessage,
+                            lockReason = incomingEntity.lockReason,
+                            cooldownUntilEpochMillis = incomingEntity.cooldownUntilEpochMillis ?: existing.cooldownUntilEpochMillis,
                         )
                     } else {
                         incomingEntity

@@ -1038,7 +1038,7 @@ private fun NoteInputBottomSheet(
                                 if (content.isNotBlank()) {
                                     if (isDark) Color(0x4DFFFFFF) else Color(0x22000000)
                                 } else {
-                                    Color(0xFF2196F3).copy(alpha = 0.6f)
+                                    Color(0xFF6366F1).copy(alpha = 0.6f)
                                 },
                                 RoundedCornerShape(20.dp)
                             )

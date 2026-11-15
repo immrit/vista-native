@@ -143,8 +143,8 @@ private enum class ReviewMode {
     DRAW,
 }
 
-private val ReviewAccentBlue = Color(0xFF2AABEE)
-private val ReviewAccentBlueDeep = Color(0xFF229ED9)
+private val ReviewAccentBlue = Color(0xFF6366F1)
+private val ReviewAccentBlueDeep = Color(0xFF4F46E5)
 private val ReviewPillBackground = Color(0xFF1E232F)
 
 @OptIn(ExperimentalLayoutApi::class)

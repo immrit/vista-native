@@ -91,6 +91,7 @@ data class MessagesUiState(
     val isSafetyNumberLoading: Boolean = false,
     val duelPreviews: Map<String, DuelPreviewUiState> = emptyMap(),
     val pendingSessionAlertActions: Set<String> = emptySet(),
+    val isRequestActionInFlight: Boolean = false,
 ) {
     val isSecret: Boolean get() = conversation?.type == ConversationType.SECRET
 }
@@ -519,10 +520,12 @@ class MessagesViewModel @Inject constructor(
                             messages = current.messages.map {
                                 if (it.clientId == clientId) it.copy(status = MessageStatus.FAILED) else it
                             },
+                            error = result.message,
                         )
                     }
+                    refresh()
                 }
-                is ChatResult.Success -> Unit
+                is ChatResult.Success -> refresh()
             }
         }
     }
@@ -578,10 +581,12 @@ class MessagesViewModel @Inject constructor(
                             messages = current.messages.map {
                                 if (it.clientId == clientId) it.copy(status = MessageStatus.FAILED) else it
                             },
+                            error = result.message,
                         )
                     }
+                    refresh()
                 }
-                is ChatResult.Success -> Unit
+                is ChatResult.Success -> refresh()
             }
         }
     }
@@ -997,6 +1002,93 @@ class MessagesViewModel @Inject constructor(
                 is ChatResult.Failure -> {
                     mutableState.update { it.copy(isModerationLoading = false, moderationError = result.message) }
                     onComplete(false)
+                }
+            }
+        }
+    }
+
+    fun acceptMessageRequest() {
+        val conversationId = mutableState.value.conversationId ?: return
+        if (mutableState.value.isRequestActionInFlight) return
+        viewModelScope.launch {
+            mutableState.update { it.copy(isRequestActionInFlight = true, error = null) }
+            when (val result = repository.acceptMessageRequest(conversationId)) {
+                is ChatResult.Success -> {
+                    mutableState.update { cur ->
+                        cur.copy(
+                            isRequestActionInFlight = false,
+                            conversation = cur.conversation?.copy(
+                                isMessageRequest = false,
+                                requestStatus = "accepted",
+                                canSendMessage = true,
+                                lockReason = null,
+                            ),
+                        )
+                    }
+                    refresh()
+                }
+                is ChatResult.Failure -> mutableState.update {
+                    it.copy(isRequestActionInFlight = false, error = result.message)
+                }
+            }
+        }
+    }
+
+    fun rejectMessageRequest(onRejected: () -> Unit = {}) {
+        val conversationId = mutableState.value.conversationId ?: return
+        if (mutableState.value.isRequestActionInFlight) return
+        viewModelScope.launch {
+            mutableState.update { it.copy(isRequestActionInFlight = true, error = null) }
+            when (val result = repository.rejectMessageRequest(conversationId)) {
+                is ChatResult.Success -> {
+                    mutableState.update { it.copy(isRequestActionInFlight = false) }
+                    onRejected()
+                }
+                is ChatResult.Failure -> mutableState.update {
+                    it.copy(isRequestActionInFlight = false, error = result.message)
+                }
+            }
+        }
+    }
+
+    fun rejectAndBlockMessageRequest(onDone: () -> Unit = {}) {
+        val conversationId = mutableState.value.conversationId ?: return
+        if (mutableState.value.isRequestActionInFlight) return
+        viewModelScope.launch {
+            mutableState.update { it.copy(isRequestActionInFlight = true, error = null) }
+            when (val result = repository.rejectAndBlockMessageRequest(conversationId)) {
+                is ChatResult.Success -> {
+                    mutableState.update { it.copy(isRequestActionInFlight = false) }
+                    onDone()
+                }
+                is ChatResult.Failure -> mutableState.update {
+                    it.copy(isRequestActionInFlight = false, error = result.message)
+                }
+            }
+        }
+    }
+
+    fun cancelMessageRequest() {
+        val conversationId = mutableState.value.conversationId ?: return
+        if (mutableState.value.isRequestActionInFlight) return
+        viewModelScope.launch {
+            mutableState.update { it.copy(isRequestActionInFlight = true, error = null) }
+            when (val result = repository.cancelMessageRequest(conversationId)) {
+                is ChatResult.Success -> {
+                    mutableState.update { cur ->
+                        cur.copy(
+                            isRequestActionInFlight = false,
+                            conversation = cur.conversation?.copy(
+                                requestStatus = "cancelled",
+                                canSendMessage = false,
+                                lockReason = "request_cancelled",
+                            ),
+                        )
+                    }
+                    refresh()
+                }
+                is ChatResult.Failure -> mutableState.update {
+                    it.copy(isRequestActionInFlight = false, error = result.message)
                 }
             }
         }

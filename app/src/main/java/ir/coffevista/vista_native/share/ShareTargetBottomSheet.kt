@@ -187,7 +187,7 @@ fun ShareTargetBottomSheet(
 
             // Options
             ShareOptionItem(
-                gradient = listOf(Color(0xFF0288D1), Color(0xFF00B0FF)),
+                gradient = listOf(Color(0xFF6366F1), Color(0xFF8B5CF6)),
                 title = "ارسال پیام",
                 subtitle = "برای یک نفر یا گروه بفرست",
                 onClick = { onSendToChat(content) },

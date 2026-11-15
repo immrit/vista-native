@@ -177,11 +177,14 @@ class ConversationsViewModel @Inject constructor(
         }
     }
 
-    fun acceptRequest(conversationId: String) = respondToRequest(conversationId, accept = true)
+    fun acceptRequest(conversationId: String) = respondToRequest(conversationId, action = "accept")
 
-    fun rejectRequest(conversationId: String) = respondToRequest(conversationId, accept = false)
+    fun rejectRequest(conversationId: String) = respondToRequest(conversationId, action = "reject")
 
-    private fun respondToRequest(conversationId: String, accept: Boolean) {
+    fun rejectAndBlockRequest(conversationId: String) = respondToRequest(conversationId, action = "reject_block")
+
+    private fun respondToRequest(conversationId: String, action: String) {
+        val accept = action == "accept"
         if (!requestActionsInFlight.add(conversationId)) return
         viewModelScope.launch {
             try {
@@ -191,10 +194,10 @@ class ConversationsViewModel @Inject constructor(
                     actionFeedback = null,
                     )
                 }
-                val result = if (accept) {
-                    repository.acceptMessageRequest(conversationId)
-                } else {
-                    repository.rejectMessageRequest(conversationId)
+                val result = when (action) {
+                    "accept" -> repository.acceptMessageRequest(conversationId)
+                    "reject_block" -> repository.rejectAndBlockMessageRequest(conversationId)
+                    else -> repository.rejectMessageRequest(conversationId)
                 }
                 when (result) {
                     is ChatResult.Success -> {
@@ -203,7 +206,12 @@ class ConversationsViewModel @Inject constructor(
                                 conversations = if (accept) {
                                     it.conversations.map { conversation ->
                                         if (conversation.id == conversationId) {
-                                            conversation.copy(isMessageRequest = false, requestStatus = "accepted")
+                                            conversation.copy(
+                                                isMessageRequest = false,
+                                                requestStatus = "accepted",
+                                                canSendMessage = true,
+                                                lockReason = null,
+                                            )
                                         } else {
                                             conversation
                                         }
@@ -211,7 +219,11 @@ class ConversationsViewModel @Inject constructor(
                                 } else {
                                     it.conversations.filterNot { conversation -> conversation.id == conversationId }
                                 },
-                                actionFeedback = if (accept) "درخواست پیام پذیرفته شد" else "درخواست پیام رد شد",
+                                actionFeedback = when (action) {
+                                    "accept" -> "درخواست پیام پذیرفته شد"
+                                    "reject_block" -> "درخواست رد و کاربر مسدود شد"
+                                    else -> "درخواست پیام رد شد"
+                                },
                             )
                         }
                         refresh()

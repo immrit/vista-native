@@ -250,7 +250,7 @@ internal fun ProfileNoteItem(
                         .border(
                             width = 0.5.dp,
                             color = if (text.isNullOrBlank()) {
-                                Color(0xFF2196F3).copy(alpha = 0.6f)
+                                Color(0xFF6366F1).copy(alpha = 0.6f)
                             } else {
                                 if (isDark) Color(0x38FFFFFF) else Color(0x22000000)
                             },
@@ -265,7 +265,7 @@ internal fun ProfileNoteItem(
                             Icons.Default.Add,
                             contentDescription = null,
                             modifier = Modifier.size(15.dp),
-                            tint = Color(0xFF2196F3),
+                            tint = Color(0xFF6366F1),
                         )
                         else -> {
                             val cleanText = text.trim()
@@ -366,7 +366,7 @@ internal fun OwnNoteEditorSheet(
                                     if (content.isNotBlank()) {
                                         if (isDark) Color(0x4DFFFFFF) else Color(0x22000000)
                                     } else {
-                                        Color(0xFF2196F3).copy(alpha = 0.6f)
+                                        Color(0xFF6366F1).copy(alpha = 0.6f)
                                     },
                                     RoundedCornerShape(18.dp)
                                 )

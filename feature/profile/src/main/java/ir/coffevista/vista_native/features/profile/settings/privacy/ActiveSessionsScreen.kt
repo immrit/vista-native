@@ -144,31 +144,31 @@ private fun rememberTelegramDevicesPalette(): TelegramDevicesPalette {
     return remember(dark) {
         if (dark) {
             TelegramDevicesPalette(
-                screenBg = Color(0xFF0E1621),
-                cardBg = Color(0xFF17212B),
-                cardBorder = Color(0xFF232E3C),
-                sectionTitle = Color(0xFF64B5F6),
-                textPrimary = Color(0xFFF5F7FA),
-                textSecondary = Color(0xFF8B9BA8),
-                divider = Color(0xFF232E3C),
-                ctaBlue = Color(0xFF2AABEE),
-                dangerRed = Color(0xFFEF5350),
-                onlineBlue = Color(0xFF64B5F6),
-                backButtonBg = Color(0xFF1E2936),
+                screenBg = Color(0xFF09090F),
+                cardBg = Color(0xFF13131E),
+                cardBorder = Color(0xFF2A2A45),
+                sectionTitle = Color(0xFF818CF8),
+                textPrimary = Color(0xFFF0F0FF),
+                textSecondary = Color(0xFF8B8BAD),
+                divider = Color(0xFF2A2A45),
+                ctaBlue = Color(0xFF6366F1),
+                dangerRed = Color(0xFFF87171),
+                onlineBlue = Color(0xFF818CF8),
+                backButtonBg = Color(0xFF1C1C2E),
             )
         } else {
             TelegramDevicesPalette(
-                screenBg = Color(0xFFF1F4F8),
+                screenBg = Color(0xFFF8F9FF),
                 cardBg = Color(0xFFFFFFFF),
-                cardBorder = Color(0xFFE5EAF0),
-                sectionTitle = Color(0xFF1C8ADB),
-                textPrimary = Color(0xFF111827),
+                cardBorder = Color(0xFFE5E7EB),
+                sectionTitle = Color(0xFF4F46E5),
+                textPrimary = Color(0xFF0F1117),
                 textSecondary = Color(0xFF6B7280),
                 divider = Color(0xFFE5E7EB),
-                ctaBlue = Color(0xFF2AABEE),
-                dangerRed = Color(0xFFDC2626),
-                onlineBlue = Color(0xFF1C8ADB),
-                backButtonBg = Color(0xFFE5EAF2),
+                ctaBlue = Color(0xFF6366F1),
+                dangerRed = Color(0xFFEF4444),
+                onlineBlue = Color(0xFF4F46E5),
+                backButtonBg = Color(0xFFF3F4FF),
             )
         }
     }
@@ -714,7 +714,7 @@ private fun TelegramLaptopIllustration(modifier: Modifier = Modifier) {
         val scrW = (bezelRight - bezelLeft) - 14f
         val scrH = (bezelBottom - bezelTop) - 14f
         drawRoundRect(
-            brush = Brush.linearGradient(listOf(Color(0xFFC8E6C9), Color(0xFFA5D6A7))),
+            brush = Brush.linearGradient(listOf(Color(0xFFE0E7FF), Color(0xFFEDE9FE))),
             topLeft = Offset(scrLeft, scrTop),
             size = Size(scrW, scrH),
             cornerRadius = CornerRadius(6f, 6f),
@@ -727,7 +727,7 @@ private fun TelegramLaptopIllustration(modifier: Modifier = Modifier) {
             size = Size(sideW, scrH),
         )
         // Sidebar dots & lines
-        val rowColors = listOf(Color(0xFF42A5F5), Color(0xFF66BB6A), Color(0xFFAB47BC), Color(0xFFFF7043))
+        val rowColors = listOf(Color(0xFF6366F1), Color(0xFF8B5CF6), Color(0xFF10B981), Color(0xFFEC4899))
         rowColors.forEachIndexed { idx, c ->
             val cy = scrTop + 14f + idx * 24f
             if (cy + 10f < scrTop + scrH) {
@@ -891,8 +891,8 @@ private fun platformBadgePresentation(platform: String): Pair<Color, ImageVector
         Color(0xFF6366F1) to Icons.Rounded.PhoneIphone
     platform.contains("web") -> Color(0xFF8B5CF6) to Icons.Rounded.Language
     platform.contains("win") || platform.contains("mac") || platform.contains("linux") || platform.contains("desktop") ->
-        Color(0xFF2AABEE) to Icons.Rounded.Computer
-    else -> Color(0xFF2AABEE) to Icons.Rounded.Devices
+        Color(0xFF6366F1) to Icons.Rounded.Computer
+    else -> Color(0xFF6366F1) to Icons.Rounded.Devices
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

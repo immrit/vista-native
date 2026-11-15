@@ -803,7 +803,7 @@ private fun CommentItem(
                             text = if (!isCommentAuthor) "ویرایش ناظر" else "ویرایش",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
-                            color = if (!isCommentAuthor) Color(0xFF2196F3) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                            color = if (!isCommentAuthor) Color(0xFF6366F1) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                             modifier = Modifier
                                 .clip(RoundedCornerShape(16.dp))
                                 .clickable {
@@ -838,7 +838,7 @@ private fun CommentItem(
                                         Icon(
                                             imageVector = if (isModEdit) Icons.Default.CheckCircle else Icons.Default.Edit,
                                             contentDescription = null,
-                                            tint = if (isModEdit) Color(0xFF2196F3) else MaterialTheme.colorScheme.onSurface,
+                                            tint = if (isModEdit) Color(0xFF6366F1) else MaterialTheme.colorScheme.onSurface,
                                             modifier = Modifier.size(18.dp),
                                         )
                                     },
@@ -1309,13 +1309,13 @@ internal fun CommentComposer(
 
                 Spacer(Modifier.width(8.dp))
 
-                // Send button matching Flutter #007AFF
+                // Send button matching Vista theme
                 Box(
                     modifier = Modifier
                         .size(40.dp)
                         .clip(CircleShape)
                         .background(
-                            if (canSend) Color(0xFF007AFF)
+                            if (canSend) Color(0xFF6366F1)
                             else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
                         )
                         .clickable(enabled = canSend) {

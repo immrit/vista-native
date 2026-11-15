@@ -138,8 +138,8 @@ fun ContactUsScreen(
                 VistaSettingsGroup {
                     VistaSettingsTile(
                         icon = Icons.Outlined.Email,
-                        iconColor = Color(0xFF2196F3),
-                        iconContainerColor = Color(0xFF2196F3).copy(alpha = 0.12f),
+                        iconColor = Color(0xFF6366F1),
+                        iconContainerColor = Color(0xFF6366F1).copy(alpha = 0.12f),
                         title = "ایمیل پشتیبانی",
                         subtitle = "info@cafevista.ir",
                         onClick = {

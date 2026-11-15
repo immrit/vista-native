@@ -198,7 +198,7 @@ fun StoryElementsOverlay(
                             )
                             Text(
                                 text = loc.address?.takeIf { it.isNotBlank() } ?: "مشاهده روی نقشه ←",
-                                color = Color(0xFF64B5F6),
+                                color = Color(0xFFA5B4FC),
                                 fontWeight = FontWeight.SemiBold,
                                 fontSize = 11.sp,
                             )
@@ -279,13 +279,13 @@ private fun ExternalLinkConfirmationDialog(
                         modifier = Modifier
                             .size(38.dp)
                             .clip(CircleShape)
-                            .background(Color(0xFF2481CC).copy(alpha = 0.22f)),
+                            .background(Color(0xFF6366F1).copy(alpha = 0.22f)),
                         contentAlignment = Alignment.Center,
                     ) {
                         Icon(
                             imageVector = Icons.Default.Link,
                             contentDescription = null,
-                            tint = Color(0xFF64B5F6),
+                            tint = Color(0xFFA5B4FC),
                             modifier = Modifier.size(20.dp),
                         )
                     }
@@ -299,7 +299,7 @@ private fun ExternalLinkConfirmationDialog(
                         if (host.isNotBlank()) {
                             Text(
                                 text = host,
-                                color = Color(0xFF64B5F6),
+                                color = Color(0xFFA5B4FC),
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.SemiBold,
                             )

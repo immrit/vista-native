@@ -40,6 +40,12 @@ data class ConversationEntity(
     val isVerified: Boolean = false,
     val verificationType: String? = null,
     val role: String? = null,
+    val initiatorUserId: String? = null,
+    val sentCountWhilePending: Int = 0,
+    val maxPreAcceptMessages: Int = 1,
+    val canSendMessage: Boolean = true,
+    val lockReason: String? = null,
+    val cooldownUntilEpochMillis: Long? = null,
 )
 
 @Entity(
@@ -461,7 +467,7 @@ interface ChatDao {
         markIncomingRead(accountId, conversationId)
     }
 
-    @Query("UPDATE chat_conversation SET isMessageRequest = 0, requestStatus = :status WHERE accountId = :accountId AND id = :conversationId")
+    @Query("UPDATE chat_conversation SET isMessageRequest = 0, requestStatus = :status, canSendMessage = 1, lockReason = NULL WHERE accountId = :accountId AND id = :conversationId")
     suspend fun resolveMessageRequest(accountId: String, conversationId: String, status: String)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -802,7 +808,7 @@ interface ChatDao {
         RemoteKeyEntity::class,
         ProfileNoteEntity::class,
     ],
-    version = 7,
+    version = 8,
     exportSchema = false,
 )
 abstract class ChatDatabase : RoomDatabase() {
@@ -884,6 +890,17 @@ abstract class ChatDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE chat_conversation ADD COLUMN isVerified INTEGER NOT NULL DEFAULT 0")
                 db.execSQL("ALTER TABLE chat_conversation ADD COLUMN verificationType TEXT")
                 db.execSQL("ALTER TABLE chat_conversation ADD COLUMN role TEXT")
+            }
+        }
+
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE chat_conversation ADD COLUMN initiatorUserId TEXT")
+                db.execSQL("ALTER TABLE chat_conversation ADD COLUMN sentCountWhilePending INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE chat_conversation ADD COLUMN maxPreAcceptMessages INTEGER NOT NULL DEFAULT 1")
+                db.execSQL("ALTER TABLE chat_conversation ADD COLUMN canSendMessage INTEGER NOT NULL DEFAULT 1")
+                db.execSQL("ALTER TABLE chat_conversation ADD COLUMN lockReason TEXT")
+                db.execSQL("ALTER TABLE chat_conversation ADD COLUMN cooldownUntilEpochMillis INTEGER")
             }
         }
     }

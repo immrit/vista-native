@@ -1677,7 +1677,7 @@ internal fun HashtagMentionCaption(
     modifier: Modifier = Modifier,
 ) {
     val entityStyle = SpanStyle(
-        color = Color(0xFF1E88E5),
+        color = Color(0xFF6366F1),
         fontWeight = FontWeight.Bold,
     )
     val annotated = remember(text) {

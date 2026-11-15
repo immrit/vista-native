@@ -208,7 +208,7 @@ fun VoicePlayerBubble(
     } else {
         MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.26f)
     }
-    val unreadAccent = Color(0xFF2AABEE)
+    val unreadAccent = VistaBrandColors.Indigo
 
     Row(
         modifier = modifier

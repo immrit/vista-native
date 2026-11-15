@@ -38,6 +38,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import ir.coffevista.vista_native.core.designsystem.tokens.VistaBrandColors
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -95,7 +96,7 @@ object VistaShareSheetTokens {
     val CircleBorder = Color(0xFF383B44)
     val DividerColor = Color(0xFF2A2C32)
     val HandleColor = Color(0xFF52555E)
-    val AccentBlue = Color(0xFF0095F6)
+    val AccentBlue = VistaBrandColors.Indigo
     val TextPrimary = Color.White
     val TextSecondary = Color(0xFFA0A4B0)
 }

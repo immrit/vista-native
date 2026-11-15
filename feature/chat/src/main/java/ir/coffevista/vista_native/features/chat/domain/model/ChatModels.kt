@@ -26,6 +26,12 @@ data class Conversation(
     val isVerified: Boolean = false,
     val verificationType: String? = null,
     val role: String? = null,
+    val initiatorUserId: String? = null,
+    val sentCountWhilePending: Int = 0,
+    val maxPreAcceptMessages: Int = 1,
+    val canSendMessage: Boolean = true,
+    val lockReason: String? = null,
+    val cooldownUntilEpochMillis: Long? = null,
 )
 
 enum class ConversationType { PRIVATE, GROUP, SECRET }

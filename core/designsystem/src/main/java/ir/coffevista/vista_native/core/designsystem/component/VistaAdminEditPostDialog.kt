@@ -126,7 +126,7 @@ fun VistaAdminEditPostDialog(
                 Icon(
                     imageVector = Icons.Default.CheckCircle,
                     contentDescription = null,
-                    tint = Color(0xFF1E88E5),
+                    tint = Color(0xFF6366F1),
                     modifier = Modifier.size(26.dp),
                 )
                 Spacer(modifier = Modifier.width(8.dp))
@@ -341,7 +341,7 @@ fun VistaAdminEditPostDialog(
                     Icon(
                         imageVector = Icons.Default.Notifications,
                         contentDescription = null,
-                        tint = Color(0xFF1E88E5),
+                        tint = Color(0xFF6366F1),
                         modifier = Modifier.size(18.dp),
                     )
                     Spacer(Modifier.width(6.dp))
@@ -368,7 +368,7 @@ fun VistaAdminEditPostDialog(
                 },
                 enabled = !isSubmitting,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF1E88E5),
+                    containerColor = Color(0xFF6366F1),
                 ),
             ) {
                 if (isSubmitting) {

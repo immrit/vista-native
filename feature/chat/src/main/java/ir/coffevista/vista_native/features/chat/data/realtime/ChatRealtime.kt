@@ -163,6 +163,8 @@ object RealtimeEventParser {
                     id = conversationId ?: data.string("id").orEmpty(),
                     status = data.string("status"),
                     requestStatus = data.string("request_status") ?: data.string("status"),
+                    initiatorUserId = data.string("initiator_user_id"),
+                    canSendMessage = if (data.string("status")?.equals("accepted", ignoreCase = true) == true) true else null,
                 )
                 RealtimeEvent.ConversationUpdated(
                     envelope.event_id,

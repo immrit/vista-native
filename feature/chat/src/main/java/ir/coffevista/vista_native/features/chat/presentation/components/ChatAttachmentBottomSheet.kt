@@ -90,7 +90,7 @@ private enum class AttachmentSheetTab {
     DUEL,
 }
 
-private val TelegramGlassBlue = Color(0xFF2AABEE)
+private val TelegramGlassBlue = VistaBrandColors.Indigo
 
 /**
  * باتم‌شیت پیوست صفحه چت به سبک تلگرام با طراحی Liquid Glass:

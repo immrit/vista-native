@@ -148,11 +148,11 @@ fun ChatAudioPlayerSheet(
         }
     }
 
-    val sheetBg = if (isDark) Color(0xFF17212B) else Color(0xFFF6F8FB)
-    val panelBg = if (isDark) Color(0xFF1F2B38) else Color(0xFFFFFFFF)
-    val dividerColor = if (isDark) Color.White.copy(alpha = 0.08f) else Color.Black.copy(alpha = 0.07f)
+    val sheetBg = if (isDark) Color(0xFF13131E) else Color(0xFFF8F9FF)
+    val panelBg = if (isDark) Color(0xFF1C1C2E) else Color(0xFFFFFFFF)
+    val dividerColor = if (isDark) Color(0xFF2A2A45) else Color(0xFFE5E7EB)
     val titleColor = if (isDark) Color.White else Color(0xFF121820)
-    val subtitleColor = if (isDark) Color(0xFF8C9AA8) else Color(0xFF667382)
+    val subtitleColor = if (isDark) Color(0xFF8B8BAD) else Color(0xFF6B7280)
 
     val shareHandler: (ChatAudioTrack) -> Unit = remember(context, onShareTrack) {
         { item ->

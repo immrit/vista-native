@@ -1032,7 +1032,7 @@ private fun StoryMusicTrimmerView(
 
             Text(
                 text = "انجام شد",
-                color = Color(0xFF60A5FA),
+                color = Color(0xFF818CF8),
                 fontSize = 14.5.sp,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier

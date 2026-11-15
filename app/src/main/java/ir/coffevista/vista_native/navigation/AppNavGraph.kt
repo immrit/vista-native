@@ -989,14 +989,18 @@ fun VistaApp(
                                     {
                                         coroutineScope.launch {
                                             val existing = chatRepository.findConversationByPeer(userId, isSecret = false)
-                                            val conversation = existing ?: when (val res = chatRepository.createConversation(userId, isSecret = false)) {
-                                                is ir.coffevista.vista_native.features.chat.domain.repository.ChatResult.Success -> res.value
-                                                is ir.coffevista.vista_native.features.chat.domain.repository.ChatResult.Failure -> null
-                                            }
-                                            if (conversation != null) {
-                                                openChat(conversation.id)
+                                                ?.takeIf {
+                                                    it.requestStatus?.trim()?.lowercase() !in setOf("rejected", "cancelled", "blocked")
+                                                }
+                                            if (existing != null) {
+                                                openChat(existing.id)
                                             } else {
-                                                openChat(userId)
+                                                when (val res = chatRepository.createConversation(userId, isSecret = false)) {
+                                                    is ir.coffevista.vista_native.features.chat.domain.repository.ChatResult.Success ->
+                                                        openChat(res.value.id)
+                                                    is ir.coffevista.vista_native.features.chat.domain.repository.ChatResult.Failure ->
+                                                        android.widget.Toast.makeText(context, res.message, android.widget.Toast.LENGTH_LONG).show()
+                                                }
                                             }
                                         }
                                     }

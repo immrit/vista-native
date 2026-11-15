@@ -301,7 +301,7 @@ fun VistaInAppMediaPickerBottomSheet(
                                 .clip(RoundedCornerShape(18.dp))
                                 .background(
                                     Brush.linearGradient(
-                                        listOf(Color(0xFF2AABEE), VistaBrandColors.Indigo),
+                                        listOf(VistaBrandColors.Violet, VistaBrandColors.Indigo),
                                     ),
                                 )
                                 .clickable {
@@ -425,7 +425,7 @@ fun VistaInAppMediaPickerBottomSheet(
 
                         isLoading -> {
                             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                CircularProgressIndicator(color = Color(0xFF2AABEE))
+                                CircularProgressIndicator(color = VistaBrandColors.Indigo)
                             }
                         }
 
@@ -478,7 +478,7 @@ fun VistaInAppMediaPickerBottomSheet(
                                                     .background(
                                                         Brush.linearGradient(
                                                             listOf(
-                                                                Color(0xFF2AABEE),
+                                                                VistaBrandColors.Violet,
                                                                 VistaBrandColors.Indigo,
                                                             ),
                                                         ),
@@ -668,7 +668,7 @@ fun VistaInAppMediaPickerBottomSheet(
                                                     if (isSelected) {
                                                         Modifier.border(
                                                             2.dp,
-                                                            Color(0xFF2AABEE),
+                                                            VistaBrandColors.Indigo,
                                                             RoundedCornerShape(6.dp),
                                                         )
                                                     } else {
@@ -734,7 +734,7 @@ fun VistaInAppMediaPickerBottomSheet(
                                                         .clip(CircleShape)
                                                         .then(
                                                             if (isSelected) {
-                                                                Modifier.background(Color(0xFF2AABEE))
+                                                                Modifier.background(VistaBrandColors.Indigo)
                                                             } else {
                                                                 Modifier
                                                                     .background(Color.Black.copy(alpha = 0.30f))
@@ -893,7 +893,7 @@ private fun VistaInAppSearchBar(
                     color = MaterialTheme.colorScheme.onSurface,
                     fontSize = 13.5.sp,
                 ),
-                cursorBrush = SolidColor(Color(0xFF2AABEE)),
+                cursorBrush = SolidColor(VistaBrandColors.Indigo),
                 modifier = Modifier.fillMaxWidth(),
             )
         }
@@ -923,7 +923,7 @@ private fun VistaFilterChipPill(
         modifier = Modifier
             .clip(shape)
             .background(
-                if (selected) Color(0xFF2AABEE)
+                if (selected) VistaBrandColors.Indigo
                 else if (isDark) Color.White.copy(alpha = 0.09f) else Color.Black.copy(alpha = 0.06f),
             )
             .clickable(onClick = onClick)
@@ -959,13 +959,13 @@ private fun VistaInAppPermissionCard(
             modifier = Modifier
                 .size(62.dp)
                 .clip(CircleShape)
-                .background(Color(0xFF2AABEE).copy(alpha = 0.14f)),
+                .background(VistaBrandColors.Indigo.copy(alpha = 0.14f)),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
                 imageVector = Icons.Default.Add,
                 contentDescription = null,
-                tint = Color(0xFF2AABEE),
+                tint = VistaBrandColors.Indigo,
                 modifier = Modifier.size(30.dp),
             )
         }
@@ -989,7 +989,7 @@ private fun VistaInAppPermissionCard(
         Button(
             onClick = onGrantClick,
             shape = RoundedCornerShape(16.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2AABEE)),
+            colors = ButtonDefaults.buttonColors(containerColor = VistaBrandColors.Indigo),
         ) {
             Text("تأیید و اعطای دسترسی", color = Color.White, fontWeight = FontWeight.Bold)
         }

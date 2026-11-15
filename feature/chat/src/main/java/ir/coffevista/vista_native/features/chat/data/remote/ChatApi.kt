@@ -77,6 +77,15 @@ interface ChatApi {
     @POST("v1/chat/conversations/{conversationId}/reject")
     suspend fun rejectMessageRequest(@Path("conversationId") conversationId: String)
 
+    @POST("v1/chat/conversations/{conversationId}/reject-and-block")
+    suspend fun rejectAndBlockMessageRequest(@Path("conversationId") conversationId: String)
+
+    @POST("v1/chat/conversations/{conversationId}/cancel-request")
+    suspend fun cancelMessageRequest(@Path("conversationId") conversationId: String)
+
+    @GET("v1/chat/initiation-policy/{peerId}")
+    suspend fun initiationPolicy(@Path("peerId") peerId: String): InitiationPolicyDto
+
     @GET("v1/chat/conversations/{conversationId}/search")
     suspend fun searchMessages(
         @Path("conversationId") conversationId: String,
@@ -339,6 +348,12 @@ data class ConversationDto(
     @SerialName("message_request_status") val messageRequestStatus: String? = null,
     @SerialName("is_message_request") val isMessageRequest: Boolean = false,
     @SerialName("message_request") val messageRequest: Boolean = false,
+    @SerialName("initiator_user_id") val initiatorUserId: String? = null,
+    @SerialName("sent_count_while_pending") val sentCountWhilePending: Int = 0,
+    @SerialName("max_pre_accept_messages") val maxPreAcceptMessages: Int? = null,
+    @SerialName("can_send_message") val canSendMessage: Boolean? = null,
+    @SerialName("lock_reason") val lockReason: String? = null,
+    @SerialName("cooldown_until") val cooldownUntil: String? = null,
     @SerialName("is_verified") val isVerified: Boolean? = null,
     @SerialName("peer_is_verified") val peerIsVerified: Boolean? = null,
     @SerialName("other_user_is_verified") val otherUserIsVerified: Boolean? = null,
@@ -349,6 +364,20 @@ data class ConversationDto(
     @SerialName("peer_role") val peerRole: String? = null,
     @SerialName("other_user_role") val otherUserRole: String? = null,
     @SerialName("account_type") val accountType: String? = null,
+)
+
+@Serializable
+data class InitiationPolicyDto(
+    @SerialName("peer_id") val peerId: String = "",
+    @SerialName("can_initiate") val canInitiate: Boolean = true,
+    @SerialName("is_cold_dm") val isColdDm: Boolean = false,
+    @SerialName("requires_request_approval") val requiresRequestApproval: Boolean = false,
+    @SerialName("requires_quota_spend") val requiresQuotaSpend: Boolean = false,
+    @SerialName("existing_conversation_id") val existingConversationId: String? = null,
+    @SerialName("gate_status") val gateStatus: String? = null,
+    @SerialName("cooldown_until") val cooldownUntil: String? = null,
+    @SerialName("block_reason_code") val blockReasonCode: String? = null,
+    @SerialName("block_message") val blockMessage: String? = null,
 )
 
 @Serializable

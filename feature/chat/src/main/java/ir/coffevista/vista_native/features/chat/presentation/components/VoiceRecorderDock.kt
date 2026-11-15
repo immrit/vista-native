@@ -416,7 +416,7 @@ fun VoiceRecorderDock(
                                         .width(3.dp)
                                         .height(h)
                                         .clip(RoundedCornerShape(1.5.dp))
-                                        .background(Color(0xFF2EA6FF))
+                                        .background(VistaBrandColors.Indigo)
                                 )
                             }
                         }
@@ -452,7 +452,7 @@ fun VoiceRecorderDock(
                             .padding(end = 4.dp)
                             .size(38.dp)
                             .clip(CircleShape)
-                            .background(Color(0xFF2EA6FF))
+                            .background(VistaBrandColors.Indigo)
                             .clickable {
                                 view.performHapticFeedback(android.view.HapticFeedbackConstants.CONFIRM)
                                 finishAndSend()
@@ -475,7 +475,7 @@ fun VoiceRecorderDock(
 
         // کپسول شناور قفل به سمت بالا (در حال نگه‌داشتن دکمه)
         if (interaction.phase == VoiceCapturePhase.HOLDING) {
-            val lockTint = if (isDark) Color(0xFF1E2732) else Color.White
+            val lockTint = if (isDark) Color(0xFF1C1C2E) else Color.White
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
@@ -519,14 +519,14 @@ fun VoiceRecorderDock(
                         CircularProgressIndicator(
                             progress = { lockProgress },
                             strokeWidth = 2.dp,
-                            color = Color(0xFF2EA6FF),
+                            color = VistaBrandColors.Indigo,
                             trackColor = Color.LightGray.copy(alpha = 0.35f),
                             modifier = Modifier.fillMaxSize()
                         )
                         Icon(
                             imageVector = Icons.Default.Lock,
                             contentDescription = "قفل ضبط",
-                            tint = if (lockProgress > 0.65f) Color(0xFF2EA6FF) else Color.Gray,
+                            tint = if (lockProgress > 0.65f) VistaBrandColors.Indigo else Color.Gray,
                             modifier = Modifier.size(15.dp)
                         )
                     }
@@ -562,7 +562,7 @@ fun VoiceRecorderDock(
                         if (interaction.phase == VoiceCapturePhase.HOLDING)
                             Color(0xFFE53935)
                         else
-                            Color(0xFF2EA6FF)
+                            VistaBrandColors.Indigo
                     )
                     .pointerInput(hasRecordPermission) {
                         awaitEachGesture {

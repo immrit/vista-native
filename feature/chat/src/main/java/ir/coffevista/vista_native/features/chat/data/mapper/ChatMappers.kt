@@ -92,6 +92,30 @@ internal suspend fun ConversationDto.toEntity(
             participantIdentity?.role,
         ).firstNotNullOfOrNull { it?.trim()?.takeIf(String::isNotEmpty) }
     }
+    val resolvedStatusStr = (status ?: messageRequestStatus ?: requestStatus)?.trim()?.lowercase()
+    val cleanInitiatorId = initiatorUserId?.trim()?.takeIf(String::isNotEmpty)
+    val amInitiator = cleanInitiatorId != null && cleanInitiatorId.equals(accountId, ignoreCase = true)
+    val resolvedIsMessageRequest = when {
+        resolvedStatusStr == "pending" && cleanInitiatorId != null -> !amInitiator
+        else -> isMessageRequest || messageRequest
+    }
+    val maxPreAccept = (maxPreAcceptMessages ?: 1).coerceAtLeast(1)
+    val resolvedCanSend = canSendMessage ?: when {
+        resolvedStatusStr == "pending" && amInitiator -> sentCountWhilePending < maxPreAccept
+        resolvedStatusStr == "pending" && cleanInitiatorId != null -> false
+        resolvedStatusStr in setOf("rejected", "blocked", "cancelled") -> false
+        else -> true
+    }
+    val resolvedLockReason = lockReason?.trim()?.takeIf(String::isNotEmpty) ?: when {
+        resolvedStatusStr == "pending" && amInitiator ->
+            if (sentCountWhilePending < maxPreAccept) "pre_first_message" else "waiting_recipient_approval"
+        resolvedStatusStr == "pending" && (cleanInitiatorId != null || isMessageRequest || messageRequest) ->
+            "recipient_decision_required"
+        resolvedStatusStr == "rejected" -> "request_rejected"
+        resolvedStatusStr == "blocked" -> "request_blocked"
+        resolvedStatusStr == "cancelled" -> "request_cancelled"
+        else -> null
+    }
     return ConversationEntity(
     accountId = accountId,
     id = id,
@@ -121,13 +145,19 @@ internal suspend fun ConversationDto.toEntity(
     isMuted = isMuted,
     requestStatus = status ?: messageRequestStatus ?: requestStatus,
     lastSyncedAtEpochMillis = now,
-    isMessageRequest = isMessageRequest || messageRequest,
+    isMessageRequest = resolvedIsMessageRequest,
     lastMessageType = lastMessageType,
     lastMessageIsMine = isLastMessageFromMe ?: (lastMessageSenderId?.trim() == accountId),
     lastMessageStatus = resolvedLastMessageStatus.name,
     isVerified = resolvedIsVerified,
     verificationType = resolvedVerificationType,
     role = resolvedRole,
+    initiatorUserId = cleanInitiatorId,
+    sentCountWhilePending = sentCountWhilePending,
+    maxPreAcceptMessages = maxPreAccept,
+    canSendMessage = resolvedCanSend,
+    lockReason = resolvedLockReason,
+    cooldownUntilEpochMillis = cooldownUntil.epochMillisOrNull(),
 )
 }
 
@@ -263,6 +293,12 @@ internal suspend fun ConversationEntity.toDomain(cipher: ChatContentCipher): Con
     isVerified = if (type == ConversationType.GROUP.name) false else isVerified,
     verificationType = if (type == ConversationType.GROUP.name || !isVerified) null else verificationType,
     role = if (type == ConversationType.GROUP.name || !isVerified) null else role,
+    initiatorUserId = initiatorUserId,
+    sentCountWhilePending = sentCountWhilePending,
+    maxPreAcceptMessages = maxPreAcceptMessages,
+    canSendMessage = canSendMessage,
+    lockReason = lockReason,
+    cooldownUntilEpochMillis = cooldownUntilEpochMillis,
 )
 
 internal fun MessageDto.toDomain(accountId: String): Message {

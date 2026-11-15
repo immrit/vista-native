@@ -754,7 +754,7 @@ fun ProfileNoteBubble(
                 color = if (hasContent) {
                     if (isDark) Color(0x4DFFFFFF) else Color(0x22000000)
                 } else {
-                    Color(0xFF2196F3).copy(alpha = 0.65f)
+                    Color(0xFF6366F1).copy(alpha = 0.65f)
                 },
             ),
         ) {
@@ -792,14 +792,14 @@ fun ProfileNoteBubble(
                             modifier = Modifier
                                 .size(16.dp)
                                 .clip(CircleShape)
-                                .background(Color(0xFF2196F3).copy(alpha = 0.15f)),
+                                .background(Color(0xFF6366F1).copy(alpha = 0.15f)),
                             contentAlignment = Alignment.Center,
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Add,
                                 contentDescription = null,
                                 modifier = Modifier.size(11.dp),
-                                tint = Color(0xFF2196F3),
+                                tint = Color(0xFF6366F1),
                             )
                         }
                         Text(
@@ -807,7 +807,7 @@ fun ProfileNoteBubble(
                             style = TextStyle(
                                 fontSize = 9.5.sp,
                                 fontWeight = FontWeight.Medium,
-                                color = if (isDark) Color(0xFF90CAF9) else Color(0xFF1976D2),
+                                color = if (isDark) Color(0xFFA5B4FC) else Color(0xFF4F46E5),
                                 textAlign = TextAlign.Center,
                                 textDirection = TextDirection.ContentOrRtl,
                             ),
@@ -933,7 +933,7 @@ internal fun ProfileAvatar(
                         .align(Alignment.BottomEnd)
                         .size(24.dp)
                         .clip(CircleShape)
-                        .background(Color(0xFF2196F3))
+                        .background(Color(0xFF6366F1))
                         .border(BorderStroke(2.dp, MaterialTheme.colorScheme.background), CircleShape)
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
@@ -1165,7 +1165,7 @@ internal fun ProfilePostCard(
             val hasEntities = remember(contentText) { contentText.contains('#') || contentText.contains('@') }
             if (hasEntities) {
                 val entityStyle = SpanStyle(
-                    color = Color(0xFF1E88E5),
+                    color = Color(0xFF6366F1),
                     fontWeight = FontWeight.Bold,
                 )
                 val annotated = remember(contentText) {

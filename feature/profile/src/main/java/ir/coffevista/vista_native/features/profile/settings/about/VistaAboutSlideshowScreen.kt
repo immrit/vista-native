@@ -76,7 +76,7 @@ fun VistaAboutSlideshowScreen(
             subtitle = "پلتفرم اجتماعی پیشرفته و امن",
             description = "چت، اشتراک‌گذاری، استوری، موزیک",
             icon = Icons.Outlined.RocketLaunch,
-            gradientColors = listOf(Color(0xFF2196F3), Color(0xFF21CBF3)),
+            gradientColors = listOf(Color(0xFF6366F1), Color(0xFF8B5CF6)),
             features = listOf("چت و پیام‌رسانی پیشرفته", "اشتراک‌گذاری محتوا", "سیستم استوری", "پخش‌کننده موزیک"),
         ),
         SlideItemData(

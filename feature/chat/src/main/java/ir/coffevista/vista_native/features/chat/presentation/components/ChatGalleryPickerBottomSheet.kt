@@ -97,7 +97,7 @@ internal fun TelegramSelectionNumberBadge(
                 if (isSelected) {
                     Modifier.background(
                         Brush.linearGradient(
-                            listOf(Color(0xFF2AABEE), VistaBrandColors.Indigo),
+                            listOf(VistaBrandColors.Violet, VistaBrandColors.Indigo),
                         ),
                     )
                 } else {
@@ -183,13 +183,13 @@ internal fun TelegramGalleryGridContent(
                         modifier = Modifier
                             .size(66.dp)
                             .clip(CircleShape)
-                            .background(Color(0xFF2AABEE).copy(alpha = 0.14f)),
+                            .background(VistaBrandColors.Indigo.copy(alpha = 0.14f)),
                         contentAlignment = Alignment.Center,
                     ) {
                         Icon(
                             imageVector = Icons.Default.PhotoLibrary,
                             contentDescription = null,
-                            tint = Color(0xFF2AABEE),
+                            tint = VistaBrandColors.Indigo,
                             modifier = Modifier.size(32.dp),
                         )
                     }
@@ -214,7 +214,7 @@ internal fun TelegramGalleryGridContent(
                             permissionLauncher.launch(requiredVistaGalleryPermissions())
                         },
                         shape = RoundedCornerShape(16.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2AABEE)),
+                        colors = ButtonDefaults.buttonColors(containerColor = VistaBrandColors.Indigo),
                     ) {
                         Text("تأیید و اعطای دسترسی", fontWeight = FontWeight.Bold, color = Color.White)
                     }
@@ -239,7 +239,7 @@ internal fun TelegramGalleryGridContent(
                     contentAlignment = Alignment.Center,
                 ) {
                     CircularProgressIndicator(
-                        color = Color(0xFF2AABEE),
+                        color = VistaBrandColors.Indigo,
                         modifier = Modifier.size(34.dp),
                     )
                 }
@@ -264,7 +264,7 @@ internal fun TelegramGalleryGridContent(
                     )
                     Spacer(Modifier.height(10.dp))
                     TextButton(onClick = onCameraTileClick) {
-                        Text("ثبت تصویر با دوربین", color = Color(0xFF2AABEE), fontWeight = FontWeight.SemiBold)
+                        Text("ثبت تصویر با دوربین", color = VistaBrandColors.Indigo, fontWeight = FontWeight.SemiBold)
                     }
                 }
             }
@@ -447,7 +447,7 @@ private fun TelegramGalleryMediaTile(
                     if (isSelected) {
                         Modifier.border(
                             width = 2.dp,
-                            color = Color(0xFF2AABEE),
+                            color = VistaBrandColors.Indigo,
                             shape = RoundedCornerShape(8.dp),
                         )
                     } else {
@@ -820,7 +820,7 @@ fun ChatGalleryPickerContent(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(14.dp))
                                 .background(
-                                    if (selected) Color(0xFF2AABEE).copy(alpha = 0.16f)
+                                    if (selected) VistaBrandColors.Indigo.copy(alpha = 0.16f)
                                     else Color.Transparent,
                                 )
                                 .clickable { activeFilter = filterOption }
@@ -830,7 +830,7 @@ fun ChatGalleryPickerContent(
                                 text = label,
                                 fontSize = 11.5.sp,
                                 fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                                color = if (selected) Color(0xFF2AABEE) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = if (selected) VistaBrandColors.Indigo else MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                     }

@@ -155,6 +155,10 @@ interface ChatRepository {
         ChatResult.Failure("حذف گفتگو در دسترس نیست", false)
     suspend fun acceptMessageRequest(conversationId: String): ChatResult<Unit>
     suspend fun rejectMessageRequest(conversationId: String): ChatResult<Unit>
+    suspend fun rejectAndBlockMessageRequest(conversationId: String): ChatResult<Unit> =
+        rejectMessageRequest(conversationId)
+    suspend fun cancelMessageRequest(conversationId: String): ChatResult<Unit> =
+        ChatResult.Failure("لغو درخواست در دسترس نیست", false)
     suspend fun editMessage(message: Message, content: String): ChatResult<Unit>
     suspend fun respondToSessionAlert(message: Message, sessionId: String, action: String): ChatResult<String> =
         ChatResult.Failure("عملیات نشست در دسترس نیست", false)
