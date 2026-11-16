@@ -345,6 +345,7 @@ private fun PrivacySettingsDto.toSnapshot() = PrivacySettingsSnapshot(
     groupAddPrivacy = group_add_privacy,
     readReceipts = read_receipts,
     allowProfileZoom = allow_profile_zoom,
+    inactiveAccountTtl = inactive_account_ttl.ifBlank { "6_months" },
 )
 
 private fun PrivacySettingsSnapshot.toDto() = PrivacySettingsDto(
@@ -354,4 +355,5 @@ private fun PrivacySettingsSnapshot.toDto() = PrivacySettingsDto(
     group_add_privacy = groupAddPrivacy,
     read_receipts = readReceipts,
     allow_profile_zoom = allowProfileZoom,
+    inactive_account_ttl = inactiveAccountTtl.ifBlank { "6_months" },
 )

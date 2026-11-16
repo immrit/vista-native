@@ -16,6 +16,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.AccessTime
+import androidx.compose.material.icons.outlined.AutoDelete
 import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Devices
@@ -301,6 +302,28 @@ fun PrivacySecurityScreen(
                 VistaSettingsSection(title = "مدیریت حساب")
                 VistaSettingsGroup {
                     VistaSettingsTile(
+                        icon = Icons.Outlined.AutoDelete,
+                        title = "حذف خودکار در صورت عدم فعالیت",
+                        subtitle = "در صورت عدم حضور و آنلاین نشدن در این بازه، حساب، چت‌ها و تمام محتوا حذف می‌شوند",
+                        trailing = {
+                            Text(
+                                text = when (settings.inactive_account_ttl) {
+                                    "1_month" -> "۱ ماه"
+                                    "3_months" -> "۳ ماه"
+                                    "1_year" -> "۱ سال"
+                                    else -> "۶ ماه"
+                                },
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    color = if (canEdit) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                                    fontSize = 13.sp,
+                                ),
+                            )
+                        },
+                        enabled = canEdit,
+                        onClick = { activeSheet = "inactiveAccountTtl" },
+                    )
+                    VistaSettingsDivider()
+                    VistaSettingsTile(
                         icon = Icons.Outlined.DeleteForever,
                         title = "حذف حساب کاربری",
                         subtitle = "انتخاب علت و ثبت درخواست با دوره انتظار ۱۴ روزه",
@@ -373,6 +396,23 @@ fun PrivacySecurityScreen(
                     ),
                     onOptionSelected = {
                         viewModel.setStoryReplyPermission(it)
+                        activeSheet = null
+                    },
+                    onDismissRequest = { activeSheet = null },
+                )
+            }
+            "inactiveAccountTtl" -> {
+                VistaSettingsChoiceBottomSheet(
+                    title = "در صورت عدم حضور تا این مدت",
+                    selectedValue = settings.inactive_account_ttl.ifBlank { "6_months" },
+                    options = listOf(
+                        VistaChoiceOption("1_month", "۱ ماه"),
+                        VistaChoiceOption("3_months", "۳ ماه"),
+                        VistaChoiceOption("6_months", "۶ ماه (پیش‌فرض)"),
+                        VistaChoiceOption("1_year", "۱ سال"),
+                    ),
+                    onOptionSelected = {
+                        viewModel.update { current -> current.copy(inactive_account_ttl = it) }
                         activeSheet = null
                     },
                     onDismissRequest = { activeSheet = null },

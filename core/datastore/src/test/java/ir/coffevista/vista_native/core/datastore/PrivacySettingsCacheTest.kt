@@ -24,7 +24,14 @@ class PrivacySettingsCacheTest {
         assertTrue(own!!.isPrivate)
         assertEquals("nobody", own.lastSeenVisibility)
         assertEquals("friends", own.messagePrivacy)
+        assertEquals("6_months", own.inactiveAccountTtl)
         assertNull(stored.privacySnapshotFor("account-b"))
         assertNull(stored.privacySnapshotFor(""))
+
+        val custom = stored.toBuilder()
+            .setPrivacyCacheInactiveAccountTtl("1_year")
+            .build()
+            .privacySnapshotFor("account-a")
+        assertEquals("1_year", custom?.inactiveAccountTtl)
     }
 }

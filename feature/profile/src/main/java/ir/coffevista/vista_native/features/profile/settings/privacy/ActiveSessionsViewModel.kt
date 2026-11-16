@@ -202,15 +202,15 @@ class ActiveSessionsViewModel @Inject constructor(
     }
 
     fun approveQrToken(rawQrContent: String, onSuccess: () -> Unit = {}) {
-        val trimmed = rawQrContent.trim()
-        if (trimmed.isBlank()) {
+        val cleanedToken = extractQrLoginToken(rawQrContent)
+        if (cleanedToken.isBlank()) {
             mutableUiState.update { it.copy(feedbackMessage = "کد ورود نامعتبر است") }
             return
         }
         viewModelScope.launch {
             mutableUiState.update { it.copy(isApprovingQr = true, feedbackMessage = null) }
             val res = runCatching {
-                api.approveQr(ApproveQrLoginRequestDto(token = trimmed))
+                api.approveQr(ApproveQrLoginRequestDto(token = cleanedToken))
             }.getOrNull()
             if (res != null && res.isSuccessful && res.body()?.success == true) {
                 mutableUiState.update {
@@ -352,4 +352,17 @@ private fun String.cleanPlaceToken(): String? {
         return null
     }
     return trimmed
+}
+
+private val QR_TOKEN_PARAM_REGEX = Regex("""(?:^|[?&])token=([^&\s]+)""", RegexOption.IGNORE_CASE)
+
+private fun extractQrLoginToken(raw: String): String {
+    val cleaned = raw.trim().trim('"', '\'').trim()
+    if (cleaned.isEmpty()) return ""
+    val match = QR_TOKEN_PARAM_REGEX.find(cleaned) ?: return cleaned
+    val encoded = match.groupValues.getOrNull(1)?.trim().orEmpty()
+    if (encoded.isEmpty()) return cleaned
+    return runCatching {
+        java.net.URLDecoder.decode(encoded, "UTF-8").trim()
+    }.getOrDefault(encoded)
 }

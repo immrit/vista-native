@@ -12,6 +12,7 @@ data class PrivacySettingsSnapshot(
     val groupAddPrivacy: String,
     val readReceipts: Boolean,
     val allowProfileZoom: Boolean,
+    val inactiveAccountTtl: String = "6_months",
 )
 
 interface PrivacySettingsCache {
@@ -40,6 +41,7 @@ class ProtoPrivacySettingsCache(
                 .setPrivacyCacheGroupAddPrivacy(snapshot.groupAddPrivacy)
                 .setPrivacyCacheReadReceipts(snapshot.readReceipts)
                 .setPrivacyCacheAllowProfileZoom(snapshot.allowProfileZoom)
+                .setPrivacyCacheInactiveAccountTtl(snapshot.inactiveAccountTtl)
                 .build()
         }
     }
@@ -54,5 +56,6 @@ internal fun AppPreferences.privacySnapshotFor(ownerId: String): PrivacySettings
         groupAddPrivacy = privacyCacheGroupAddPrivacy.ifBlank { "everyone" },
         readReceipts = privacyCacheReadReceipts,
         allowProfileZoom = privacyCacheAllowProfileZoom,
+        inactiveAccountTtl = privacyCacheInactiveAccountTtl.ifBlank { "6_months" },
     )
 }

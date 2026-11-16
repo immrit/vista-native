@@ -110,6 +110,7 @@ data class PrivacySettingsDto(
     val group_add_privacy: String = "everyone",
     val read_receipts: Boolean = true,
     val allow_profile_zoom: Boolean = true,
+    val inactive_account_ttl: String = "6_months",
 )
 
 @Serializable

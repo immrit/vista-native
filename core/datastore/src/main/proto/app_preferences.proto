@@ -28,4 +28,5 @@ message AppPreferences {
   bool auto_download_cellular = 22;
   bool auto_download_roaming = 23;
   string keep_media_period = 24;
+  string privacy_cache_inactive_account_ttl = 25;
 }
