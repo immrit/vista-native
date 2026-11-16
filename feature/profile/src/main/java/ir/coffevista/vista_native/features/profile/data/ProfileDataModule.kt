@@ -7,9 +7,10 @@ import dagger.hilt.components.SingletonComponent
 import ir.coffevista.vista_native.core.database.profile.OwnProfileDao
 import ir.coffevista.vista_native.core.network.InternalApi
 import ir.coffevista.vista_native.features.profile.settings.notifications.NotificationSettingsApi
-import ir.coffevista.vista_native.features.profile.settings.privacy.PrivacySettingsApi
-import ir.coffevista.vista_native.features.profile.settings.privacy.BlockedUsersApi
 import ir.coffevista.vista_native.features.profile.settings.privacy.ActiveSessionsApi
+import ir.coffevista.vista_native.features.profile.settings.privacy.BlockedUsersApi
+import ir.coffevista.vista_native.features.profile.settings.privacy.PrivacySettingsApi
+import ir.coffevista.vista_native.features.profile.settings.privacy.TwoFactorApi
 import ir.coffevista.vista_native.features.profile.settings.password.ChangePasswordApi
 import ir.coffevista.vista_native.features.profile.settings.saved.SavedPostsApi
 import ir.coffevista.vista_native.features.profile.settings.about.ContactRequestsApi
@@ -32,6 +33,12 @@ object ProfileDataModule {
     fun providePrivacySettingsApi(
         @InternalApi retrofit: Retrofit,
     ): PrivacySettingsApi = retrofit.create(PrivacySettingsApi::class.java)
+
+    @Provides
+    @Singleton
+    fun provideTwoFactorApi(
+        @InternalApi retrofit: Retrofit,
+    ): TwoFactorApi = retrofit.create(TwoFactorApi::class.java)
 
     @Provides
     @Singleton

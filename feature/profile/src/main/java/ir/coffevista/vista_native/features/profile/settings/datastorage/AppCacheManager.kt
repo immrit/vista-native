@@ -3,11 +3,19 @@ package ir.coffevista.vista_native.features.profile.settings.datastorage
 import android.content.Context
 import coil.Coil
 import dagger.hilt.android.qualifiers.ApplicationContext
+import ir.coffevista.vista_native.core.datastore.MediaDataPolicy
+import ir.coffevista.vista_native.core.datastore.SettingsPreferenceStore
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
+
+data class MediaPruneResult(
+    val deletedFiles: Int = 0,
+    val freedBytes: Long = 0L,
+)
 
 enum class CacheCategory {
     IMAGES,
@@ -31,6 +39,7 @@ data class CacheBreakdown(
 @Singleton
 class AppCacheManager @Inject constructor(
     @ApplicationContext private val context: Context,
+    private val preferenceStore: SettingsPreferenceStore? = null,
 ) {
     suspend fun sizeBytes(): Long = withContext(Dispatchers.IO) {
         cacheRoots().sumOf(::sizeOf)
@@ -96,6 +105,40 @@ class AppCacheManager @Inject constructor(
         freed
     }
 
+    suspend fun pruneExpiredMedia(
+        periodOverride: String? = null,
+        nowMillis: Long = System.currentTimeMillis(),
+    ): MediaPruneResult = withContext(Dispatchers.IO) {
+        val period = periodOverride
+            ?: runCatching { preferenceStore?.preferences?.first()?.keepMediaPeriod }.getOrNull()
+            ?: "forever"
+        val maxAgeMillis = MediaDataPolicy.keepMediaDurationMillis(period)
+            ?: return@withContext MediaPruneResult()
+        val cutoff = nowMillis - maxAgeMillis
+        var deletedCount = 0
+        var freedBytes = 0L
+        cacheRoots().forEach { root ->
+            traverseFiles(root) { file ->
+                if (file.lastModified() < cutoff && shouldPruneFile(file)) {
+                    val len = file.length()
+                    if (file.delete()) {
+                        deletedCount += 1
+                        freedBytes += len
+                    }
+                }
+            }
+            cleanEmptyDirectories(root)
+        }
+        MediaPruneResult(deletedFiles = deletedCount, freedBytes = freedBytes)
+    }
+
+    private fun shouldPruneFile(file: File): Boolean {
+        val name = file.name.lowercase()
+        // Keep SimpleCache structural index files so active video cache metadata stays consistent.
+        if (name == "cached_content_index.exi" || name == ".uid") return false
+        return true
+    }
+
     private fun classifyFile(file: File): CacheCategory {
         val name = file.name.lowercase()
         val path = file.absolutePath.lowercase()
@@ -144,6 +187,8 @@ class AppCacheManager @Inject constructor(
     private fun cacheRoots(): List<File> = buildList {
         add(context.cacheDir)
         context.externalCacheDir?.let(::add)
+        val chatDownloads = File(context.filesDir, "chat_downloads")
+        if (chatDownloads.exists()) add(chatDownloads)
     }
 
     private fun sizeOf(file: File): Long = when {

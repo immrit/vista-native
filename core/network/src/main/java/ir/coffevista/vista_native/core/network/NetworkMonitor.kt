@@ -10,6 +10,7 @@ import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import ir.coffevista.vista_native.core.common.ApplicationScope
+import ir.coffevista.vista_native.core.common.ConnectionTransport
 import ir.coffevista.vista_native.core.common.DispatcherProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.awaitClose
@@ -17,6 +18,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -28,7 +30,12 @@ enum class NetworkState {
 
 interface NetworkMonitor {
     val state: StateFlow<NetworkState>
+    val transport: StateFlow<ConnectionTransport>
+        get() = kotlinx.coroutines.flow.MutableStateFlow(currentTransport())
+
     fun currentState(): NetworkState
+    fun currentTransport(): ConnectionTransport =
+        if (currentState() == NetworkState.ONLINE) ConnectionTransport.WIFI else ConnectionTransport.OFFLINE
 }
 
 object AssumeOnlineNetworkMonitor : NetworkMonitor {
@@ -74,6 +81,15 @@ class AndroidNetworkMonitor @Inject constructor(
             initialValue = currentState(),
         )
 
+    override val transport: StateFlow<ConnectionTransport> = state
+        .map { currentTransport() }
+        .flowOn(dispatchers.io)
+        .stateIn(
+            scope = scope,
+            started = SharingStarted.WhileSubscribed(stopTimeoutMillis = 5_000),
+            initialValue = currentTransport(),
+        )
+
     override fun currentState(): NetworkState {
         val network = connectivity.activeNetwork ?: return NetworkState.OFFLINE
         val capabilities = connectivity.getNetworkCapabilities(network)
@@ -86,6 +102,25 @@ class AndroidNetworkMonitor @Inject constructor(
         } else {
             NetworkState.OFFLINE
         }
+    }
+
+    override fun currentTransport(): ConnectionTransport {
+        val network = connectivity.activeNetwork ?: return ConnectionTransport.OFFLINE
+        val capabilities = connectivity.getNetworkCapabilities(network)
+            ?: return ConnectionTransport.OFFLINE
+        if (!capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) {
+            return ConnectionTransport.OFFLINE
+        }
+        if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
+        ) {
+            return ConnectionTransport.WIFI
+        }
+        if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)) {
+            val isNotRoaming = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_ROAMING)
+            return if (isNotRoaming) ConnectionTransport.CELLULAR else ConnectionTransport.ROAMING
+        }
+        return ConnectionTransport.CELLULAR
     }
 }
 

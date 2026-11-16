@@ -4,8 +4,12 @@ import ir.coffevista.vista_native.core.model.auth.AuthPayload
 import ir.coffevista.vista_native.core.model.auth.AuthSession
 import ir.coffevista.vista_native.core.model.auth.AuthUser
 import ir.coffevista.vista_native.core.model.auth.IdentifierLookup
+import ir.coffevista.vista_native.core.model.auth.LoginOutcome
 import ir.coffevista.vista_native.core.model.auth.OtpChallenge
 import ir.coffevista.vista_native.core.model.auth.OtpVerification
+import ir.coffevista.vista_native.core.model.auth.TwoFactorChallenge
+import ir.coffevista.vista_native.core.model.auth.TwoFactorRecoveryChallenge
+import ir.coffevista.vista_native.core.model.auth.TwoFactorResetResult
 import ir.coffevista.vista_native.core.network.BackendErrorParser
 import ir.coffevista.vista_native.core.network.BootstrapStatusClient
 import ir.coffevista.vista_native.core.network.InternalApi
@@ -45,7 +49,16 @@ interface AuthApi {
     @POST("v1/auth/2fa/verify")
     suspend fun verifyTwoFactor(@Body body: JsonObject): Response<JsonObject>
 
-    @POST("v1/auth/2fa/setup")
+    @POST("v1/auth/2fa/recovery/send")
+    suspend fun sendTwoFactorRecovery(@Body body: JsonObject): Response<JsonObject>
+
+    @POST("v1/auth/2fa/recovery/verify")
+    suspend fun verifyTwoFactorRecovery(@Body body: JsonObject): Response<JsonObject>
+
+    @POST("v1/auth/2fa/reset/request")
+    suspend fun requestTwoFactorReset(@Body body: JsonObject): Response<JsonObject>
+
+    @POST("v1/auth/set-password")
     suspend fun setPassword(
         @Header("Authorization") authorization: String,
         @Body body: JsonObject,
@@ -94,6 +107,26 @@ class OkHttpAuthRemoteDataSource @Inject constructor(
             ),
         )
 
+    override suspend fun loginWithChallenge(identifier: String, password: String): LoginOutcome {
+        val json = execute(
+            api.login(jsonBody("identifier" to identifier, "password" to password)),
+        )
+        if (json.boolean("is_2fa_required")) {
+            val token = json.string("two_factor_token")
+                ?: throw kotlinx.serialization.SerializationException("two_factor_token missing")
+            return LoginOutcome.TwoFactorRequired(
+                TwoFactorChallenge(
+                    twoFactorToken = token,
+                    hint = json.string("two_fa_hint"),
+                    hasRecovery = json.boolean("has_recovery"),
+                    recoveryEmailPattern = json.string("recovery_email_pattern"),
+                    pendingResetDate = json.long("pending_reset_date") ?: 0L,
+                ),
+            )
+        }
+        return LoginOutcome.Authenticated(parseAuthPayload(json))
+    }
+
     override suspend fun sendOtp(phoneNumber: String): OtpChallenge {
         val json = execute(api.sendOtp(jsonBody("phone_number" to phoneNumber)))
         return OtpChallenge(
@@ -111,7 +144,13 @@ class OkHttpAuthRemoteDataSource @Inject constructor(
                 ?: throw kotlinx.serialization.SerializationException(
                     "two_factor_token missing",
                 )
-            return OtpVerification.PasswordChallenge(token)
+            return OtpVerification.PasswordChallenge(
+                twoFactorToken = token,
+                hint = json.string("two_fa_hint"),
+                hasRecovery = json.boolean("has_recovery"),
+                recoveryEmailPattern = json.string("recovery_email_pattern"),
+                pendingResetDate = json.long("pending_reset_date") ?: 0L,
+            )
         }
         val auth = json["auth"]?.jsonObject
             ?: throw kotlinx.serialization.SerializationException("auth missing")
@@ -128,6 +167,47 @@ class OkHttpAuthRemoteDataSource @Inject constructor(
             ),
         ),
     )
+
+    override suspend fun sendTwoFactorRecoveryCode(twoFactorToken: String): TwoFactorRecoveryChallenge {
+        val json = execute(
+            api.sendTwoFactorRecovery(jsonBody("two_factor_token" to twoFactorToken)),
+        )
+        return TwoFactorRecoveryChallenge(
+            sessionId = json.string("session_id"),
+            emailPattern = json.string("email_pattern"),
+            message = json.string("message"),
+        )
+    }
+
+    override suspend fun verifyTwoFactorRecoveryCode(
+        twoFactorToken: String,
+        sessionId: String?,
+        code: String,
+    ): AuthPayload {
+        val body = buildJsonObject {
+            put("two_factor_token", twoFactorToken)
+            put("code", code)
+            if (!sessionId.isNullOrBlank()) {
+                put("session_id", sessionId)
+            }
+        }
+        return parseAuthPayload(execute(api.verifyTwoFactorRecovery(body)))
+    }
+
+    override suspend fun requestTwoFactorReset(twoFactorToken: String): TwoFactorResetResult {
+        val json = execute(
+            api.requestTwoFactorReset(jsonBody("two_factor_token" to twoFactorToken)),
+        )
+        val completed = json.boolean("reset_completed")
+        val authObj = json["auth"]?.jsonObject
+        return TwoFactorResetResult(
+            resetCompleted = completed,
+            pendingResetDate = json.long("pending_reset_date") ?: 0L,
+            waitSeconds = json.long("wait_seconds") ?: 0L,
+            message = json.string("message"),
+            auth = authObj?.let { parseAuthPayload(it) },
+        )
+    }
 
     override suspend fun setPassword(accessToken: String, password: String) {
         executeUnit(
@@ -248,3 +328,6 @@ private fun JsonObject.boolean(key: String): Boolean =
 
 private fun JsonObject.int(key: String): Int? =
     (this[key] as? JsonPrimitive)?.intOrNull
+
+private fun JsonObject.long(key: String): Long? =
+    (this[key] as? JsonPrimitive)?.contentOrNull?.toLongOrNull()

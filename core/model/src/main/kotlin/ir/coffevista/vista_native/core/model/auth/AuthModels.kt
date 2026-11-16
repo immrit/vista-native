@@ -42,7 +42,40 @@ data class OtpChallenge(
     val debugCode: String?,
 )
 
+data class TwoFactorChallenge(
+    val twoFactorToken: String,
+    val hint: String? = null,
+    val hasRecovery: Boolean = false,
+    val recoveryEmailPattern: String? = null,
+    val pendingResetDate: Long = 0L,
+)
+
+data class TwoFactorRecoveryChallenge(
+    val sessionId: String? = null,
+    val emailPattern: String? = null,
+    val message: String? = null,
+)
+
+data class TwoFactorResetResult(
+    val resetCompleted: Boolean,
+    val pendingResetDate: Long = 0L,
+    val waitSeconds: Long = 0L,
+    val message: String? = null,
+    val auth: AuthPayload? = null,
+)
+
+sealed interface LoginOutcome {
+    data class Authenticated(val payload: AuthPayload) : LoginOutcome
+    data class TwoFactorRequired(val challenge: TwoFactorChallenge) : LoginOutcome
+}
+
 sealed interface OtpVerification {
     data class Authenticated(val payload: AuthPayload) : OtpVerification
-    data class PasswordChallenge(val twoFactorToken: String) : OtpVerification
+    data class PasswordChallenge(
+        val twoFactorToken: String,
+        val hint: String? = null,
+        val hasRecovery: Boolean = false,
+        val recoveryEmailPattern: String? = null,
+        val pendingResetDate: Long = 0L,
+    ) : OtpVerification
 }

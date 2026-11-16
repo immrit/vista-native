@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import ir.coffevista.vista_native.core.datastore.SettingsPreferenceStore
 import ir.coffevista.vista_native.core.datastore.SettingsPreferences
+import ir.coffevista.vista_native.features.profile.settings.datastorage.AppCacheManager
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -14,6 +15,7 @@ import javax.inject.Inject
 @HiltViewModel
 class AppearanceSettingsViewModel @Inject constructor(
     private val store: SettingsPreferenceStore,
+    private val cacheManager: AppCacheManager? = null,
 ) : ViewModel() {
     val preferences: StateFlow<SettingsPreferences> = store.preferences.stateIn(
         viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsPreferences(),
@@ -72,5 +74,6 @@ class AppearanceSettingsViewModel @Inject constructor(
 
     fun setKeepMediaPeriod(value: String) = viewModelScope.launch {
         store.update { it.copy(keepMediaPeriod = value) }
+        runCatching { cacheManager?.pruneExpiredMedia(periodOverride = value) }
     }
 }

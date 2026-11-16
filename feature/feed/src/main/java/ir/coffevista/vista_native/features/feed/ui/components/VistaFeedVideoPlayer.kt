@@ -51,11 +51,14 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
+import ir.coffevista.vista_native.core.datastore.MediaDataPolicy
 import ir.coffevista.vista_native.core.designsystem.glass.LocalVistaGlassState
 import ir.coffevista.vista_native.features.feed.R
 
@@ -67,35 +70,66 @@ fun VistaFeedVideoPlayer(
     thumbnailUrl: String? = null,
     aspectRatio: Float? = null,
     autoPlay: Boolean = true,
+    dataSaver: Boolean = false,
     initiallyMuted: Boolean = true,
     showMuteToggle: Boolean = true,
     onVideoClick: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    val shouldAutoPlay = autoPlay && !dataSaver
 
+    var hasInitiatedPlayback by remember(videoUrl, shouldAutoPlay) { mutableStateOf(shouldAutoPlay) }
     var isMuted by remember { mutableStateOf(initiallyMuted) }
     var isPlaying by remember { mutableStateOf(false) }
-    var isBuffering by remember { mutableStateOf(true) }
-    var hasRenderedFirstFrame by remember { mutableStateOf(false) }
+    var isBuffering by remember(videoUrl, shouldAutoPlay) { mutableStateOf(shouldAutoPlay) }
+    var hasRenderedFirstFrame by remember(videoUrl) { mutableStateOf(false) }
 
     val activePlayingUrl by FeedVideoPlaybackCoordinator.activePlayingVideoUrl.collectAsStateWithLifecycle()
 
-    val exoPlayer = remember(videoUrl) {
+    val exoPlayer = remember(videoUrl, dataSaver) {
         val mediaSourceFactory = DefaultMediaSourceFactory(
             FeedVideoPlaybackCoordinator.buildCacheDataSourceFactory(context)
         )
-        ExoPlayer.Builder(context)
+        val builder = ExoPlayer.Builder(context)
             .setMediaSourceFactory(mediaSourceFactory)
-            .build().apply {
-                val mediaItem = MediaItem.fromUri(Uri.parse(videoUrl))
-                setMediaItem(mediaItem)
-                repeatMode = Player.REPEAT_MODE_ALL
-                videoScalingMode = C.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING
-                volume = if (initiallyMuted) 0f else 1f
-                prepare()
-                playWhenReady = autoPlay
+        if (dataSaver) {
+            val loadControl = DefaultLoadControl.Builder()
+                .setBufferDurationsMs(2_500, 6_000, 1_000, 2_000)
+                .build()
+            val trackSelector = DefaultTrackSelector(context).apply {
+                setParameters(
+                    buildUponParameters()
+                        .setMaxVideoBitrate(MediaDataPolicy.DATA_SAVER_MAX_VIDEO_BITRATE)
+                )
             }
+            builder.setLoadControl(loadControl).setTrackSelector(trackSelector)
+        }
+        builder.build().apply {
+            val mediaItem = MediaItem.fromUri(Uri.parse(videoUrl))
+            setMediaItem(mediaItem)
+            repeatMode = Player.REPEAT_MODE_ALL
+            videoScalingMode = C.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING
+            volume = if (initiallyMuted) 0f else 1f
+            if (shouldAutoPlay) {
+                prepare()
+                playWhenReady = true
+            } else {
+                playWhenReady = false
+            }
+        }
+    }
+
+    LaunchedEffect(shouldAutoPlay) {
+        if (!shouldAutoPlay && exoPlayer.isPlaying) {
+            exoPlayer.pause()
+        } else if (shouldAutoPlay && !hasInitiatedPlayback) {
+            hasInitiatedPlayback = true
+            isBuffering = true
+            exoPlayer.prepare()
+            exoPlayer.playWhenReady = true
+            exoPlayer.play()
+        }
     }
 
     LaunchedEffect(activePlayingUrl) {
@@ -131,7 +165,7 @@ fun VistaFeedVideoPlayer(
             when (event) {
                 Lifecycle.Event.ON_PAUSE -> exoPlayer.pause()
                 Lifecycle.Event.ON_RESUME -> {
-                    if (autoPlay) exoPlayer.play()
+                    if (shouldAutoPlay && hasInitiatedPlayback) exoPlayer.play()
                 }
                 else -> Unit
             }
@@ -193,7 +227,12 @@ fun VistaFeedVideoPlayer(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
                         ) {
-                            if (exoPlayer.isPlaying) {
+                            if (!hasInitiatedPlayback) {
+                                hasInitiatedPlayback = true
+                                isBuffering = true
+                                exoPlayer.prepare()
+                                exoPlayer.play()
+                            } else if (exoPlayer.isPlaying) {
                                 exoPlayer.pause()
                             } else {
                                 exoPlayer.play()
@@ -224,24 +263,32 @@ fun VistaFeedVideoPlayer(
             )
         }
 
-        // Play/Pause Overlay indicator when paused manually
+        // Play/Pause Overlay indicator when paused or waiting for manual start under data saver
         AnimatedVisibility(
-            visible = !isPlaying && !isBuffering && hasRenderedFirstFrame,
+            visible = !isPlaying && !isBuffering && (hasRenderedFirstFrame || !hasInitiatedPlayback),
             enter = fadeIn(),
             exit = fadeOut(),
         ) {
             Box(
                 modifier = Modifier
-                    .size(48.dp)
+                    .size(52.dp)
                     .clip(CircleShape)
-                    .background(Color.Black.copy(alpha = 0.5f)),
+                    .background(Color.Black.copy(alpha = 0.58f))
+                    .clickable {
+                        if (!hasInitiatedPlayback) {
+                            hasInitiatedPlayback = true
+                            isBuffering = true
+                            exoPlayer.prepare()
+                        }
+                        exoPlayer.play()
+                    },
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
                     imageVector = Icons.Default.PlayArrow,
                     contentDescription = "پخش ویدیو",
                     tint = Color.White,
-                    modifier = Modifier.size(32.dp),
+                    modifier = Modifier.size(34.dp),
                 )
             }
         }

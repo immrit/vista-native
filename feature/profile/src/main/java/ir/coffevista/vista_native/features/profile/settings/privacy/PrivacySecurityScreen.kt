@@ -77,6 +77,7 @@ fun PrivacySecurityScreen(
     onBlockedUsersClick: () -> Unit,
     onActiveSessionsClick: () -> Unit,
     onDeleteAccountClick: () -> Unit = {},
+    onTwoFactorClick: () -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: PrivacySettingsViewModel = hiltViewModel(),
 ) {
@@ -281,8 +282,9 @@ fun PrivacySecurityScreen(
                     VistaSettingsDivider()
                     VistaSettingsTile(
                         icon = Icons.Outlined.LockReset,
-                        title = "غیرفعال‌سازی تایید دو مرحله‌ای (2FA)",
-                        onClick = { showRemove2FADialog = true },
+                        title = "تایید دو مرحله‌ای (2FA)",
+                        subtitle = "تنظیم رمز ابری، ایمیل بازیابی و راهنمای رمز",
+                        onClick = onTwoFactorClick,
                     )
                     VistaSettingsDivider()
                     VistaSettingsTile(

@@ -105,7 +105,8 @@ object ChatDataModule {
         @ApplicationContext context: Context,
         api: ChatApi,
         @ExternalMedia externalClient: OkHttpClient,
-    ): ChatMediaUploader = ChatMediaUploader(context, api, externalClient)
+        preferenceStore: ir.coffevista.vista_native.core.datastore.SettingsPreferenceStore,
+    ): ChatMediaUploader = ChatMediaUploader(context, api, externalClient, preferenceStore)
 
     @Provides
     @Singleton
@@ -115,7 +116,15 @@ object ChatDataModule {
         dao: ChatDao,
         cipher: ChatContentCipher,
         @ApplicationScope scope: CoroutineScope,
-    ): ChatMediaDownloader = ChatMediaDownloader(context, externalClient, dao, cipher, scope)
+        preferenceStore: ir.coffevista.vista_native.core.datastore.SettingsPreferenceStore,
+    ): ChatMediaDownloader = ChatMediaDownloader(
+        context = context,
+        client = externalClient,
+        dao = dao,
+        cipher = cipher,
+        scope = scope,
+        preferenceStore = preferenceStore,
+    )
 
     @Provides
     @Singleton

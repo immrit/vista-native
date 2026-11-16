@@ -909,7 +909,11 @@ fun VistaShell(
                         { navController.navigate(ShellRoutes.BlockedUsers) },
                         { navController.navigate(ShellRoutes.ActiveSessions) },
                         { navController.navigate(ShellRoutes.DeleteAccount) },
+                        { navController.navigate(ShellRoutes.TwoFactorSettings) },
                     )
+                }
+                composable(ShellRoutes.TwoFactorSettings) {
+                    content.twoFactorSettings?.invoke { navController.popBackStack() }
                 }
                 composable(ShellRoutes.DeleteAccount) {
                     content.deleteAccount?.invoke(

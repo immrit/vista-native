@@ -71,6 +71,7 @@ object ShellRoutes {
     const val PricingPage = "pricing_page"
     const val BadgeStore = "badge_store"
     const val PrivacySecurity = "privacy_security"
+    const val TwoFactorSettings = "two_factor_settings"
     const val DeleteAccount = "delete_account"
     const val ActiveSessions = "active_sessions"
     const val BlockedUsers = "blocked_users"

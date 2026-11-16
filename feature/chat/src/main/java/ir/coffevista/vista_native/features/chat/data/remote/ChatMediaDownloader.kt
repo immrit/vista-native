@@ -1,6 +1,8 @@
 package ir.coffevista.vista_native.features.chat.data.remote
 
 import android.content.Context
+import ir.coffevista.vista_native.core.datastore.MediaDataPolicy
+import ir.coffevista.vista_native.core.datastore.SettingsPreferenceStore
 import ir.coffevista.vista_native.features.chat.data.local.ChatDao
 import ir.coffevista.vista_native.features.chat.data.local.DownloadTaskEntity
 import ir.coffevista.vista_native.features.chat.domain.model.DownloadState
@@ -13,6 +15,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import okhttp3.Call
 import okhttp3.OkHttpClient
@@ -25,6 +28,7 @@ class ChatMediaDownloader(
     private val cipher: ChatContentCipher,
     private val scope: CoroutineScope,
     private val now: () -> Long = System::currentTimeMillis,
+    private val preferenceStore: SettingsPreferenceStore? = null,
 ) {
     private val activeCalls = ConcurrentHashMap<String, Call>()
     private val activeJobs = ConcurrentHashMap<String, Job>()
@@ -110,7 +114,9 @@ class ChatMediaDownloader(
                 dao.upsertDownload(row.copy(state = DownloadState.QUEUED.name, updatedAtEpochMillis = now()))
                 launch(row.accountId, row.messageId)
             }
-            cleanupCache(accountId)
+            val period = runCatching { preferenceStore?.preferences?.first()?.keepMediaPeriod }.getOrNull()
+            val maxAge = if (period != null) MediaDataPolicy.keepMediaDurationMillis(period) else CACHE_MAX_AGE_MILLIS
+            cleanupCache(accountId, maxAge)
         }
     }
 
@@ -230,13 +236,13 @@ class ChatMediaDownloader(
         directory.listFiles()?.filter { it.name.startsWith(sha256(row.messageId)) }?.forEach(File::delete)
     }
 
-    private suspend fun cleanupCache(accountId: String, maxAgeMillis: Long = CACHE_MAX_AGE_MILLIS) {
-        val cutoff = now() - maxAgeMillis
+    private suspend fun cleanupCache(accountId: String, maxAgeMillis: Long? = CACHE_MAX_AGE_MILLIS) {
+        val cutoff = maxAgeMillis?.let { now() - it }
         dao.downloadsForAccount(accountId).forEach { row ->
             val finalFile = row.localPath?.let(::File)
-            val expired = finalFile?.isFile == true && finalFile.lastModified() < cutoff
+            val expired = cutoff != null && finalFile?.isFile == true && finalFile.lastModified() < cutoff
             val missing = row.state == DownloadState.COMPLETE.name && finalFile?.isFile != true
-            if (expired) finalFile.delete()
+            if (expired && finalFile != null) finalFile.delete()
             if (expired || missing) {
                 deleteTaskFiles(row)
                 dao.upsertDownload(
@@ -250,8 +256,9 @@ class ChatMediaDownloader(
                 )
             }
         }
+        val partCutoff = cutoff ?: (now() - CACHE_MAX_AGE_MILLIS)
         accountDirectory(accountId).listFiles()?.forEach { file ->
-            if (file.name.endsWith(".part") && file.lastModified() < cutoff) file.delete()
+            if (file.name.endsWith(".part") && file.lastModified() < partCutoff) file.delete()
         }
     }
 

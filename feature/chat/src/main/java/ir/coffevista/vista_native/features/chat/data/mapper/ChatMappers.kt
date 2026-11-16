@@ -25,6 +25,26 @@ import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 
+private const val VISTA_SERVICE_USER_ID = "00000000-0000-4000-8000-000000000101"
+private const val VISTA_SERVICE_DISPLAY_NAME = "Vista Service"
+
+private fun resolveConversationDisplayTitle(
+    peerId: String?,
+    accountType: String?,
+    candidates: List<String?>,
+): String {
+    val cleanCandidates = candidates.mapNotNull { it?.trim()?.takeIf(String::isNotEmpty) }
+    val normalizedPeerId = peerId?.trim()?.lowercase()
+    val isSystem = accountType?.trim()?.lowercase() == "system"
+    val isVistaService = normalizedPeerId == VISTA_SERVICE_USER_ID ||
+        cleanCandidates.any {
+            val lower = it.lowercase()
+            lower == "vista_service" || lower == "vista service" || (isSystem && lower == "vista")
+        }
+    if (isVistaService) return VISTA_SERVICE_DISPLAY_NAME
+    return cleanCandidates.firstOrNull() ?: "کاربر"
+}
+
 internal fun String?.epochMillisOrNull(): Long? {
     val value = this?.trim()?.takeIf(String::isNotEmpty) ?: return null
     val normalized = value.replace(Regex("(\\.\\d{3})\\d+(?=Z|[+-]\\d{2}:?\\d{2}$)"), "$1")
@@ -120,18 +140,35 @@ internal suspend fun ConversationDto.toEntity(
     accountId = accountId,
     id = id,
     type = resolvedType.name,
-    title = listOf(
-        name,
-        peerUsername,
-        otherUserUsername,
-        username,
-        peerFullName,
-        otherUserFullName,
-        participantIdentity?.username,
-        participantIdentity?.fullName,
-    )
-        .firstNotNullOfOrNull { it?.trim()?.takeIf(String::isNotEmpty) }
-        ?: "کاربر",
+    title = resolveConversationDisplayTitle(
+        peerId = effectivePeerId,
+        accountType = accountType ?: participantIdentity?.role,
+        candidates = listOf(
+            name,
+            peerFullName,
+            otherUserFullName,
+            participantIdentity?.fullName,
+            peerUsername,
+            otherUserUsername,
+            username,
+            participantIdentity?.username,
+        ).let {
+            if (accountType?.trim()?.lowercase() == "system" || effectivePeerId == VISTA_SERVICE_USER_ID) {
+                it
+            } else {
+                listOf(
+                    name,
+                    peerUsername,
+                    otherUserUsername,
+                    username,
+                    peerFullName,
+                    otherUserFullName,
+                    participantIdentity?.username,
+                    participantIdentity?.fullName,
+                )
+            }
+        },
+    ),
     avatarUrl = listOf(image, peerAvatarUrl, otherUserAvatar, avatarUrl, participantIdentity?.avatarUrl)
         .firstNotNullOfOrNull { it.resolvedAvatarUrl() },
     peerId = effectivePeerId,
@@ -266,7 +303,11 @@ internal suspend fun ConversationEntity.toDomain(cipher: ChatContentCipher): Con
     accountId = accountId,
     id = id,
     type = runCatching { ConversationType.valueOf(type) }.getOrDefault(ConversationType.PRIVATE),
-    title = title,
+    title = resolveConversationDisplayTitle(
+        peerId = peerId,
+        accountType = null,
+        candidates = listOf(title),
+    ),
     avatarUrl = avatarUrl,
     peerId = peerId,
     lastMessage = lastMessageCiphertext?.let {

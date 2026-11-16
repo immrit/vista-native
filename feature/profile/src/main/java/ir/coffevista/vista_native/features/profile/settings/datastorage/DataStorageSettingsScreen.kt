@@ -61,6 +61,10 @@ fun DataStorageSettingsScreen(
     cacheState.message?.let { message ->
         LaunchedEffect(message) { snackbarHostState.showSnackbar(message) }
     }
+    LaunchedEffect(keepMediaPeriod) {
+        kotlinx.coroutines.delay(150L)
+        cacheViewModel.refresh()
+    }
 
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
         Scaffold(

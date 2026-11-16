@@ -2322,6 +2322,8 @@ fun MessageDetailScreen(
                                                 MediaAlbumBubble(
                                                     messages = renderItem.messages,
                                                     downloads = state.downloads,
+                                                    settingsPreferences = state.settingsPreferences,
+                                                    connectionTransport = state.connectionTransport,
                                                     selectionMode = selectedMessageKeys.isNotEmpty(),
                                                     selected = messageKeys.all(selectedMessageKeys::contains),
                                                     onToggleSelection = { toggleMessageSelection(messageKeys) },
@@ -2374,6 +2376,8 @@ fun MessageDetailScreen(
                                                 onRetry = onRetry,
                                                 onCancelTransfer = onCancelTransfer,
                                                 downloadTask = state.downloads[message.serverId ?: message.clientId],
+                                                settingsPreferences = state.settingsPreferences,
+                                                connectionTransport = state.connectionTransport,
                                                 onStartDownload = onStartDownload,
                                                 onPauseDownload = onPauseDownload,
                                                 onResumeDownload = onResumeDownload,
@@ -3655,6 +3659,10 @@ private fun GroupSenderFrame(
 private fun MediaAlbumBubble(
     messages: List<Message>,
     downloads: Map<String, DownloadTask>,
+    settingsPreferences: ir.coffevista.vista_native.core.datastore.SettingsPreferences =
+        ir.coffevista.vista_native.core.datastore.SettingsPreferences(),
+    connectionTransport: ir.coffevista.vista_native.core.common.ConnectionTransport =
+        ir.coffevista.vista_native.core.common.ConnectionTransport.WIFI,
     selectionMode: Boolean,
     selected: Boolean,
     onToggleSelection: () -> Unit,
@@ -3773,6 +3781,8 @@ private fun MediaAlbumBubble(
                     MediaAlbumGrid(
                         messages = visibleMessages,
                         downloads = downloads,
+                        settingsPreferences = settingsPreferences,
+                        connectionTransport = connectionTransport,
                         selectionMode = selectionMode,
                         onToggleSelection = onToggleSelection,
                         onLongPress = onLongPress,
@@ -3835,6 +3845,10 @@ private fun MediaAlbumBubble(
 private fun MediaAlbumGrid(
     messages: List<Message>,
     downloads: Map<String, DownloadTask>,
+    settingsPreferences: ir.coffevista.vista_native.core.datastore.SettingsPreferences =
+        ir.coffevista.vista_native.core.datastore.SettingsPreferences(),
+    connectionTransport: ir.coffevista.vista_native.core.common.ConnectionTransport =
+        ir.coffevista.vista_native.core.common.ConnectionTransport.WIFI,
     selectionMode: Boolean,
     onToggleSelection: () -> Unit,
     onLongPress: () -> Unit,
@@ -3851,6 +3865,8 @@ private fun MediaAlbumGrid(
             MediaAlbumTile(
                 message = message,
                 downloadTask = downloads[message.serverId ?: message.clientId],
+                settingsPreferences = settingsPreferences,
+                connectionTransport = connectionTransport,
                 modifier = modifier,
                 shape = shape,
                 selectionMode = selectionMode,
@@ -3960,6 +3976,10 @@ private fun MediaAlbumGrid(
 private fun MediaAlbumTile(
     message: Message,
     downloadTask: DownloadTask?,
+    settingsPreferences: ir.coffevista.vista_native.core.datastore.SettingsPreferences =
+        ir.coffevista.vista_native.core.datastore.SettingsPreferences(),
+    connectionTransport: ir.coffevista.vista_native.core.common.ConnectionTransport =
+        ir.coffevista.vista_native.core.common.ConnectionTransport.WIFI,
     modifier: Modifier,
     shape: AbsoluteRoundedCornerShape,
     selectionMode: Boolean,
@@ -3974,12 +3994,19 @@ private fun MediaAlbumTile(
     onAttachmentClick: (ir.coffevista.vista_native.features.chat.domain.model.Attachment) -> Unit,
 ) {
     val attachment = message.attachment ?: return
-    val source = attachment.localUri ?: attachment.remoteUrl
+    val allowRemotePreview = message.isMine ||
+        downloadTask?.state == DownloadState.COMPLETE ||
+        shouldAllowRemoteAttachmentPreview(attachment, settingsPreferences, connectionTransport)
+    val completedLocalUri = downloadTask?.takeIf { it.state == DownloadState.COMPLETE }?.localUri?.takeIf(String::isNotBlank)
+    val source = completedLocalUri ?: attachment.localUri?.takeIf(String::isNotBlank)
+        ?: if (allowRemotePreview) attachment.remoteUrl else null
     val activeUpload = attachment.transferState == TransferState.UPLOADING ||
         attachment.transferState == TransferState.QUEUED
     val needsDownload = attachment.transferState == TransferState.COMPLETE &&
+        completedLocalUri.isNullOrBlank() &&
         attachment.localUri.isNullOrBlank() &&
-        !attachment.remoteUrl.isNullOrBlank()
+        !attachment.remoteUrl.isNullOrBlank() &&
+        !message.isMine
     Box(
         modifier = modifier
             .clip(shape)
@@ -4145,6 +4172,10 @@ private fun MessageBubble(
     onRetry: (Message) -> Unit,
     onCancelTransfer: (Message) -> Unit,
     downloadTask: DownloadTask? = null,
+    settingsPreferences: ir.coffevista.vista_native.core.datastore.SettingsPreferences =
+        ir.coffevista.vista_native.core.datastore.SettingsPreferences(),
+    connectionTransport: ir.coffevista.vista_native.core.common.ConnectionTransport =
+        ir.coffevista.vista_native.core.common.ConnectionTransport.WIFI,
     onStartDownload: (Message) -> Unit = {},
     onPauseDownload: (String) -> Unit = {},
     onResumeDownload: (String) -> Unit = {},
@@ -4559,6 +4590,8 @@ private fun MessageBubble(
                         message = message,
                         attachment = attachment,
                         downloadTask = downloadTask,
+                        settingsPreferences = settingsPreferences,
+                        connectionTransport = connectionTransport,
                         senderDisplayName = senderDisplayName,
                         isSecretConversation = isSecretConversation,
                         voiceQueue = voiceQueue,
@@ -5654,11 +5687,33 @@ internal fun String.toPersianDigits(): String = map { char ->
     if (char in '0'..'9') "۰۱۲۳۴۵۶۷۸۹"[char - '0'] else char
 }.joinToString("")
 
+private fun shouldAllowRemoteAttachmentPreview(
+    attachment: ir.coffevista.vista_native.features.chat.domain.model.Attachment,
+    settings: ir.coffevista.vista_native.core.datastore.SettingsPreferences,
+    transport: ir.coffevista.vista_native.core.common.ConnectionTransport,
+): Boolean {
+    val isImageOrGifOrVoice = attachment.kind in setOf(
+        AttachmentKind.IMAGE,
+        AttachmentKind.GIF,
+        AttachmentKind.VOICE,
+    )
+    return ir.coffevista.vista_native.core.datastore.MediaDataPolicy.shouldAutoDownloadAttachment(
+        transport = transport,
+        isImageOrGifOrVoice = isImageOrGifOrVoice,
+        sizeBytes = attachment.sizeBytes,
+        prefs = settings,
+    )
+}
+
 @Composable
 private fun AttachmentBubble(
     message: Message,
     attachment: ir.coffevista.vista_native.features.chat.domain.model.Attachment,
     downloadTask: DownloadTask? = null,
+    settingsPreferences: ir.coffevista.vista_native.core.datastore.SettingsPreferences =
+        ir.coffevista.vista_native.core.datastore.SettingsPreferences(),
+    connectionTransport: ir.coffevista.vista_native.core.common.ConnectionTransport =
+        ir.coffevista.vista_native.core.common.ConnectionTransport.WIFI,
     senderDisplayName: String = if (message.isMine) "شما" else "مخاطب",
     isSecretConversation: Boolean = false,
     voiceQueue: List<ChatAudioTrack> = emptyList(),
@@ -5688,8 +5743,11 @@ private fun AttachmentBubble(
     val isDownloading = !isGif && (downloadTask?.state == DownloadState.DOWNLOADING || downloadTask?.state == DownloadState.QUEUED)
     val isFailed = !isGif && (downloadTask?.state == DownloadState.FAILED || downloadTask?.state == DownloadState.CANCELLED)
     val effectiveLocalUri = usableLocalUri
+    val allowRemotePreview = isGif ||
+        (!isSecretConversation && message.isMine) ||
+        shouldAllowRemoteAttachmentPreview(attachment, settingsPreferences, connectionTransport)
     val mediaModel = effectiveLocalUri?.takeIf { it.isNotBlank() }
-        ?: if (isSecretConversation) null else attachment.remoteUrl
+        ?: if (isSecretConversation || !allowRemotePreview) null else attachment.remoteUrl
 
     val isActiveUpload = attachment.transferState == TransferState.UPLOADING ||
         attachment.transferState == TransferState.QUEUED

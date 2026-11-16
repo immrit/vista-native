@@ -58,8 +58,11 @@ import ir.coffevista.vista_native.features.profile.settings.SettingsScreen
 import ir.coffevista.vista_native.features.profile.settings.editprofile.EditProfileScreen
 import ir.coffevista.vista_native.features.profile.settings.pricing.PricingScreen
 import ir.coffevista.vista_native.features.profile.settings.privacy.DeleteAccountScreen
-import ir.coffevista.vista_native.features.profile.settings.privacy.PrivacySecurityScreen
 import ir.coffevista.vista_native.features.profile.settings.privacy.ActiveSessionsScreen
+import ir.coffevista.vista_native.features.profile.settings.privacy.BlockedUsersScreen
+import ir.coffevista.vista_native.features.profile.settings.privacy.DeleteAccountScreen
+import ir.coffevista.vista_native.features.profile.settings.privacy.PrivacySecurityScreen
+import ir.coffevista.vista_native.features.profile.settings.privacy.TwoFactorSettingsScreen
 import ir.coffevista.vista_native.features.profile.settings.privacy.BlockedUsersScreen
 import ir.coffevista.vista_native.features.profile.settings.notifications.NotificationSettingsScreen
 import ir.coffevista.vista_native.features.profile.settings.appearance.ThemeSettingsScreen
@@ -818,7 +821,7 @@ fun VistaApp(
                         badgeStore = { onBack ->
                             PricingScreen(onBack = onBack, initialTab = 1)
                         },
-                        privacySecurity = { onBack, onBlockedUsers, onActiveSessions, onDeleteAccount ->
+                        privacySecurity = { onBack, onBlockedUsers, onActiveSessions, onDeleteAccount, onTwoFactorSettings ->
                             val profileViewModel = hiltViewModel<OwnProfileViewModel>()
                             val profileState by profileViewModel.uiState.collectAsStateWithLifecycle()
                             val profile = (profileState as? OwnProfileUiState.Content)?.profile
@@ -828,7 +831,11 @@ fun VistaApp(
                                 onBlockedUsersClick = onBlockedUsers,
                                 onActiveSessionsClick = onActiveSessions,
                                 onDeleteAccountClick = onDeleteAccount,
+                                onTwoFactorClick = onTwoFactorSettings,
                             )
+                        },
+                        twoFactorSettings = { onBack ->
+                            TwoFactorSettingsScreen(onBack = onBack)
                         },
                         deleteAccount = { onBack, onAccountDeleted ->
                             val profileViewModel = hiltViewModel<OwnProfileViewModel>()

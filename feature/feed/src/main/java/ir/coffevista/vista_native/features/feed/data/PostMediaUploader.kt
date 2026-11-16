@@ -7,8 +7,11 @@ import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import dagger.hilt.android.qualifiers.ApplicationContext
+import ir.coffevista.vista_native.core.datastore.MediaDataPolicy
+import ir.coffevista.vista_native.core.datastore.SettingsPreferenceStore
 import ir.coffevista.vista_native.core.network.ExternalMedia
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -75,6 +78,7 @@ class PostMediaUploader @Inject constructor(
     @ApplicationContext private val context: Context,
     private val api: FeedApi,
     @ExternalMedia private val externalClient: OkHttpClient,
+    private val preferenceStore: SettingsPreferenceStore,
 ) : PostMediaUploadGateway {
     private val resolver: ContentResolver = context.contentResolver
     private val cacheDir = context.cacheDir
@@ -86,7 +90,14 @@ class PostMediaUploader @Inject constructor(
         onProgress: (Float) -> Unit,
     ): UploadedMediaResult = withContext(Dispatchers.IO) {
         require(userId.isNotBlank()) { "شناسه کاربر نامعتبر است" }
-        val temporaryJpeg = compressImageToJpeg(uri, maxBytes)
+        val qualityKey = runCatching { preferenceStore.preferences.first().mediaQuality }.getOrDefault("high")
+        val preset = MediaDataPolicy.uploadPreset(qualityKey)
+        val temporaryJpeg = compressImageToJpeg(
+            uri = uri,
+            maxBytes = maxBytes,
+            maxDimension = preset.maxDimension,
+            jpegQuality = preset.jpegQuality,
+        )
         try {
             val objectKey = "posts/${userId.safeSegment()}/${System.currentTimeMillis()}_image.jpg"
             val presign = api.presignUpload(
@@ -376,7 +387,12 @@ class PostMediaUploader @Inject constructor(
         }
     }
 
-    private fun compressImageToJpeg(uri: Uri, maxBytes: Long): File {
+    private fun compressImageToJpeg(
+        uri: Uri,
+        maxBytes: Long,
+        maxDimension: Int = MAX_IMAGE_DIMENSION,
+        jpegQuality: Int = JPEG_QUALITY,
+    ): File {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         (openInputStream(uri) ?: throw IOException("فایل تصویر قابل خواندن نیست")).use {
             BitmapFactory.decodeStream(it, null, bounds)
@@ -389,7 +405,7 @@ class PostMediaUploader @Inject constructor(
         var sampleSize = 1
         var w = bounds.outWidth
         var h = bounds.outHeight
-        while (w > MAX_IMAGE_DIMENSION || h > MAX_IMAGE_DIMENSION) {
+        while (w > maxDimension || h > maxDimension) {
             sampleSize *= 2
             w /= 2
             h /= 2
@@ -427,16 +443,16 @@ class PostMediaUploader @Inject constructor(
             rotated
         } else rawBitmap
 
-        val finalBitmap = if (oriented.width > MAX_IMAGE_DIMENSION || oriented.height > MAX_IMAGE_DIMENSION) {
+        val finalBitmap = if (oriented.width > maxDimension || oriented.height > maxDimension) {
             val ratio = oriented.width.toFloat() / oriented.height.toFloat()
             val targetW: Int
             val targetH: Int
             if (ratio > 1f) {
-                targetW = MAX_IMAGE_DIMENSION
-                targetH = (MAX_IMAGE_DIMENSION / ratio).toInt().coerceAtLeast(1)
+                targetW = maxDimension
+                targetH = (maxDimension / ratio).toInt().coerceAtLeast(1)
             } else {
-                targetH = MAX_IMAGE_DIMENSION
-                targetW = (MAX_IMAGE_DIMENSION * ratio).toInt().coerceAtLeast(1)
+                targetH = maxDimension
+                targetW = (maxDimension * ratio).toInt().coerceAtLeast(1)
             }
             val scaled = Bitmap.createScaledBitmap(oriented, targetW, targetH, true)
             if (scaled != oriented) oriented.recycle()
@@ -446,7 +462,7 @@ class PostMediaUploader @Inject constructor(
         val file = File.createTempFile("post-media-", ".jpg", cacheDir)
         return try {
             file.outputStream().use { output ->
-                if (!finalBitmap.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, output)) {
+                if (!finalBitmap.compress(Bitmap.CompressFormat.JPEG, jpegQuality, output)) {
                     throw IOException("فشرده‌سازی تصویر ناموفق بود")
                 }
             }

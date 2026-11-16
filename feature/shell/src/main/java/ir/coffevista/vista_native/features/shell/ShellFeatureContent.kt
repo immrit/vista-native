@@ -126,7 +126,9 @@ data class ShellFeatureContent(
         onBlockedUsers: () -> Unit,
         onActiveSessions: () -> Unit,
         onDeleteAccount: () -> Unit,
+        onTwoFactorSettings: () -> Unit,
     ) -> Unit),
+    val twoFactorSettings: (@Composable (onBack: () -> Unit) -> Unit)? = null,
     val deleteAccount: (@Composable (
         onBack: () -> Unit,
         onAccountDeleted: () -> Unit,

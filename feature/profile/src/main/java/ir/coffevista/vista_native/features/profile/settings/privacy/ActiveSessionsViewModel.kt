@@ -255,12 +255,13 @@ class ActiveSessionsViewModel @Inject constructor(
         val osVersion = session.deviceInfo["os_version"]?.jsonPrimitive?.content?.trim().orEmpty()
         val appVer = session.appVersion?.trim().orEmpty()
         val subtitle = buildClientSubtitle(rawPlatform, appVer, osVersion)
-        val location = listOfNotNull(
-            session.locationCity?.takeIf(String::isNotBlank),
-            session.locationCountry?.takeIf(String::isNotBlank),
-        ).joinToString("، ").ifBlank {
-            session.ipAddress?.takeIf(String::isNotBlank) ?: "موقعیت نامشخص"
-        }
+        val primaryPlace = session.locationCity?.cleanPlaceToken()
+            ?: session.locationRegion?.cleanPlaceToken()
+        val country = session.locationCountry?.cleanPlaceToken()
+        val location = listOfNotNull(primaryPlace, country)
+            .distinct()
+            .joinToString("، ")
+            .ifBlank { "موقعیت نامشخص" }
 
         return SessionItemUiModel(
             id = session.id,
@@ -339,4 +340,16 @@ private fun formatFullDateTime(rawIso: String?): String {
         val zoned = instant.atZone(ZoneId.systemDefault())
         DateTimeFormatter.ofPattern("HH:mm • yyyy/MM/dd", Locale.US).format(zoned)
     }.getOrElse { rawIso }
+}
+
+private val IPV4_PATTERN = Regex("""^\d{1,3}(\.\d{1,3}){3}$""")
+private val IPV6_PATTERN = Regex("""^[0-9a-fA-F:.\[\]]+$""")
+
+private fun String.cleanPlaceToken(): String? {
+    val trimmed = trim()
+    if (trimmed.isEmpty()) return null
+    if (IPV4_PATTERN.matches(trimmed) || (trimmed.contains(':') && IPV6_PATTERN.matches(trimmed))) {
+        return null
+    }
+    return trimmed
 }

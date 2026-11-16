@@ -2,7 +2,12 @@ package ir.coffevista.vista_native.features.chat.data.remote
 
 import android.content.ContentResolver
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
+import ir.coffevista.vista_native.core.datastore.MediaDataPolicy
+import ir.coffevista.vista_native.core.datastore.SettingsPreferenceStore
+import ir.coffevista.vista_native.core.datastore.UploadCompressionPreset
 import ir.coffevista.vista_native.features.chat.data.mapper.epochMillisOrNull
 import ir.coffevista.vista_native.features.chat.domain.model.AttachmentKind
 import ir.coffevista.vista_native.features.chat.domain.model.ChatAttachmentDraft
@@ -12,6 +17,7 @@ import java.io.IOException
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import okhttp3.Call
 import okhttp3.MediaType.Companion.toMediaType
@@ -34,8 +40,10 @@ class ChatMediaUploader(
     context: Context,
     private val api: ChatApi,
     private val externalClient: OkHttpClient,
+    private val preferenceStore: SettingsPreferenceStore? = null,
 ) {
     private val resolver: ContentResolver = context.contentResolver
+    private val cacheDir: File = File(context.cacheDir, "chat_upload_compressed").apply { mkdirs() }
     private val activeCalls = ConcurrentHashMap<String, ActiveUpload>()
     private val policy = ChatUploadPolicy()
 
@@ -47,21 +55,27 @@ class ChatMediaUploader(
         existingObjectKey: String? = null,
         validateContent: Boolean = true,
     ): PreparedChatUpload = withContext(Dispatchers.IO) {
-        val profile = if (draft.sizeBytes > ChatUploadPolicy.NORMAL_MAX_BYTES) {
+        val qualityKey = runCatching { preferenceStore?.preferences?.first()?.mediaQuality }.getOrNull() ?: "high"
+        val effectiveDraft = compressImageDraftIfNeeded(
+            draft = draft,
+            preset = MediaDataPolicy.uploadPreset(qualityKey),
+            validateContent = validateContent,
+        )
+        val profile = if (effectiveDraft.sizeBytes > ChatUploadPolicy.NORMAL_MAX_BYTES) {
             runCatching { api.ownUploadProfile().toUploadProfile() }.getOrNull()
         } else {
             null
         }
         val validated = policy.validate(
-            fileName = draft.fileName,
-            declaredMimeType = draft.mimeType,
-            declaredKind = draft.kind,
-            sizeBytes = draft.sizeBytes,
-            header = readHeader(Uri.parse(draft.uri)),
+            fileName = effectiveDraft.fileName,
+            declaredMimeType = effectiveDraft.mimeType,
+            declaredKind = effectiveDraft.kind,
+            sizeBytes = effectiveDraft.sizeBytes,
+            header = readHeader(Uri.parse(effectiveDraft.uri)),
             profile = profile,
             validateContent = validateContent,
         )
-        val normalized = draft.copy(kind = validated.kind, mimeType = validated.mimeType)
+        val normalized = effectiveDraft.copy(kind = validated.kind, mimeType = validated.mimeType)
         PreparedChatUpload(
             draft = normalized,
             objectKey = existingObjectKey?.trim()?.takeIf(String::isNotEmpty)
@@ -130,6 +144,66 @@ class ChatMediaUploader(
         val read = input.read(buffer)
         if (read <= 0) byteArrayOf() else buffer.copyOf(read)
     } ?: throw IOException("فایل انتخاب‌شده قابل خواندن نیست")
+
+    private fun compressImageDraftIfNeeded(
+        draft: ChatAttachmentDraft,
+        preset: UploadCompressionPreset,
+        validateContent: Boolean,
+    ): ChatAttachmentDraft {
+        if (!validateContent || draft.kind != AttachmentKind.IMAGE) return draft
+        if (draft.mimeType.equals("image/gif", ignoreCase = true)) return draft
+        val uri = Uri.parse(draft.uri)
+        return runCatching {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            openStream(resolver, uri)?.use { BitmapFactory.decodeStream(it, null, bounds) } ?: return draft
+            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return draft
+
+            var sampleSize = 1
+            var w = bounds.outWidth
+            var h = bounds.outHeight
+            while (w > preset.maxDimension || h > preset.maxDimension) {
+                sampleSize *= 2
+                w /= 2
+                h /= 2
+            }
+            val decoded = openStream(resolver, uri)?.use {
+                BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sampleSize })
+            } ?: return draft
+
+            val scaled = if (decoded.width > preset.maxDimension || decoded.height > preset.maxDimension) {
+                val ratio = decoded.width.toFloat() / decoded.height.toFloat()
+                val targetW = if (ratio > 1f) preset.maxDimension else (preset.maxDimension * ratio).toInt().coerceAtLeast(1)
+                val targetH = if (ratio > 1f) (preset.maxDimension / ratio).toInt().coerceAtLeast(1) else preset.maxDimension
+                Bitmap.createScaledBitmap(decoded, targetW, targetH, true).also {
+                    if (it != decoded) decoded.recycle()
+                }
+            } else {
+                decoded
+            }
+
+            val outFile = File(cacheDir, "chat_img_${System.currentTimeMillis()}_${UUID.randomUUID().toString().take(8)}.jpg")
+            try {
+                outFile.outputStream().use { out ->
+                    check(scaled.compress(Bitmap.CompressFormat.JPEG, preset.jpegQuality, out))
+                }
+            } finally {
+                scaled.recycle()
+            }
+            // Only replace when compressed output is valid and avoids inflating tiny originals.
+            val compressedSize = outFile.length()
+            if (compressedSize <= 0L || (compressedSize >= draft.sizeBytes && bounds.outWidth <= preset.maxDimension && bounds.outHeight <= preset.maxDimension)) {
+                outFile.delete()
+                return draft
+            }
+            val jpegName = draft.fileName.substringBeforeLast('.') + ".jpg"
+            draft.copy(
+                uri = Uri.fromFile(outFile).toString(),
+                fileName = jpegName,
+                mimeType = "image/jpeg",
+                sizeBytes = compressedSize,
+            )
+        }.getOrDefault(draft)
+    }
 
     private fun buildObjectKey(
         accountId: String,

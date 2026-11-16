@@ -204,8 +204,14 @@ private fun PasswordScreen(
         backIcon = visuals.backIcon,
         backContentSpacing = 28.dp,
     ) {
+        val heading = when {
+            state.isRegistering -> "انتخاب رمز عبور"
+            state.isTwoFactor && state.twoFactorRecoveryMode -> "بازیابی تایید دو مرحله‌ای"
+            state.isTwoFactor -> "رمز عبور دو مرحله‌ای"
+            else -> "رمز عبور خود را وارد کنید"
+        }
         Text(
-            text = if (state.isRegistering) "انتخاب رمز عبور" else "رمز عبور خود را وارد کنید",
+            text = heading,
             style = MaterialTheme.typography.headlineMedium,
             modifier = Modifier.fillMaxWidth(),
             textAlign = TextAlign.Center,
@@ -219,27 +225,127 @@ private fun PasswordScreen(
                 modifier = Modifier.fillMaxWidth(),
                 textAlign = TextAlign.Center,
             )
+        } else if (state.isTwoFactor) {
+            state.twoFactorHint?.takeIf(String::isNotBlank)?.let { hint ->
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    text = "راهنمای رمز: $hint",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.Center,
+                )
+            }
+            if (state.twoFactorPendingResetDate > 0L) {
+                val nowSeconds = System.currentTimeMillis() / 1000L
+                val remainingHours = ((state.twoFactorPendingResetDate - nowSeconds).coerceAtLeast(0L) + 3599L) / 3600L
+                val remainingDays = remainingHours / 24L
+                val extraHours = remainingHours % 24L
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = "بازنشانی دومرحله‌ای در انتظار تایید است ($remainingDays روز و $extraHours ساعت باقی‌مانده). برای ورود سریع‌تر رمز خود را وارد کنید یا با ایمیل بازیابی تایید نمایید.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.Center,
+                )
+            }
+            state.infoMessage?.takeIf(String::isNotBlank)?.let { msg ->
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = msg,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.Center,
+                )
+            }
         }
-        Spacer(Modifier.height(32.dp))
-        PasswordField(state, onAction, visuals)
-        Spacer(Modifier.height(24.dp))
-        AuthPrimaryButton(
-            label = state.visualPrimaryLabel(),
-            loading = state.isLoading,
-            enabled = !state.isLoading,
-            onClick = { onAction(AuthAction.Submit) },
-        )
-        if (!state.isRegistering) {
-            Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(28.dp))
+        if (state.isTwoFactor && state.twoFactorRecoveryMode) {
+            if (state.twoFactorHasRecovery && state.twoFactorRecoverySessionId != null) {
+                CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                    AuthTextField(
+                        value = state.twoFactorRecoveryCode,
+                        onValueChange = { onAction(AuthAction.TwoFactorRecoveryCodeChanged(it)) },
+                        placeholder = "کد ۶ رقمی ایمیل بازیابی",
+                        enabled = !state.isLoading,
+                        isError = false,
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Number,
+                            imeAction = ImeAction.Done,
+                        ),
+                        keyboardActions = KeyboardActions(onDone = { onAction(AuthAction.Submit) }),
+                    )
+                }
+                Spacer(Modifier.height(20.dp))
+                AuthPrimaryButton(
+                    label = "تایید کد و غیرفعال‌سازی دومرحله‌ای",
+                    loading = state.isLoading,
+                    enabled = !state.isLoading,
+                    onClick = { onAction(AuthAction.Submit) },
+                )
+                Spacer(Modifier.height(10.dp))
+                TextButton(
+                    onClick = { onAction(AuthAction.RequestTwoFactorEmailRecovery) },
+                    enabled = !state.isLoading,
+                ) {
+                    Text(
+                        text = "ارسال مجدد کد به ایمیل",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = VistaBrandColors.Indigo,
+                    )
+                }
+            } else if (state.twoFactorHasRecovery) {
+                AuthPrimaryButton(
+                    label = "ارسال کد به ایمیل (${state.twoFactorRecoveryEmailPattern.orEmpty()})",
+                    loading = state.isLoading,
+                    enabled = !state.isLoading,
+                    onClick = { onAction(AuthAction.RequestTwoFactorEmailRecovery) },
+                )
+            }
+            Spacer(Modifier.height(8.dp))
             TextButton(
-                onClick = { onAction(AuthAction.ForgotPassword) },
+                onClick = { onAction(AuthAction.RequestTwoFactorReset) },
                 enabled = !state.isLoading,
             ) {
                 Text(
-                    text = "فراموشی رمز عبور؟",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = VistaBrandColors.Indigo,
+                    text = "دسترسی به ایمیل ندارم (بازنشانی ۷ روزه تلگرام)",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
                 )
+            }
+            TextButton(
+                onClick = { onAction(AuthAction.CancelTwoFactorRecoveryMode) },
+                enabled = !state.isLoading,
+            ) {
+                Text(
+                    text = "بازگشت به وارد کردن رمز دومرحله‌ای",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        } else {
+            PasswordField(state, onAction, visuals)
+            Spacer(Modifier.height(24.dp))
+            AuthPrimaryButton(
+                label = state.visualPrimaryLabel(),
+                loading = state.isLoading,
+                enabled = !state.isLoading,
+                onClick = { onAction(AuthAction.Submit) },
+            )
+            if (!state.isRegistering) {
+                Spacer(Modifier.height(12.dp))
+                TextButton(
+                    onClick = { onAction(AuthAction.ForgotPassword) },
+                    enabled = !state.isLoading,
+                ) {
+                    Text(
+                        text = if (state.isTwoFactor) "رمز دو مرحله‌ای را فراموش کرده‌ام" else "فراموشی رمز عبور؟",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = VistaBrandColors.Indigo,
+                    )
+                }
             }
         }
         state.errorMessage?.let {

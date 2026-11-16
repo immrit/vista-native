@@ -261,6 +261,8 @@ fun FeedScreen(
         currentUserAvatar = ownProfile?.avatarUrl,
         unreadNotificationCount = unreadNotificationCount,
         selectedKind = selectedKind,
+        autoplayMedia = preferences.autoplayMedia,
+        videoDataSaver = preferences.videoDataSaver,
         autoplayPostMusic = preferences.autoplayPostMusic,
         onFollowClick = viewModel::toggleFollowAuthor,
         storyUsers = storyUsers,
@@ -486,6 +488,8 @@ internal fun FeedScreenContent(
     onTrackEvent: (String, String) -> Unit = { _, _ -> },
     onTrackPostEvent: (String, String, Long?) -> Unit = { id, ev, _ -> onTrackEvent(id, ev) },
     onTrackMusicPlay: (String, List<String>) -> Unit = { _, _ -> },
+    autoplayMedia: Boolean = true,
+    videoDataSaver: Boolean = false,
     autoplayPostMusic: Boolean = true,
     onFollowClick: (String) -> Unit = {},
 ) {
@@ -672,6 +676,8 @@ internal fun FeedScreenContent(
                         onTrackEvent = onTrackEvent,
                         onTrackPostEvent = onTrackPostEvent,
                         onTrackMusicPlay = onTrackMusicPlay,
+                        autoplayMedia = autoplayMedia,
+                        videoDataSaver = videoDataSaver,
                         autoplayPostMusic = autoplayPostMusic,
                         onFollowClick = onFollowClick,
                         topPadding = topHeaderHeight,
@@ -963,6 +969,8 @@ internal fun FeedContent(
     onTrackEvent: (String, String) -> Unit = { _, _ -> },
     onTrackPostEvent: (String, String, Long?) -> Unit = { id, ev, _ -> onTrackEvent(id, ev) },
     onTrackMusicPlay: (String, List<String>) -> Unit = { _, _ -> },
+    autoplayMedia: Boolean = true,
+    videoDataSaver: Boolean = false,
     autoplayPostMusic: Boolean = true,
     onFollowClick: (String) -> Unit = {},
     topPadding: androidx.compose.ui.unit.Dp = 8.dp,
@@ -1162,6 +1170,8 @@ internal fun FeedContent(
                 isOwnPost = !viewerUserId.isNullOrBlank() && post.userId.equals(viewerUserId, ignoreCase = true),
                 isBlueTick = isViewerBlueTick,
                 hasPremiumEdit = viewerHasPremiumEdit,
+                autoplayVideo = autoplayMedia,
+                videoDataSaver = videoDataSaver,
                 showFollowState = selectedKind == FeedKind.Explore,
                 onFollowClick = onFollowClick,
                 onPostClick = {
@@ -1300,6 +1310,8 @@ fun VistaFeedPostCard(
     onAppealClick: (String) -> Unit = {},
     showFollowState: Boolean = false,
     onFollowClick: (String) -> Unit = {},
+    autoplayVideo: Boolean = true,
+    videoDataSaver: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     var expanded by rememberSaveable(post.id) { mutableStateOf(false) }
@@ -1439,6 +1451,8 @@ fun VistaFeedPostCard(
         PostMedia(
             post = post,
             onMediaClick = onMediaClick,
+            autoplayVideo = autoplayVideo,
+            videoDataSaver = videoDataSaver,
             onClick = {
                 if (!post.videoUrl.isNullOrBlank() && onVideoClick != null) {
                     onVideoClick()
@@ -1548,6 +1562,8 @@ private fun PostMedia(
     onClick: () -> Unit,
     onDoubleTap: () -> Unit,
     onMediaClick: ((List<String>, Int) -> Unit)? = null,
+    autoplayVideo: Boolean = true,
+    videoDataSaver: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val mediaUrl = post.videoThumbnailUrl ?: post.primaryImageUrl
@@ -1598,7 +1614,8 @@ private fun PostMedia(
                 videoUrl = post.videoUrl,
                 thumbnailUrl = mediaUrl,
                 aspectRatio = ratio,
-                autoPlay = true,
+                autoPlay = autoplayVideo,
+                dataSaver = videoDataSaver,
                 initiallyMuted = true,
                 showMuteToggle = true,
                 onVideoClick = onClick,

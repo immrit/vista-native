@@ -90,6 +90,7 @@ class VistaApplication : Application(), Configuration.Provider, ImageLoaderFacto
         ir.coffevista.vista_native.core.designsystem.component.VistaDirectShareRegistry.current =
             directShareGateway
         ir.coffevista.vista_native.crash.VistaCrashReporter.install(this)
+        ir.coffevista.vista_native.worker.MediaRetentionWorker.schedule(this)
     }
 
     override fun newImageLoader(): ImageLoader = ImageLoader.Builder(this)

@@ -6,12 +6,15 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import dagger.hilt.android.qualifiers.ApplicationContext
+import ir.coffevista.vista_native.core.datastore.MediaDataPolicy
+import ir.coffevista.vista_native.core.datastore.SettingsPreferenceStore
 import ir.coffevista.vista_native.core.network.ExternalMedia
 import java.io.File
 import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -27,6 +30,7 @@ class ProfileAvatarUploader @Inject constructor(
     @ApplicationContext context: Context,
     private val api: ProfileApi,
     @ExternalMedia private val externalClient: OkHttpClient,
+    private val preferenceStore: SettingsPreferenceStore,
 ) {
     private val resolver: ContentResolver = context.contentResolver
     private val cacheDirectory = context.cacheDir
@@ -43,7 +47,13 @@ class ProfileAvatarUploader @Inject constructor(
             ?: sourceLengthAtMost(uri)
         if (sourceSize > MAX_INPUT_BYTES) throw IOException("حجم تصویر باید حداکثر ۵ مگابایت باشد")
 
-        val temporaryJpeg = compressToJpeg(uri)
+        val qualityKey = runCatching { preferenceStore.preferences.first().mediaQuality }.getOrDefault("high")
+        val preset = MediaDataPolicy.uploadPreset(qualityKey)
+        val temporaryJpeg = compressToJpeg(
+            uri = uri,
+            maxDimension = preset.maxDimension.coerceAtMost(MAX_DIMENSION),
+            jpegQuality = preset.jpegQuality,
+        )
         try {
             if (temporaryJpeg.length() !in 1..MAX_INPUT_BYTES) {
                 throw IOException("حجم تصویر فشرده‌شده باید حداکثر ۵ مگابایت باشد")
@@ -84,7 +94,13 @@ class ProfileAvatarUploader @Inject constructor(
             ?: sourceLengthAtMost(uri)
         if (sourceSize > MAX_INPUT_BYTES) throw IOException("حجم مدرک باید حداکثر ۵ مگابایت باشد")
 
-        val temporaryJpeg = compressToJpeg(uri)
+        val qualityKey = runCatching { preferenceStore.preferences.first().mediaQuality }.getOrDefault("high")
+        val preset = MediaDataPolicy.uploadPreset(qualityKey)
+        val temporaryJpeg = compressToJpeg(
+            uri = uri,
+            maxDimension = preset.maxDimension.coerceAtMost(MAX_DIMENSION),
+            jpegQuality = preset.jpegQuality,
+        )
         try {
             if (temporaryJpeg.length() !in 1..MAX_INPUT_BYTES) {
                 throw IOException("حجم تصویر مدرک فشرده‌شده باید حداکثر ۵ مگابایت باشد")
@@ -119,13 +135,17 @@ class ProfileAvatarUploader @Inject constructor(
         api.deleteUpload(ProfileMediaDeleteRequestDto(objectKey)).success
     }
 
-    private fun compressToJpeg(uri: Uri): File {
+    private fun compressToJpeg(
+        uri: Uri,
+        maxDimension: Int = MAX_DIMENSION,
+        jpegQuality: Int = JPEG_QUALITY,
+    ): File {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         (resolver.openInputStream(uri) ?: throw IOException("فایل انتخاب‌شده قابل خواندن نیست")).use {
             BitmapFactory.decodeStream(it, null, bounds)
         }
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) throw IOException("فایل انتخاب‌شده تصویر معتبر نیست")
-        val options = BitmapFactory.Options().apply { inSampleSize = sampleSize(bounds.outWidth, bounds.outHeight) }
+        val options = BitmapFactory.Options().apply { inSampleSize = sampleSize(bounds.outWidth, bounds.outHeight, maxDimension) }
         val rawBitmap = (resolver.openInputStream(uri) ?: throw IOException("فایل انتخاب‌شده قابل خواندن نیست")).use {
             BitmapFactory.decodeStream(it, null, options)
         } ?: throw IOException("فایل انتخاب‌شده قابل خواندن نیست")
@@ -157,16 +177,16 @@ class ProfileAvatarUploader @Inject constructor(
             transformed
         } else rawBitmap
 
-        val finalBitmap = if (oriented.width > MAX_DIMENSION || oriented.height > MAX_DIMENSION) {
+        val finalBitmap = if (oriented.width > maxDimension || oriented.height > maxDimension) {
             val ratio = oriented.width.toFloat() / oriented.height.toFloat()
             val targetW: Int
             val targetH: Int
             if (ratio > 1f) {
-                targetW = MAX_DIMENSION
-                targetH = (MAX_DIMENSION / ratio).toInt().coerceAtLeast(1)
+                targetW = maxDimension
+                targetH = (maxDimension / ratio).toInt().coerceAtLeast(1)
             } else {
-                targetH = MAX_DIMENSION
-                targetW = (MAX_DIMENSION * ratio).toInt().coerceAtLeast(1)
+                targetH = maxDimension
+                targetW = (maxDimension * ratio).toInt().coerceAtLeast(1)
             }
             val scaled = Bitmap.createScaledBitmap(oriented, targetW, targetH, true)
             if (scaled != oriented) oriented.recycle()
@@ -176,7 +196,7 @@ class ProfileAvatarUploader @Inject constructor(
         val file = File.createTempFile("profile-avatar-", ".jpg", cacheDirectory)
         return try {
             file.outputStream().use { output ->
-                if (!finalBitmap.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, output)) {
+                if (!finalBitmap.compress(Bitmap.CompressFormat.JPEG, jpegQuality, output)) {
                     throw IOException("فشرده‌سازی تصویر ناموفق بود")
                 }
             }
@@ -203,11 +223,11 @@ class ProfileAvatarUploader @Inject constructor(
         return total
     }
 
-    private fun sampleSize(width: Int, height: Int): Int {
+    private fun sampleSize(width: Int, height: Int, maxDimension: Int = MAX_DIMENSION): Int {
         var sample = 1
         var sampledWidth = width
         var sampledHeight = height
-        while (sampledWidth > MAX_DIMENSION || sampledHeight > MAX_DIMENSION) {
+        while (sampledWidth > maxDimension || sampledHeight > maxDimension) {
             sample *= 2
             sampledWidth /= 2
             sampledHeight /= 2

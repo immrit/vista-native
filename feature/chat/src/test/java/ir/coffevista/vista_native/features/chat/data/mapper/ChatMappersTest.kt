@@ -220,9 +220,25 @@ class ChatMappersTest {
 
         val conversation = entity.toDomain(cipher)
         assertEquals("service-peer", conversation.peerId)
-        assertEquals("vista_service", conversation.title)
+        assertEquals("Vista Service", conversation.title)
         assertEquals("https://s3.coffevista.ir/avatars/vista-service.png", conversation.avatarUrl)
         assertEquals(4, conversation.unreadCount)
+    }
+
+    @Test
+    fun `official vista service peer displays Vista Service even when username is Vista`() = runTest {
+        val entity = ConversationDto(
+            id = "conversation-official-service",
+            conversationType = "direct",
+            peerId = "00000000-0000-4000-8000-000000000101",
+            name = "Vista",
+            username = "Vista",
+            peerFullName = "Vista Service",
+            accountType = "system",
+        ).toEntity("account", cipher, 11)
+
+        val conversation = entity.toDomain(cipher)
+        assertEquals("Vista Service", conversation.title)
     }
 
     @Test

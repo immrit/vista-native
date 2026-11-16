@@ -27,6 +27,9 @@ class DefaultAuthRepository @Inject constructor(
     override suspend fun login(identifier: String, password: String) =
         call("ورود") { remote.login(identifier, password) }
 
+    override suspend fun loginWithChallenge(identifier: String, password: String) =
+        call("ورود") { remote.loginWithChallenge(identifier, password) }
+
     override suspend fun sendOtp(phoneNumber: String) =
         call("ارسال کد تایید") { remote.sendOtp(phoneNumber) }
 
@@ -35,6 +38,20 @@ class DefaultAuthRepository @Inject constructor(
 
     override suspend fun verifyTwoFactor(token: String, password: String) =
         call("تایید دو مرحله‌ای") { remote.verifyTwoFactor(token, password) }
+
+    override suspend fun sendTwoFactorRecoveryCode(twoFactorToken: String) =
+        call("ارسال کد بازیابی تایید دومرحله‌ای") { remote.sendTwoFactorRecoveryCode(twoFactorToken) }
+
+    override suspend fun verifyTwoFactorRecoveryCode(
+        twoFactorToken: String,
+        sessionId: String?,
+        code: String,
+    ) = call("تایید کد بازیابی دومرحله‌ای") {
+        remote.verifyTwoFactorRecoveryCode(twoFactorToken, sessionId, code)
+    }
+
+    override suspend fun requestTwoFactorReset(twoFactorToken: String) =
+        call("درخواست بازنشانی تایید دومرحله‌ای") { remote.requestTwoFactorReset(twoFactorToken) }
 
     override suspend fun setPassword(accessToken: String, password: String) =
         call("تعیین رمز عبور") { remote.setPassword(accessToken, password) }

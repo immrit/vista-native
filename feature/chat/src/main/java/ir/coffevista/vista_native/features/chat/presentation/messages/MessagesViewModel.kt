@@ -3,8 +3,15 @@ package ir.coffevista.vista_native.features.chat.presentation.messages
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import ir.coffevista.vista_native.core.common.ConnectionTransport
+import ir.coffevista.vista_native.core.datastore.MediaDataPolicy
+import ir.coffevista.vista_native.core.datastore.SettingsPreferenceStore
+import ir.coffevista.vista_native.core.datastore.SettingsPreferences
+import ir.coffevista.vista_native.core.network.NetworkMonitor
 import ir.coffevista.vista_native.core.security.SessionStore
+import ir.coffevista.vista_native.features.chat.domain.model.AttachmentKind
 import ir.coffevista.vista_native.features.chat.domain.model.ChatAttachmentDraft
+import ir.coffevista.vista_native.features.chat.domain.model.TransferState
 import ir.coffevista.vista_native.features.chat.domain.model.ChatPartnerProfile
 import ir.coffevista.vista_native.features.chat.domain.model.ChatUser
 import ir.coffevista.vista_native.features.chat.domain.model.BlockStatus
@@ -92,6 +99,8 @@ data class MessagesUiState(
     val duelPreviews: Map<String, DuelPreviewUiState> = emptyMap(),
     val pendingSessionAlertActions: Set<String> = emptySet(),
     val isRequestActionInFlight: Boolean = false,
+    val settingsPreferences: SettingsPreferences = SettingsPreferences(),
+    val connectionTransport: ConnectionTransport = ConnectionTransport.WIFI,
 ) {
     val isSecret: Boolean get() = conversation?.type == ConversationType.SECRET
 }
@@ -102,6 +111,8 @@ class MessagesViewModel @Inject constructor(
     private val sessionStore: SessionStore? = null,
     private val gifCatalog: GifCatalog = EmptyGifCatalog,
     private val savedGifStore: SavedGifStore? = null,
+    private val settingsPreferenceStore: SettingsPreferenceStore? = null,
+    private val networkMonitor: NetworkMonitor? = null,
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(MessagesUiState())
     val state: StateFlow<MessagesUiState> = mutableState.asStateFlow()
@@ -127,8 +138,25 @@ class MessagesViewModel @Inject constructor(
     private val messageReadOrShownTimestamps = java.util.concurrent.ConcurrentHashMap<String, Long>()
     private val optimisticPendingMessages = java.util.concurrent.ConcurrentHashMap<String, Message>()
     private val inFlightDuelPreviews = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    private val autoDownloadAttemptedKeys = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
     init {
+        settingsPreferenceStore?.let { store ->
+            viewModelScope.launch {
+                store.preferences.collect { prefs ->
+                    mutableState.update { it.copy(settingsPreferences = prefs) }
+                    evaluateAutoDownloads()
+                }
+            }
+        }
+        networkMonitor?.let { monitor ->
+            viewModelScope.launch {
+                monitor.transport.collect { transport ->
+                    mutableState.update { it.copy(connectionTransport = transport) }
+                    evaluateAutoDownloads()
+                }
+            }
+        }
         savedGifStore?.let { store ->
             viewModelScope.launch {
                 store.savedGifs.collect { list ->
@@ -187,6 +215,7 @@ class MessagesViewModel @Inject constructor(
                     )
                 }
                 acknowledgeVisibleUnread()
+                evaluateAutoDownloads()
                 val autoDelete = mutableState.value.secretAutoDeleteSeconds
                 if (autoDelete > 0) {
                     scheduleSecretAutoDelete(mergedMessages, autoDelete)
@@ -228,7 +257,10 @@ class MessagesViewModel @Inject constructor(
             .onEach { media -> mutableState.update { it.copy(sharedMedia = media) } }
             .launchIn(viewModelScope)
         downloadsObserver = repository.observeDownloads(conversationId)
-            .onEach { tasks -> mutableState.update { it.copy(downloads = tasks.associateBy(DownloadTask::messageId)) } }
+            .onEach { tasks ->
+                mutableState.update { it.copy(downloads = tasks.associateBy(DownloadTask::messageId)) }
+                evaluateAutoDownloads()
+            }
             .launchIn(viewModelScope)
         refresh()
         loadPinnedMessages()
@@ -676,6 +708,38 @@ class MessagesViewModel @Inject constructor(
     }
 
     fun startDownload(message: Message) = downloadMutation { repository.startDownload(message) }
+
+    private fun evaluateAutoDownloads() {
+        val store = settingsPreferenceStore ?: return
+        val snapshot = mutableState.value
+        if (snapshot.isSecret) return
+        val transport = networkMonitor?.currentTransport() ?: snapshot.connectionTransport
+        val prefs = snapshot.settingsPreferences
+        val downloads = snapshot.downloads
+        snapshot.messages.forEach { message ->
+            val att = message.attachment ?: return@forEach
+            val remoteUrl = att.remoteUrl?.trim()?.takeIf(String::isNotEmpty) ?: return@forEach
+            if (!att.localUri.isNullOrBlank()) return@forEach
+            if (att.transferState != TransferState.COMPLETE) return@forEach
+            val downloadKey = message.serverId ?: message.clientId
+            if (downloads.containsKey(downloadKey)) return@forEach
+            val isImageOrGifOrVoice = att.kind in setOf(
+                AttachmentKind.IMAGE,
+                AttachmentKind.GIF,
+                AttachmentKind.VOICE,
+            )
+            if (!MediaDataPolicy.shouldAutoDownloadAttachment(
+                    transport = transport,
+                    isImageOrGifOrVoice = isImageOrGifOrVoice,
+                    sizeBytes = att.sizeBytes,
+                    prefs = prefs,
+                )
+            ) return@forEach
+            if (autoDownloadAttemptedKeys.add(downloadKey)) {
+                viewModelScope.launch { repository.startDownload(message) }
+            }
+        }
+    }
 
     fun pauseDownload(messageId: String) = downloadMutation { repository.pauseDownload(messageId) }
 

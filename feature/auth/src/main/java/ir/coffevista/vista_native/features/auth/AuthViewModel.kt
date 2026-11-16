@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import ir.coffevista.vista_native.core.common.Outcome
 import ir.coffevista.vista_native.core.model.auth.AuthPayload
+import ir.coffevista.vista_native.core.model.auth.LoginOutcome
 import ir.coffevista.vista_native.core.model.auth.OtpVerification
 import ir.coffevista.vista_native.core.model.session.AuthenticatedContext
 import ir.coffevista.vista_native.core.security.SessionStore
@@ -37,6 +38,13 @@ data class AuthUiState(
     val recoveryOptionId: String? = null,
     val recoveryToken: String? = null,
     val isTwoFactor: Boolean = false,
+    val twoFactorHint: String? = null,
+    val twoFactorHasRecovery: Boolean = false,
+    val twoFactorRecoveryEmailPattern: String? = null,
+    val twoFactorPendingResetDate: Long = 0L,
+    val twoFactorRecoveryMode: Boolean = false,
+    val twoFactorRecoveryCode: String = "",
+    val twoFactorRecoverySessionId: String? = null,
     val resendSeconds: Int = 0,
     val errorMessage: String? = null,
     val infoMessage: String? = null,
@@ -47,9 +55,13 @@ sealed interface AuthAction {
     data class IdentifierChanged(val value: String) : AuthAction
     data class PasswordChanged(val value: String) : AuthAction
     data class OtpChanged(val value: String) : AuthAction
+    data class TwoFactorRecoveryCodeChanged(val value: String) : AuthAction
     data object TogglePasswordVisibility : AuthAction
     data object Submit : AuthAction
     data object ForgotPassword : AuthAction
+    data object RequestTwoFactorEmailRecovery : AuthAction
+    data object RequestTwoFactorReset : AuthAction
+    data object CancelTwoFactorRecoveryMode : AuthAction
     data object ResendOtp : AuthAction
     data object Back : AuthAction
     data object ClearMessage : AuthAction
@@ -85,6 +97,13 @@ class AuthViewModel @Inject constructor(
                 val digits = normalizeDigits(action.value).filter(Char::isDigit).take(5)
                 updateInput(otp = digits)
             }
+            is AuthAction.TwoFactorRecoveryCodeChanged -> {
+                val digits = normalizeDigits(action.value).filter(Char::isDigit).take(6)
+                mutableState.value = mutableState.value.copy(
+                    twoFactorRecoveryCode = digits,
+                    errorMessage = null,
+                )
+            }
             AuthAction.TogglePasswordVisibility -> {
                 mutableState.value = mutableState.value.copy(
                     passwordVisible = !mutableState.value.passwordVisible,
@@ -92,6 +111,17 @@ class AuthViewModel @Inject constructor(
             }
             AuthAction.Submit -> submit()
             AuthAction.ForgotPassword -> forgotPassword()
+            AuthAction.RequestTwoFactorEmailRecovery -> sendTwoFactorRecoveryEmail()
+            AuthAction.RequestTwoFactorReset -> requestTwoFactorReset()
+            AuthAction.CancelTwoFactorRecoveryMode -> {
+                mutableState.value = mutableState.value.copy(
+                    twoFactorRecoveryMode = false,
+                    twoFactorRecoveryCode = "",
+                    twoFactorRecoverySessionId = null,
+                    errorMessage = null,
+                    infoMessage = null,
+                )
+            }
             AuthAction.ResendOtp -> resendOtp()
             AuthAction.Back -> goBack()
             AuthAction.ClearMessage -> {
@@ -182,13 +212,30 @@ class AuthViewModel @Inject constructor(
     }
 
     private fun submitPassword() {
-        val password = mutableState.value.password
+        val current = mutableState.value
+        val twoFactorToken = pendingTwoFactorToken
+        if (twoFactorToken != null && current.twoFactorRecoveryMode) {
+            val code = normalizeDigits(current.twoFactorRecoveryCode).trim()
+            if (code.length < 6) {
+                showError("کد بازیابی ۶ رقمی را وارد کنید")
+                return
+            }
+            launchLoading {
+                when (val result = repository.verifyTwoFactorRecoveryCode(twoFactorToken, current.twoFactorRecoverySessionId, code)) {
+                    is Outcome.Failure -> showError(result.error.messageFa)
+                    is Outcome.Success -> completeAuthentication(result.value)
+                }
+            }
+            return
+        }
+
+        val password = current.password
         if (password.isBlank()) {
             showError("لطفاً رمز عبور را وارد کنید")
             return
         }
-        if (mutableState.value.isRegistering) {
-            val validation = validatePassword(password, mutableState.value.normalizedPhone)
+        if (current.isRegistering) {
+            val validation = validatePassword(password, current.normalizedPhone)
             if (validation != null) {
                 showError(validation)
                 return
@@ -197,19 +244,38 @@ class AuthViewModel @Inject constructor(
             return
         }
 
-        val twoFactorToken = pendingTwoFactorToken
         launchLoading {
-            val result = if (twoFactorToken != null) {
-                repository.verifyTwoFactor(twoFactorToken, password)
+            if (twoFactorToken != null) {
+                when (val result = repository.verifyTwoFactor(twoFactorToken, password)) {
+                    is Outcome.Failure -> showError(result.error.messageFa)
+                    is Outcome.Success -> completeAuthentication(result.value)
+                }
             } else {
-                repository.login(
-                    identifier = normalizedIdentifier(),
-                    password = password,
-                )
-            }
-            when (result) {
-                is Outcome.Failure -> showError(result.error.messageFa)
-                is Outcome.Success -> completeAuthentication(result.value)
+                when (val result = repository.loginWithChallenge(normalizedIdentifier(), password)) {
+                    is Outcome.Failure -> showError(result.error.messageFa)
+                    is Outcome.Success -> when (val outcome = result.value) {
+                        is LoginOutcome.Authenticated -> completeAuthentication(outcome.payload)
+                        is LoginOutcome.TwoFactorRequired -> {
+                            val challenge = outcome.challenge
+                            pendingTwoFactorToken = challenge.twoFactorToken
+                            mutableState.value = mutableState.value.copy(
+                                step = AuthStep.PASSWORD,
+                                password = "",
+                                isTwoFactor = true,
+                                twoFactorHint = challenge.hint,
+                                twoFactorHasRecovery = challenge.hasRecovery,
+                                twoFactorRecoveryEmailPattern = challenge.recoveryEmailPattern,
+                                twoFactorPendingResetDate = challenge.pendingResetDate,
+                                twoFactorRecoveryMode = false,
+                                twoFactorRecoveryCode = "",
+                                isRegistering = false,
+                                isLoading = false,
+                                errorMessage = null,
+                                infoMessage = "حساب شما تایید دومرحله‌ای دارد؛ رمز عبور دومرحله‌ای را وارد کنید.",
+                            )
+                        }
+                    }
+                }
             }
         }
     }
@@ -294,6 +360,12 @@ class AuthViewModel @Inject constructor(
                             step = AuthStep.PASSWORD,
                             password = "",
                             isTwoFactor = true,
+                            twoFactorHint = verification.hint,
+                            twoFactorHasRecovery = verification.hasRecovery,
+                            twoFactorRecoveryEmailPattern = verification.recoveryEmailPattern,
+                            twoFactorPendingResetDate = verification.pendingResetDate,
+                            twoFactorRecoveryMode = false,
+                            twoFactorRecoveryCode = "",
                             isRegistering = false,
                             isLoading = false,
                             errorMessage = null,
@@ -462,6 +534,18 @@ class AuthViewModel @Inject constructor(
 
     private fun forgotPassword() {
         if (mutableState.value.isLoading) return
+        if (mutableState.value.isTwoFactor && pendingTwoFactorToken != null) {
+            if (mutableState.value.twoFactorHasRecovery) {
+                sendTwoFactorRecoveryEmail()
+            } else {
+                mutableState.value = mutableState.value.copy(
+                    twoFactorRecoveryMode = true,
+                    errorMessage = null,
+                    infoMessage = "ایمیل بازیابی برای رمز دومرحله‌ای ثبت نشده است؛ می‌توانید درخواست بازنشانی ۷ روزه بدهید.",
+                )
+            }
+            return
+        }
         val phone = mutableState.value.normalizedPhone
             ?: normalizeIranPhone(mutableState.value.identifier)
         if (phone != null) {
@@ -503,6 +587,56 @@ class AuthViewModel @Inject constructor(
         }
     }
 
+    private fun sendTwoFactorRecoveryEmail() {
+        val token = pendingTwoFactorToken ?: return
+        launchLoading {
+            when (val res = repository.sendTwoFactorRecoveryCode(token)) {
+                is Outcome.Failure -> showError(res.error.messageFa)
+                is Outcome.Success -> {
+                    val info = res.value
+                    val target = info.emailPattern ?: mutableState.value.twoFactorRecoveryEmailPattern
+                    mutableState.value = mutableState.value.copy(
+                        twoFactorRecoveryMode = true,
+                        twoFactorRecoverySessionId = info.sessionId,
+                        twoFactorRecoveryEmailPattern = target,
+                        twoFactorRecoveryCode = "",
+                        isLoading = false,
+                        errorMessage = null,
+                        infoMessage = if (!target.isNullOrBlank()) {
+                            "کد ۶ رقمی بازیابی به ایمیل $target ارسال شد."
+                        } else {
+                            info.message ?: "کد ۶ رقمی بازیابی به ایمیل شما ارسال شد."
+                        },
+                    )
+                }
+            }
+        }
+    }
+
+    private fun requestTwoFactorReset() {
+        val token = pendingTwoFactorToken ?: return
+        launchLoading {
+            when (val res = repository.requestTwoFactorReset(token)) {
+                is Outcome.Failure -> showError(res.error.messageFa)
+                is Outcome.Success -> {
+                    val result = res.value
+                    val auth = result.auth
+                    if (result.resetCompleted && auth != null) {
+                        completeAuthentication(auth)
+                    } else {
+                        mutableState.value = mutableState.value.copy(
+                            twoFactorPendingResetDate = result.pendingResetDate,
+                            isLoading = false,
+                            errorMessage = null,
+                            infoMessage = result.message
+                                ?: "درخواست بازنشانی ۷ روزه ثبت شد. پس از پایان مهلت، تایید دومرحله‌ای حذف می‌شود.",
+                        )
+                    }
+                }
+            }
+        }
+    }
+
     private fun goBack() {
         if (mutableState.value.isLoading) return
         countdownJob?.cancel()
@@ -513,6 +647,13 @@ class AuthViewModel @Inject constructor(
                 step = AuthStep.IDENTIFIER,
                 password = "",
                 isTwoFactor = false,
+                twoFactorHint = null,
+                twoFactorHasRecovery = false,
+                twoFactorRecoveryEmailPattern = null,
+                twoFactorPendingResetDate = 0L,
+                twoFactorRecoveryMode = false,
+                twoFactorRecoveryCode = "",
+                twoFactorRecoverySessionId = null,
                 isRegistering = false,
                 isPasswordRecovery = false,
                 errorMessage = null,
