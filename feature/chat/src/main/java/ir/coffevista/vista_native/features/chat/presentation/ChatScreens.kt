@@ -4337,6 +4337,16 @@ private fun MessageBubble(
             )
             val screenWidth = LocalConfiguration.current.screenWidthDp.dp
             val isSingleEmoji = singleEmoji != null
+            val isVisualMediaBubble = !isDeleted &&
+                !isSingleEmoji &&
+                duelInvite == null &&
+                sessionAlert == null &&
+                sharedPost == null &&
+                message.attachment?.kind in setOf(
+                    AttachmentKind.IMAGE,
+                    AttachmentKind.GIF,
+                    AttachmentKind.VIDEO,
+                )
             val base = Modifier
                 .then(
                     if (isSingleEmoji) {
@@ -4503,6 +4513,8 @@ private fun MessageBubble(
                         .then(
                             if (isSingleEmoji) {
                                 Modifier.padding(0.dp)
+                            } else if (isVisualMediaBubble) {
+                                Modifier.padding(3.dp)
                             } else {
                                 Modifier.padding(start = 12.dp, top = 8.dp, end = 12.dp, bottom = 6.dp)
                             }
@@ -4510,7 +4522,11 @@ private fun MessageBubble(
                 ) {
                 if (!isDeleted && message.isForwarded) {
                     Row(
-                        Modifier.padding(bottom = 4.dp),
+                        if (isVisualMediaBubble) {
+                            Modifier.padding(start = 9.dp, top = 5.dp, end = 9.dp, bottom = 4.dp)
+                        } else {
+                            Modifier.padding(bottom = 4.dp)
+                        },
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Icon(
@@ -4537,7 +4553,13 @@ private fun MessageBubble(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(bottom = 6.dp)
+                            .then(
+                                if (isVisualMediaBubble) {
+                                    Modifier.padding(start = 6.dp, top = 4.dp, end = 6.dp, bottom = 4.dp)
+                                } else {
+                                    Modifier.padding(bottom = 6.dp)
+                                },
+                            )
                             .clip(RoundedCornerShape(8.dp))
                             .background(
                                 if (message.isMine) Color.White.copy(alpha = 0.15f)
@@ -4627,7 +4649,11 @@ private fun MessageBubble(
                         onCancelDownload = onCancelDownload,
                         onAttachmentClick = onAttachmentClick,
                     )
-                    if (text.isNotBlank()) Spacer(Modifier.height(6.dp))
+                    if (text.isNotBlank()) {
+                        Spacer(Modifier.height(if (isVisualMediaBubble) 4.dp else 6.dp))
+                    } else if (isVisualMediaBubble) {
+                        Spacer(Modifier.height(2.dp))
+                    }
                 }
                 val messageTextDir = resolveMessageTextDirection(text)
                 val isRtlMessage = messageTextDir == androidx.compose.ui.text.style.TextDirection.Rtl ||
@@ -4748,11 +4774,29 @@ private fun MessageBubble(
                             )
                         },
                         footer = metaFooter,
-                        modifier = Modifier.align(AbsoluteAlignment.Right),
+                        modifier = Modifier
+                            .align(AbsoluteAlignment.Right)
+                            .then(
+                                if (isVisualMediaBubble) {
+                                    Modifier.padding(start = 9.dp, end = 9.dp, bottom = 3.dp)
+                                } else {
+                                    Modifier
+                                },
+                            ),
                         layoutDirection = if (isRtlMessage) LayoutDirection.Rtl else LayoutDirection.Ltr,
                     )
                 } else {
-                    Box(Modifier.align(AbsoluteAlignment.Right)) {
+                    Box(
+                        Modifier
+                            .align(AbsoluteAlignment.Right)
+                            .then(
+                                if (isVisualMediaBubble) {
+                                    Modifier.padding(start = 9.dp, top = 2.dp, end = 9.dp, bottom = 3.dp)
+                                } else {
+                                    Modifier
+                                },
+                            ),
+                    ) {
                         metaFooter()
                     }
                 }
@@ -4764,7 +4808,12 @@ private fun MessageBubble(
                     ChatLinkPreviewCard(
                         url = previewUrl,
                         isMine = message.isMine,
-                        modifier = Modifier.padding(top = 4.dp),
+                        modifier = Modifier
+                            .padding(top = 4.dp)
+                            .then(
+                                if (isVisualMediaBubble) Modifier.padding(horizontal = 9.dp)
+                                else Modifier
+                            ),
                     )
                 }
                 MessageReactionsRow(
@@ -4774,7 +4823,12 @@ private fun MessageBubble(
                     selectionMode = selectionMode,
                     onToggleSelection = onToggleSelection,
                     onReact = onReact,
-                    modifier = Modifier.padding(top = 5.dp),
+                    modifier = Modifier
+                        .padding(top = 5.dp)
+                        .then(
+                            if (isVisualMediaBubble) Modifier.padding(start = 9.dp, end = 9.dp, bottom = 3.dp)
+                            else Modifier
+                        ),
                 )
             }
         }
@@ -5792,7 +5846,7 @@ private fun AttachmentBubble(
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(min = 140.dp, max = 280.dp)
-                        .clip(RoundedCornerShape(12.dp))
+                        .clip(RoundedCornerShape(15.dp))
                         .clickable {
                             when {
                                 isDownloaded -> onAttachmentClick(attachment.copy(localUri = effectiveLocalUri))
@@ -5902,7 +5956,7 @@ private fun AttachmentBubble(
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(min = 160.dp, max = 260.dp)
-                        .clip(RoundedCornerShape(12.dp))
+                        .clip(RoundedCornerShape(15.dp))
                         .background(Color(0xFF1E1E1E))
                         .clickable {
                             when {

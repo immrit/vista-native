@@ -109,7 +109,13 @@ class TwoFactorSettingsViewModel @Inject constructor(
     }
 
     fun updateAccountEmailCodeInput(value: String) {
-        val digits = value.filter(Char::isDigit).take(6)
+        val digits = value.map { ch ->
+            when (ch) {
+                in '۰'..'۹' -> ('0'.code + (ch.code - '۰'.code)).toChar()
+                in '٠'..'٩' -> ('0'.code + (ch.code - '٠'.code)).toChar()
+                else -> ch
+            }
+        }.filter { it in '0'..'9' }.take(6).joinToString("")
         mutableUiState.update { it.copy(accountEmailCodeInput = digits, errorMessage = null) }
     }
 

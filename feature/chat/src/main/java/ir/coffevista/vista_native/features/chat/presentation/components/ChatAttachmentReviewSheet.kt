@@ -1,11 +1,14 @@
 package ir.coffevista.vista_native.features.chat.presentation.components
 
 import android.content.Context
+import android.content.res.Configuration
 import android.net.Uri
 import android.os.Build
 import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
 import androidx.activity.compose.BackHandler
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -199,26 +202,41 @@ internal fun ChatAttachmentReviewSheet(
 
     val density = LocalDensity.current
     val configuration = LocalConfiguration.current
-    val isLandscape = configuration.screenWidthDp > configuration.screenHeightDp
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE ||
+        configuration.screenWidthDp > configuration.screenHeightDp
     val screenHeightDp = configuration.screenHeightDp.toFloat()
-    val savedEmojiHeightDp = remember(isLandscape, screenHeightDp) {
-        KeyboardHeightStore.getKeyboardHeightDp(context, isLandscape, screenHeightDp)
+    var composerPanelHeightDp by remember(configuration.screenHeightDp, isLandscape) {
+        mutableFloatStateOf(KeyboardHeightStore.getKeyboardHeightDp(context, isLandscape, screenHeightDp))
     }
     val imeBottomDp = with(density) { WindowInsets.ime.getBottom(density).toDp() }
+    val navBottomDp = with(density) { WindowInsets.navigationBars.getBottom(density).toDp() }
     val isImeVisible = WindowInsets.isImeVisible
+    var peakImeHeightDp by remember { mutableFloatStateOf(0f) }
+    val isImeOpen = isImeVisible || imeBottomDp.value >= 160f
     val isKeyboardOpen = isImeVisible || imeBottomDp > 60.dp
     val isComposerExpanded = isKeyboardOpen || emojiPanelVisible
-    val navBottomDp = with(density) { WindowInsets.navigationBars.getBottom(density).toDp() }
     var closedControlsHeightDp by remember { mutableStateOf(0.dp) }
 
-    LaunchedEffect(imeBottomDp, isLandscape, screenHeightDp) {
-        if (imeBottomDp > 60.dp) {
-            KeyboardHeightStore.saveKeyboardHeightDp(
-                context = context,
-                isLandscape = isLandscape,
-                heightDp = imeBottomDp.value,
-                screenHeightDp = screenHeightDp,
-            )
+    // مانند صفحه چت، پس از تثبیت ارتفاع واقعی کیبورد آن را ذخیره می‌کنیم و پنل ایموجی را بدون پرش می‌بندیم.
+    LaunchedEffect(isImeOpen, imeBottomDp.value) {
+        val currentDp = imeBottomDp.value
+        if (isImeOpen) {
+            if (currentDp > peakImeHeightDp) {
+                peakImeHeightDp = currentDp
+            }
+            if (currentDp >= 160f && currentDp >= (peakImeHeightDp - 1f)) {
+                kotlinx.coroutines.delay(80)
+                if (isImeOpen && imeBottomDp.value >= (peakImeHeightDp - 2f)) {
+                    val finalVal = maxOf(imeBottomDp.value, peakImeHeightDp)
+                    composerPanelHeightDp = finalVal
+                    KeyboardHeightStore.saveKeyboardHeightDp(context, isLandscape, finalVal, screenHeightDp)
+                    if (emojiPanelVisible) {
+                        emojiPanelVisible = false
+                    }
+                }
+            }
+        } else {
+            peakImeHeightDp = 0f
         }
     }
 
@@ -240,17 +258,32 @@ internal fun ChatAttachmentReviewSheet(
         }
     }
 
+    val openKeyboardSmoothly = {
+        captionFocusRequester.requestFocus()
+        keyboardController?.show()
+        val window = localView.context.findActivity()?.window
+        if (window != null) {
+            WindowCompat.getInsetsController(window, localView).show(WindowInsetsCompat.Type.ime())
+        } else {
+            val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+            localView.post { imm?.showSoftInput(localView.findFocus() ?: localView, 0) }
+        }
+    }
+
     LaunchedEffect(captionInteractionSource) {
         captionInteractionSource.interactions.collect { interaction ->
             if (interaction is PressInteraction.Release) {
-                emojiPanelVisible = false
-                keyboardController?.show()
+                openKeyboardSmoothly()
             }
         }
     }
 
     val hideSoftKeyboard = {
         keyboardController?.hide()
+        val window = localView.context.findActivity()?.window
+        if (window != null) {
+            WindowCompat.getInsetsController(window, localView).hide(WindowInsetsCompat.Type.ime())
+        }
         val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
         imm?.hideSoftInputFromWindow(localView.windowToken, 0)
         Unit
@@ -268,9 +301,7 @@ internal fun ChatAttachmentReviewSheet(
 
     var wasKeyboardOpen by remember { mutableStateOf(false) }
     LaunchedEffect(isKeyboardOpen) {
-        if (isKeyboardOpen) {
-            emojiPanelVisible = false
-        } else if (wasKeyboardOpen && !isKeyboardOpen && isCaptionFocused && !emojiPanelVisible) {
+        if (wasKeyboardOpen && !isKeyboardOpen && isCaptionFocused && !emojiPanelVisible) {
             runCatching { dismissFocusRequester.requestFocus() }
         }
         wasKeyboardOpen = isKeyboardOpen
@@ -460,16 +491,14 @@ internal fun ChatAttachmentReviewSheet(
                                 } else {
                                     Modifier
                                 },
-                            )
-                            .navigationBarsPadding()
-                            .imePadding(),
+                            ),
                     ) {
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .onSizeChanged { size ->
                                     if (!isKeyboardOpen && !emojiPanelVisible && !isCaptionFocused) {
-                                        closedControlsHeightDp = with(density) { size.height.toDp() } + navBottomDp
+                                        closedControlsHeightDp = with(density) { size.height.toDp() }
                                     }
                                 },
                         ) {
@@ -633,9 +662,7 @@ internal fun ChatAttachmentReviewSheet(
                                 )
                                 .pointerInput(Unit) {
                                     detectTapGestures {
-                                        emojiPanelVisible = false
-                                        captionFocusRequester.requestFocus()
-                                        keyboardController?.show()
+                                        openKeyboardSmoothly()
                                     }
                                 }
                                 .padding(
@@ -724,10 +751,17 @@ internal fun ChatAttachmentReviewSheet(
                             IconButton(
                                 onClick = {
                                     if (emojiPanelVisible) {
-                                        emojiPanelVisible = false
-                                        captionFocusRequester.requestFocus()
-                                        keyboardController?.show()
+                                        openKeyboardSmoothly()
                                     } else {
+                                        if (imeBottomDp.value >= 160f) {
+                                            composerPanelHeightDp = imeBottomDp.value
+                                            KeyboardHeightStore.saveKeyboardHeightDp(
+                                                context = context,
+                                                isLandscape = isLandscape,
+                                                heightDp = imeBottomDp.value,
+                                                screenHeightDp = screenHeightDp,
+                                            )
+                                        }
                                         emojiPanelVisible = true
                                         hideSoftKeyboard()
                                     }
@@ -868,26 +902,33 @@ internal fun ChatAttachmentReviewSheet(
                         }
                     }
 
-                    AnimatedVisibility(
-                        visible = emojiPanelVisible && !isKeyboardOpen,
-                        enter = slideInVertically { it / 2 } + fadeIn(),
-                        exit = slideOutVertically { it / 2 } + fadeOut(),
+                    val bottomSlotHeight = when {
+                        emojiPanelVisible -> maxOf(composerPanelHeightDp.dp, imeBottomDp, navBottomDp)
+                        imeBottomDp > navBottomDp -> imeBottomDp
+                        else -> navBottomDp
+                    }
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(bottomSlotHeight),
                     ) {
-                        ChatEmojiPickerPanel(
-                            onEmoji = { emoji ->
-                                val updated = EmojiCursorHelper.insertEmoji(caption, emoji)
-                                if (updated.text.length <= MAX_ATTACHMENT_CAPTION_LENGTH) {
-                                    caption = updated
-                                }
-                            },
-                            onBackspace = {
-                                caption = EmojiCursorHelper.deleteBeforeCursor(caption)
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(savedEmojiHeightDp.dp),
-                            forceDarkTheme = true,
-                        )
+                        if (emojiPanelVisible) {
+                            ChatEmojiPickerPanel(
+                                onEmoji = { emoji ->
+                                    val updated = EmojiCursorHelper.insertEmoji(caption, emoji)
+                                    if (updated.text.length <= MAX_ATTACHMENT_CAPTION_LENGTH) {
+                                        caption = updated
+                                    }
+                                },
+                                onBackspace = {
+                                    caption = EmojiCursorHelper.deleteBeforeCursor(caption)
+                                },
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .navigationBarsPadding(),
+                                forceDarkTheme = true,
+                            )
+                        }
                     }
                 }
                 }

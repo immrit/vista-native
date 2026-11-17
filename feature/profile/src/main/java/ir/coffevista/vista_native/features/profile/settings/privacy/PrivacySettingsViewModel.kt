@@ -12,6 +12,8 @@ import ir.coffevista.vista_native.core.security.BiometricAuthenticator
 import ir.coffevista.vista_native.core.security.BiometricAvailability
 import ir.coffevista.vista_native.core.security.SessionStore
 import androidx.fragment.app.FragmentActivity
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -29,7 +31,12 @@ data class PrivacySettingsUiState(
     val biometricAvailable: Boolean = false,
     val biometricLoading: Boolean = true,
     val errorMessage: String? = null,
+    val verifiedEmail: String? = null,
+    val isEmailVerified: Boolean = false,
     val emailVerificationSessionId: String? = null,
+    val emailVerificationTargetEmail: String = "",
+    val emailVerificationResendSeconds: Int = 0,
+    val emailVerificationCompleted: Boolean = false,
     val isSendingEmailVerification: Boolean = false,
     val isVerifyingEmail: Boolean = false,
     val emailVerificationSuccessMessage: String? = null,
@@ -39,6 +46,7 @@ data class PrivacySettingsUiState(
 @HiltViewModel
 class PrivacySettingsViewModel @Inject constructor(
     private val api: PrivacySettingsApi,
+    private val twoFactorApi: TwoFactorApi,
     private val cache: PrivacySettingsCache,
     private val authenticationStateProvider: AuthenticationStateProvider,
     private val sessionStore: SessionStore,
@@ -46,6 +54,7 @@ class PrivacySettingsViewModel @Inject constructor(
 ) : ViewModel() {
     private val mutableUiState = MutableStateFlow(PrivacySettingsUiState())
     val uiState: StateFlow<PrivacySettingsUiState> = mutableUiState.asStateFlow()
+    private var emailResendCountdownJob: Job? = null
 
     init {
         refreshBiometricPolicy()
@@ -87,6 +96,18 @@ class PrivacySettingsViewModel @Inject constructor(
 
     fun refresh() = viewModelScope.launch {
         mutableUiState.update { it.copy(isLoading = true, errorMessage = null) }
+        val twoFaStatus = runCatching { twoFactorApi.getStatus() }.getOrNull()?.takeIf { it.isSuccessful }?.body()
+        if (twoFaStatus != null) {
+            mutableUiState.update {
+                it.copy(
+                    isEmailVerified = twoFaStatus.emailVerified,
+                    verifiedEmail = twoFaStatus.verifiedEmail ?: it.verifiedEmail,
+                    emailVerificationTargetEmail = it.emailVerificationTargetEmail.ifBlank {
+                        twoFaStatus.verifiedEmail.orEmpty()
+                    },
+                )
+            }
+        }
         val storyResp = runCatching { api.getStorySettings() }.getOrNull()
         val storyPerm = storyResp?.body()?.reply_permission ?: mutableUiState.value.storyReplyPermission
         val response = runCatching { api.getSettings() }.getOrNull()
@@ -258,48 +279,108 @@ class PrivacySettingsViewModel @Inject constructor(
         }
     }
 
+    fun prepareEmailVerificationSheet() {
+        mutableUiState.update {
+            it.copy(
+                emailVerificationErrorMessage = null,
+                emailVerificationSuccessMessage = null,
+                emailVerificationCompleted = false,
+            )
+        }
+    }
+
+    fun resetEmailVerificationToEmailStep() {
+        emailResendCountdownJob?.cancel()
+        mutableUiState.update {
+            it.copy(
+                emailVerificationSessionId = null,
+                emailVerificationResendSeconds = 0,
+                emailVerificationCompleted = false,
+                emailVerificationErrorMessage = null,
+                emailVerificationSuccessMessage = null,
+            )
+        }
+    }
+
     fun sendEmailVerification(email: String) {
-        if (email.isBlank()) {
-            mutableUiState.update { it.copy(emailVerificationErrorMessage = "لطفاً ایمیل معتبر وارد کنید") }
+        val trimmedEmail = email.trim()
+        if (trimmedEmail.isBlank() || !trimmedEmail.contains("@") || !trimmedEmail.contains(".")) {
+            mutableUiState.update { it.copy(emailVerificationErrorMessage = "لطفاً یک آدرس ایمیل معتبر وارد کنید") }
             return
         }
         mutableUiState.update {
             it.copy(
                 isSendingEmailVerification = true,
+                emailVerificationTargetEmail = trimmedEmail,
+                emailVerificationCompleted = false,
                 emailVerificationErrorMessage = null,
                 emailVerificationSuccessMessage = null,
             )
         }
         viewModelScope.launch {
-            val res = runCatching { api.sendEmailVerification(SendEmailVerificationDto(email = email.trim())) }.getOrNull()
+            val res = runCatching { api.sendEmailVerification(SendEmailVerificationDto(email = trimmedEmail)) }.getOrNull()
             val body = res?.body()
-            if (res?.isSuccessful == true && body?.success == true) {
-                mutableUiState.update {
-                    it.copy(
-                        isSendingEmailVerification = false,
-                        emailVerificationSessionId = body.sessionId,
-                        emailVerificationSuccessMessage = body.message ?: "کد تأیید به ایمیل شما ارسال شد",
-                    )
+            if (res != null && res.isSuccessful && body?.success == true) {
+                val sessionId = body.sessionId?.trim()?.takeIf { it.isNotEmpty() }
+                if (sessionId == null) {
+                    emailResendCountdownJob?.cancel()
+                    mutableUiState.update {
+                        it.copy(
+                            isSendingEmailVerification = false,
+                            isEmailVerified = true,
+                            verifiedEmail = trimmedEmail,
+                            emailVerificationSessionId = null,
+                            emailVerificationResendSeconds = 0,
+                            emailVerificationCompleted = true,
+                            emailVerificationSuccessMessage = body.message ?: "این ایمیل قبلاً تأیید شده است",
+                        )
+                    }
+                } else {
+                    startEmailResendCountdown(60)
+                    mutableUiState.update {
+                        it.copy(
+                            isSendingEmailVerification = false,
+                            emailVerificationSessionId = sessionId,
+                            emailVerificationSuccessMessage = body.message ?: "کد ۶ رقمی به ایمیل شما ارسال شد",
+                        )
+                    }
                 }
             } else {
+                val errorText = parseApiError(
+                    response = res,
+                    networkFallback = "خطا در برقراری ارتباط با سرور؛ اتصال اینترنت را بررسی کنید",
+                    httpFallback = body?.message ?: "ارسال کد تأیید ناموفق بود. لطفاً ایمیل را بررسی کنید",
+                )
                 mutableUiState.update {
                     it.copy(
                         isSendingEmailVerification = false,
-                        emailVerificationErrorMessage = body?.message ?: "ارسال کد تأیید ناموفق بود. لطفاً ایمیل را بررسی کنید",
+                        emailVerificationErrorMessage = errorText,
                     )
                 }
             }
         }
     }
 
+    fun resendEmailVerification() {
+        val state = mutableUiState.value
+        if (state.isSendingEmailVerification || state.emailVerificationResendSeconds > 0) return
+        val email = state.emailVerificationTargetEmail.trim()
+        if (email.isBlank()) {
+            resetEmailVerificationToEmailStep()
+            return
+        }
+        sendEmailVerification(email)
+    }
+
     fun verifyEmail(code: String) {
-        val sessionId = mutableUiState.value.emailVerificationSessionId
+        val sessionId = mutableUiState.value.emailVerificationSessionId?.trim()
         if (sessionId.isNullOrBlank()) {
             mutableUiState.update { it.copy(emailVerificationErrorMessage = "ابتدا درخواست کد تأیید دهید") }
             return
         }
-        if (code.isBlank()) {
-            mutableUiState.update { it.copy(emailVerificationErrorMessage = "لطفاً کد ۶ رقمی را وارد کنید") }
+        val cleanCode = normalizeOtpDigits(code)
+        if (cleanCode.length < 6) {
+            mutableUiState.update { it.copy(emailVerificationErrorMessage = "لطفاً کد ۶ رقمی ارسال‌شده را کامل وارد کنید") }
             return
         }
         mutableUiState.update {
@@ -310,25 +391,91 @@ class PrivacySettingsViewModel @Inject constructor(
             )
         }
         viewModelScope.launch {
-            val res = runCatching { api.verifyEmail(VerifyEmailDto(sessionId = sessionId, code = code.trim())) }.getOrNull()
+            val res = runCatching {
+                api.verifyEmail(VerifyEmailDto(sessionId = sessionId, code = cleanCode))
+            }.getOrNull()
             val body = res?.body()
-            if (res?.isSuccessful == true && body?.success == true) {
+            if (res != null && res.isSuccessful && body?.success == true) {
+                emailResendCountdownJob?.cancel()
+                val verifiedAddr = body.email?.takeIf { it.isNotBlank() }
+                    ?: mutableUiState.value.emailVerificationTargetEmail.takeIf { it.isNotBlank() }
+                    ?: mutableUiState.value.verifiedEmail
                 mutableUiState.update {
                     it.copy(
                         isVerifyingEmail = false,
-                        emailVerificationSuccessMessage = "ایمیل شما با موفقیت تأیید شد! ✓",
+                        isEmailVerified = true,
+                        verifiedEmail = verifiedAddr,
+                        emailVerificationCompleted = true,
+                        emailVerificationSuccessMessage = "ایمیل حساب کاربری شما با موفقیت تأیید شد",
                         emailVerificationSessionId = null,
+                        emailVerificationResendSeconds = 0,
                     )
                 }
+                // همگام‌سازی وضعیت نهایی از سرور
+                runCatching { twoFactorApi.getStatus() }.getOrNull()
+                    ?.takeIf { it.isSuccessful }
+                    ?.body()
+                    ?.let { status ->
+                        mutableUiState.update {
+                            it.copy(
+                                isEmailVerified = status.emailVerified || it.isEmailVerified,
+                                verifiedEmail = status.verifiedEmail ?: it.verifiedEmail,
+                            )
+                        }
+                    }
             } else {
+                val errorText = parseApiError(
+                    response = res,
+                    networkFallback = "خطا در برقراری ارتباط با سرور؛ لطفاً دوباره تلاش کنید",
+                    httpFallback = body?.message ?: "کد تأیید اشتباه یا منقضی شده است",
+                )
                 mutableUiState.update {
                     it.copy(
                         isVerifyingEmail = false,
-                        emailVerificationErrorMessage = body?.message ?: "کد تأیید اشتباه یا منقضی شده است",
+                        emailVerificationErrorMessage = errorText,
                     )
                 }
             }
         }
+    }
+
+    private fun startEmailResendCountdown(seconds: Int) {
+        emailResendCountdownJob?.cancel()
+        mutableUiState.update { it.copy(emailVerificationResendSeconds = seconds.coerceAtLeast(0)) }
+        emailResendCountdownJob = viewModelScope.launch {
+            var remaining = seconds.coerceAtLeast(0)
+            while (remaining > 0) {
+                delay(1_000L)
+                remaining -= 1
+                mutableUiState.update { it.copy(emailVerificationResendSeconds = remaining) }
+            }
+        }
+    }
+
+    private fun parseApiError(
+        response: retrofit2.Response<*>?,
+        networkFallback: String,
+        httpFallback: String,
+    ): String {
+        if (response == null) return networkFallback
+        val raw = runCatching { response.errorBody()?.string() }.getOrNull().orEmpty()
+        return BackendErrorParser.parse(raw).message ?: httpFallback
+    }
+
+    override fun onCleared() {
+        emailResendCountdownJob?.cancel()
+        super.onCleared()
+    }
+
+    companion object {
+        fun normalizeOtpDigits(raw: String): String =
+            raw.map { ch ->
+                when (ch) {
+                    in '۰'..'۹' -> ('0'.code + (ch.code - '۰'.code)).toChar()
+                    in '٠'..'٩' -> ('0'.code + (ch.code - '٠'.code)).toChar()
+                    else -> ch
+                }
+            }.filter { it in '0'..'9' }.take(6).joinToString("")
     }
 
     private fun currentOwnerId(): String? =

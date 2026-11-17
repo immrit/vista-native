@@ -1,33 +1,58 @@
 package ir.coffevista.vista_native.features.profile.settings.privacy
 
 import android.widget.Toast
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.Alignment
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.outlined.AccessTime
+import androidx.compose.material.icons.outlined.AlternateEmail
 import androidx.compose.material.icons.outlined.AutoDelete
 import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Devices
 import androidx.compose.material.icons.outlined.DoneAll
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.Email
 import androidx.compose.material.icons.outlined.Fingerprint
 import androidx.compose.material.icons.outlined.DeleteForever
 import androidx.compose.material.icons.outlined.GroupAdd
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.LockReset
 import androidx.compose.material.icons.outlined.MarkEmailRead
+import androidx.compose.material.icons.outlined.MarkEmailUnread
 import androidx.compose.material.icons.outlined.PhotoSizeSelectLarge
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -36,19 +61,35 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextDirection
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -61,6 +102,7 @@ import androidx.compose.ui.unit.sp
 import androidx.fragment.app.FragmentActivity
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import ir.coffevista.vista_native.core.common.toPersianDigits
 import ir.coffevista.vista_native.features.profile.settings.components.VistaChoiceOption
 import ir.coffevista.vista_native.features.profile.settings.components.VistaSettingsChoiceBottomSheet
 import ir.coffevista.vista_native.features.profile.settings.components.VistaSettingsDivider
@@ -95,9 +137,15 @@ fun PrivacySecurityScreen(
     var showRemove2FADialog by remember { mutableStateOf(false) }
     var remove2FAPassword by remember { mutableStateOf("") }
 
-    var showEmailVerificationDialog by remember { mutableStateOf(false) }
-    var emailInput by remember { mutableStateOf(profile?.email.orEmpty()) }
-    var emailCodeInput by remember { mutableStateOf("") }
+    var showEmailVerificationDialog by rememberSaveable { mutableStateOf(false) }
+    var emailInput by rememberSaveable { mutableStateOf(profile?.email.orEmpty()) }
+    var emailCodeInput by rememberSaveable { mutableStateOf("") }
+
+    LaunchedEffect(uiState.verifiedEmail) {
+        if (emailInput.isBlank() && !uiState.verifiedEmail.isNullOrBlank()) {
+            emailInput = uiState.verifiedEmail.orEmpty()
+        }
+    }
 
     CompositionLocalProvider(LocalLayoutDirection provides LocalLayoutDirection.current) {
         Scaffold(
@@ -291,8 +339,37 @@ fun PrivacySecurityScreen(
                     VistaSettingsTile(
                         icon = Icons.Outlined.MarkEmailRead,
                         title = "تأیید ایمیل حساب کاربری",
-                        subtitle = "ارسال کد تأیید برای ایمن‌سازی حساب",
-                        onClick = { showEmailVerificationDialog = true },
+                        subtitle = if (uiState.isEmailVerified && !uiState.verifiedEmail.isNullOrBlank()) {
+                            uiState.verifiedEmail
+                        } else {
+                            "ارسال کد تأیید برای ایمن‌سازی و بازیابی حساب"
+                        },
+                        trailing = {
+                            Surface(
+                                shape = RoundedCornerShape(999.dp),
+                                color = if (uiState.isEmailVerified) {
+                                    Color(0xFF16A34A).copy(alpha = 0.14f)
+                                } else {
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                                },
+                            ) {
+                                Text(
+                                    text = if (uiState.isEmailVerified) "تأیید شده" else "تأیید",
+                                    color = if (uiState.isEmailVerified) {
+                                        Color(0xFF16A34A)
+                                    } else {
+                                        MaterialTheme.colorScheme.primary
+                                    },
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                )
+                            }
+                        },
+                        onClick = {
+                            viewModel.prepareEmailVerificationSheet()
+                            showEmailVerificationDialog = true
+                        },
                     )
                 }
 
@@ -421,80 +498,28 @@ fun PrivacySecurityScreen(
         }
 
         if (showEmailVerificationDialog) {
-            AlertDialog(
-                onDismissRequest = { showEmailVerificationDialog = false },
-                title = { Text("تأیید ایمیل حساب کاربری") },
-                text = {
-                    Column {
-                        if (uiState.emailVerificationSuccessMessage != null) {
-                            Text(
-                                text = uiState.emailVerificationSuccessMessage.orEmpty(),
-                                color = MaterialTheme.colorScheme.primary,
-                                style = MaterialTheme.typography.bodyMedium,
-                            )
-                            Spacer(Modifier.height(8.dp))
-                        }
-                        if (uiState.emailVerificationErrorMessage != null) {
-                            Text(
-                                text = uiState.emailVerificationErrorMessage.orEmpty(),
-                                color = MaterialTheme.colorScheme.error,
-                                style = MaterialTheme.typography.bodyMedium,
-                            )
-                            Spacer(Modifier.height(8.dp))
-                        }
-                        if (uiState.emailVerificationSessionId == null) {
-                            Text("برای دریافت کد تأیید، لطفاً ایمیل حساب خود را وارد کنید:")
-                            Spacer(Modifier.height(8.dp))
-                            OutlinedTextField(
-                                value = emailInput,
-                                onValueChange = { emailInput = it },
-                                placeholder = { Text("example@domain.com") },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth(),
-                            )
-                        } else {
-                            Text("کد ۶ رقمی ارسال‌شده به ایمیل را وارد کنید:")
-                            Spacer(Modifier.height(8.dp))
-                            OutlinedTextField(
-                                value = emailCodeInput,
-                                onValueChange = { emailCodeInput = it },
-                                placeholder = { Text("۱۲۳۴۵۶") },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth(),
-                            )
-                        }
-                    }
+            EmailVerificationModalSheet(
+                uiState = uiState,
+                emailInput = emailInput,
+                emailCodeInput = emailCodeInput,
+                onEmailChange = { emailInput = it },
+                onCodeChange = { raw ->
+                    emailCodeInput = PrivacySettingsViewModel.normalizeOtpDigits(raw)
                 },
-                confirmButton = {
-                    if (uiState.emailVerificationSessionId == null) {
-                        Button(
-                            onClick = { viewModel.sendEmailVerification(emailInput) },
-                            enabled = !uiState.isSendingEmailVerification && emailInput.isNotBlank(),
-                        ) {
-                            if (uiState.isSendingEmailVerification) {
-                                CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-                            } else {
-                                Text("ارسال کد")
-                            }
-                        }
-                    } else {
-                        Button(
-                            onClick = { viewModel.verifyEmail(emailCodeInput) },
-                            enabled = !uiState.isVerifyingEmail && emailCodeInput.isNotBlank(),
-                        ) {
-                            if (uiState.isVerifyingEmail) {
-                                CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-                            } else {
-                                Text("تأیید نهایی")
-                            }
-                        }
-                    }
+                onSendCode = {
+                    emailCodeInput = ""
+                    viewModel.sendEmailVerification(emailInput)
                 },
-                dismissButton = {
-                    TextButton(onClick = { showEmailVerificationDialog = false }) {
-                        Text("بستن")
-                    }
+                onResendCode = {
+                    emailCodeInput = ""
+                    viewModel.resendEmailVerification()
                 },
+                onVerifyCode = { viewModel.verifyEmail(emailCodeInput) },
+                onChangeEmailStep = {
+                    emailCodeInput = ""
+                    viewModel.resetEmailVerificationToEmailStep()
+                },
+                onDismiss = { showEmailVerificationDialog = false },
             )
         }
 
@@ -545,6 +570,568 @@ fun PrivacySecurityScreen(
                 },
                 dismissButton = {
                     TextButton(onClick = { showRemove2FADialog = false }) { Text("انصراف") }
+                },
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun EmailVerificationModalSheet(
+    uiState: PrivacySettingsUiState,
+    emailInput: String,
+    emailCodeInput: String,
+    onEmailChange: (String) -> Unit,
+    onCodeChange: (String) -> Unit,
+    onSendCode: () -> Unit,
+    onResendCode: () -> Unit,
+    onVerifyCode: () -> Unit,
+    onChangeEmailStep: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val emerald = Color(0xFF16A34A)
+    val stepKey = when {
+        uiState.emailVerificationCompleted -> 2
+        !uiState.emailVerificationSessionId.isNullOrBlank() -> 1
+        else -> 0
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .imePadding()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 22.dp, vertical = 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            val heroBg = when (stepKey) {
+                2 -> emerald.copy(alpha = 0.14f)
+                else -> MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+            }
+            val heroTint = when (stepKey) {
+                2 -> emerald
+                else -> MaterialTheme.colorScheme.primary
+            }
+            val heroIcon = when (stepKey) {
+                2 -> Icons.Filled.CheckCircle
+                1 -> Icons.Outlined.MarkEmailRead
+                else -> Icons.Outlined.AlternateEmail
+            }
+
+            Box(
+                modifier = Modifier
+                    .size(62.dp)
+                    .clip(CircleShape)
+                    .background(heroBg),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = heroIcon,
+                    contentDescription = null,
+                    tint = heroTint,
+                    modifier = Modifier.size(30.dp),
+                )
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            Text(
+                text = when (stepKey) {
+                    2 -> "ایمیل با موفقیت تأیید شد"
+                    1 -> "کد تأیید را وارد کنید"
+                    else -> "تأیید ایمیل حساب کاربری"
+                },
+                style = MaterialTheme.typography.titleMedium.copy(
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                ),
+                textAlign = TextAlign.Center,
+            )
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            Text(
+                text = when (stepKey) {
+                    2 -> "ایمیل شما به حساب ویستا متصل شد و برای بازیابی و امنیت حساب فعال است."
+                    1 -> "کد ۶ رقمی ارسال‌شده به صندوق ایمیل (یا پوشه Spam) خود را در کادر زیر وارد کنید."
+                    else -> "با تأیید ایمیل، می‌توانید امنیت حساب و بازیابی رمز عبور دومرحله‌ای را فعال نگه دارید."
+                },
+                style = MaterialTheme.typography.bodySmall.copy(
+                    fontSize = 13.sp,
+                    lineHeight = 20.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                ),
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 8.dp),
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            AnimatedVisibility(visible = !uiState.emailVerificationErrorMessage.isNullOrBlank()) {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.7f),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 12.dp),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.ErrorOutline,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Text(
+                            text = uiState.emailVerificationErrorMessage.orEmpty(),
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontSize = 12.5.sp,
+                                lineHeight = 18.sp,
+                            ),
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+            }
+
+            AnimatedVisibility(
+                visible = !uiState.emailVerificationSuccessMessage.isNullOrBlank() && stepKey != 2,
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 12.dp),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.MarkEmailUnread,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Text(
+                            text = uiState.emailVerificationSuccessMessage.orEmpty(),
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontSize = 12.5.sp,
+                                lineHeight = 18.sp,
+                            ),
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+            }
+
+            AnimatedContent(
+                targetState = stepKey,
+                transitionSpec = { fadeIn() togetherWith fadeOut() },
+                label = "email-verification-step",
+            ) { step ->
+                when (step) {
+                    2 -> {
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            val confirmedEmail = uiState.verifiedEmail?.takeIf { it.isNotBlank() }
+                                ?: uiState.emailVerificationTargetEmail
+                            if (confirmedEmail.isNotBlank()) {
+                                Surface(
+                                    shape = RoundedCornerShape(14.dp),
+                                    color = emerald.copy(alpha = 0.1f),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .border(
+                                            width = 1.dp,
+                                            color = emerald.copy(alpha = 0.35f),
+                                            shape = RoundedCornerShape(14.dp),
+                                        ),
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.Center,
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.MarkEmailRead,
+                                            contentDescription = null,
+                                            tint = emerald,
+                                            modifier = Modifier.size(18.dp),
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = confirmedEmail,
+                                            style = TextStyle(
+                                                color = emerald,
+                                                fontSize = 14.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                textDirection = TextDirection.Ltr,
+                                            ),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(18.dp))
+                            }
+
+                            Button(
+                                onClick = onDismiss,
+                                shape = RoundedCornerShape(14.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(48.dp),
+                            ) {
+                                Text("تأیید و بستن", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                            }
+
+                            Spacer(modifier = Modifier.height(6.dp))
+
+                            TextButton(onClick = onChangeEmailStep) {
+                                Text(
+                                    text = "تغییر و تأیید ایمیل جدید",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 13.sp,
+                                )
+                            }
+                        }
+                    }
+
+                    1 -> {
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Surface(
+                                shape = RoundedCornerShape(999.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
+                                modifier = Modifier.clip(RoundedCornerShape(999.dp)).clickable(onClick = onChangeEmailStep),
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.Edit,
+                                        contentDescription = "تغییر ایمیل",
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(15.dp),
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = uiState.emailVerificationTargetEmail.ifBlank { emailInput },
+                                        style = TextStyle(
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            textDirection = TextDirection.Ltr,
+                                        ),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(18.dp))
+
+                            EmailOtpCodeBoxes(
+                                code = emailCodeInput,
+                                onCodeChange = onCodeChange,
+                                onDone = {
+                                    if (emailCodeInput.length == 6 && !uiState.isVerifyingEmail) {
+                                        onVerifyCode()
+                                    }
+                                },
+                            )
+
+                            Spacer(modifier = Modifier.height(14.dp))
+
+                            if (uiState.emailVerificationResendSeconds > 0) {
+                                val secText = uiState.emailVerificationResendSeconds
+                                    .toString()
+                                    .padStart(2, '0')
+                                    .toPersianDigits()
+                                Text(
+                                    text = "امکان ارسال مجدد تا ۰۰:$secText ثانیه دیگر",
+                                    style = MaterialTheme.typography.bodySmall.copy(
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        fontSize = 12.5.sp,
+                                    ),
+                                )
+                            } else {
+                                TextButton(
+                                    onClick = onResendCode,
+                                    enabled = !uiState.isSendingEmailVerification && !uiState.isVerifyingEmail,
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.Refresh,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp),
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("ارسال مجدد کد تأیید", fontWeight = FontWeight.Medium)
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            Button(
+                                onClick = onVerifyCode,
+                                enabled = !uiState.isVerifyingEmail && emailCodeInput.length == 6,
+                                shape = RoundedCornerShape(14.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(48.dp),
+                            ) {
+                                if (uiState.isVerifyingEmail) {
+                                    CircularProgressIndicator(
+                                        color = MaterialTheme.colorScheme.onPrimary,
+                                        modifier = Modifier.size(20.dp),
+                                        strokeWidth = 2.2.dp,
+                                    )
+                                } else {
+                                    Text("تأیید و ثبت ایمیل", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            TextButton(
+                                onClick = onDismiss,
+                                enabled = !uiState.isVerifyingEmail,
+                            ) {
+                                Text("بستن", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+
+                    else -> {
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            if (uiState.isEmailVerified && !uiState.verifiedEmail.isNullOrBlank()) {
+                                Surface(
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = emerald.copy(alpha = 0.1f),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(bottom = 12.dp),
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.CheckCircle,
+                                            contentDescription = null,
+                                            tint = emerald,
+                                            modifier = Modifier.size(17.dp),
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = "ایمیل فعلی تأیید شده: ${uiState.verifiedEmail}",
+                                            style = MaterialTheme.typography.bodySmall.copy(
+                                                color = emerald,
+                                                fontSize = 12.5.sp,
+                                                fontWeight = FontWeight.Medium,
+                                            ),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
+                                }
+                            }
+
+                            OutlinedTextField(
+                                value = emailInput,
+                                onValueChange = onEmailChange,
+                                label = { Text("آدرس ایمیل") },
+                                placeholder = {
+                                    Text(
+                                        "name@example.com",
+                                        style = TextStyle(textDirection = TextDirection.Ltr),
+                                    )
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Outlined.Email,
+                                        contentDescription = null,
+                                    )
+                                },
+                                trailingIcon = {
+                                    if (emailInput.isNotEmpty()) {
+                                        IconButton(onClick = { onEmailChange("") }) {
+                                            Icon(
+                                                imageVector = Icons.Filled.Close,
+                                                contentDescription = "پاک کردن",
+                                                modifier = Modifier.size(18.dp),
+                                            )
+                                        }
+                                    }
+                                },
+                                textStyle = MaterialTheme.typography.bodyLarge.copy(
+                                    textDirection = TextDirection.Ltr,
+                                ),
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(
+                                    keyboardType = KeyboardType.Email,
+                                    imeAction = ImeAction.Send,
+                                ),
+                                keyboardActions = KeyboardActions(
+                                    onSend = {
+                                        if (!uiState.isSendingEmailVerification && emailInput.isNotBlank()) {
+                                            onSendCode()
+                                        }
+                                    },
+                                ),
+                                shape = RoundedCornerShape(14.dp),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+                                ),
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+
+                            Spacer(modifier = Modifier.height(18.dp))
+
+                            Button(
+                                onClick = onSendCode,
+                                enabled = !uiState.isSendingEmailVerification && emailInput.trim().contains("@"),
+                                shape = RoundedCornerShape(14.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(48.dp),
+                            ) {
+                                if (uiState.isSendingEmailVerification) {
+                                    CircularProgressIndicator(
+                                        color = MaterialTheme.colorScheme.onPrimary,
+                                        modifier = Modifier.size(20.dp),
+                                        strokeWidth = 2.2.dp,
+                                    )
+                                } else {
+                                    Text("ارسال کد تأیید", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            OutlinedButton(
+                                onClick = onDismiss,
+                                shape = RoundedCornerShape(14.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(44.dp),
+                            ) {
+                                Text("انصراف", fontSize = 14.sp)
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+        }
+    }
+}
+
+@Composable
+private fun EmailOtpCodeBoxes(
+    code: String,
+    onCodeChange: (String) -> Unit,
+    onDone: () -> Unit,
+) {
+    val focusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(Unit) {
+        runCatching { focusRequester.requestFocus() }
+    }
+
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { runCatching { focusRequester.requestFocus() } },
+            contentAlignment = Alignment.Center,
+        ) {
+            BasicTextField(
+                value = code,
+                onValueChange = { onCodeChange(it) },
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.NumberPassword,
+                    imeAction = ImeAction.Done,
+                ),
+                keyboardActions = KeyboardActions(onDone = { onDone() }),
+                singleLine = true,
+                cursorBrush = SolidColor(Color.Transparent),
+                textStyle = TextStyle(color = Color.Transparent, fontSize = 1.sp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .focusRequester(focusRequester),
+                decorationBox = {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                    ) {
+                        for (index in 0 until 6) {
+                            val char = code.getOrNull(index)
+                            val isCurrent = index == code.length && code.length < 6
+                            val isFilled = char != null
+                            val borderColor = when {
+                                isCurrent -> MaterialTheme.colorScheme.primary
+                                isFilled -> MaterialTheme.colorScheme.primary.copy(alpha = 0.55f)
+                                else -> MaterialTheme.colorScheme.outlineVariant
+                            }
+                            val bgColor = when {
+                                isCurrent -> MaterialTheme.colorScheme.primary.copy(alpha = 0.06f)
+                                isFilled -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                                else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f)
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(54.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(bgColor)
+                                    .border(
+                                        width = if (isCurrent) 2.dp else 1.2.dp,
+                                        color = borderColor,
+                                        shape = RoundedCornerShape(12.dp),
+                                    ),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    text = char?.toString() ?: "",
+                                    style = MaterialTheme.typography.titleLarge.copy(
+                                        fontSize = 21.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                    ),
+                                )
+                            }
+                        }
+                    }
                 },
             )
         }

@@ -62,6 +62,8 @@ data class VerifyEmailDto(
 data class VerifyEmailResponseDto(
     val success: Boolean = true,
     val message: String? = null,
+    val email: String? = null,
+    @kotlinx.serialization.SerialName("email_verified_at") val emailVerifiedAt: String? = null,
 )
 
 @Serializable
