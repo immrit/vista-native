@@ -711,11 +711,17 @@ fun VistaShell(
                     content.servicesNearby(
                         { navController.popBackStack() },
                         { navController.navigate(ShellRoutes.ServicesNearbyLikes) },
-                        { userId, _ -> navController.navigate(ShellRoutes.userProfile(userId)) },
+                        { userId, _ ->
+                            if (userId.isNotBlank()) {
+                                navController.navigate(ShellRoutes.userProfile(userId))
+                            }
+                        },
                         { convId, otherUserId, _, _ ->
                             val targetRoute = convId.ifBlank { otherUserId }
-                            selectTab(ShellTab.Chat)
-                            navController.navigate(ShellRoutes.chatDetail(targetRoute))
+                            if (targetRoute.isNotBlank()) {
+                                selectTab(ShellTab.Chat)
+                                navController.navigate(ShellRoutes.chatDetail(targetRoute))
+                            }
                         },
                     )
                 }
@@ -724,8 +730,10 @@ fun VistaShell(
                         { navController.popBackStack() },
                         { convId, otherUserId, _, _ ->
                             val targetRoute = convId.ifBlank { otherUserId }
-                            selectTab(ShellTab.Chat)
-                            navController.navigate(ShellRoutes.chatDetail(targetRoute))
+                            if (targetRoute.isNotBlank()) {
+                                selectTab(ShellTab.Chat)
+                                navController.navigate(ShellRoutes.chatDetail(targetRoute))
+                            }
                         },
                     )
                 }

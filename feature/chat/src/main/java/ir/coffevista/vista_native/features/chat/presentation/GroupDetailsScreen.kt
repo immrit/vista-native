@@ -881,16 +881,33 @@ fun GroupDetailsScreen(
                                 ) {
                                     gridItems(mediaMessages, key = { it.stableKey }) { msg ->
                                         val attachment = msg.attachment
+                                        var localFailed by remember(attachment?.localUri) { mutableStateOf(false) }
+                                        val displayModel = attachment?.localUri?.takeIf { it.isNotBlank() && !localFailed }
+                                            ?: attachment?.remoteUrl
                                         Box(
                                             Modifier
                                                 .aspectRatio(1f)
                                                 .clip(RoundedCornerShape(4.dp))
-                                                .clickable { attachment?.let(onAttachmentClick) }
+                                                .clickable {
+                                                    attachment?.let { att ->
+                                                        onAttachmentClick(
+                                                            if (localFailed) att.copy(localUri = null) else att,
+                                                        )
+                                                    }
+                                                }
                                         ) {
                                             AsyncImage(
-                                                model = attachment?.localUri ?: attachment?.remoteUrl,
+                                                model = displayModel,
                                                 contentDescription = attachment?.fileName ?: "رسانه",
                                                 contentScale = ContentScale.Crop,
+                                                onError = {
+                                                    if (!attachment?.localUri.isNullOrBlank() &&
+                                                        displayModel == attachment?.localUri &&
+                                                        !attachment?.remoteUrl.isNullOrBlank()
+                                                    ) {
+                                                        localFailed = true
+                                                    }
+                                                },
                                                 modifier = Modifier.fillMaxSize(),
                                             )
                                             if (attachment?.kind == AttachmentKind.VIDEO || attachment?.mimeType?.startsWith("video/") == true) {

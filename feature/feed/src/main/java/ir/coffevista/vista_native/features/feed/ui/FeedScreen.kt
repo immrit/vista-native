@@ -271,6 +271,7 @@ fun FeedScreen(
         onRetryUpload = viewModel::retryPostUpload,
         onCancelUpload = viewModel::cancelPostUpload,
         onDismissUpload = viewModel::dismissPostUpload,
+        onUploadBannerDisplayed = viewModel::markPostUploadBannerDisplayed,
         onRetryStoryUpload = viewModel::retryStoryUpload,
         onCancelStoryUpload = viewModel::cancelStoryUpload,
         onDismissStoryUpload = viewModel::dismissStoryUpload,
@@ -478,6 +479,7 @@ internal fun FeedScreenContent(
     onRetryUpload: () -> Unit = {},
     onCancelUpload: () -> Unit = {},
     onDismissUpload: () -> Unit = {},
+    onUploadBannerDisplayed: (String?) -> Unit = {},
     onRetryStoryUpload: () -> Unit = {},
     onCancelStoryUpload: () -> Unit = {},
     onDismissStoryUpload: () -> Unit = {},
@@ -790,6 +792,7 @@ internal fun FeedScreenContent(
                         onRetry = onRetryUpload,
                         onCancel = onCancelUpload,
                         onDismiss = onDismissUpload,
+                        onBannerDisplayed = onUploadBannerDisplayed,
                     )
                 }
             }
@@ -2517,8 +2520,15 @@ private fun FeedPostUploadBanner(
     onRetry: () -> Unit,
     onCancel: () -> Unit,
     onDismiss: () -> Unit,
+    onBannerDisplayed: (String?) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
+    val isTerminalVisible = uploadState.isSuccess || uploadState.errorMessage != null
+    LaunchedEffect(uploadState.workId, isTerminalVisible) {
+        if (isTerminalVisible && !uploadState.workId.isNullOrBlank()) {
+            onBannerDisplayed(uploadState.workId)
+        }
+    }
     AnimatedVisibility(
         visible = uploadState.isUploading || uploadState.errorMessage != null || uploadState.isSuccess,
         enter = expandVertically() + fadeIn(),

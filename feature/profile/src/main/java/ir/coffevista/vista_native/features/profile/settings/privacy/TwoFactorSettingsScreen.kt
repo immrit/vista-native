@@ -246,7 +246,7 @@ fun TwoFactorSettingsScreen(
                         WizardStepCard(
                             icon = Icons.Outlined.HelpOutline,
                             title = "راهنمای رمز (اختیاری)",
-                            description = "یک راهنما برای به خاطر آوردن رمز بسازید. طبق استاندارد تلگرام، راهنما نباید با خود رمز یکسان باشد.",
+                            description = "یک راهنما برای به خاطر آوردن رمز بسازید. راهنما نباید با خود رمز عبور یکسان باشد.",
                         ) {
                             OutlinedTextField(
                                 value = uiState.hintInput,
@@ -491,10 +491,10 @@ private fun TelegramTwoFactorIntroAndPrereqs(
     val status = uiState.status
     WizardStepCard(
         icon = Icons.Outlined.Shield,
-        title = "امنیت چندلایه حساب ویستا (مشابه تلگرام)",
-        description = "با فعال‌سازی تایید دو مرحله‌ای، برای ورود از هر دستگاه جدید علاوه بر کد تایید یا رمز حساب، رمز عبور ابری دومرحله‌ای نیز لازم است.",
+        title = "امنیت چندلایه حساب ویستا",
+        description = "با فعال‌سازی تایید دو مرحله‌ای، برای ورود از هر دستگاه جدید علاوه بر کد تایید یا رمز حساب، رمز عبور دومرحله‌ای نیز لازم است.",
     ) {
-        VistaSettingsSection(title = "پیش‌نیازهای الزامی فعال‌سازی")
+        VistaSettingsSection(title = "پیش‌نیاز فعال‌سازی (تایید شماره موبایل یا ایمیل)")
         VistaSettingsGroup {
             PrerequisiteRow(
                 icon = Icons.Outlined.PhoneAndroid,
@@ -510,8 +510,14 @@ private fun TelegramTwoFactorIntroAndPrereqs(
                 verified = status.emailVerified,
             )
         }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = "تایید تنها یکی از موارد بالا (شماره موبایل یا ایمیل) برای فعال‌سازی کافی است.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
 
-        if (!status.emailVerified) {
+        if (!status.canEnable) {
             Spacer(Modifier.height(16.dp))
             Surface(
                 shape = RoundedCornerShape(12.dp),
@@ -520,7 +526,7 @@ private fun TelegramTwoFactorIntroAndPrereqs(
             ) {
                 Column(modifier = Modifier.padding(14.dp)) {
                     Text(
-                        text = "برای فعال‌سازی 2FA ابتدا باید ایمیل خود را تایید کنید:",
+                        text = "برای فعال‌سازی 2FA، ایمیل یا شماره موبایل خود را تایید کنید:",
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Medium,
                     )

@@ -234,6 +234,99 @@ fun ChatMediaPickerPanel(
 }
 
 @Composable
+internal fun ChatEmojiPickerPanel(
+    onEmoji: (String) -> Unit,
+    onBackspace: () -> Unit,
+    modifier: Modifier = Modifier,
+    forceDarkTheme: Boolean = false,
+) {
+    val context = LocalContext.current
+    val recentEmojiStore = remember(context) { RecentEmojiStore(context) }
+    val isDark = forceDarkTheme || isSystemInDarkTheme()
+    val accentColor = VistaBrandColors.Indigo
+    val panelBg = if (isDark) Color(0xFF141821) else Color(0xFFF4F6F8)
+    val cardBg = if (isDark) Color(0xFF1E232F) else Color(0xFFFFFFFF)
+    val dividerColor = if (isDark) Color(0xFF283040) else Color(0xFFE2E6EA)
+    val textColor = if (isDark) Color.White else MaterialTheme.colorScheme.onSurface
+    val mutedTextColor = if (isDark) Color.White.copy(alpha = 0.65f) else MaterialTheme.colorScheme.onSurfaceVariant
+
+    var emojiSearchQuery by remember { mutableStateOf("") }
+    var isEmojiSearchActive by remember { mutableStateOf(false) }
+    val recentEmojis = remember(recentEmojiStore) { recentEmojiStore.getRecent() }
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (modifier == Modifier) Modifier.height(300.dp) else modifier),
+        color = panelBg,
+    ) {
+        Column(Modifier.fillMaxSize()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(44.dp)
+                    .background(panelBg)
+                    .padding(horizontal = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(
+                    onClick = { isEmojiSearchActive = !isEmojiSearchActive },
+                    modifier = Modifier.size(36.dp),
+                ) {
+                    Icon(
+                        if (isEmojiSearchActive) Icons.Default.Close else Icons.Default.Search,
+                        contentDescription = "جستجو",
+                        tint = if (isEmojiSearchActive) accentColor else mutedTextColor,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+
+                Box(
+                    modifier = Modifier.weight(1f),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = ChatMediaTab.EMOJI.title,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = accentColor,
+                    )
+                }
+
+                BackspaceButton(
+                    onBackspace = onBackspace,
+                    tint = mutedTextColor,
+                )
+            }
+
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(0.5.dp)
+                    .background(dividerColor)
+            )
+
+            Box(modifier = Modifier.weight(1f)) {
+                EmojiPickerPage(
+                    recents = recentEmojis,
+                    searchQuery = emojiSearchQuery,
+                    isSearchActive = isEmojiSearchActive,
+                    onSearchQueryChange = { emojiSearchQuery = it },
+                    onEmojiSelected = { emoji ->
+                        recentEmojiStore.addRecent(emoji)
+                        onEmoji(emoji)
+                    },
+                    accentColor = accentColor,
+                    cardBg = cardBg,
+                    textColor = textColor,
+                    mutedTextColor = mutedTextColor,
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun EmojiPickerPage(
     recents: List<String>,
     searchQuery: String,
@@ -242,6 +335,8 @@ private fun EmojiPickerPage(
     onEmojiSelected: (String) -> Unit,
     accentColor: Color,
     cardBg: Color,
+    textColor: Color = MaterialTheme.colorScheme.onSurface,
+    mutedTextColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
 ) {
     val gridState = rememberLazyGridState()
     val scope = rememberCoroutineScope()
@@ -301,7 +396,7 @@ private fun EmojiPickerPage(
                     value = searchQuery,
                     onValueChange = onSearchQueryChange,
                     modifier = Modifier.fillMaxWidth(),
-                    textStyle = TextStyle(color = MaterialTheme.colorScheme.onSurface, fontSize = 13.sp),
+                    textStyle = TextStyle(color = textColor, fontSize = 13.sp),
                     singleLine = true,
                     cursorBrush = SolidColor(accentColor),
                     decorationBox = { innerTextField ->
@@ -309,7 +404,7 @@ private fun EmojiPickerPage(
                             Text(
                                 text = "جستجوی شکلک (خنده، قلب، آتش...)",
                                 fontSize = 13.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
+                                color = mutedTextColor.copy(alpha = 0.75f),
                             )
                         }
                         innerTextField()
@@ -361,7 +456,7 @@ private fun EmojiPickerPage(
         if (isSearchActive && searchQuery.isNotBlank()) {
             if (searchResults.isEmpty()) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("شکلکی یافت نشد", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("شکلکی یافت نشد", fontSize = 14.sp, color = mutedTextColor)
                 }
             } else {
                 LazyVerticalGrid(
@@ -399,7 +494,7 @@ private fun EmojiPickerPage(
                                 text = item.title,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
+                                color = mutedTextColor.copy(alpha = 0.85f),
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(start = 8.dp, end = 8.dp, top = 10.dp, bottom = 4.dp),
@@ -719,6 +814,7 @@ private fun StickerPickerPage(
 private fun BackspaceButton(
     onBackspace: () -> Unit,
     modifier: Modifier = Modifier,
+    tint: Color = MaterialTheme.colorScheme.onSurfaceVariant,
 ) {
     var isPressed by remember { mutableStateOf(false) }
 
@@ -751,7 +847,7 @@ private fun BackspaceButton(
         Icon(
             Icons.AutoMirrored.Filled.Backspace,
             contentDescription = "حذف",
-            tint = if (isPressed) VistaBrandColors.Indigo else MaterialTheme.colorScheme.onSurfaceVariant,
+            tint = if (isPressed) VistaBrandColors.Indigo else tint,
             modifier = Modifier.size(20.dp),
         )
     }

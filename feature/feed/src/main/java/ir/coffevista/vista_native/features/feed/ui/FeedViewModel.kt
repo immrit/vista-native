@@ -97,6 +97,10 @@ class FeedViewModel @Inject constructor(
         postUploadManager?.dismiss()
     }
 
+    fun markPostUploadBannerDisplayed(workId: String?) {
+        postUploadManager?.markBannerDisplayed(workId)
+    }
+
     fun retryStoryUpload() {
         storyUploadManager?.retry()
     }

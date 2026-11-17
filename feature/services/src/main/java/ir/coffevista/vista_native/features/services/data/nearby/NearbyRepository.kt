@@ -179,12 +179,13 @@ class DefaultNearbyRepository @Inject constructor(
             .bodyOrThrow("bazaar_verify_failed")
             .toDomain()
 
-    private fun <T> Response<T>.bodyOrThrow(emptyCode: String): T {
+    private inline fun <reified T> Response<T>.bodyOrThrow(emptyCode: String): T {
         if (isSuccessful) {
             val b = body()
-            if (b != null || this.raw().code == 204 || this.raw().code == 200) {
+            if (b != null) return b
+            if (T::class == Unit::class) {
                 @Suppress("UNCHECKED_CAST")
-                return (b ?: Unit) as T
+                return Unit as T
             }
             throw RemoteFailure(
                 statusCode = code(),

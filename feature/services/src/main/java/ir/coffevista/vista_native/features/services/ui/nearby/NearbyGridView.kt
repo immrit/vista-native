@@ -19,6 +19,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -56,17 +61,30 @@ fun NearbyGridView(
     onLoadMore: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val gridState = rememberLazyGridState()
+    val uniqueCandidates = remember(candidates) {
+        candidates.filter { it.userId.isNotBlank() }.distinctBy { it.userId }
+    }
+
+    LaunchedEffect(gridState, uniqueCandidates.size) {
+        if (uniqueCandidates.isEmpty()) return@LaunchedEffect
+        snapshotFlow {
+            gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
+        }
+            .distinctUntilChanged()
+            .filter { lastVisible -> lastVisible >= (uniqueCandidates.size - 4).coerceAtLeast(0) }
+            .collect { onLoadMore() }
+    }
+
     LazyVerticalGrid(
+        state = gridState,
         columns = GridCells.Fixed(2),
         contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 8.dp, bottom = 24.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
         modifier = modifier.fillMaxSize(),
     ) {
-        itemsIndexed(candidates, key = { _, item -> item.userId }) { index, candidate ->
-            if (index >= candidates.size - 4) {
-                LaunchedEffect(candidates.size) { onLoadMore() }
-            }
+        itemsIndexed(uniqueCandidates, key = { _, item -> item.userId }) { _, candidate ->
             NearbyRadarGridTile(
                 candidate = candidate,
                 onClick = { onCandidateClick(candidate) },

@@ -310,7 +310,7 @@ private fun PasswordScreen(
                 enabled = !state.isLoading,
             ) {
                 Text(
-                    text = "دسترسی به ایمیل ندارم (بازنشانی ۷ روزه تلگرام)",
+                    text = "دسترسی به ایمیل ندارم (بازنشانی ۷ روزه)",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error,
                 )

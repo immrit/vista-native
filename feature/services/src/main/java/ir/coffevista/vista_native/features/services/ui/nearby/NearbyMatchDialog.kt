@@ -147,7 +147,6 @@ fun NearbyMatchDialog(
                 // Start Chat Button
                 Button(
                     onClick = {
-                        onDismiss()
                         onStartChat(matchId, userId, name, avatar)
                     },
                     modifier = Modifier

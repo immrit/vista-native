@@ -186,11 +186,11 @@ class TwoFactorSettingsViewModel @Inject constructor(
     fun beginEnableWizard() {
         val status = mutableUiState.value.status
         if (!status.canEnable) {
-            val missing = when {
-                !status.phoneVerified -> "برای فعال‌سازی تایید دو مرحله‌ای، ابتدا باید شماره موبایل شما تایید شده باشد."
-                else -> "برای فعال‌سازی تایید دو مرحله‌ای، ابتدا باید ایمیل خود را تایید کنید."
+            mutableUiState.update {
+                it.copy(
+                    errorMessage = "برای فعال‌سازی تایید دو مرحله‌ای، ابتدا باید شماره موبایل یا ایمیل خود را تایید کنید.",
+                )
             }
-            mutableUiState.update { it.copy(errorMessage = missing) }
             return
         }
         mutableUiState.update {

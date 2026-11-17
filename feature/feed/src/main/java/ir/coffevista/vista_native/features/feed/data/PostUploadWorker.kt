@@ -190,13 +190,15 @@ class PostUploadWorker @AssistedInject constructor(
 
             runCatching { temporaryVideoFile?.delete() }
             updateProgressState(1f, "پست با موفقیت منتشر شد")
-            Result.success(workDataOf(KEY_POST_ID to postDto.id))
+            Result.success(workDataOf(KEY_POST_ID to postDto.id, KEY_USER_ID to userId))
         } catch (cancelled: CancellationException) {
             cleanupOrphanFiles(uploadedObjectKeys)
-            Result.failure(workDataOf(KEY_ERROR to "ارسال پست لغو شد"))
+            val userId = inputData.getString(KEY_USER_ID)
+            Result.failure(workDataOf(KEY_ERROR to "ارسال پست لغو شد", KEY_USER_ID to userId))
         } catch (e: Throwable) {
             cleanupOrphanFiles(uploadedObjectKeys)
-            Result.failure(workDataOf(KEY_ERROR to (e.message ?: "خطا در ارسال پست")))
+            val userId = inputData.getString(KEY_USER_ID)
+            Result.failure(workDataOf(KEY_ERROR to (e.message ?: "خطا در ارسال پست"), KEY_USER_ID to userId))
         }
     }
 

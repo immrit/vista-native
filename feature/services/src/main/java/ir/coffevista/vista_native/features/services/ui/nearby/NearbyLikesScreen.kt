@@ -16,7 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -343,15 +343,18 @@ private fun ChatRequestsTabContent(
         return
     }
 
+    val uniqueIncoming = remember(incoming) { incoming.distinctBy { it.id } }
+    val uniqueOutgoing = remember(outgoing) { outgoing.distinctBy { it.id } }
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        if (incoming.isNotEmpty()) {
+        if (uniqueIncoming.isNotEmpty()) {
             item {
                 Text(
-                    text = "درخواست‌های دریافتی (${incoming.size})",
+                    text = "درخواست‌های دریافتی (${uniqueIncoming.size})",
                     style = MaterialTheme.typography.titleSmall.copy(
                         fontFamily = VistaFontFamily,
                         fontWeight = FontWeight.Bold,
@@ -359,7 +362,7 @@ private fun ChatRequestsTabContent(
                     ),
                 )
             }
-            items(incoming, key = { "in-${it.id}" }) { req ->
+            itemsIndexed(uniqueIncoming, key = { idx, it -> it.id.ifBlank { "in-$idx" } }) { _, req ->
                 ChatRequestCardItem(
                     req = req,
                     isIncoming = true,
@@ -371,11 +374,11 @@ private fun ChatRequestsTabContent(
             }
         }
 
-        if (outgoing.isNotEmpty()) {
+        if (uniqueOutgoing.isNotEmpty()) {
             item {
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    text = "درخواست‌های ارسالی شما (${outgoing.size})",
+                    text = "درخواست‌های ارسالی شما (${uniqueOutgoing.size})",
                     style = MaterialTheme.typography.titleSmall.copy(
                         fontFamily = VistaFontFamily,
                         fontWeight = FontWeight.Bold,
@@ -383,7 +386,7 @@ private fun ChatRequestsTabContent(
                     ),
                 )
             }
-            items(outgoing, key = { "out-${it.id}" }) { req ->
+            itemsIndexed(uniqueOutgoing, key = { idx, it -> it.id.ifBlank { "out-$idx" } }) { _, req ->
                 ChatRequestCardItem(
                     req = req,
                     isIncoming = false,
@@ -610,12 +613,13 @@ private fun ReceivedLikesTabContent(
             }
         }
     } else {
+        val uniqueLikes = remember(likes) { likes.distinctBy { it.userId } }
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            items(likes, key = { it.userId }) { like ->
+            itemsIndexed(uniqueLikes, key = { idx, it -> it.userId.ifBlank { "like-$idx" } }) { _, like ->
                 ReceivedLikeItem(like = like, onLike = { onLike(like) }, onPass = { onPass(like) })
             }
         }
@@ -746,12 +750,13 @@ private fun MatchesTabContent(
             }
         }
     } else {
+        val uniqueMatches = remember(matches) { matches.distinctBy { it.matchId } }
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            items(matches, key = { it.matchId }) { match ->
+            itemsIndexed(uniqueMatches, key = { idx, it -> it.matchId.ifBlank { "match-$idx" } }) { _, match ->
                 MatchItemRow(match = match, onChat = { onChat(match) }, onUnmatch = { onUnmatch(match) })
             }
         }

@@ -119,6 +119,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
@@ -126,8 +127,7 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import coil.ImageLoader
 import coil.compose.SubcomposeAsyncImage
-import coil.decode.GifDecoder
-import coil.decode.ImageDecoderDecoder
+import coil.imageLoader
 import coil.request.ImageRequest
 import ir.coffevista.vista_native.core.designsystem.glass.VistaGlassState
 import ir.coffevista.vista_native.core.designsystem.glass.VistaGlassTokens
@@ -153,6 +153,7 @@ import okhttp3.Request
 data class MediaViewerItem(
     val url: String,
     val isVideo: Boolean,
+    val fallbackUrl: String? = null,
     val title: String? = null,
     val caption: String? = null,
     val isGif: Boolean = false,
@@ -187,21 +188,8 @@ fun FullscreenMediaViewerDialog(
     var statusBannerText by remember { mutableStateOf<String?>(null) }
     var isSavingToGallery by remember { mutableStateOf(false) }
 
-    // Dedicated animated-GIF-capable Coil ImageLoader for the viewer.
-    val viewerImageLoader = remember(context) {
-        ImageLoader.Builder(context)
-            .components {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                    add(ImageDecoderDecoder.Factory())
-                } else {
-                    add(GifDecoder.Factory())
-                }
-            }
-            .build()
-    }
-    DisposableEffect(viewerImageLoader) {
-        onDispose { viewerImageLoader.shutdown() }
-    }
+    // از ImageLoader مشترک اپلیکیشن با کلاینت رسانه و کش حافظه/دیسک استفاده می‌کنیم.
+    val viewerImageLoader = context.imageLoader
 
     LaunchedEffect(statusBannerText) {
         if (statusBannerText != null) {
@@ -271,6 +259,7 @@ fun FullscreenMediaViewerDialog(
                 if (item.isVideo) {
                     VideoPage(
                         videoUrl = item.url,
+                        fallbackUrl = item.fallbackUrl,
                         isCurrentPage = pagerState.currentPage == page,
                         chromeVisible = chromeVisible && !isDraggingToDismiss,
                         glassState = mediaGlassState,
@@ -291,6 +280,7 @@ fun FullscreenMediaViewerDialog(
                 } else {
                     ZoomableImagePage(
                         imageUrl = item.url,
+                        fallbackUrl = item.fallbackUrl,
                         isGif = item.isGif,
                         contentDescription = item.title ?: "تصویر",
                         imageLoader = viewerImageLoader,
@@ -704,6 +694,7 @@ private fun ViewerActionButton(
 @Composable
 private fun ZoomableImagePage(
     imageUrl: String,
+    fallbackUrl: String?,
     isGif: Boolean,
     contentDescription: String?,
     imageLoader: ImageLoader,
@@ -754,9 +745,10 @@ private fun ZoomableImagePage(
     }
 
     val context = LocalContext.current
-    val request = remember(imageUrl, isGif) {
+    var activeUrl by remember(imageUrl, fallbackUrl) { mutableStateOf(imageUrl) }
+    val request = remember(activeUrl, isGif) {
         ImageRequest.Builder(context)
-            .data(imageUrl)
+            .data(activeUrl)
             .crossfade(true)
             .build()
     }
@@ -867,6 +859,11 @@ private fun ZoomableImagePage(
                     imageIntrinsicSize = intrinsic
                 }
             },
+            onError = {
+                if (!fallbackUrl.isNullOrBlank() && activeUrl != fallbackUrl) {
+                    activeUrl = fallbackUrl
+                }
+            },
             loading = {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(color = Color.White, strokeWidth = 2.5.dp)
@@ -908,6 +905,7 @@ private fun ZoomableImagePage(
 @Composable
 private fun VideoPage(
     videoUrl: String,
+    fallbackUrl: String?,
     isCurrentPage: Boolean,
     chromeVisible: Boolean,
     glassState: VistaGlassState,
@@ -916,6 +914,7 @@ private fun VideoPage(
     onVerticalDragRelease: () -> Unit,
 ) {
     val context = LocalContext.current
+    var activeVideoUrl by remember(videoUrl, fallbackUrl) { mutableStateOf(videoUrl) }
     var isPlaying by remember { mutableStateOf(isCurrentPage) }
     var isEnded by remember { mutableStateOf(false) }
     var isMuted by remember { mutableStateOf(false) }
@@ -924,9 +923,9 @@ private fun VideoPage(
     var isBuffering by remember { mutableStateOf(true) }
     var speed by remember { mutableFloatStateOf(1f) }
 
-    val exoPlayer = remember(videoUrl) {
+    val exoPlayer = remember(activeVideoUrl) {
         ExoPlayer.Builder(context).build().apply {
-            setMediaItem(MediaItem.fromUri(videoUrl))
+            setMediaItem(MediaItem.fromUri(activeVideoUrl))
             repeatMode = Player.REPEAT_MODE_OFF
             playWhenReady = isCurrentPage
             prepare()
@@ -941,6 +940,12 @@ private fun VideoPage(
 
                 override fun onIsPlayingChanged(playing: Boolean) {
                     isPlaying = playing
+                }
+
+                override fun onPlayerError(error: PlaybackException) {
+                    if (!fallbackUrl.isNullOrBlank() && activeVideoUrl != fallbackUrl) {
+                        activeVideoUrl = fallbackUrl
+                    }
                 }
             })
         }

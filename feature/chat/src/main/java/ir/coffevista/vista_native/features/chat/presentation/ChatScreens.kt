@@ -3459,10 +3459,15 @@ fun MessageDetailScreen(
                     it.kind == AttachmentKind.IMAGE || it.kind == AttachmentKind.GIF || it.kind == AttachmentKind.VIDEO
                 }?.let { att ->
                     val dl = state.downloads[msg.serverId ?: msg.clientId]
-                    val url = dl?.localUri?.takeIf(String::isNotBlank)
+                    val rawLocalUrl = dl?.localUri?.takeIf(String::isNotBlank)
                         ?: att.localUri?.takeIf(String::isNotBlank)
-                        ?: att.remoteUrl?.takeIf(String::isNotBlank)
-                        ?: return@let null
+                    val safeLocalUrl = rawLocalUrl?.takeUnless {
+                        it.contains("sec_up_") ||
+                            it.contains("enc_chat_") ||
+                            it.contains("secret_pending_uploads")
+                    }
+                    val remoteUrl = att.remoteUrl?.takeIf(String::isNotBlank)
+                    val url = safeLocalUrl ?: remoteUrl ?: return@let null
                     val rawText = (msg.content as? MessageContent.Text)?.value?.trim().orEmpty()
                     val cleanCaption = rawText.takeIf {
                         it.isNotEmpty() &&
@@ -3478,6 +3483,7 @@ fun MessageDetailScreen(
                     MediaViewerItem(
                         url = url,
                         isVideo = att.kind == AttachmentKind.VIDEO,
+                        fallbackUrl = remoteUrl?.takeIf { it != url },
                         title = att.fileName,
                         caption = cleanCaption,
                         isGif = att.kind == AttachmentKind.GIF,
@@ -3489,8 +3495,14 @@ fun MessageDetailScreen(
                 }
             }
         }
-        val targetUrl = attachment.localUri?.takeIf(String::isNotBlank) ?: attachment.remoteUrl?.takeIf(String::isNotBlank)
-        val initialIndex = activeMediaList.indexOfFirst { it.url == targetUrl }.coerceAtLeast(0)
+        val targetLocalUrl = attachment.localUri?.takeIf(String::isNotBlank)
+        val targetRemoteUrl = attachment.remoteUrl?.takeIf(String::isNotBlank)
+        val targetUrl = targetLocalUrl ?: targetRemoteUrl
+        val initialIndex = activeMediaList.indexOfFirst { item ->
+            (targetUrl != null && (item.url == targetUrl || item.fallbackUrl == targetUrl)) ||
+                (targetRemoteUrl != null && (item.url == targetRemoteUrl || item.fallbackUrl == targetRemoteUrl)) ||
+                (targetLocalUrl != null && item.url == targetLocalUrl)
+        }.coerceAtLeast(0)
 
         if (attachment.kind == AttachmentKind.IMAGE || attachment.kind == AttachmentKind.GIF || attachment.kind == AttachmentKind.VIDEO) {
             FullscreenMediaViewerDialog(
@@ -3498,6 +3510,7 @@ fun MessageDetailScreen(
                     MediaViewerItem(
                         url = targetUrl.orEmpty(),
                         isVideo = attachment.kind == AttachmentKind.VIDEO,
+                        fallbackUrl = targetRemoteUrl?.takeIf { it != targetUrl },
                         title = attachment.fileName,
                         isGif = attachment.kind == AttachmentKind.GIF,
                     ),
@@ -3998,14 +4011,17 @@ private fun MediaAlbumTile(
         downloadTask?.state == DownloadState.COMPLETE ||
         shouldAllowRemoteAttachmentPreview(attachment, settingsPreferences, connectionTransport)
     val completedLocalUri = downloadTask?.takeIf { it.state == DownloadState.COMPLETE }?.localUri?.takeIf(String::isNotBlank)
-    val source = completedLocalUri ?: attachment.localUri?.takeIf(String::isNotBlank)
-        ?: if (allowRemotePreview) attachment.remoteUrl else null
+    val rawLocalUri = completedLocalUri ?: attachment.localUri?.takeIf(String::isNotBlank)
+    var localLoadFailed by remember(rawLocalUri) { mutableStateOf(false) }
+    val usableLocalUri = rawLocalUri?.takeUnless { localLoadFailed }
+    val remoteUrl = attachment.remoteUrl?.takeIf(String::isNotBlank)
+    val source = usableLocalUri ?: if (allowRemotePreview) remoteUrl else null
     val activeUpload = attachment.transferState == TransferState.UPLOADING ||
         attachment.transferState == TransferState.QUEUED
     val needsDownload = attachment.transferState == TransferState.COMPLETE &&
         completedLocalUri.isNullOrBlank() &&
         attachment.localUri.isNullOrBlank() &&
-        !attachment.remoteUrl.isNullOrBlank() &&
+        !remoteUrl.isNullOrBlank() &&
         !message.isMine
     Box(
         modifier = modifier
@@ -4023,8 +4039,10 @@ private fun MediaAlbumTile(
                             attachment.transferState == TransferState.CANCELLED -> onRetry(message)
                         downloadTask?.state == DownloadState.COMPLETE &&
                             !downloadTask.localUri.isNullOrBlank() ->
-                            onAttachmentClick(attachment.copy(localUri = downloadTask.localUri))
-                        !attachment.localUri.isNullOrBlank() -> onAttachmentClick(attachment)
+                            onAttachmentClick(attachment.copy(localUri = usableLocalUri))
+                        !usableLocalUri.isNullOrBlank() -> onAttachmentClick(attachment)
+                        allowRemotePreview && !remoteUrl.isNullOrBlank() ->
+                            onAttachmentClick(attachment.copy(localUri = null))
                         downloadTask?.state == DownloadState.DOWNLOADING ->
                             onPauseDownload(downloadTask.messageId)
                         downloadTask != null && downloadTask.state in setOf(
@@ -4048,6 +4066,11 @@ private fun MediaAlbumTile(
             model = source,
             contentDescription = null,
             contentScale = ContentScale.Crop,
+            onError = {
+                if (!rawLocalUri.isNullOrBlank() && source == rawLocalUri && !remoteUrl.isNullOrBlank()) {
+                    localLoadFailed = true
+                }
+            },
             modifier = Modifier.fillMaxSize(),
         )
         when {
@@ -5737,17 +5760,23 @@ private fun AttachmentBubble(
         it.contains("sec_up_") || it.contains("enc_chat_") || it.contains("secret_pending_uploads")
     } == true
     val usableLocalUri = rawLocalUri?.takeUnless { it.isBlank() || isEncryptedLocalFile }
+    var localLoadFailed by remember(usableLocalUri) { mutableStateOf(false) }
+    val remoteUrl = attachment.remoteUrl?.takeIf { it.isNotBlank() }
+    val activeLocalUri = usableLocalUri?.takeUnless {
+        localLoadFailed && !isSecretConversation && remoteUrl != null
+    }
     val isDownloaded = isGif ||
         !usableLocalUri.isNullOrBlank() ||
         (!isSecretConversation && message.isMine)
     val isDownloading = !isGif && (downloadTask?.state == DownloadState.DOWNLOADING || downloadTask?.state == DownloadState.QUEUED)
     val isFailed = !isGif && (downloadTask?.state == DownloadState.FAILED || downloadTask?.state == DownloadState.CANCELLED)
-    val effectiveLocalUri = usableLocalUri
+    val effectiveLocalUri = activeLocalUri
     val allowRemotePreview = isGif ||
         (!isSecretConversation && message.isMine) ||
+        !usableLocalUri.isNullOrBlank() ||
         shouldAllowRemoteAttachmentPreview(attachment, settingsPreferences, connectionTransport)
     val mediaModel = effectiveLocalUri?.takeIf { it.isNotBlank() }
-        ?: if (isSecretConversation || !allowRemotePreview) null else attachment.remoteUrl
+        ?: if (isSecretConversation || !allowRemotePreview) null else remoteUrl
 
     val isActiveUpload = attachment.transferState == TransferState.UPLOADING ||
         attachment.transferState == TransferState.QUEUED
@@ -5778,6 +5807,11 @@ private fun AttachmentBubble(
                         model = mediaModel,
                         contentDescription = attachment.fileName ?: "تصویر پیوست",
                         contentScale = ContentScale.Crop,
+                        onError = {
+                            if (!usableLocalUri.isNullOrBlank() && mediaModel == usableLocalUri && remoteUrl != null) {
+                                localLoadFailed = true
+                            }
+                        },
                         modifier = Modifier
                             .fillMaxSize()
                             .then(
@@ -5885,6 +5919,11 @@ private fun AttachmentBubble(
                             model = mediaModel,
                             contentDescription = attachment.fileName ?: "ویدیو",
                             contentScale = ContentScale.Crop,
+                            onError = {
+                                if (!usableLocalUri.isNullOrBlank() && mediaModel == usableLocalUri && remoteUrl != null) {
+                                    localLoadFailed = true
+                                }
+                            },
                             modifier = Modifier
                                 .fillMaxSize()
                                 .then(
@@ -6636,7 +6675,7 @@ private fun ChatComposerBar(
 }
 
 @Composable
-private fun TelegramSmileyIcon(
+internal fun TelegramSmileyIcon(
     modifier: Modifier = Modifier,
     tint: Color = Color(0xFF7D8B99),
 ) {
@@ -7919,16 +7958,33 @@ private fun PartnerDetailsScreen(
                     ) {
                         gridItems(mediaMessages, key = { it.stableKey }) { message ->
                             val attachment = message.attachment
+                            var localFailed by remember(attachment?.localUri) { mutableStateOf(false) }
+                            val displayModel = attachment?.localUri?.takeIf { it.isNotBlank() && !localFailed }
+                                ?: attachment?.remoteUrl
                             Box(
                                 Modifier
                                     .aspectRatio(1f)
                                     .clip(RoundedCornerShape(4.dp))
-                                    .clickable { message.attachment?.let(onAttachmentClick) }
+                                    .clickable {
+                                        attachment?.let { att ->
+                                            onAttachmentClick(
+                                                if (localFailed) att.copy(localUri = null) else att,
+                                            )
+                                        }
+                                    }
                             ) {
                                 AsyncImage(
-                                    model = attachment?.localUri ?: attachment?.remoteUrl,
+                                    model = displayModel,
                                     contentDescription = attachment?.fileName ?: "رسانه",
                                     contentScale = ContentScale.Crop,
+                                    onError = {
+                                        if (!attachment?.localUri.isNullOrBlank() &&
+                                            displayModel == attachment?.localUri &&
+                                            !attachment?.remoteUrl.isNullOrBlank()
+                                        ) {
+                                            localFailed = true
+                                        }
+                                    },
                                     modifier = Modifier.fillMaxSize(),
                                 )
                                 if (attachment?.kind == AttachmentKind.VIDEO) {

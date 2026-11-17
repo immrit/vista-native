@@ -344,8 +344,10 @@ fun NearbyPreferencesSheet(
             Spacer(modifier = Modifier.height(20.dp))
 
             // Age Range
+            val safeMinAge = currentPrefs.minAge.toFloat().coerceIn(18f, 80f)
+            val safeMaxAge = currentPrefs.maxAge.toFloat().coerceIn(safeMinAge, 80f)
             Text(
-                text = "بازه سنی: ${currentPrefs.minAge} تا ${currentPrefs.maxAge} سال",
+                text = "بازه سنی: ${safeMinAge.toInt()} تا ${safeMaxAge.toInt()} سال",
                 style = MaterialTheme.typography.titleSmall.copy(
                     fontFamily = VistaFontFamily,
                     fontWeight = FontWeight.Bold,
@@ -354,15 +356,17 @@ fun NearbyPreferencesSheet(
                 ),
             )
             RangeSlider(
-                value = currentPrefs.minAge.toFloat()..currentPrefs.maxAge.toFloat(),
+                value = safeMinAge..safeMaxAge,
                 onValueChange = { range ->
+                    val newMin = range.start.toInt().coerceIn(18, 80)
+                    val newMax = range.endInclusive.toInt().coerceIn(newMin, 80)
                     currentPrefs = currentPrefs.copy(
-                        minAge = range.start.toInt(),
-                        maxAge = range.endInclusive.toInt(),
+                        minAge = newMin,
+                        maxAge = newMax,
                     )
                 },
                 valueRange = 18f..80f,
-                steps = 62,
+                steps = 61,
                 colors = SliderDefaults.colors(
                     thumbColor = VistaBrandColors.Indigo,
                     activeTrackColor = VistaBrandColors.Indigo,

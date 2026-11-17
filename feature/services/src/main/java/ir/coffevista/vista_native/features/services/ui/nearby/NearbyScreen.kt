@@ -10,6 +10,7 @@ import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
 import android.net.Uri
+import android.os.Looper
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -137,8 +138,12 @@ import ir.coffevista.vista_native.core.designsystem.theme.VistaFontFamily
 import ir.coffevista.vista_native.core.designsystem.theme.vistaColors
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaBrandColors
 import ir.coffevista.vista_native.features.services.data.nearby.NearbyCandidate
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.roundToInt
 
 private const val NEARBY_BAZAAR_RSA_PUBLIC_KEY =
@@ -164,6 +169,8 @@ fun NearbyScreen(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val snackbarHostState = remember { SnackbarHostState() }
+    val coroutineScope = rememberCoroutineScope()
+    val activeLocationListener = remember { mutableStateOf<LocationListener?>(null) }
     var reportingCandidate by remember { mutableStateOf<NearbyCandidate?>(null) }
 
     val payment = remember(context) {
@@ -231,6 +238,7 @@ fun NearbyScreen(
             executePurchase()
         } else {
             runCatching {
+                bazaarConnection?.disconnect()
                 bazaarConnection = payment.connect {
                     connectionSucceed { executePurchase() }
                     connectionFailed { throwable ->
@@ -253,7 +261,7 @@ fun NearbyScreen(
         val fineGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true
         val coarseGranted = permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
         if (fineGranted || coarseGranted) {
-            checkAndAcquireLocation(context, viewModel)
+            checkAndAcquireLocation(context, viewModel, coroutineScope, activeLocationListener)
         } else {
             val activity = context as? Activity
             val showRationale = activity?.let {
@@ -274,12 +282,11 @@ fun NearbyScreen(
             viewModel.setLocationError("permission")
         } else {
             val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
-            val isGpsEnabled = locationManager?.isProviderEnabled(LocationManager.GPS_PROVIDER) == true ||
-                locationManager?.isProviderEnabled(LocationManager.NETWORK_PROVIDER) == true
+            val isGpsEnabled = isAnyLocationProviderEnabled(locationManager)
             if (!isGpsEnabled) {
                 viewModel.setLocationError("service_off")
             } else {
-                checkAndAcquireLocation(context, viewModel)
+                checkAndAcquireLocation(context, viewModel, coroutineScope, activeLocationListener)
             }
         }
     }
@@ -318,16 +325,22 @@ fun NearbyScreen(
                     val fine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
                     val coarse = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
                     val lm = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
-                    val gpsOn = lm?.isProviderEnabled(LocationManager.GPS_PROVIDER) == true ||
-                        lm?.isProviderEnabled(LocationManager.NETWORK_PROVIDER) == true
+                    val gpsOn = isAnyLocationProviderEnabled(lm)
                     if ((fine || coarse) && gpsOn) {
-                        checkAndAcquireLocation(context, viewModel)
+                        checkAndAcquireLocation(context, viewModel, coroutineScope, activeLocationListener)
                     }
                 }
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            val lm = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
+            activeLocationListener.value?.let { listener ->
+                runCatching { lm?.removeUpdates(listener) }
+            }
+            activeLocationListener.value = null
+        }
     }
 
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
@@ -466,7 +479,7 @@ fun NearbyScreen(
                     when {
                         state.isDisabled -> {
                             DisabledDiscoveryView(
-                                onEnable = { checkAndAcquireLocation(context, viewModel) }
+                                onEnable = { checkAndAcquireLocation(context, viewModel, coroutineScope, activeLocationListener) }
                             )
                         }
                         state.locationError != null -> {
@@ -481,16 +494,28 @@ fun NearbyScreen(
                                     )
                                 },
                                 onOpenGpsSettings = {
-                                    context.startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+                                    runCatching {
+                                        context.startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+                                    }.onFailure {
+                                        coroutineScope.launch {
+                                            snackbarHostState.showSnackbar("امکان باز کردن تنظیمات مکان‌یاب وجود ندارد")
+                                        }
+                                    }
                                 },
                                 onOpenAppSettings = {
-                                    val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                                        data = Uri.fromParts("package", context.packageName, null)
+                                    runCatching {
+                                        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                            data = Uri.fromParts("package", context.packageName, null)
+                                        }
+                                        context.startActivity(intent)
+                                    }.onFailure {
+                                        coroutineScope.launch {
+                                            snackbarHostState.showSnackbar("امکان باز کردن تنظیمات برنامه وجود ندارد")
+                                        }
                                     }
-                                    context.startActivity(intent)
                                 },
                                 onRetry = {
-                                    checkAndAcquireLocation(context, viewModel)
+                                    checkAndAcquireLocation(context, viewModel, coroutineScope, activeLocationListener)
                                 },
                             )
                         }
@@ -499,7 +524,7 @@ fun NearbyScreen(
                         }
                         state.cards.isEmpty() -> {
                             NearbyEmptyRadarView(
-                                onRefresh = { checkAndAcquireLocation(context, viewModel) },
+                                onRefresh = { checkAndAcquireLocation(context, viewModel, coroutineScope, activeLocationListener) },
                                 onOpenPreferences = { viewModel.setPreferencesSheetVisible(true) },
                             )
                         }
@@ -1200,35 +1225,52 @@ private fun LocationErrorView(
     }
 }
 
-private fun resolveCityAndProvince(context: Context, lat: Double, lng: Double): Pair<String?, String?> {
-    fun extract(locale: java.util.Locale): Pair<String?, String?>? {
-        return runCatching {
-            @Suppress("DEPRECATION")
-            val addresses = android.location.Geocoder(context, locale).getFromLocation(lat, lng, 3)
-            val addr = addresses?.firstOrNull { !it.locality.isNullOrBlank() || !it.subAdminArea.isNullOrBlank() }
-                ?: addresses?.firstOrNull()
-                ?: return null
-            val rawCity = addr.locality?.takeIf { it.isNotBlank() }
-                ?: addr.subAdminArea?.takeIf { it.isNotBlank() }
-            val cleanCity = rawCity?.trim()
-                ?.removePrefix("شهرستان ")
-                ?.removePrefix("شهر ")
-                ?.trim()
-            val cleanProvince = addr.adminArea?.trim()?.removePrefix("استان ")?.trim()
-            if (cleanCity.isNullOrBlank() && cleanProvince.isNullOrBlank()) null else cleanCity to cleanProvince
-        }.getOrNull()
-    }
-
-    val fa = extract(java.util.Locale.forLanguageTag("fa-IR"))
-    if (fa != null && !fa.first.isNullOrBlank()) return fa
-    return extract(java.util.Locale.ENGLISH) ?: (fa ?: (null to null))
+private fun isAnyLocationProviderEnabled(locationManager: LocationManager?): Boolean {
+    if (locationManager == null) return false
+    val gps = runCatching { locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER) }.getOrDefault(false)
+    val network = runCatching { locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER) }.getOrDefault(false)
+    return gps || network
 }
 
-private fun checkAndAcquireLocation(context: Context, viewModel: NearbyViewModel) {
+private suspend fun resolveCityAndProvinceOffMain(
+    context: Context,
+    lat: Double,
+    lng: Double,
+): Pair<String?, String?> = withContext(Dispatchers.IO) {
+    val appCtx = context.applicationContext
+    withTimeoutOrNull(3_500L) {
+        fun extract(locale: java.util.Locale): Pair<String?, String?>? {
+            return runCatching {
+                @Suppress("DEPRECATION")
+                val addresses = android.location.Geocoder(appCtx, locale).getFromLocation(lat, lng, 3)
+                val addr = addresses?.firstOrNull { !it.locality.isNullOrBlank() || !it.subAdminArea.isNullOrBlank() }
+                    ?: addresses?.firstOrNull()
+                    ?: return@runCatching null
+                val rawCity = addr.locality?.takeIf { it.isNotBlank() }
+                    ?: addr.subAdminArea?.takeIf { it.isNotBlank() }
+                val cleanCity = rawCity?.trim()
+                    ?.removePrefix("شهرستان ")
+                    ?.removePrefix("شهر ")
+                    ?.trim()
+                val cleanProvince = addr.adminArea?.trim()?.removePrefix("استان ")?.trim()
+                if (cleanCity.isNullOrBlank() && cleanProvince.isNullOrBlank()) null else cleanCity to cleanProvince
+            }.getOrNull()
+        }
+
+        val fa = extract(java.util.Locale.forLanguageTag("fa-IR"))
+        if (fa != null && !fa.first.isNullOrBlank()) fa
+        else extract(java.util.Locale.ENGLISH) ?: (fa ?: (null to null))
+    } ?: (null to null)
+}
+
+private fun checkAndAcquireLocation(
+    context: Context,
+    viewModel: NearbyViewModel,
+    scope: CoroutineScope,
+    activeListenerHolder: androidx.compose.runtime.MutableState<LocationListener?>,
+) {
     val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
-    val isGpsEnabled = locationManager?.isProviderEnabled(LocationManager.GPS_PROVIDER) == true ||
-        locationManager?.isProviderEnabled(LocationManager.NETWORK_PROVIDER) == true
-    if (!isGpsEnabled) {
+    if (!isAnyLocationProviderEnabled(locationManager)) {
         viewModel.setLocationError("service_off")
         return
     }
@@ -1240,45 +1282,65 @@ private fun checkAndAcquireLocation(context: Context, viewModel: NearbyViewModel
     }
     try {
         val candidates = listOfNotNull(
-            locationManager?.getLastKnownLocation(LocationManager.GPS_PROVIDER),
-            locationManager?.getLastKnownLocation(LocationManager.NETWORK_PROVIDER),
-            locationManager?.getLastKnownLocation(LocationManager.PASSIVE_PROVIDER),
+            if (fineGranted) runCatching { locationManager?.getLastKnownLocation(LocationManager.GPS_PROVIDER) }.getOrNull() else null,
+            runCatching { locationManager?.getLastKnownLocation(LocationManager.NETWORK_PROVIDER) }.getOrNull(),
+            if (fineGranted) runCatching { locationManager?.getLastKnownLocation(LocationManager.PASSIVE_PROVIDER) }.getOrNull() else null,
         )
         val freshest = candidates.maxByOrNull { it.time }
         val isRecent = freshest != null && (System.currentTimeMillis() - freshest.time) <= 15 * 60 * 1000L
 
         if (freshest != null && isRecent) {
-            val (city, province) = resolveCityAndProvince(context, freshest.latitude, freshest.longitude)
-            viewModel.onLocationAcquired(freshest.latitude, freshest.longitude, city, province)
-        } else {
-            // Emit stale cached location immediately for instant UI if present, and request fresh fix.
-            if (freshest != null) {
-                val (city, province) = resolveCityAndProvince(context, freshest.latitude, freshest.longitude)
+            scope.launch {
+                val (city, province) = resolveCityAndProvinceOffMain(context, freshest.latitude, freshest.longitude)
                 viewModel.onLocationAcquired(freshest.latitude, freshest.longitude, city, province)
             }
+        } else {
+            if (freshest != null) {
+                scope.launch {
+                    val (city, province) = resolveCityAndProvinceOffMain(context, freshest.latitude, freshest.longitude)
+                    viewModel.onLocationAcquired(freshest.latitude, freshest.longitude, city, province)
+                }
+            }
             val activeProvider = when {
-                locationManager?.isProviderEnabled(LocationManager.GPS_PROVIDER) == true -> LocationManager.GPS_PROVIDER
-                locationManager?.isProviderEnabled(LocationManager.NETWORK_PROVIDER) == true -> LocationManager.NETWORK_PROVIDER
+                fineGranted && runCatching {
+                    locationManager?.isProviderEnabled(LocationManager.GPS_PROVIDER) == true
+                }.getOrDefault(false) ->
+                    LocationManager.GPS_PROVIDER
+                runCatching {
+                    locationManager?.isProviderEnabled(LocationManager.NETWORK_PROVIDER) == true
+                }.getOrDefault(false) ->
+                    LocationManager.NETWORK_PROVIDER
                 else -> null
             }
-            if (activeProvider != null) {
-                @Suppress("DEPRECATION")
-                locationManager?.requestSingleUpdate(
-                    activeProvider,
-                    object : LocationListener {
-                        override fun onLocationChanged(location: Location) {
-                            val (city, province) = resolveCityAndProvince(context, location.latitude, location.longitude)
+            if (activeProvider != null && locationManager != null) {
+                activeListenerHolder.value?.let { oldListener ->
+                    runCatching { locationManager.removeUpdates(oldListener) }
+                }
+                val listener = object : LocationListener {
+                    override fun onLocationChanged(location: Location) {
+                        activeListenerHolder.value = null
+                        runCatching { locationManager.removeUpdates(this) }
+                        scope.launch {
+                            val (city, province) = resolveCityAndProvinceOffMain(context, location.latitude, location.longitude)
                             viewModel.onLocationAcquired(location.latitude, location.longitude, city, province)
                         }
-                        @Deprecated("Deprecated in Java")
-                        override fun onStatusChanged(provider: String?, status: Int, extras: android.os.Bundle?) {}
-                        override fun onProviderEnabled(provider: String) {}
-                        override fun onProviderDisabled(provider: String) {
-                            viewModel.setLocationError("service_off")
-                        }
-                    },
-                    null
+                    }
+                    @Deprecated("Deprecated in Java")
+                    override fun onStatusChanged(provider: String?, status: Int, extras: android.os.Bundle?) {}
+                    override fun onProviderEnabled(provider: String) {}
+                    override fun onProviderDisabled(provider: String) {
+                        viewModel.setLocationError("service_off")
+                    }
+                }
+                activeListenerHolder.value = listener
+                @Suppress("DEPRECATION")
+                locationManager.requestSingleUpdate(
+                    activeProvider,
+                    listener,
+                    Looper.getMainLooper(),
                 )
+            } else if (freshest == null) {
+                viewModel.setLocationError("failed")
             }
         }
     } catch (_: SecurityException) {

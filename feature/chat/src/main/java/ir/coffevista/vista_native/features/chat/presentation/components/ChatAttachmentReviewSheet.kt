@@ -62,6 +62,7 @@ import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Crop
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Tune
@@ -106,6 +107,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
@@ -116,10 +118,12 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.style.TextOverflow
@@ -132,6 +136,7 @@ import ir.coffevista.vista_native.core.common.toPersianDigits
 import ir.coffevista.vista_native.features.chat.domain.model.AttachmentKind
 import ir.coffevista.vista_native.features.chat.domain.model.ChatAttachmentDraft
 import ir.coffevista.vista_native.features.chat.presentation.MAX_ATTACHMENT_CAPTION_LENGTH
+import ir.coffevista.vista_native.features.chat.presentation.TelegramSmileyIcon
 import kotlinx.coroutines.launch
 import java.util.Locale
 import kotlin.math.abs
@@ -171,10 +176,13 @@ internal fun ChatAttachmentReviewSheet(
     var isCaptionFocused by remember { mutableStateOf(false) }
 
     var selectedUri by rememberSaveable { mutableStateOf(drafts.first().uri) }
-    var caption by rememberSaveable { mutableStateOf("") }
+    var caption by rememberSaveable(stateSaver = TextFieldValue.Saver) {
+        mutableStateOf(TextFieldValue("", TextRange.Zero))
+    }
     var currentMode by remember { mutableStateOf(ReviewMode.VIEW) }
     var isProcessingSend by remember { mutableStateOf(false) }
     var isHd by rememberSaveable { mutableStateOf(false) }
+    var emojiPanelVisible by remember { mutableStateOf(false) }
 
     // Map of edit states for each draft (by original Uri)
     val editStates = remember { mutableStateMapOf<String, ImageEditState>() }
@@ -190,11 +198,29 @@ internal fun ChatAttachmentReviewSheet(
     val dragStepPx = with(LocalDensity.current) { 80.dp.toPx() }
 
     val density = LocalDensity.current
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.screenWidthDp > configuration.screenHeightDp
+    val screenHeightDp = configuration.screenHeightDp.toFloat()
+    val savedEmojiHeightDp = remember(isLandscape, screenHeightDp) {
+        KeyboardHeightStore.getKeyboardHeightDp(context, isLandscape, screenHeightDp)
+    }
     val imeBottomDp = with(density) { WindowInsets.ime.getBottom(density).toDp() }
     val isImeVisible = WindowInsets.isImeVisible
     val isKeyboardOpen = isImeVisible || imeBottomDp > 60.dp
+    val isComposerExpanded = isKeyboardOpen || emojiPanelVisible
     val navBottomDp = with(density) { WindowInsets.navigationBars.getBottom(density).toDp() }
     var closedControlsHeightDp by remember { mutableStateOf(0.dp) }
+
+    LaunchedEffect(imeBottomDp, isLandscape, screenHeightDp) {
+        if (imeBottomDp > 60.dp) {
+            KeyboardHeightStore.saveKeyboardHeightDp(
+                context = context,
+                isLandscape = isLandscape,
+                heightDp = imeBottomDp.value,
+                screenHeightDp = screenHeightDp,
+            )
+        }
+    }
 
     // Ensure WindowInsets.ime reports keyboard height on Android < 11 even when
     // MainActivity uses adjustNothing for the main chat composer.
@@ -217,26 +243,34 @@ internal fun ChatAttachmentReviewSheet(
     LaunchedEffect(captionInteractionSource) {
         captionInteractionSource.interactions.collect { interaction ->
             if (interaction is PressInteraction.Release) {
+                emojiPanelVisible = false
                 keyboardController?.show()
             }
         }
     }
 
-    val hideKeyboardAndClearFocus = {
-        if (isCaptionFocused) {
-            runCatching { dismissFocusRequester.requestFocus() }
-        } else {
-            focusManager.clearFocus(force = true)
-        }
+    val hideSoftKeyboard = {
         keyboardController?.hide()
         val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
         imm?.hideSoftInputFromWindow(localView.windowToken, 0)
         Unit
     }
 
+    val hideKeyboardAndClearFocus = {
+        emojiPanelVisible = false
+        if (isCaptionFocused) {
+            runCatching { dismissFocusRequester.requestFocus() }
+        } else {
+            focusManager.clearFocus(force = true)
+        }
+        hideSoftKeyboard()
+    }
+
     var wasKeyboardOpen by remember { mutableStateOf(false) }
     LaunchedEffect(isKeyboardOpen) {
-        if (wasKeyboardOpen && !isKeyboardOpen && isCaptionFocused) {
+        if (isKeyboardOpen) {
+            emojiPanelVisible = false
+        } else if (wasKeyboardOpen && !isKeyboardOpen && isCaptionFocused && !emojiPanelVisible) {
             runCatching { dismissFocusRequester.requestFocus() }
         }
         wasKeyboardOpen = isKeyboardOpen
@@ -246,7 +280,9 @@ internal fun ChatAttachmentReviewSheet(
         when (currentMode) {
             ReviewMode.CROP, ReviewMode.DRAW -> currentMode = ReviewMode.VIEW
             ReviewMode.VIEW -> {
-                if (isKeyboardOpen) {
+                if (emojiPanelVisible) {
+                    emojiPanelVisible = false
+                } else if (isKeyboardOpen) {
                     hideKeyboardAndClearFocus()
                 } else if (!isProcessingSend) {
                     hideKeyboardAndClearFocus()
@@ -280,7 +316,7 @@ internal fun ChatAttachmentReviewSheet(
                             }
                         }
                     }
-                    onSend(caption)
+                    onSend(caption.text)
                 } finally {
                     isProcessingSend = false
                 }
@@ -312,7 +348,7 @@ internal fun ChatAttachmentReviewSheet(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
                     onClick = {
-                        if (isKeyboardOpen || isCaptionFocused) {
+                        if (emojiPanelVisible || isKeyboardOpen || isCaptionFocused) {
                             hideKeyboardAndClearFocus()
                         }
                     },
@@ -412,7 +448,7 @@ internal fun ChatAttachmentReviewSheet(
                         modifier = Modifier
                             .fillMaxWidth()
                             .then(
-                                if (isKeyboardOpen) {
+                                if (isComposerExpanded) {
                                     Modifier.background(
                                         Brush.verticalGradient(
                                             colors = listOf(
@@ -432,13 +468,13 @@ internal fun ChatAttachmentReviewSheet(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .onSizeChanged { size ->
-                                    if (!isKeyboardOpen && !isCaptionFocused) {
+                                    if (!isKeyboardOpen && !emojiPanelVisible && !isCaptionFocused) {
                                         closedControlsHeightDp = with(density) { size.height.toDp() } + navBottomDp
                                     }
                                 },
                         ) {
-                    // Multi-attachment thumbnails strip (when keyboard is closed)
-                    if (drafts.size > 1 && !isKeyboardOpen) {
+                    // Multi-attachment thumbnails strip (when keyboard and emoji panel are closed)
+                    if (drafts.size > 1 && !isComposerExpanded) {
                         LazyRow(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
@@ -575,12 +611,12 @@ internal fun ChatAttachmentReviewSheet(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(
-                                horizontal = if (isKeyboardOpen) 12.dp else 14.dp,
+                                horizontal = if (isComposerExpanded) 12.dp else 14.dp,
                                 vertical = 6.dp,
                             ),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        val captionShape = RoundedCornerShape(if (isKeyboardOpen) 26.dp else 24.dp)
+                        val captionShape = RoundedCornerShape(if (isComposerExpanded) 26.dp else 24.dp)
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -588,7 +624,7 @@ internal fun ChatAttachmentReviewSheet(
                                 .background(ReviewPillBackground)
                                 .border(
                                     width = 1.dp,
-                                    color = if (isCaptionFocused || isKeyboardOpen) {
+                                    color = if (isCaptionFocused || isComposerExpanded) {
                                         ReviewAccentBlue.copy(alpha = 0.55f)
                                     } else {
                                         Color.White.copy(alpha = 0.08f)
@@ -597,22 +633,40 @@ internal fun ChatAttachmentReviewSheet(
                                 )
                                 .pointerInput(Unit) {
                                     detectTapGestures {
+                                        emojiPanelVisible = false
                                         captionFocusRequester.requestFocus()
                                         keyboardController?.show()
                                     }
                                 }
                                 .padding(
                                     start = 16.dp,
-                                    end = if (isKeyboardOpen) 8.dp else 16.dp,
+                                    end = 8.dp,
                                     top = 4.dp,
                                     bottom = 4.dp,
                                 ),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
                             BasicTextField(
                                 value = caption,
-                                onValueChange = { caption = it.take(MAX_ATTACHMENT_CAPTION_LENGTH) },
+                                onValueChange = { incoming ->
+                                    val trimmed = if (incoming.text.length > MAX_ATTACHMENT_CAPTION_LENGTH) {
+                                        incoming.text.take(MAX_ATTACHMENT_CAPTION_LENGTH)
+                                    } else {
+                                        incoming.text
+                                    }
+                                    val snappedSelection = EmojiCursorHelper.snapSelection(
+                                        text = trimmed,
+                                        selection = TextRange(
+                                            incoming.selection.start.coerceIn(0, trimmed.length),
+                                            incoming.selection.end.coerceIn(0, trimmed.length),
+                                        ),
+                                    )
+                                    caption = incoming.copy(
+                                        text = trimmed,
+                                        selection = snappedSelection,
+                                    )
+                                },
                                 interactionSource = captionInteractionSource,
                                 textStyle = TextStyle(
                                     color = Color.White,
@@ -640,7 +694,7 @@ internal fun ChatAttachmentReviewSheet(
                                             .padding(vertical = 8.dp),
                                         contentAlignment = Alignment.CenterStart,
                                     ) {
-                                        if (caption.isEmpty()) {
+                                        if (caption.text.isEmpty()) {
                                             Text(
                                                 text = "افزودن شرح…",
                                                 color = Color.White.copy(alpha = 0.5f),
@@ -652,17 +706,9 @@ internal fun ChatAttachmentReviewSheet(
                                 },
                             )
 
-                            if (caption.isNotEmpty()) {
-                                Text(
-                                    text = "${caption.length}/${MAX_ATTACHMENT_CAPTION_LENGTH}".toPersianDigits(),
-                                    color = Color.White.copy(alpha = 0.4f),
-                                    fontSize = 11.sp,
-                                )
-                            }
-
-                            if (isKeyboardOpen && caption.isNotEmpty()) {
+                            if (isComposerExpanded && caption.text.isNotEmpty()) {
                                 IconButton(
-                                    onClick = { caption = "" },
+                                    onClick = { caption = TextFieldValue("", TextRange.Zero) },
                                     modifier = Modifier.size(28.dp),
                                 ) {
                                     Icon(
@@ -674,7 +720,39 @@ internal fun ChatAttachmentReviewSheet(
                                 }
                             }
 
-                            if (isKeyboardOpen) {
+                            val emojiIconTint = Color.White.copy(alpha = 0.72f)
+                            IconButton(
+                                onClick = {
+                                    if (emojiPanelVisible) {
+                                        emojiPanelVisible = false
+                                        captionFocusRequester.requestFocus()
+                                        keyboardController?.show()
+                                    } else {
+                                        emojiPanelVisible = true
+                                        hideSoftKeyboard()
+                                    }
+                                },
+                                modifier = Modifier
+                                    .focusProperties { canFocus = false }
+                                    .size(36.dp)
+                                    .testTag("attachment-review-emoji"),
+                            ) {
+                                if (emojiPanelVisible) {
+                                    Icon(
+                                        imageVector = Icons.Default.Keyboard,
+                                        contentDescription = "صفحه‌کلید",
+                                        tint = emojiIconTint,
+                                        modifier = Modifier.size(22.dp),
+                                    )
+                                } else {
+                                    TelegramSmileyIcon(
+                                        tint = emojiIconTint,
+                                        modifier = Modifier.size(22.dp),
+                                    )
+                                }
+                            }
+
+                            if (isComposerExpanded) {
                                 AttachmentReviewSendButton(
                                     buttonSize = 38.dp,
                                     iconSize = 18.dp,
@@ -685,7 +763,7 @@ internal fun ChatAttachmentReviewSheet(
                             }
                         }
 
-                        if (!isKeyboardOpen) {
+                        if (!isComposerExpanded) {
                             // Bottom Toolbar (Tools on start, Send on end)
                             Row(
                                 modifier = Modifier
@@ -788,6 +866,28 @@ internal fun ChatAttachmentReviewSheet(
                                 )
                             }
                         }
+                    }
+
+                    AnimatedVisibility(
+                        visible = emojiPanelVisible && !isKeyboardOpen,
+                        enter = slideInVertically { it / 2 } + fadeIn(),
+                        exit = slideOutVertically { it / 2 } + fadeOut(),
+                    ) {
+                        ChatEmojiPickerPanel(
+                            onEmoji = { emoji ->
+                                val updated = EmojiCursorHelper.insertEmoji(caption, emoji)
+                                if (updated.text.length <= MAX_ATTACHMENT_CAPTION_LENGTH) {
+                                    caption = updated
+                                }
+                            },
+                            onBackspace = {
+                                caption = EmojiCursorHelper.deleteBeforeCursor(caption)
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(savedEmojiHeightDp.dp),
+                            forceDarkTheme = true,
+                        )
                     }
                 }
                 }

@@ -1,5 +1,6 @@
 package ir.coffevista.vista_native.features.auth.data
 
+import ir.coffevista.vista_native.core.common.SessionCredentialsProvider
 import ir.coffevista.vista_native.core.model.auth.AuthPayload
 import ir.coffevista.vista_native.core.model.auth.AuthSession
 import ir.coffevista.vista_native.core.model.auth.AuthUser
@@ -270,10 +271,20 @@ class OkHttpAuthRemoteDataSource @Inject constructor(
             ?: throw kotlinx.serialization.SerializationException("refresh_token missing")
         val expiry = expiryFromJwt(accessToken)
             ?: throw kotlinx.serialization.SerializationException("session expiry missing")
+        val userId = user.string("id")
+            ?: throw kotlinx.serialization.SerializationException("user id missing")
+        val backendSessionId = session.string("session_id")?.takeIf(String::isNotBlank)
+        val backendSessionToken = session.string("session_token")?.takeIf(String::isNotBlank)
+        if (backendSessionId != null && backendSessionToken != null) {
+            SessionCredentialsProvider.current?.saveSessionCredentials(
+                sessionId = backendSessionId,
+                sessionToken = backendSessionToken,
+                userId = userId,
+            )
+        }
         return AuthPayload(
             user = AuthUser(
-                id = user.string("id")
-                    ?: throw kotlinx.serialization.SerializationException("user id missing"),
+                id = userId,
                 phoneNumber = user.string("phone_number"),
                 profileCompleted = user.boolean("profile_completed"),
                 hasPassword = user.boolean("has_password"),

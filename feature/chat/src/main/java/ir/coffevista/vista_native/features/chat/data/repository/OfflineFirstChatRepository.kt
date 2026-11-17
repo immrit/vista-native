@@ -225,6 +225,12 @@ class OfflineFirstChatRepository(
                             .thenBy { it.id }
                     ) ?: duplicates.first()
                 }
+                .filter { row ->
+                    row.type.equals(ConversationType.GROUP.name, ignoreCase = true) ||
+                        row.lastMessageCiphertext != null ||
+                        !row.lastMessageType.isNullOrBlank() ||
+                        row.unreadCount > 0
+                }
                 .sortedWith(
                     compareByDescending<ConversationEntity> { it.isPinned }
                         .thenByDescending { it.lastMessageAtEpochMillis ?: 0L }

@@ -58,8 +58,8 @@ check(configuredSigningValues == 0 || configuredSigningValues == signingValues.s
 }
 val vistaVersionCode = injectedValue("vista.versionCode", "VISTA_VERSION_CODE")
     ?.toIntOrNull()
-    ?: 8054
-val vistaVersionName = injectedValue("vista.versionName", "VISTA_VERSION_NAME") ?: "2.6.7"
+    ?: 8055
+val vistaVersionName = injectedValue("vista.versionName", "VISTA_VERSION_NAME") ?: "2.6.8"
 val flutterReferenceApplicationId = "ir.coffevista.vista"
 val nativeBetaApplicationId = injectedValue("vista.applicationId.beta", "VISTA_BETA_APPLICATION_ID")
     ?: "ir.coffevista.vista_native.beta"

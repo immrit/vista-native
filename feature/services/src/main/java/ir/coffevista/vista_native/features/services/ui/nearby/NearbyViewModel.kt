@@ -15,6 +15,7 @@ import ir.coffevista.vista_native.features.services.data.nearby.NearbyPreference
 import ir.coffevista.vista_native.features.services.data.nearby.NearbyReceivedLike
 import ir.coffevista.vista_native.features.services.data.nearby.NearbyRepository
 import ir.coffevista.vista_native.features.services.data.nearby.NearbyWallet
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -91,6 +92,8 @@ class NearbyViewModel @Inject constructor(
 
     private var currentZone: String? = null
     private var lastSwipedCandidate: NearbyCandidate? = null
+    private var loadCardsJob: Job? = null
+    private var isLoadingMore: Boolean = false
 
     init {
         initBootstrap()
@@ -162,58 +165,76 @@ class NearbyViewModel @Inject constructor(
     }
 
     fun loadCards(reset: Boolean = false, setRandomOnline: Boolean? = null) {
-        viewModelScope.launch {
-            val isRandom = setRandomOnline ?: _uiState.value.isRandomOnline
-            val filter = if (isRandom) {
-                NearbyZoneFilter.RANDOM_ONLINE
-            } else if (_uiState.value.zoneFilter == NearbyZoneFilter.RANDOM_ONLINE) {
-                NearbyZoneFilter.ALL
-            } else {
-                _uiState.value.zoneFilter
-            }
-
-            _uiState.update {
-                it.copy(
-                    isLoading = reset || it.cards.isEmpty(),
-                    isRandomOnline = isRandom,
-                    zoneFilter = filter,
-                    isLocating = false,
-                    locationError = null,
-                )
-            }
-
-            runCatching {
-                if (isRandom) {
-                    repository.discoverRandomOnline(limit = 24)
+        if (!reset && (isLoadingMore || _uiState.value.isLoading)) return
+        if (reset) {
+            loadCardsJob?.cancel()
+            isLoadingMore = false
+        } else {
+            isLoadingMore = true
+        }
+        loadCardsJob = viewModelScope.launch {
+            try {
+                val isRandom = setRandomOnline ?: _uiState.value.isRandomOnline
+                val filter = if (isRandom) {
+                    NearbyZoneFilter.RANDOM_ONLINE
+                } else if (_uiState.value.zoneFilter == NearbyZoneFilter.RANDOM_ONLINE) {
+                    NearbyZoneFilter.ALL
                 } else {
-                    val offset = if (reset) 0 else _uiState.value.cards.size
-                    repository.discoverFiltered(limit = 24, offset = offset, zone = filter.queryParam)
+                    _uiState.value.zoneFilter
                 }
-            }.onSuccess { candidates ->
-                val existingIds = if (reset) emptySet() else _uiState.value.cards.map { it.userId }.toSet()
-                val appended = candidates.filterNot { it.userId in existingIds }
-                val newCards = if (reset) candidates else _uiState.value.cards + appended
+
                 _uiState.update {
                     it.copy(
-                        cards = newCards,
-                        currentIndex = if (reset) 0 else it.currentIndex.coerceAtMost((newCards.size - 1).coerceAtLeast(0)),
-                        isLoading = false,
-                        errorMessage = null,
-                    )
-                }
-            }.onFailure { error ->
-                val code = (error as? RemoteFailure)?.code
-                _uiState.update {
-                    it.copy(
-                        isLoading = false,
-                        locationError = if (code == "location_required") "location_required" else it.locationError,
-                        errorMessage = if (reset && it.cards.isEmpty() && code != "location_required") {
-                            mapNearbyError(error, fallback = "خطا در دریافت افراد نزدیک")
+                        isLoading = reset || it.cards.isEmpty(),
+                        isRandomOnline = isRandom,
+                        zoneFilter = filter,
+                        isLocating = false,
+                        locationError = if (it.locationError in setOf("permission", "permission_forever", "service_off")) {
+                            it.locationError
                         } else {
                             null
                         },
                     )
                 }
+
+                runCatching {
+                    if (isRandom) {
+                        repository.discoverRandomOnline(limit = 24)
+                    } else {
+                        val offset = if (reset) 0 else _uiState.value.cards.size
+                        repository.discoverFiltered(limit = 24, offset = offset, zone = filter.queryParam)
+                    }
+                }.onSuccess { rawCandidates ->
+                    val candidates = rawCandidates
+                        .filter { it.userId.isNotBlank() }
+                        .distinctBy { it.userId }
+                    val existingIds = if (reset) emptySet() else _uiState.value.cards.map { it.userId }.toSet()
+                    val appended = candidates.filterNot { it.userId in existingIds }
+                    val newCards = if (reset) candidates else _uiState.value.cards + appended
+                    _uiState.update {
+                        it.copy(
+                            cards = newCards,
+                            currentIndex = if (reset) 0 else it.currentIndex.coerceAtMost((newCards.size - 1).coerceAtLeast(0)),
+                            isLoading = false,
+                            errorMessage = null,
+                        )
+                    }
+                }.onFailure { error ->
+                    val code = (error as? RemoteFailure)?.code
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            locationError = if (code == "location_required") "location_required" else it.locationError,
+                            errorMessage = if (reset && it.cards.isEmpty() && code != "location_required") {
+                                mapNearbyError(error, fallback = "خطا در دریافت افراد نزدیک")
+                            } else {
+                                null
+                            },
+                        )
+                    }
+                }
+            } finally {
+                isLoadingMore = false
             }
         }
     }
@@ -609,6 +630,7 @@ class NearbyViewModel @Inject constructor(
                         current.copy(
                             isLiking = false,
                             cards = nextCards,
+                            currentIndex = current.currentIndex.coerceAtMost((nextCards.size - 1).coerceAtLeast(0)),
                             wallet = updatedWallet,
                             matchedResult = if (result.matched) result else current.matchedResult,
                             matchedCandidate = if (result.matched) candidate else current.matchedCandidate,
@@ -759,8 +781,10 @@ class NearbyViewModel @Inject constructor(
         viewModelScope.launch {
             runCatching { repository.report(targetId, reason) }
             _uiState.update { current ->
+                val remaining = current.cards.filterNot { it.userId == targetId }
                 current.copy(
-                    cards = current.cards.filterNot { it.userId == targetId },
+                    cards = remaining,
+                    currentIndex = current.currentIndex.coerceAtMost((remaining.size - 1).coerceAtLeast(0)),
                     previewCandidate = null,
                     infoMessage = "گزارش با موفقیت ثبت شد و این کاربر مخفی گردید",
                 )

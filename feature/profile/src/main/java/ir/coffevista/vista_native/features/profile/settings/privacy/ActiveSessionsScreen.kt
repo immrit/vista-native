@@ -1,12 +1,7 @@
 package ir.coffevista.vista_native.features.profile.settings.privacy
 
-import android.Manifest
 import android.content.Context
-import android.content.pm.PackageManager
-import android.graphics.BitmapFactory
 import android.net.Uri
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -32,12 +27,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.rounded.Android
-import androidx.compose.material.icons.rounded.CameraAlt
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Computer
 import androidx.compose.material.icons.rounded.Devices
-import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.PanTool
 import androidx.compose.material.icons.rounded.PhoneIphone
@@ -95,21 +88,14 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.content.ContextCompat
-import androidx.core.content.FileProvider
 import androidx.fragment.app.FragmentActivity
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.google.zxing.BinaryBitmap
-import com.google.zxing.MultiFormatReader
-import com.google.zxing.RGBLuminanceSource
-import com.google.zxing.common.HybridBinarizer
 import ir.coffevista.vista_native.core.designsystem.component.VistaInAppMediaPickerBottomSheet
 import ir.coffevista.vista_native.core.designsystem.component.VistaInAppPickerMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.File
 
 data class SessionItemUiModel(
     val id: String,
@@ -189,6 +175,7 @@ fun ActiveSessionsScreen(
     var selectedSession by remember { mutableStateOf<SessionItemUiModel?>(null) }
     var confirmTerminateAll by remember { mutableStateOf(false) }
     var showTtlSheet by remember { mutableStateOf(false) }
+    var showLiveQrScanner by remember { mutableStateOf(false) }
     var showAddDeviceSheet by remember { mutableStateOf(false) }
     var showQrGalleryPicker by remember { mutableStateOf(false) }
 
@@ -274,7 +261,7 @@ fun ActiveSessionsScreen(
                     item {
                         DevicesHeroCard(
                             palette = palette,
-                            onAddDevice = { showAddDeviceSheet = true },
+                            onAddDevice = { showLiveQrScanner = true },
                         )
                     }
 
@@ -537,20 +524,33 @@ fun ActiveSessionsScreen(
             )
         }
 
-        // ── Add Device (QR Link) Bottom Sheet ───────────────────────────────────────────────
+        // ── Live Telegram-Style QR Scanner ──────────────────────────────────────────────────
+        if (showLiveQrScanner) {
+            TelegramQrScannerDialog(
+                isApproving = uiState.isApprovingQr,
+                onQrRecognized = { raw ->
+                    viewModel.approveQrToken(raw) {
+                        showLiveQrScanner = false
+                    }
+                },
+                onPickGallery = { showQrGalleryPicker = true },
+                onManualEntry = {
+                    showLiveQrScanner = false
+                    showAddDeviceSheet = true
+                },
+                onDismiss = { showLiveQrScanner = false },
+            )
+        }
+
+        // ── Manual QR Token Entry Sheet ─────────────────────────────────────────────────────
         if (showAddDeviceSheet) {
-            AddDeviceQrSheet(
-                context = context,
+            AddDeviceManualCodeSheet(
                 palette = palette,
                 isApproving = uiState.isApprovingQr,
-                onOpenGallery = { showQrGalleryPicker = true },
                 onApproveToken = { raw ->
                     viewModel.approveQrToken(raw) {
                         showAddDeviceSheet = false
                     }
-                },
-                onDecodeError = { msg ->
-                    scope.launch { snackbarHostState.showSnackbar(msg) }
                 },
                 onDismiss = { showAddDeviceSheet = false },
             )
@@ -567,6 +567,7 @@ fun ActiveSessionsScreen(
                         val decoded = withContext(Dispatchers.IO) { decodeQrTextFromUri(context, uri) }
                         if (decoded != null) {
                             viewModel.approveQrToken(decoded) {
+                                showLiveQrScanner = false
                                 showAddDeviceSheet = false
                             }
                         } else {
@@ -1078,46 +1079,13 @@ private fun AutoTerminateTtlSheet(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AddDeviceQrSheet(
-    context: Context,
+private fun AddDeviceManualCodeSheet(
     palette: TelegramDevicesPalette,
     isApproving: Boolean,
-    onOpenGallery: () -> Unit,
     onApproveToken: (String) -> Unit,
-    onDecodeError: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val scope = rememberCoroutineScope()
     var manualCode by remember { mutableStateOf("") }
-    var cameraUri by remember { mutableStateOf<Uri?>(null) }
-
-    val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
-        val uri = cameraUri
-        cameraUri = null
-        if (success && uri != null) {
-            scope.launch {
-                val decoded = withContext(Dispatchers.IO) { decodeQrTextFromUri(context, uri) }
-                if (decoded != null) {
-                    onApproveToken(decoded)
-                } else {
-                    onDecodeError("کد QR در عکس گرفته شده تشخیص داده نشد")
-                }
-            }
-        }
-    }
-
-    val startCameraCapture: () -> Unit = {
-        val dir = File(context.cacheDir, "camera").apply { mkdirs() }
-        val file = File(dir, "qr_login_${System.currentTimeMillis()}.jpg")
-        val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
-        cameraUri = uri
-        cameraLauncher.launch(uri)
-    }
-
-    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) startCameraCapture()
-        else onDecodeError("دسترسی به دوربین برای اسکن QR لازم است")
-    }
 
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = palette.cardBg) {
         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
@@ -1134,57 +1102,22 @@ private fun AddDeviceQrSheet(
                 ) {
                     Icon(Icons.Rounded.Shield, contentDescription = null, tint = palette.ctaBlue)
                     Text(
-                        text = "اتصال دستگاه جدید با QR",
+                        text = "اتصال دستگاه با کد دستی",
                         color = palette.textPrimary,
                         fontSize = 17.sp,
                         fontWeight = FontWeight.Bold,
                     )
                 }
                 Text(
-                    text = "در ویستا وب به صفحه ورود با QR بروید، از کد QR عکس بگیرید یا تصویر/کد آن را انتخاب کنید.",
+                    text = "کد یا لینک اتصال نمایش‌داده‌شده در صفحه ورود ویستا وب را وارد نمایید.",
                     color = palette.textSecondary,
                     fontSize = 13.5.sp,
                 )
 
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                    Button(
-                        onClick = {
-                            if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
-                                startCameraCapture()
-                            } else {
-                                permissionLauncher.launch(Manifest.permission.CAMERA)
-                            }
-                        },
-                        enabled = !isApproving,
-                        colors = ButtonDefaults.buttonColors(containerColor = palette.ctaBlue),
-                        shape = RoundedCornerShape(14.dp),
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(46.dp),
-                    ) {
-                        Icon(Icons.Rounded.CameraAlt, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("اسکن با دوربین", fontSize = 13.5.sp)
-                    }
-                    OutlinedButton(
-                        onClick = onOpenGallery,
-                        enabled = !isApproving,
-                        shape = RoundedCornerShape(14.dp),
-                        border = BorderStroke(1.dp, palette.cardBorder),
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(46.dp),
-                    ) {
-                        Icon(Icons.Rounded.Image, contentDescription = null, tint = palette.textPrimary, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("از گالری", color = palette.textPrimary, fontSize = 13.5.sp)
-                    }
-                }
-
                 OutlinedTextField(
                     value = manualCode,
                     onValueChange = { manualCode = it },
-                    label = { Text("یا کد / لینک QR را وارد کنید") },
+                    label = { Text("کد یا لینک QR") },
                     placeholder = { Text("vista://login?token=...") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
@@ -1211,24 +1144,3 @@ private fun AddDeviceQrSheet(
         }
     }
 }
-
-private fun decodeQrTextFromUri(context: Context, uri: Uri): String? = runCatching {
-    context.contentResolver.openInputStream(uri)?.use { stream ->
-        val raw = BitmapFactory.decodeStream(stream) ?: return@use null
-        val maxDim = maxOf(raw.width, raw.height)
-        val bitmap = if (maxDim > 1600) {
-            val scale = 1600f / maxDim
-            android.graphics.Bitmap.createScaledBitmap(
-                raw,
-                (raw.width * scale).toInt().coerceAtLeast(1),
-                (raw.height * scale).toInt().coerceAtLeast(1),
-                true,
-            )
-        } else raw
-        val pixels = IntArray(bitmap.width * bitmap.height)
-        bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
-        val source = RGBLuminanceSource(bitmap.width, bitmap.height, pixels)
-        val binary = BinaryBitmap(HybridBinarizer(source))
-        MultiFormatReader().decode(binary).text
-    }
-}.getOrNull()
