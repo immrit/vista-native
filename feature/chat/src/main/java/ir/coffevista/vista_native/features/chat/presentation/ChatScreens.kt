@@ -178,6 +178,8 @@ import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.Constraints
 import ir.coffevista.vista_native.features.chat.presentation.components.ActiveSendFlight
 import ir.coffevista.vista_native.features.chat.presentation.components.PendingSendFlight
 import ir.coffevista.vista_native.features.chat.presentation.components.TELEGRAM_MINIMAL_SEND_DURATION_MS
@@ -185,6 +187,8 @@ import ir.coffevista.vista_native.features.chat.presentation.components.TELEGRAM
 import ir.coffevista.vista_native.features.chat.presentation.components.TelegramSendBezierEasing
 import ir.coffevista.vista_native.features.chat.presentation.components.TelegramSendFlightOverlay
 import ir.coffevista.vista_native.features.chat.presentation.components.isEligibleSendFlightCandidate
+import ir.coffevista.vista_native.features.chat.presentation.components.resolveSendFlightStartBounds
+import ir.coffevista.vista_native.features.chat.presentation.components.resolveSendFlightTargetFallbackBounds
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
@@ -2126,9 +2130,10 @@ fun MessageDetailScreen(
     var chatRootTopLeft by remember { mutableStateOf(Offset.Zero) }
     var chatRootSizePx by remember { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
     var composerInputBoundsInRoot by remember { mutableStateOf<Rect?>(null) }
+    val textMeasurer = rememberTextMeasurer()
     var pendingSendFlight by remember(state.conversationId) { mutableStateOf<PendingSendFlight?>(null) }
     var activeSendFlight by remember(state.conversationId) { mutableStateOf<ActiveSendFlight?>(null) }
-    var activeFlightTargetBoundsLocal by remember(state.conversationId) { mutableStateOf<Rect?>(null) }
+    var activeFlightTargetBounds by remember(state.conversationId) { mutableStateOf<Pair<String, Rect>?>(null) }
     val flownSendFlightKeys = remember(state.conversationId) { mutableSetOf<String>() }
     var sendFlightSeq by remember { mutableStateOf(0L) }
 
@@ -2136,7 +2141,8 @@ fun MessageDetailScreen(
     val displayedRenderItems = messageRenderItems
     LaunchedEffect(displayedRenderItems, pendingSendFlight) {
         val pending = pendingSendFlight ?: return@LaunchedEffect
-        val firstPrimary = displayedRenderItems.firstOrNull()?.primary
+        val firstRenderItem = displayedRenderItems.firstOrNull()
+        val firstPrimary = firstRenderItem?.primary
         if (firstPrimary != null &&
             isEligibleSendFlightCandidate(
                 pending = pending,
@@ -2148,27 +2154,68 @@ fun MessageDetailScreen(
             )
         ) {
             flownSendFlightKeys += firstPrimary.stableKey
-            val composerPx = with(density) { composerHeightDp.toPx() }
-            val fallbackWidth = pending.startBoundsLocal.width.coerceAtLeast(with(density) { 120.dp.toPx() })
-            val fallbackHeight = with(density) { 44.dp.toPx() }
-            val fallbackRight = (chatRootSizePx.width.toFloat() - with(density) { 12.dp.toPx() })
-                .coerceAtLeast(pending.startBoundsLocal.right)
-            val fallbackBottom = (chatRootSizePx.height.toFloat() - composerPx - with(density) { 10.dp.toPx() })
-                .coerceAtLeast(fallbackHeight)
-            val fallbackTarget = Rect(
-                left = (fallbackRight - fallbackWidth).coerceAtLeast(0f),
-                top = (fallbackBottom - fallbackHeight).coerceAtLeast(0f),
-                right = fallbackRight,
-                bottom = fallbackBottom,
+            val textDir = resolveMessageTextDirection(pending.text)
+            val isRtlText = textDir == androidx.compose.ui.text.style.TextDirection.Rtl ||
+                textDir == androidx.compose.ui.text.style.TextDirection.ContentOrRtl
+            val screenWidthPx = chatRootSizePx.width.toFloat().coerceAtLeast(with(density) { 360.dp.toPx() })
+            val screenHeightPx = chatRootSizePx.height.toFloat().coerceAtLeast(with(density) { 400.dp.toPx() })
+            val maxBubbleWidthPx = (screenWidthPx * 0.82f).coerceAtLeast(with(density) { 120.dp.toPx() })
+            val maxTextWidthPx = (maxBubbleWidthPx - with(density) { 24.dp.toPx() }).roundToInt().coerceAtLeast(1)
+            val measured = runCatching {
+                textMeasurer.measure(
+                    text = AnnotatedString(pending.text),
+                    style = androidx.compose.ui.text.TextStyle(
+                        fontSize = 16.sp,
+                        lineHeight = 22.sp,
+                        textDirection = textDir,
+                    ),
+                    constraints = Constraints(maxWidth = maxTextWidthPx),
+                )
+            }.getOrNull()
+            val textWidthPx = measured?.size?.width?.toFloat() ?: with(density) { 96.dp.toPx() }
+            val textHeightPx = measured?.size?.height?.toFloat() ?: with(density) { 22.dp.toPx() }
+            val singleLine = (measured?.lineCount ?: 1) <= 1
+            val metaFooterReservePx = if (singleLine) with(density) { 52.dp.toPx() } else 0f
+            val estimatedWidthPx = (textWidthPx + with(density) { 24.dp.toPx() } + metaFooterReservePx)
+                .coerceIn(with(density) { 64.dp.toPx() }, maxBubbleWidthPx)
+            val estimatedHeightPx = (textHeightPx + with(density) { 16.dp.toPx() } +
+                if (pending.replyPreview != null) with(density) { 38.dp.toPx() } else 0f)
+                .coerceAtLeast(with(density) { 42.dp.toPx() })
+
+            val startBounds = resolveSendFlightStartBounds(
+                inputBoundsLocal = pending.startBoundsLocal,
+                estimatedBubbleWidthPx = estimatedWidthPx,
+                isRtlText = isRtlText,
             )
-            activeFlightTargetBoundsLocal = null
+            val composerPx = with(density) { composerHeightDp.toPx() }
+            val fallbackTarget = resolveSendFlightTargetFallbackBounds(
+                rootWidthPx = screenWidthPx,
+                rootHeightPx = screenHeightPx,
+                composerHeightPx = composerPx,
+                estimatedBubbleWidthPx = estimatedWidthPx,
+                estimatedBubbleHeightPx = estimatedHeightPx,
+                alignToRight = firstPrimary.isMine,
+                horizontalMarginPx = with(density) { 12.dp.toPx() },
+                bottomMarginPx = with(density) { 9.dp.toPx() },
+            )
+            val targetGroupPos = messageGroupPosition(
+                messages = displayedMessages,
+                index = firstRenderItem.primaryIndex,
+                spanLength = firstRenderItem.messages.size,
+            )
+            if (activeFlightTargetBounds?.first != firstPrimary.stableKey) {
+                activeFlightTargetBounds = null
+            }
             activeSendFlight = ActiveSendFlight(
                 flightId = pending.flightId,
                 messageKey = firstPrimary.stableKey,
                 text = pending.text,
                 replyPreview = pending.replyPreview,
-                startBoundsLocal = pending.startBoundsLocal,
+                startBoundsLocal = startBounds,
                 fallbackTargetBoundsLocal = fallbackTarget,
+                targetAlignRight = firstPrimary.isMine,
+                targetIsFirstInGroup = targetGroupPos.isFirstInGroup,
+                targetIsLastInGroup = targetGroupPos.isLastInGroup,
             )
             pendingSendFlight = null
         } else if (System.currentTimeMillis() - pending.createdAtMs > 1_500L) {
@@ -2354,7 +2401,15 @@ fun MessageDetailScreen(
                                 older == null ||
                                 !isSameLocalDay(renderItem.oldest.createdAtEpochMillis, older.createdAtEpochMillis)
                             )
-                            val isFlyingSendTarget = activeSendFlight?.messageKey == message.stableKey
+                            val matchesPendingFlight = index == 0 && isEligibleSendFlightCandidate(
+                                pending = pendingSendFlight,
+                                candidateStableKey = message.stableKey,
+                                candidateText = (message.content as? MessageContent.Text)?.value,
+                                candidateIsMine = message.isMine,
+                                candidateIsPending = message.status == MessageStatus.PENDING,
+                                flownMessageKeys = flownSendFlightKeys,
+                            )
+                            val isFlyingSendTarget = activeSendFlight?.messageKey == message.stableKey || matchesPendingFlight
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -2548,7 +2603,7 @@ fun MessageDetailScreen(
                                                 },
                                                 onOpenAudioPlayer = { audioPlayerSheetVisible = true },
                                                 onBubbleBoundsInRootChanged = if (isFlyingSendTarget) { boundsInRoot ->
-                                                    activeFlightTargetBoundsLocal = boundsInRoot.translate(
+                                                    activeFlightTargetBounds = message.stableKey to boundsInRoot.translate(
                                                         -chatRootTopLeft.x,
                                                         -chatRootTopLeft.y,
                                                     )
@@ -2572,13 +2627,15 @@ fun MessageDetailScreen(
         activeSendFlight?.let { flight ->
             TelegramSendFlightOverlay(
                 flight = flight,
-                targetBoundsLocal = activeFlightTargetBoundsLocal,
+                targetBoundsLocal = activeFlightTargetBounds?.takeIf { it.first == flight.messageKey }?.second,
                 textDirection = resolveMessageTextDirection(flight.text),
                 minimalMotion = chatEntryMode == "minimal",
                 onFlightFinished = { finishedKey ->
                     if (activeSendFlight?.messageKey == finishedKey) {
                         activeSendFlight = null
-                        activeFlightTargetBoundsLocal = null
+                        if (activeFlightTargetBounds?.first == finishedKey) {
+                            activeFlightTargetBounds = null
+                        }
                     }
                 },
                 modifier = Modifier.zIndex(5f),

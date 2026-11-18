@@ -1469,4 +1469,15 @@ private fun openMediaInputStream(context: Context, url: String): InputStream? {
     return when {
         url.startsWith("/") -> File(url).takeIf(File::isFile)?.let(::FileInputStream)
         uri.scheme == "file" && !uri.path.isNullOrBlank() -> File(uri.path!!).takeIf(File::isFile)?.let(::FileInputStream)
-        uri.sche
+        uri.scheme == "content" -> context.contentResolver.openInputStream(uri)
+        uri.scheme == "http" || uri.scheme == "https" -> {
+            val client = OkHttpClient()
+            val response = client.newCall(Request.Builder().url(url).build()).execute()
+            if (response.isSuccessful) response.body?.byteStream() else {
+                response.close()
+                null
+            }
+        }
+        else -> null
+    }
+}
