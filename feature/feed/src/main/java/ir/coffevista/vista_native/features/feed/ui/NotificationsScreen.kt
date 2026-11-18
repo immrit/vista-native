@@ -93,7 +93,20 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.unit.Dp
+import ir.coffevista.vista_native.core.designsystem.component.LocalMiniPlayerSlot
 import ir.coffevista.vista_native.core.designsystem.component.VistaNotificationBadge
+import ir.coffevista.vista_native.core.designsystem.glass.VistaGlassScrollSync
+import ir.coffevista.vista_native.core.designsystem.glass.VistaGlassState
+import ir.coffevista.vista_native.core.designsystem.glass.VistaGlassTokens
+import ir.coffevista.vista_native.core.designsystem.glass.rememberVistaGlassState
+import ir.coffevista.vista_native.core.designsystem.glass.vistaGlass
+import ir.coffevista.vista_native.core.designsystem.glass.vistaGlassSource
 import ir.coffevista.vista_native.core.designsystem.R as DesignSystemR
 import ir.coffevista.vista_native.features.feed.data.FollowRequestActionResult
 import ir.coffevista.vista_native.features.feed.data.FollowRequestActionState
@@ -165,9 +178,100 @@ internal fun NotificationsScreenContent(
         state.notifications.filter { notificationTypeMatchesFilter(it.type, selectedFilter) }
     }
 
+    val notificationsGlassState = rememberVistaGlassState()
+    val isDarkNotif = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    val topHeaderHeight = statusBarTop + 64.dp + 56.dp + LocalMiniPlayerSlot.current.extraHeight
+
     Scaffold(
-        topBar = {
-            Column(modifier = Modifier.fillMaxWidth()) {
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        containerColor = MaterialTheme.colorScheme.background,
+    ) { _ ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+                .testTag(NotificationTestTags.Screen),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .vistaGlassSource(notificationsGlassState)
+                    .background(MaterialTheme.colorScheme.background),
+            ) {
+                if (isInitialLoading) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(top = statusBarTop + 64.dp + LocalMiniPlayerSlot.current.extraHeight),
+                    ) {
+                        NotificationTabsShimmer()
+                        NotificationListShimmer()
+                    }
+                } else {
+                    PullToRefreshBox(
+                        isRefreshing = state.isLoading && state.notifications.isNotEmpty(),
+                        onRefresh = onRefresh,
+                        modifier = Modifier.fillMaxSize(),
+                    ) {
+                        AnimatedContent(
+                            targetState = selectedFilter,
+                            transitionSpec = {
+                                fadeIn(animationSpec = tween(220)) togetherWith
+                                    fadeOut(animationSpec = tween(180))
+                            },
+                            label = "NotificationsFilterTransition",
+                        ) { currentFilter ->
+                            val tabFiltered = remember(state.notifications, currentFilter) {
+                                state.notifications.filter { notificationTypeMatchesFilter(it.type, currentFilter) }
+                            }
+                            NotificationsList(
+                                notifications = tabFiltered,
+                                hasMore = state.hasMore,
+                                isFetching = state.isLoading,
+                                actionLoadingIds = state.actionLoadingIds,
+                                topContentPadding = topHeaderHeight,
+                                glassState = notificationsGlassState,
+                                onRefresh = onRefresh,
+                                onLoadMore = onLoadMore,
+                                onOpenItem = onOpenItem,
+                                onOpenActor = onOpenActor,
+                                onFollowRequestAction = { notification, accept ->
+                                    onFollowRequestAction(notification, accept) { result ->
+                                        val message = when (result.state) {
+                                            FollowRequestActionState.Success -> if (accept) {
+                                                "درخواست با موفقیت پذیرفته شد"
+                                            } else {
+                                                "درخواست رد شد"
+                                            }
+                                            FollowRequestActionState.AlreadyHandled -> "این درخواست قبلا مدیریت شده است"
+                                            FollowRequestActionState.Failed -> "خطا در پردازش درخواست"
+                                        }
+                                        scope.launch { snackbarHostState.showSnackbar(result.message.ifBlank { message }) }
+                                    }
+                                },
+                            )
+                        }
+                    }
+                }
+            }
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.TopCenter)
+                    .vistaGlass(
+                        state = notificationsGlassState,
+                        shape = RectangleShape,
+                        tint = if (isDarkNotif) Color(0xFF1A222C) else Color.White,
+                        isDark = isDarkNotif,
+                        blurRadius = VistaGlassTokens.BarBlur,
+                        tintAlphaOverride = if (isDarkNotif) 0.58f else 0.62f,
+                        drawHighlight = true,
+                        rimWidth = 0.dp,
+                        shadowElevation = 3.dp,
+                    ),
+            ) {
                 TopAppBar(
                     title = {
                         Text(
@@ -188,76 +292,18 @@ internal fun NotificationsScreenContent(
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.background,
+                        containerColor = Color.Transparent,
                     ),
                 )
-                VistaMiniPlayerHost()
-            }
-        },
-        snackbarHost = { SnackbarHost(snackbarHostState) },
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .background(MaterialTheme.colorScheme.background)
-                .testTag(NotificationTestTags.Screen),
-        ) {
-            if (isInitialLoading) {
-                NotificationTabsShimmer()
-                NotificationListShimmer()
-            } else {
-                NotificationFilterTabs(
-                    tabs = tabs,
-                    selectedFilter = selectedFilter,
-                    unreadCounts = state.unreadCountsByFilter,
-                    onSelected = { selectedFilter = it },
-                )
-                HorizontalDivider(
-                    thickness = 1.dp,
-                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f),
-                )
-                PullToRefreshBox(
-                    isRefreshing = state.isLoading && state.notifications.isNotEmpty(),
-                    onRefresh = onRefresh,
-                    modifier = Modifier.fillMaxSize(),
-                ) {
-                    AnimatedContent(
-                        targetState = selectedFilter,
-                        transitionSpec = {
-                            fadeIn(animationSpec = tween(220)) togetherWith
-                                fadeOut(animationSpec = tween(180))
-                        },
-                        label = "NotificationsFilterTransition",
-                    ) { currentFilter ->
-                        val tabFiltered = remember(state.notifications, currentFilter) {
-                            state.notifications.filter { notificationTypeMatchesFilter(it.type, currentFilter) }
-                        }
-                        NotificationsList(
-                            notifications = tabFiltered,
-                            hasMore = state.hasMore,
-                            isFetching = state.isLoading,
-                            actionLoadingIds = state.actionLoadingIds,
-                            onRefresh = onRefresh,
-                            onLoadMore = onLoadMore,
-                            onOpenItem = onOpenItem,
-                            onOpenActor = onOpenActor,
-                            onFollowRequestAction = { notification, accept ->
-                                onFollowRequestAction(notification, accept) { result ->
-                                    val message = when (result.state) {
-                                        FollowRequestActionState.Success -> if (accept) {
-                                            "درخواست با موفقیت پذیرفته شد"
-                                        } else {
-                                            "درخواست رد شد"
-                                        }
-                                        FollowRequestActionState.AlreadyHandled -> "این درخواست قبلا مدیریت شده است"
-                                        FollowRequestActionState.Failed -> "خطا در پردازش درخواست"
-                                    }
-                                    scope.launch { snackbarHostState.showSnackbar(result.message.ifBlank { message }) }
-                                }
-                            },
-                        )
-                    }
+                VistaMiniPlayerHost(glassState = notificationsGlassState)
+                if (!isInitialLoading) {
+                    NotificationFilterTabs(
+                        tabs = tabs,
+                        selectedFilter = selectedFilter,
+                        unreadCounts = state.unreadCountsByFilter,
+                        isDark = isDarkNotif,
+                        onSelected = { selectedFilter = it },
+                    )
                 }
             }
         }
@@ -269,19 +315,26 @@ private fun NotificationFilterTabs(
     tabs: List<NotificationTabData>,
     selectedFilter: String,
     unreadCounts: Map<String, Int>,
+    isDark: Boolean = false,
     onSelected: (String) -> Unit,
 ) {
     LazyRow(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = 12.dp, bottom = 6.dp),
+            .padding(top = 6.dp, bottom = 10.dp),
         contentPadding = PaddingValues(horizontal = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         items(tabs, key = { it.type }) { tab ->
             val selected = tab.type == selectedFilter
             val tabColor by animateColorAsState(
-                targetValue = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                targetValue = if (selected) {
+                    MaterialTheme.colorScheme.primary
+                } else if (isDark) {
+                    Color.White.copy(alpha = 0.08f)
+                } else {
+                    Color.Black.copy(alpha = 0.05f)
+                },
                 animationSpec = tween(180),
                 label = "tab_bg_${tab.type}",
             )
@@ -292,17 +345,21 @@ private fun NotificationFilterTabs(
             )
             Surface(
                 onClick = { onSelected(tab.type) },
-                shape = RoundedCornerShape(18.dp),
+                shape = RoundedCornerShape(20.dp),
                 color = tabColor,
                 contentColor = tabContentColor,
-                border = if (selected) null else {
-                    androidx.compose.foundation.BorderStroke(
-                        1.dp,
-                        MaterialTheme.colorScheme.outlineVariant,
-                    )
-                },
+                border = androidx.compose.foundation.BorderStroke(
+                    width = 0.6.dp,
+                    color = if (selected) {
+                        Color.White.copy(alpha = 0.35f)
+                    } else if (isDark) {
+                        Color.White.copy(alpha = 0.18f)
+                    } else {
+                        Color.Black.copy(alpha = 0.10f)
+                    },
+                ),
                 modifier = Modifier
-                    .height(40.dp)
+                    .height(38.dp)
                     .testTag(NotificationTestTags.tab(tab.type)),
             ) {
                 Row(
@@ -328,6 +385,8 @@ private fun NotificationsList(
     hasMore: Boolean,
     isFetching: Boolean,
     actionLoadingIds: Set<String>,
+    topContentPadding: Dp = 0.dp,
+    glassState: VistaGlassState? = null,
     onRefresh: () -> Unit,
     onLoadMore: () -> Unit,
     onOpenItem: (NotificationFeedItem) -> Unit,
@@ -335,12 +394,17 @@ private fun NotificationsList(
     onFollowRequestAction: (VistaNotification, Boolean) -> Unit,
 ) {
     if (notifications.isEmpty()) {
-        NotificationEmptyState(onRetry = onRefresh)
+        Box(modifier = Modifier.fillMaxSize().padding(top = topContentPadding)) {
+            NotificationEmptyState(onRetry = onRefresh)
+        }
         return
     }
 
     val rows = remember(notifications) { buildNotificationRows(notifications) }
     val listState = rememberLazyListState()
+    if (glassState != null) {
+        VistaGlassScrollSync(glassState, listState)
+    }
     LaunchedEffect(listState, rows.size, hasMore) {
         snapshotFlow {
             val info = listState.layoutInfo
@@ -354,7 +418,7 @@ private fun NotificationsList(
     LazyColumn(
         state = listState,
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = 20.dp),
+        contentPadding = PaddingValues(top = topContentPadding, bottom = 20.dp),
     ) {
         items(rows, key = { it.key }) { row ->
             when (row) {

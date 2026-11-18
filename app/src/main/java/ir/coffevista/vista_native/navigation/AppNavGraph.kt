@@ -82,6 +82,7 @@ import ir.coffevista.vista_native.features.search.ui.SearchWorkspaceScreen
 import ir.coffevista.vista_native.features.shell.ShellDeepLinkRequest
 import ir.coffevista.vista_native.features.shell.ShellDeferredKind
 import ir.coffevista.vista_native.features.shell.ShellFeatureContent
+import ir.coffevista.vista_native.features.shell.ShellNavigationSlotOverride
 import ir.coffevista.vista_native.features.shell.VistaShell
 import ir.coffevista.vista_native.features.shell.ShellRoutes
 import ir.coffevista.vista_native.features.onboarding.OnboardingSlide
@@ -499,10 +500,23 @@ fun VistaApp(
             } else {
                 val conversations by chatRepository.observeConversations().collectAsStateWithLifecycle(initialValue = emptyList())
                 val chatBadgeCount = remember(conversations) { conversations.sumOf { it.unreadCount } }
+                val remoteConfig by SystemGateMonitor.remoteConfig.collectAsStateWithLifecycle()
+                val shellNavSlots = remember(remoteConfig?.navigationSlots) {
+                    remoteConfig?.navigationSlots.orEmpty().map { slot ->
+                        ShellNavigationSlotOverride(
+                            key = slot.key,
+                            label = slot.label,
+                            visible = slot.visible,
+                            sortOrder = slot.sortOrder,
+                            badgeText = slot.badgeText,
+                        )
+                    }
+                }
 
                 VistaShell(
                     context = signedIn.context,
                     deepLinkRequest = shellDeepLinkRequest,
+                    navigationSlots = shellNavSlots,
                     onDeepLinkConsumed = { id ->
                         deepLinkCoordinator.consume(id)
                         shellDeepLinkRequest = null

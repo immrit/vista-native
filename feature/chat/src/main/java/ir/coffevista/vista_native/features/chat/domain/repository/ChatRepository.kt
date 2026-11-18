@@ -146,6 +146,15 @@ interface ChatRepository {
         ChatResult.Failure("ادامه دانلود در دسترس نیست", false)
     suspend fun cancelDownload(messageId: String): ChatResult<Unit> =
         ChatResult.Failure("لغو دانلود در دسترس نیست", false)
+    suspend fun saveAttachmentToDevice(message: Message): ChatResult<String> =
+        ChatResult.Failure("ذخیره فایل در دسترس نیست", false)
+    suspend fun saveMediaUrlToDevice(
+        sourceUrl: String,
+        fallbackUrl: String? = null,
+        kind: ir.coffevista.vista_native.features.chat.domain.model.AttachmentKind,
+        fileName: String? = null,
+        mimeType: String? = null,
+    ): ChatResult<String> = ChatResult.Failure("ذخیره رسانه در دسترس نیست", false)
     suspend fun markRead(conversationId: String): ChatResult<Unit>
     suspend fun sendTyping(conversationId: String): ChatResult<Unit>
     suspend fun setConversationActive(conversationId: String, active: Boolean): ChatResult<Unit>

@@ -37,6 +37,9 @@ import ir.coffevista.vista_native.core.designsystem.glass.rememberVistaGlassStat
 import ir.coffevista.vista_native.core.designsystem.glass.vistaGlass
 import ir.coffevista.vista_native.core.designsystem.glass.vistaGlassSource
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaBrandColors
+import ir.coffevista.vista_native.core.network.RemoteBrandOrnament
+import ir.coffevista.vista_native.core.network.RemoteCopyOverrides
+import ir.coffevista.vista_native.core.network.SystemGateMonitor
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -99,9 +102,11 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Flag
+import androidx.compose.material.icons.filled.PostAdd
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.WorkspacePremium
+import androidx.compose.ui.AbsoluteAlignment
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.RemoveCircleOutline
 import ir.coffevista.vista_native.core.database.profile.hasBlueBadge
@@ -502,6 +507,7 @@ internal fun FeedScreenContent(
     val coroutineScope = rememberCoroutineScope()
     var idleJob by remember { mutableStateOf<Job?>(null) }
     var fullscreenMedia by remember { mutableStateOf<Pair<List<String>, Int>?>(null) }
+    val remoteConfig by SystemGateMonitor.remoteConfig.collectAsState()
 
     fun updateBarsVisibility(visible: Boolean) {
         if (isBarsVisible != visible) {
@@ -685,6 +691,9 @@ internal fun FeedScreenContent(
                         topPadding = topHeaderHeight,
                         topHeaderItem = {
                             Column(modifier = Modifier.fillMaxWidth()) {
+                                remoteConfig?.feedBanner?.let { banner ->
+                                    VistaRemoteFeedBannerCard(banner = banner)
+                                }
                                 FeedStoryUploadBanner(
                                     uploadState = storyUploadState,
                                     onRetry = onRetryStoryUpload,
@@ -721,22 +730,24 @@ internal fun FeedScreenContent(
                 visible = isBarsVisible,
                 enter = scaleIn(animationSpec = spring(dampingRatio = Spring.DampingRatioLowBouncy)) + fadeIn(),
                 exit = scaleOut(animationSpec = tween(200)) + fadeOut(),
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(end = 16.dp),
+                modifier = Modifier.align(AbsoluteAlignment.BottomRight),
             ) {
                 VistaFloatingActionButton(
                     onClick = onCreatePostClick,
                     contentDescription = "ارسال پست جدید",
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Add,
+                        imageVector = Icons.Filled.PostAdd,
                         contentDescription = null,
                         tint = Color.White,
-                        modifier = Modifier.size(28.dp),
+                        modifier = Modifier.size(26.dp),
                     )
                 }
             }
+        }
+
+        remoteConfig?.ambientEffect?.let { ambient ->
+            VistaFeedAmbientParticles(ambientEffect = ambient)
         }
 
         AnimatedVisibility(
@@ -762,12 +773,13 @@ internal fun FeedScreenContent(
                     .vistaGlass(
                         state = feedGlassState,
                         shape = androidx.compose.ui.graphics.RectangleShape,
-                        tint = MaterialTheme.colorScheme.surface,
+                        tint = if (isDarkFeed) Color(0xFF1A222C) else Color(0xFFFFFFFF),
                         isDark = isDarkFeed,
                         blurRadius = VistaGlassTokens.BarBlur,
-                        tintAlphaOverride = if (isDarkFeed) 0.74f else 0.77f,
+                        tintAlphaOverride = if (isDarkFeed) 0.58f else 0.62f,
+                        drawHighlight = true,
                         rimWidth = 0.dp,
-                        shadowElevation = 4.dp,
+                        shadowElevation = 3.dp,
                     ),
             ) {
                 Column(
@@ -778,9 +790,11 @@ internal fun FeedScreenContent(
                     FeedAppBar(
                         onNotificationClick = onNotificationClick,
                         unreadNotificationCount = unreadNotificationCount,
+                        ornament = remoteConfig?.brandOrnament ?: RemoteBrandOrnament(),
                     )
                     FeedTabs(
                         selectedKind = selectedKind,
+                        copyOverrides = remoteConfig?.copyOverrides ?: RemoteCopyOverrides(),
                         onKindSelected = { kind ->
                             updateBarsVisibility(true)
                             onKindSelected(kind)
@@ -811,6 +825,7 @@ internal fun FeedScreenContent(
 private fun FeedAppBar(
     onNotificationClick: () -> Unit,
     unreadNotificationCount: Int = 0,
+    ornament: RemoteBrandOrnament = RemoteBrandOrnament(),
 ) {
     // Use the active Compose palette, which also respects Vista's in-app theme setting.
     // Reading the system configuration here previously selected the black asset when
@@ -828,10 +843,10 @@ private fun FeedAppBar(
             .testTag(FeedTestTags.AppBar),
         contentAlignment = Alignment.Center,
     ) {
-        Image(
-            painter = painterResource(logoId),
-            contentDescription = "Vista",
-            modifier = Modifier.size(35.dp),
+        VistaBrandedFeedLogo(
+            dark = dark,
+            defaultLogoRes = logoId,
+            ornament = ornament,
         )
         NotificationBell(
             unreadCount = unreadNotificationCount,
@@ -885,10 +900,11 @@ private fun FeedStoryBar(onStoryClick: () -> Unit) {
 private fun FeedTabs(
     selectedKind: FeedKind,
     onKindSelected: (FeedKind) -> Unit,
+    copyOverrides: RemoteCopyOverrides = RemoteCopyOverrides(),
 ) {
     val tabs = listOf(
-        FeedKind.Explore to "برای شما",
-        FeedKind.Following to "دنبال شده‌ها",
+        FeedKind.Explore to copyOverrides.feedForYouTab.ifBlank { "برای شما" },
+        FeedKind.Following to copyOverrides.feedFollowingTab.ifBlank { "دنبال شده‌ها" },
     )
     TabRow(
         selectedTabIndex = tabs.indexOfFirst { it.first == selectedKind },

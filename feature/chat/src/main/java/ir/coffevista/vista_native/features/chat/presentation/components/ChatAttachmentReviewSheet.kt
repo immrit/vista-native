@@ -649,14 +649,22 @@ internal fun ChatAttachmentReviewSheet(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .shadow(6.dp, captionShape, ambientColor = Color.Black.copy(alpha = 0.25f))
                                 .clip(captionShape)
-                                .background(ReviewPillBackground)
+                                .background(
+                                    Brush.verticalGradient(
+                                        colors = listOf(
+                                            Color(0xFF1F2735).copy(alpha = 0.84f),
+                                            Color(0xFF141A24).copy(alpha = 0.88f),
+                                        ),
+                                    ),
+                                )
                                 .border(
-                                    width = 1.dp,
+                                    width = 0.75.dp,
                                     color = if (isCaptionFocused || isComposerExpanded) {
-                                        ReviewAccentBlue.copy(alpha = 0.55f)
+                                        ReviewAccentBlue.copy(alpha = 0.65f)
                                     } else {
-                                        Color.White.copy(alpha = 0.08f)
+                                        Color.White.copy(alpha = 0.22f)
                                     },
                                     shape = captionShape,
                                 )
@@ -798,7 +806,7 @@ internal fun ChatAttachmentReviewSheet(
                         }
 
                         if (!isComposerExpanded) {
-                            // Bottom Toolbar (Tools on start, Send on end)
+                            // Bottom Toolbar (Floating Glass Tools Capsule on start, Send Lens on end)
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -806,11 +814,28 @@ internal fun ChatAttachmentReviewSheet(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.SpaceBetween,
                             ) {
-                                // Left Editing Tools
+                                // Left Editing Tools in a floating dark-crystal glass capsule
                                 if (isImage) {
                                     Row(
+                                        modifier = Modifier
+                                            .shadow(5.dp, RoundedCornerShape(24.dp), ambientColor = Color.Black.copy(alpha = 0.25f))
+                                            .clip(RoundedCornerShape(24.dp))
+                                            .background(
+                                                Brush.verticalGradient(
+                                                    colors = listOf(
+                                                        Color(0xFF1F2735).copy(alpha = 0.80f),
+                                                        Color(0xFF141A24).copy(alpha = 0.84f),
+                                                    ),
+                                                ),
+                                            )
+                                            .border(
+                                                width = 0.7.dp,
+                                                color = Color.White.copy(alpha = 0.22f),
+                                                shape = RoundedCornerShape(24.dp),
+                                            )
+                                            .padding(horizontal = 10.dp, vertical = 4.dp),
                                         verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp),
                                     ) {
                                         // Crop & Rotate Tool
                                         IconButton(
@@ -818,13 +843,13 @@ internal fun ChatAttachmentReviewSheet(
                                                 hideKeyboardAndClearFocus()
                                                 currentMode = ReviewMode.CROP
                                             },
-                                            modifier = Modifier.size(40.dp),
+                                            modifier = Modifier.size(38.dp),
                                         ) {
                                             Icon(
                                                 imageVector = Icons.Default.Crop,
                                                 contentDescription = "برش و چرخش",
                                                 tint = Color.White,
-                                                modifier = Modifier.size(24.dp),
+                                                modifier = Modifier.size(22.dp),
                                             )
                                         }
 
@@ -834,28 +859,28 @@ internal fun ChatAttachmentReviewSheet(
                                                 hideKeyboardAndClearFocus()
                                                 currentMode = ReviewMode.DRAW
                                             },
-                                            modifier = Modifier.size(40.dp),
+                                            modifier = Modifier.size(38.dp),
                                         ) {
                                             Icon(
                                                 imageVector = Icons.Default.Brush,
                                                 contentDescription = "نقاشی",
                                                 tint = Color.White,
-                                                modifier = Modifier.size(24.dp),
+                                                modifier = Modifier.size(22.dp),
                                             )
                                         }
 
                                         // HD Quality Toggle Badge
                                         Box(
                                             modifier = Modifier
-                                                .clip(RoundedCornerShape(6.dp))
+                                                .clip(RoundedCornerShape(8.dp))
                                                 .border(
                                                     width = 1.dp,
-                                                    color = if (isHd) ReviewAccentBlue else Color.White.copy(alpha = 0.7f),
-                                                    shape = RoundedCornerShape(6.dp),
+                                                    color = if (isHd) ReviewAccentBlue else Color.White.copy(alpha = 0.65f),
+                                                    shape = RoundedCornerShape(8.dp),
                                                 )
-                                                .background(if (isHd) ReviewAccentBlue.copy(alpha = 0.25f) else Color.Transparent)
+                                                .background(if (isHd) ReviewAccentBlue.copy(alpha = 0.28f) else Color.White.copy(alpha = 0.06f))
                                                 .clickable { isHd = !isHd }
-                                                .padding(horizontal = 7.dp, vertical = 3.dp),
+                                                .padding(horizontal = 8.dp, vertical = 4.dp),
                                             contentAlignment = Alignment.Center,
                                         ) {
                                             Text(
@@ -877,13 +902,13 @@ internal fun ChatAttachmentReviewSheet(
                                                     ),
                                                 )
                                             },
-                                            modifier = Modifier.size(40.dp),
+                                            modifier = Modifier.size(38.dp),
                                         ) {
                                             Icon(
                                                 imageVector = Icons.Default.Tune,
                                                 contentDescription = "تنظیمات و چرخش ۹۰ درجه",
                                                 tint = Color.White,
-                                                modifier = Modifier.size(24.dp),
+                                                modifier = Modifier.size(22.dp),
                                             )
                                         }
                                     }
@@ -975,12 +1000,17 @@ private fun AttachmentReviewSendButton(
     Box(
         modifier = Modifier
             .size(buttonSize)
-            .let { mod -> if (shadowElevation > 0.dp) mod.shadow(shadowElevation, CircleShape) else mod }
+            .let { mod -> if (shadowElevation > 0.dp) mod.shadow(shadowElevation, CircleShape, ambientColor = ReviewAccentBlue) else mod }
             .clip(CircleShape)
             .background(
                 Brush.linearGradient(
                     listOf(ReviewAccentBlue, ReviewAccentBlueDeep),
                 ),
+            )
+            .border(
+                width = 0.8.dp,
+                color = Color.White.copy(alpha = 0.35f),
+                shape = CircleShape,
             )
             .clickable(enabled = enabled, onClick = onClick)
             .testTag("attachment-review-send"),
@@ -1005,57 +1035,84 @@ private fun AttachmentReviewTopBar(
     onCloseOrBack: () -> Unit,
     onResetEdits: () -> Unit,
 ) {
+    val pillBrush = Brush.verticalGradient(
+        colors = listOf(
+            Color(0xFF202836).copy(alpha = 0.82f),
+            Color(0xFF141A24).copy(alpha = 0.86f),
+        ),
+    )
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .statusBarsPadding()
-            .padding(horizontal = 8.dp, vertical = 4.dp),
+            .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        // Back / Close
-        IconButton(
-            onClick = onCloseOrBack,
-            modifier = Modifier.size(44.dp),
+        // Floating Back / Close Crystal Pill
+        Box(
+            modifier = Modifier
+                .size(42.dp)
+                .shadow(4.dp, CircleShape, ambientColor = Color.Black.copy(alpha = 0.28f))
+                .clip(CircleShape)
+                .background(pillBrush)
+                .border(0.7.dp, Color.White.copy(alpha = 0.22f), CircleShape)
+                .clickable(onClick = onCloseOrBack),
+            contentAlignment = Alignment.Center,
         ) {
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                 contentDescription = "بازگشت",
                 tint = Color.White,
-                modifier = Modifier.size(24.dp),
+                modifier = Modifier.size(22.dp),
             )
         }
 
-        // Title (Recipient title or Mode title)
-        Text(
-            text = when (mode) {
-                ReviewMode.VIEW -> recipientTitle.ifBlank { "پیش‌نمایش تصویر" }
-                ReviewMode.CROP -> "برش و چرخش"
-                ReviewMode.DRAW -> "نقاشی روی تصویر"
-            },
-            color = Color.White,
-            fontSize = 18.sp,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(horizontal = 8.dp),
-        )
+        // Floating Title Crystal Capsule
+        Box(
+            modifier = Modifier
+                .shadow(4.dp, RoundedCornerShape(21.dp), ambientColor = Color.Black.copy(alpha = 0.28f))
+                .clip(RoundedCornerShape(21.dp))
+                .background(pillBrush)
+                .border(0.7.dp, Color.White.copy(alpha = 0.22f), RoundedCornerShape(21.dp))
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = when (mode) {
+                    ReviewMode.VIEW -> recipientTitle.ifBlank { "پیش‌نمایش تصویر" }
+                    ReviewMode.CROP -> "برش و چرخش"
+                    ReviewMode.DRAW -> "نقاشی روی تصویر"
+                },
+                color = Color.White,
+                fontSize = 15.5.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
 
-        // End Action (Reset button or Selection indicator badge)
+        // End Action (Reset pill + Selection counter badge)
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             if (hasModifications) {
-                IconButton(
-                    onClick = onResetEdits,
-                    modifier = Modifier.size(36.dp),
+                Box(
+                    modifier = Modifier
+                        .size(38.dp)
+                        .shadow(4.dp, CircleShape)
+                        .clip(CircleShape)
+                        .background(pillBrush)
+                        .border(0.7.dp, Color(0xFFFF5252).copy(alpha = 0.45f), CircleShape)
+                        .clickable(onClick = onResetEdits),
+                    contentAlignment = Alignment.Center,
                 ) {
                     Icon(
                         imageVector = Icons.Default.Refresh,
                         contentDescription = "بازنشانی تغییرات",
-                        tint = Color(0xFFFF5252),
-                        modifier = Modifier.size(20.dp),
+                        tint = Color(0xFFFF6E6E),
+                        modifier = Modifier.size(19.dp),
                     )
                 }
             }
@@ -1064,8 +1121,14 @@ private fun AttachmentReviewTopBar(
                 if (totalCount > 1) {
                     Box(
                         modifier = Modifier
-                            .size(26.dp)
-                            .background(ReviewAccentBlue, CircleShape),
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(
+                                Brush.linearGradient(
+                                    listOf(ReviewAccentBlue, ReviewAccentBlueDeep),
+                                ),
+                            )
+                            .border(0.7.dp, Color.White.copy(alpha = 0.35f), CircleShape),
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
@@ -1078,12 +1141,22 @@ private fun AttachmentReviewTopBar(
                 } else {
                     Box(
                         modifier = Modifier
-                            .size(24.dp)
-                            .border(1.5.dp, Color.White.copy(alpha = 0.85f), CircleShape),
-                    )
+                            .size(42.dp)
+                            .shadow(4.dp, CircleShape)
+                            .clip(CircleShape)
+                            .background(pillBrush)
+                            .border(0.7.dp, Color.White.copy(alpha = 0.22f), CircleShape),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(18.dp)
+                                .border(1.5.dp, Color.White.copy(alpha = 0.85f), CircleShape),
+                        )
+                    }
                 }
             } else {
-                Spacer(modifier = Modifier.size(26.dp))
+                Spacer(modifier = Modifier.size(42.dp))
             }
         }
     }

@@ -750,6 +750,7 @@ interface ChatDao {
         previewCiphertext: ByteArray,
         incrementUnread: Boolean,
         mutationAtEpochMillis: Long,
+        allowUnarchive: Boolean = true,
     ) {
         if (replacedClientId != null && replacedClientId != message.clientId) {
             deleteMessage(message.accountId, message.conversationId, replacedClientId)
@@ -757,19 +758,6 @@ interface ChatDao {
         val current = conversation(message.accountId, message.conversationId)
             ?: conversationByType(message.accountId, message.conversationId, fallbackConversation.type)
         val base = current ?: fallbackConversation
-        val resolvedTitle = if (base.title.isNotBlank() && base.title != "کاربر" && base.title != "user") {
-            base.title
-        } else if (fallbackConversation.title.isNotBlank() && fallbackConversation.title != "کاربر" && fallbackConversation.title != "user") {
-            fallbackConversation.title
-        } else {
-            base.title
-        }
-        val resolvedAvatar = (base.avatarUrl ?: fallbackConversation.avatarUrl)?.takeIf(String::isNotBlank)
-        val nextLastMessageAt = maxOf(
-            message.createdAtEpochMillis,
-            mutationAtEpochMillis,
-            base.lastMessageAtEpochMillis ?: 0L,
-        )
         val finalMessage = if (message.conversationId != base.id) {
             message.copy(conversationId = base.id)
         } else {
@@ -778,19 +766,36 @@ interface ChatDao {
         upsertMessage(finalMessage)
         upsertConversations(
             listOf(
-                base.copy(
-                    title = resolvedTitle,
-                    avatarUrl = resolvedAvatar,
-                    lastMessageCiphertext = previewCiphertext,
-                    lastMessageAtEpochMillis = nextLastMessageAt,
-                    lastMessageStatus = if (message.isMine) message.status else "READ",
-                    lastMessageIsMine = message.isMine,
-                    isArchived = if (message.isMine || !base.isMuted) false else base.isArchived,
-                    unreadCount = base.unreadCount + if (incrementUnread) 1 else 0,
-                    lastSyncedAtEpochMillis = mutationAtEpochMillis,
+                applyMessageSummaryToConversation(
+                    current = current,
+                    base = base,
+                    fallbackConversation = fallbackConversation,
+                    finalMessage = finalMessage,
+                    previewCiphertext = previewCiphertext,
+                    incrementUnread = incrementUnread,
+                    mutationAtEpochMillis = mutationAtEpochMillis,
+                    allowUnarchive = allowUnarchive,
                 ),
             ),
         )
+    }
+
+    @Transaction
+    suspend fun deleteMessageLocally(
+        tombstone: TombstoneEntity,
+        accountId: String,
+        conversationId: String,
+        messageIdentity: String,
+        clientId: String,
+        serverId: String?,
+    ) {
+        upsertTombstone(tombstone)
+        deleteMessageByIdentity(accountId, conversationId, messageIdentity)
+        deleteTransfer(accountId, clientId)
+        deletePending(accountId, clientId)
+        if (serverId != null && serverId != clientId) {
+            deletePending(accountId, serverId)
+        }
     }
 }
 
@@ -904,4 +909,56 @@ abstract class ChatDatabase : RoomDatabase() {
             }
         }
     }
+}
+
+internal fun applyMessageSummaryToConversation(
+    current: ConversationEntity?,
+    base: ConversationEntity,
+    fallbackConversation: ConversationEntity,
+    finalMessage: MessageEntity,
+    previewCiphertext: ByteArray,
+    incrementUnread: Boolean,
+    mutationAtEpochMillis: Long,
+    allowUnarchive: Boolean,
+): ConversationEntity {
+    val resolvedTitle = if (base.title.isNotBlank() && base.title != "کاربر" && base.title != "user") {
+        base.title
+    } else if (fallbackConversation.title.isNotBlank() && fallbackConversation.title != "کاربر" && fallbackConversation.title != "user") {
+        fallbackConversation.title
+    } else {
+        base.title
+    }
+    val resolvedAvatar = (base.avatarUrl ?: fallbackConversation.avatarUrl)?.takeIf(String::isNotBlank)
+    val existingLastMessageAt = base.lastMessageAtEpochMillis ?: Long.MIN_VALUE
+    val isHandshakeFrame = finalMessage.messageType.equals("exchange_key", ignoreCase = true) ||
+        finalMessage.messageType.equals("exchange_key_reply", ignoreCase = true)
+    val shouldUpdateSummary = current == null ||
+        (!isHandshakeFrame && finalMessage.deletedAtEpochMillis == null && finalMessage.createdAtEpochMillis >= existingLastMessageAt)
+    // Never use wall-clock mutationAtEpochMillis as lastMessageAtEpochMillis:
+    // opening or syncing an older conversation must not promote it to the top.
+    val nextLastMessageAt = if (shouldUpdateSummary) {
+        maxOf(finalMessage.createdAtEpochMillis, base.lastMessageAtEpochMillis ?: 0L)
+    } else {
+        base.lastMessageAtEpochMillis
+    }
+    return base.copy(
+        title = resolvedTitle,
+        avatarUrl = resolvedAvatar,
+        lastMessageCiphertext = if (shouldUpdateSummary) previewCiphertext else base.lastMessageCiphertext,
+        lastMessageAtEpochMillis = nextLastMessageAt,
+        lastMessageType = if (shouldUpdateSummary) finalMessage.messageType else base.lastMessageType,
+        lastMessageStatus = if (shouldUpdateSummary) {
+            if (finalMessage.isMine) finalMessage.status else "READ"
+        } else {
+            base.lastMessageStatus
+        },
+        lastMessageIsMine = if (shouldUpdateSummary) finalMessage.isMine else base.lastMessageIsMine,
+        isArchived = if (shouldUpdateSummary && allowUnarchive && (finalMessage.isMine || !base.isMuted)) {
+            false
+        } else {
+            base.isArchived
+        },
+        unreadCount = base.unreadCount + if (incrementUnread) 1 else 0,
+        lastSyncedAtEpochMillis = mutationAtEpochMillis,
+    )
 }

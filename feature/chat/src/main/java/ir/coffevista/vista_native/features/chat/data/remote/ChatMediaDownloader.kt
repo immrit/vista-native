@@ -75,6 +75,34 @@ class ChatMediaDownloader(
         return record
     }
 
+    fun httpClient(): OkHttpClient = client
+
+    suspend fun ensureDownloadedFile(
+        accountId: String,
+        conversationId: String,
+        messageId: String,
+        remoteUrl: String,
+        fileName: String,
+        mimeType: String?,
+    ): File? {
+        val current = start(
+            accountId = accountId,
+            conversationId = conversationId,
+            messageId = messageId,
+            remoteUrl = remoteUrl,
+            fileName = fileName,
+            mimeType = mimeType,
+        )
+        if (current.state == DownloadState.COMPLETE.name) {
+            current.localPath?.let(::File)?.takeIf { it.isFile && it.canRead() }?.let { return it }
+        }
+        val activeKey = key(accountId, messageId)
+        activeJobs[activeKey]?.join()
+        val finished = dao.download(accountId, messageId) ?: return null
+        if (finished.state != DownloadState.COMPLETE.name) return null
+        return finished.localPath?.let(::File)?.takeIf { it.isFile && it.canRead() }
+    }
+
     suspend fun pause(accountId: String, messageId: String) {
         val row = dao.download(accountId, messageId) ?: return
         dao.upsertDownload(row.copy(state = DownloadState.PAUSED.name, updatedAtEpochMillis = now()))

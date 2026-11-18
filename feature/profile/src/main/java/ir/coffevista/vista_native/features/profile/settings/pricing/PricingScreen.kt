@@ -78,6 +78,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -106,6 +107,8 @@ data class PricingPlanUiModel(
     val price: String,
     val description: String,
     val badge: String? = null,
+    val originalPrice: String? = null,
+    val recommended: Boolean = false,
 )
 
 data class PremiumFeatureUiModel(
@@ -183,7 +186,27 @@ fun PricingScreen(
         ),
     )
 
+    val displayedFeatures = remember(uiState.remotePremiumFeatures, features) {
+        if (uiState.remotePremiumFeatures.isNotEmpty()) {
+            uiState.remotePremiumFeatures.map { label ->
+                PremiumFeatureUiModel(
+                    icon = Icons.Outlined.Verified,
+                    title = label,
+                    subtitle = "",
+                )
+            }
+        } else {
+            features
+        }
+    }
+
     var selectedPlanIndex by remember { mutableIntStateOf(0) }
+    LaunchedEffect(plans) {
+        val recommendedIndex = plans.indexOfFirst { it.recommended }
+        if (recommendedIndex >= 0) {
+            selectedPlanIndex = recommendedIndex
+        }
+    }
     var selectedTab by remember { mutableIntStateOf(initialTab.coerceIn(0, 1)) }
     var showPaymentConfirmation by remember { mutableStateOf(false) }
     val selectedPlan = plans.getOrNull(selectedPlanIndex.coerceAtLeast(0)) ?: plans.firstOrNull()
@@ -513,6 +536,18 @@ fun PricingScreen(
 
                                         Spacer(modifier = Modifier.height(6.dp))
 
+                                        if (plan.originalPrice != null) {
+                                            Text(
+                                                text = plan.originalPrice,
+                                                style = MaterialTheme.typography.labelSmall.copy(
+                                                    fontSize = 10.sp,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    textDecoration = TextDecoration.LineThrough,
+                                                ),
+                                                textAlign = TextAlign.Center,
+                                            )
+                                        }
+
                                         Text(
                                             text = plan.price,
                                             style = MaterialTheme.typography.bodySmall.copy(
@@ -547,7 +582,7 @@ fun PricingScreen(
                                     .fillMaxWidth()
                                     .padding(16.dp),
                             ) {
-                                features.forEachIndexed { index, feature ->
+                                displayedFeatures.forEachIndexed { index, feature ->
                                     Row(
                                         modifier = Modifier
                                             .fillMaxWidth()
@@ -579,18 +614,20 @@ fun PricingScreen(
                                                     fontSize = 14.sp,
                                                 ),
                                             )
-                                            Spacer(modifier = Modifier.height(2.dp))
-                                            Text(
-                                                text = feature.subtitle,
-                                                style = MaterialTheme.typography.bodySmall.copy(
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                    fontSize = 12.sp,
-                                                    lineHeight = 18.sp,
-                                                ),
-                                            )
+                                            if (feature.subtitle.isNotBlank()) {
+                                                Spacer(modifier = Modifier.height(2.dp))
+                                                Text(
+                                                    text = feature.subtitle,
+                                                    style = MaterialTheme.typography.bodySmall.copy(
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                        fontSize = 12.sp,
+                                                        lineHeight = 18.sp,
+                                                    ),
+                                                )
+                                            }
                                         }
                                     }
-                                    if (index < features.size - 1) {
+                                    if (index < displayedFeatures.size - 1) {
                                         Spacer(modifier = Modifier.height(4.dp))
                                     }
                                 }

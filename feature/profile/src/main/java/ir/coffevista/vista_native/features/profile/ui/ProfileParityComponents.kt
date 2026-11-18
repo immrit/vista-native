@@ -76,6 +76,7 @@ import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.PostAdd
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -1854,13 +1855,11 @@ internal fun ProfileFAB(
         modifier = modifier,
         contentDescription = "ایجاد پست جدید",
     ) {
-        Text(
-            text = "+",
-            color = Color.White,
-            fontSize = 28.sp,
-            fontWeight = FontWeight.Light,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(bottom = 2.dp),
+        Icon(
+            imageVector = Icons.Filled.PostAdd,
+            contentDescription = null,
+            tint = Color.White,
+            modifier = Modifier.size(26.dp),
         )
     }
 }

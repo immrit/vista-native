@@ -21,12 +21,22 @@ interface PricingPlansApi {
 @Serializable
 data class PricingPlansResponseDto(
     val plans: List<PricingPlanDto> = emptyList(),
+    @SerialName("premium_features") val premiumFeatures: List<String> = emptyList(),
+)
+
+@Serializable
+data class PricingPlanMetaDto(
+    val enabled: Boolean = true,
+    @SerialName("original_price_toman") val originalPriceToman: Long = 0L,
+    @SerialName("badge_text") val badgeText: String = "",
+    val recommended: Boolean = false,
 )
 
 @Serializable
 data class PricingPlanDto(
     @SerialName("plan_type") val planType: String,
     @SerialName("price_toman") val priceToman: Long,
+    val meta: PricingPlanMetaDto? = null,
 )
 
 @Serializable

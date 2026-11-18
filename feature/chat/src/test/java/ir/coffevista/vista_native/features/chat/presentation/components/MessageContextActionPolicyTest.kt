@@ -157,6 +157,75 @@ class MessageContextActionPolicyTest {
             ),
         ).contextActionPolicy()
         assertFalse(policyWithoutCaption.canEdit)
+        assertTrue(policyWithoutCaption.canSaveToDevice)
+    }
+
+    @Test
+    fun `normal chats allow saving images, files, and audio but secret chats forbid saving`() {
+        listOf(
+            AttachmentKind.IMAGE to "photo.jpg",
+            AttachmentKind.DOCUMENT to "spec.pdf",
+            AttachmentKind.AUDIO to "track.mp3",
+            AttachmentKind.VIDEO to "clip.mp4",
+        ).forEach { (kind, name) ->
+            val att = Attachment(
+                kind = kind,
+                remoteUrl = "https://media.example.test/$name",
+                localUri = null,
+                fileName = name,
+                mimeType = null,
+                sizeBytes = 128L,
+                progress = 1f,
+                transferState = TransferState.COMPLETE,
+            )
+            val privatePolicy = message(attachment = att).contextActionPolicy(
+                MessageContextCapabilities(conversationType = ConversationType.PRIVATE),
+            )
+            val groupPolicy = message(attachment = att).contextActionPolicy(
+                MessageContextCapabilities(conversationType = ConversationType.GROUP),
+            )
+            val secretPolicy = message(attachment = att).contextActionPolicy(
+                MessageContextCapabilities(conversationType = ConversationType.SECRET),
+            )
+
+            assertTrue("$kind must be saveable in PRIVATE chat", privatePolicy.canSaveToDevice)
+            assertTrue("$kind must be saveable in GROUP chat", groupPolicy.canSaveToDevice)
+            assertFalse("$kind must NOT be saveable in SECRET chat", secretPolicy.canSaveToDevice)
+        }
+    }
+
+    @Test
+    fun `secret local files and incomplete or deleted messages cannot save`() {
+        val secretFilePolicy = message(
+            attachment = Attachment(
+                kind = AttachmentKind.IMAGE,
+                remoteUrl = null,
+                localUri = "/data/user/0/app/files/enc_chat_123.bin",
+                fileName = "secret.jpg",
+                mimeType = "image/jpeg",
+                sizeBytes = 64L,
+                progress = 1f,
+                transferState = TransferState.COMPLETE,
+            ),
+        ).contextActionPolicy(MessageContextCapabilities(conversationType = ConversationType.PRIVATE))
+        assertFalse(secretFilePolicy.canSaveToDevice)
+
+        val uploadingPolicy = message(
+            attachment = Attachment(
+                kind = AttachmentKind.DOCUMENT,
+                remoteUrl = "https://media.example.test/doc.pdf",
+                localUri = "content://local/doc.pdf",
+                fileName = "doc.pdf",
+                mimeType = "application/pdf",
+                sizeBytes = 100L,
+                progress = 0.5f,
+                transferState = TransferState.UPLOADING,
+            ),
+        ).contextActionPolicy()
+        assertFalse(uploadingPolicy.canSaveToDevice)
+
+        val textOnlyPolicy = message(attachment = null).contextActionPolicy()
+        assertFalse(textOnlyPolicy.canSaveToDevice)
     }
 
     private fun message(

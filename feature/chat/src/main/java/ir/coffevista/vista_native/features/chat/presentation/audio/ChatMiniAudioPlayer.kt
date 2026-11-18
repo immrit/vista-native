@@ -76,8 +76,7 @@ import ir.coffevista.vista_native.features.chat.presentation.components.formatSp
 import ir.coffevista.vista_native.features.chat.presentation.toPersianDigits
 
 /**
- * مینی‌پلیر تلگرامی زیر اپ‌بار چت (الگوبرداری از `FragmentContextView` تلگرام)
- * با افکت شیشه‌ای لیکویید گلس ویستا (`vistaGlass`):
+ * مینی‌پلیر صوتی شناور زیر هدر گفتگو با افکت شیشه مایع ویستا (`vistaGlass`):
  * - نمایش عنوان، خواننده/فرستنده و زمان پخش زنده برای موزیک و پیام صوتی
  * - کنترل Play/Pause انیمیشنی، تغییر سرعت پخش (لمس برای چرخش، لمس طولانی برای منو سرعت)، ترک بعدی و بستن
  * - نوار پیشرفت باریک در لبه پایینی و باز کردن پلیر تمام‌صفحه/باتم‌شیت موزیک با لمس نوار
@@ -106,7 +105,7 @@ fun ChatMiniAudioPlayer(
         if (track == null) return@AnimatedVisibility
 
         val isRounded = shape != RectangleShape
-        val tintColor = if (isDark) Color(0xFF1C242F) else Color(0xFFFFFFFF)
+        val tintColor = if (isDark) Color(0xFF1A222C) else Color(0xFFFFFFFF)
         val glassModifier = if (glassState != null) {
             Modifier.vistaGlass(
                 state = glassState,
@@ -114,9 +113,9 @@ fun ChatMiniAudioPlayer(
                 tint = tintColor,
                 isDark = isDark,
                 blurRadius = if (isRounded) VistaGlassTokens.PillBlur else VistaGlassTokens.BarBlur,
-                tintAlphaOverride = if (isDark) 0.78f else 0.84f,
-                drawHighlight = isRounded,
-                rimWidth = if (isRounded) 0.8.dp else 0.dp,
+                tintAlphaOverride = if (isDark) 0.58f else 0.62f,
+                drawHighlight = true,
+                rimWidth = if (isRounded) 0.6.dp else 0.dp,
                 shadowElevation = if (isRounded) 4.dp else 0.dp,
             )
         } else {
@@ -232,7 +231,7 @@ fun ChatMiniAudioPlayer(
                     }
                 }
 
-                // دکمه سرعت پخش (تغییر سریع با لمس، منو سرعت‌های دقیق با نگه‌داشتن طولانی مثل تلگرام)
+                // دکمه سرعت پخش (تغییر سریع با لمس، منو سرعت‌های دقیق با نگه‌داشتن طولانی)
                 val showSpeedButton = track.kind == ChatAudioKind.VOICE || durationMs >= 10 * 60 * 1000L
                 if (showSpeedButton) {
                     Box {
@@ -310,7 +309,7 @@ fun ChatMiniAudioPlayer(
                 }
             }
 
-            // نوار پیشرفت زنده در لبه پایینی مینی‌پلیر (جهت چپ به راست مانند تلگرام)
+            // نوار پیشرفت زنده در لبه پایینی مینی‌پلیر (جهت چپ به راست)
             CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                 Box(
                     modifier = Modifier

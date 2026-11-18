@@ -58,6 +58,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.AbsoluteAlignment
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -81,18 +82,38 @@ import ir.coffevista.vista_native.core.designsystem.component.VistaEditPostDialo
 import ir.coffevista.vista_native.core.designsystem.component.VistaErrorState
 import ir.coffevista.vista_native.core.designsystem.component.VistaPremiumPromptDialog
 import ir.coffevista.vista_native.core.designsystem.component.VistaReportReasonDialog
+import ir.coffevista.vista_native.core.designsystem.component.LocalBottomBarVisibility
+import ir.coffevista.vista_native.core.designsystem.glass.LocalVistaGlassState
 import ir.coffevista.vista_native.core.designsystem.glass.VistaGlassTokens
 import ir.coffevista.vista_native.core.designsystem.glass.rememberVistaGlassState
 import ir.coffevista.vista_native.core.designsystem.glass.vistaGlass
 import ir.coffevista.vista_native.core.designsystem.glass.vistaGlassSource
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import ir.coffevista.vista_native.features.profile.R
 import ir.coffevista.vista_native.core.database.profile.tierCapabilities
 import ir.coffevista.vista_native.features.profile.data.ProfileHighlightDto
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -186,12 +207,90 @@ fun OwnProfileScreen(
             val profileGlassState = rememberVistaGlassState()
             val profileListState = rememberLazyListState()
             VistaGlassScrollSync(profileGlassState, profileListState)
+
+            val bottomBarVisibilityCallback = LocalBottomBarVisibility.current
+            var isBarsVisible by rememberSaveable { mutableStateOf(true) }
+            val coroutineScope = rememberCoroutineScope()
+            var idleJob by remember { mutableStateOf<Job?>(null) }
+
+            fun updateBarsVisibility(visible: Boolean) {
+                if (isBarsVisible != visible) {
+                    isBarsVisible = visible
+                    bottomBarVisibilityCallback(visible)
+                }
+            }
+
+            DisposableEffect(Unit) {
+                onDispose {
+                    idleJob?.cancel()
+                    bottomBarVisibilityCallback(true)
+                }
+            }
+
+            val nestedScrollConnection = remember(profileListState) {
+                object : NestedScrollConnection {
+                    override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                        val delta = available.y
+                        if (delta < -4f) {
+                            updateBarsVisibility(false)
+                            idleJob?.cancel()
+                            idleJob = coroutineScope.launch {
+                                delay(1200)
+                                updateBarsVisibility(true)
+                            }
+                        } else if (delta > 4f) {
+                            idleJob?.cancel()
+                            updateBarsVisibility(true)
+                        }
+                        return Offset.Zero
+                    }
+                }
+            }
+
+            androidx.compose.runtime.LaunchedEffect(profileListState) {
+                var previousIndex = profileListState.firstVisibleItemIndex
+                var previousOffset = profileListState.firstVisibleItemScrollOffset
+                snapshotFlow {
+                    Triple(
+                        profileListState.firstVisibleItemIndex,
+                        profileListState.firstVisibleItemScrollOffset,
+                        profileListState.isScrollInProgress,
+                    )
+                }.collect { (index, offset, isScrolling) ->
+                    if (index == 0 && offset == 0) {
+                        idleJob?.cancel()
+                        updateBarsVisibility(true)
+                    } else if (isScrolling) {
+                        val delta = if (index != previousIndex) {
+                            (index - previousIndex) * 1000 + (offset - previousOffset)
+                        } else {
+                            offset - previousOffset
+                        }
+
+                        if (delta > 4) {
+                            idleJob?.cancel()
+                            updateBarsVisibility(false)
+                            idleJob = coroutineScope.launch {
+                                delay(1200)
+                                updateBarsVisibility(true)
+                            }
+                        } else if (delta < -4) {
+                            idleJob?.cancel()
+                            updateBarsVisibility(true)
+                        }
+                    }
+                    previousIndex = index
+                    previousOffset = offset
+                }
+            }
+
             val isDarkProfile = MaterialTheme.colorScheme.background.luminance() < 0.5f
             val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
             val profileTopBarHeight = statusBarTop + 56.dp + LocalMiniPlayerSlot.current.extraHeight
             Box(
                 modifier = modifier
                     .fillMaxSize()
+                    .nestedScroll(nestedScrollConnection)
                     .background(MaterialTheme.colorScheme.background),
             ) {
                 Box(
@@ -321,9 +420,11 @@ fun OwnProfileScreen(
                         .vistaGlass(
                             state = profileGlassState,
                             shape = RectangleShape,
-                            tint = MaterialTheme.colorScheme.surface,
+                            tint = if (isDarkProfile) androidx.compose.ui.graphics.Color(0xFF1A222C) else androidx.compose.ui.graphics.Color(0xFFFFFFFF),
                             isDark = isDarkProfile,
                             blurRadius = VistaGlassTokens.BarBlur,
+                            tintAlphaOverride = if (isDarkProfile) 0.58f else 0.62f,
+                            drawHighlight = true,
                             rimWidth = 0.dp,
                             shadowElevation = 3.dp,
                         )
@@ -459,15 +560,25 @@ fun OwnProfileScreen(
                     )
                 }
 
-                Box(modifier = Modifier.fillMaxSize()) {
-                    ProfileFAB(
-                        onClick = {
-                            onAddPost?.invoke() ?: Toast.makeText(context, "ایجاد پست جدید", Toast.LENGTH_SHORT).show()
-                        },
-                        modifier = Modifier
-                            .align(Alignment.BottomEnd)
-                            .padding(end = 16.dp),
-                    )
+                androidx.compose.runtime.CompositionLocalProvider(
+                    LocalVistaGlassState provides profileGlassState,
+                ) {
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        AnimatedVisibility(
+                            visible = isBarsVisible,
+                            enter = scaleIn(
+                                animationSpec = spring(dampingRatio = Spring.DampingRatioLowBouncy),
+                            ) + fadeIn(),
+                            exit = scaleOut(animationSpec = tween(200)) + fadeOut(),
+                            modifier = Modifier.align(AbsoluteAlignment.BottomRight),
+                        ) {
+                            ProfileFAB(
+                                onClick = {
+                                    onAddPost?.invoke() ?: Toast.makeText(context, "ایجاد پست جدید", Toast.LENGTH_SHORT).show()
+                                },
+                            )
+                        }
+                    }
                 }
 
                 // Options Bottom Sheet

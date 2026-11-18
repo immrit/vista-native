@@ -1,5 +1,6 @@
 package ir.coffevista.vista_native.features.chat.presentation.components
 
+import ir.coffevista.vista_native.features.chat.domain.model.AttachmentKind
 import ir.coffevista.vista_native.features.chat.domain.model.Message
 import ir.coffevista.vista_native.features.chat.domain.model.MessageContent
 import ir.coffevista.vista_native.features.chat.domain.model.MessageStatus
@@ -29,6 +30,7 @@ internal data class MessageContextActionPolicy(
     val canReact: Boolean,
     val canReply: Boolean,
     val canCopy: Boolean,
+    val canSaveToDevice: Boolean,
     val canForward: Boolean,
     val canTogglePinned: Boolean,
     val canEdit: Boolean,
@@ -41,6 +43,7 @@ internal data class MessageContextActionPolicy(
             canRetry,
             canReply,
             canCopy,
+            canSaveToDevice,
             canForward,
             canTogglePinned,
             canEdit,
@@ -70,12 +73,30 @@ internal fun Message.contextActionPolicy(
         MessageStatus.FAILED,
     )
     val canInteractRemotely = !isDeleted && isServerConfirmed && isAttachmentTransferComplete
+    val hasSaveableAttachment = attachment != null &&
+        attachment.kind in setOf(
+            AttachmentKind.IMAGE,
+            AttachmentKind.VIDEO,
+            AttachmentKind.GIF,
+            AttachmentKind.AUDIO,
+            AttachmentKind.VOICE,
+            AttachmentKind.DOCUMENT,
+            AttachmentKind.UNKNOWN,
+        ) &&
+        (!attachment.localUri.isNullOrBlank() || !attachment.remoteUrl.isNullOrBlank()) &&
+        !isSecretLocalUri(attachment.localUri)
 
     return MessageContextActionPolicy(
         canRetry = !isDeleted && isMine && isFailed,
         canReact = canInteractRemotely && capabilities.allowsReactions,
         canReply = canInteractRemotely,
         canCopy = !isDeleted && (isTextOnly || hasText) && capabilities.conversationType != ConversationType.SECRET,
+        // Secret conversations must never allow saving attachments to device storage.
+        canSaveToDevice = !isDeleted &&
+            isAttachmentTransferComplete &&
+            capabilities.conversationType != ConversationType.SECRET &&
+            !transportType.equals("secret", ignoreCase = true) &&
+            hasSaveableAttachment,
         // Secret conversations must never expose a forwarding or pin route.
         // The API remains authoritative for all other conversation policies.
         canForward = canInteractRemotely &&

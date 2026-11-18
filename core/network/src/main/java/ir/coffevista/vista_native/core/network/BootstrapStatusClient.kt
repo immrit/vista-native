@@ -10,6 +10,8 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
@@ -34,6 +36,130 @@ data class SystemAlert(
     val message: String,
 )
 
+data class RemoteTierLimits(
+    val maxPostChars: Int? = null,
+    val canEditPost: Boolean? = null,
+    val canEditComment: Boolean? = null,
+    val maxStoryHours: Int? = null,
+    val maxUploadMb: Int? = null,
+    val canPostMusic: Boolean? = null,
+    val maxVideoSeconds: Int? = null,
+    val canHideEngagementCounts: Boolean? = null,
+    val searchPriority: Int? = null,
+    val adsFree: Boolean? = null,
+    val maxGalleryImages: Int? = null,
+)
+
+data class RemoteAnnouncement(
+    val enabled: Boolean = false,
+    val id: String = "",
+    val title: String = "",
+    val message: String = "",
+    val ctaText: String = "",
+    val ctaUrl: String = "",
+    val severity: String = "info",
+    val dismissible: Boolean = true,
+)
+
+data class RemoteBannerSlot(
+    val enabled: Boolean = false,
+    val title: String = "",
+    val subtitle: String = "",
+    val imageUrl: String = "",
+    val linkUrl: String = "",
+    val bgColor: String = "#6366F1",
+    val textColor: String = "#FFFFFF",
+)
+
+data class RemoteThemeOverride(
+    val enabled: Boolean = false,
+    val holidayName: String = "",
+    val primaryHex: String = "#6366F1",
+    val accentHex: String = "#EC4899",
+    val badgeText: String = "",
+)
+
+data class RemoteAdsConfig(
+    val enabled: Boolean = true,
+    val feedInterval: Int = 8,
+    val storiesEnabled: Boolean = true,
+    val bannerEnabled: Boolean = true,
+)
+
+data class RemoteQuickServiceItem(
+    val key: String,
+    val title: String,
+    val subtitle: String,
+    val route: String,
+    val enabled: Boolean = true,
+    val sortOrder: Int = 0,
+    val gradientStart: String = "#6366F1",
+    val gradientEnd: String = "#8B5CF6",
+)
+
+data class RemoteBrandOrnament(
+    val enabled: Boolean = false,
+    val preset: String = "none",
+    val customImageUrl: String = "",
+    val customLogoLightUrl: String = "",
+    val customLogoDarkUrl: String = "",
+    val offsetX: Int = 0,
+    val offsetY: Int = -10,
+    val scale: Float = 1.0f,
+    val rotationDeg: Int = 0,
+    val tapAction: String = "none",
+    val tapTitle: String = "",
+    val tapMessage: String = "",
+    val tapUrl: String = "",
+)
+
+data class RemoteAmbientEffect(
+    val effect: String = "none",
+    val density: String = "low",
+)
+
+data class RemoteNavigationSlot(
+    val key: String,
+    val label: String = "",
+    val visible: Boolean = true,
+    val sortOrder: Int = 0,
+    val badgeText: String = "",
+)
+
+data class RemoteCopyOverrides(
+    val feedForYouTab: String = "",
+    val feedFollowingTab: String = "",
+    val maintenanceTitle: String = "",
+    val maintenanceMessage: String = "",
+    val composerPlaceholder: String = "",
+)
+
+data class RemotePricingPlanMeta(
+    val enabled: Boolean = true,
+    val originalPriceToman: Long = 0L,
+    val badgeText: String = "",
+    val recommended: Boolean = false,
+)
+
+data class RemoteConfigSnapshot(
+    val version: Long = 1L,
+    val tiers: Map<String, RemoteTierLimits> = emptyMap(),
+    val maxGroupMembers: Int = 20,
+    val announcement: RemoteAnnouncement = RemoteAnnouncement(),
+    val feedBanner: RemoteBannerSlot = RemoteBannerSlot(),
+    val exploreBanner: RemoteBannerSlot = RemoteBannerSlot(),
+    val themeOverride: RemoteThemeOverride = RemoteThemeOverride(),
+    val ads: RemoteAdsConfig = RemoteAdsConfig(),
+    val quickServices: List<RemoteQuickServiceItem> = emptyList(),
+    val brandOrnament: RemoteBrandOrnament = RemoteBrandOrnament(),
+    val ambientEffect: RemoteAmbientEffect = RemoteAmbientEffect(),
+    val navigationSlots: List<RemoteNavigationSlot> = emptyList(),
+    val copyOverrides: RemoteCopyOverrides = RemoteCopyOverrides(),
+    val pricingMeta: Map<String, RemotePricingPlanMeta> = emptyMap(),
+    val premiumFeatures: List<String> = emptyList(),
+    val rollouts: Map<String, Int> = emptyMap(),
+)
+
 object SystemGateMonitor {
     private val _maintenanceActive = MutableStateFlow(false)
     val maintenanceActive: StateFlow<Boolean> = _maintenanceActive.asStateFlow()
@@ -46,6 +172,26 @@ object SystemGateMonitor {
 
     private val _sessionTerminated = MutableStateFlow(false)
     val sessionTerminated: StateFlow<Boolean> = _sessionTerminated.asStateFlow()
+
+    private val _featureFlags = MutableStateFlow<Map<String, Boolean>>(emptyMap())
+    val featureFlags: StateFlow<Map<String, Boolean>> = _featureFlags.asStateFlow()
+
+    private val _remoteConfig = MutableStateFlow<RemoteConfigSnapshot?>(null)
+    val remoteConfig: StateFlow<RemoteConfigSnapshot?> = _remoteConfig.asStateFlow()
+
+    fun isFeatureEnabled(featureKey: String): Boolean {
+        val normalized = featureKey.trim().lowercase()
+        val flags = _featureFlags.value
+        return flags[normalized] ?: flags["${normalized}_enabled"] ?: true
+    }
+
+    fun updateBootstrapStatus(status: BootstrapStatus) {
+        _maintenanceActive.value = status.maintenance
+        _featureFlags.value = status.featureFlags
+        if (status.remoteConfig != null) {
+            _remoteConfig.value = status.remoteConfig
+        }
+    }
 
     fun reportMaintenance(active: Boolean) {
         _maintenanceActive.value = active
@@ -73,6 +219,7 @@ data class BootstrapStatus(
     val killSwitches: Set<String> = emptySet(),
     val alerts: List<SystemAlert> = emptyList(),
     val fcmResyncEpoch: Long = 0L,
+    val remoteConfig: RemoteConfigSnapshot? = null,
 ) {
     fun isFeatureEnabled(featureKey: String): Boolean {
         val normalized = featureKey.trim().lowercase()
@@ -118,6 +265,7 @@ class BootstrapStatusClient @Inject constructor(
 
             val tls = data["tls_pinning"] as? JsonObject
             val update = tls?.let { raw -> observeBackendPolicy(raw, isVerifiedControlPlane) }
+            val remoteConfig = (data["remote_config"] as? JsonObject)?.let(::parseRemoteConfigSnapshot)
             val status = BootstrapStatus(
                 maintenance = maintenance,
                 tlsUpdate = update,
@@ -125,9 +273,10 @@ class BootstrapStatusClient @Inject constructor(
                 killSwitches = killSwitches,
                 alerts = alerts,
                 fcmResyncEpoch = fcmResyncEpoch,
+                remoteConfig = remoteConfig,
             )
             _statusState.value = status
-            SystemGateMonitor.reportMaintenance(maintenance)
+            SystemGateMonitor.updateBootstrapStatus(status)
             return status
         }
     }
@@ -263,4 +412,168 @@ class BootstrapStatusClient @Inject constructor(
     private companion object {
         const val DEFAULT_PIN_TTL_SECONDS = 30L * 86_400L
     }
+}
+
+internal fun parseRemoteConfigSnapshot(obj: JsonObject): RemoteConfigSnapshot {
+    val tiersObj = obj["tiers"] as? JsonObject
+    val tiersMap = buildMap<String, RemoteTierLimits> {
+        tiersObj?.forEach { (key, elem) ->
+            val item = elem as? JsonObject ?: return@forEach
+            put(
+                key,
+                RemoteTierLimits(
+                    maxPostChars = (item["max_post_chars"] as? JsonPrimitive)?.intOrNull,
+                    canEditPost = (item["can_edit_post"] as? JsonPrimitive)?.booleanOrNull,
+                    canEditComment = (item["can_edit_comment"] as? JsonPrimitive)?.booleanOrNull,
+                    maxStoryHours = (item["max_story_hours"] as? JsonPrimitive)?.intOrNull,
+                    maxUploadMb = (item["max_upload_mb"] as? JsonPrimitive)?.intOrNull,
+                    canPostMusic = (item["can_post_music"] as? JsonPrimitive)?.booleanOrNull,
+                    maxVideoSeconds = (item["max_video_seconds"] as? JsonPrimitive)?.intOrNull,
+                    canHideEngagementCounts = (item["can_hide_engagement_counts"] as? JsonPrimitive)?.booleanOrNull,
+                    searchPriority = (item["search_priority"] as? JsonPrimitive)?.intOrNull,
+                    adsFree = (item["ads_free"] as? JsonPrimitive)?.booleanOrNull,
+                    maxGalleryImages = (item["max_gallery_images"] as? JsonPrimitive)?.intOrNull,
+                ),
+            )
+        }
+    }
+    val chatObj = obj["chat"] as? JsonObject
+    val maxGroupMembers = (chatObj?.get("max_group_members") as? JsonPrimitive)?.intOrNull ?: 20
+
+    val uiObj = obj["ui"] as? JsonObject
+    val annObj = uiObj?.get("announcement") as? JsonObject
+    val announcement = RemoteAnnouncement(
+        enabled = (annObj?.get("enabled") as? JsonPrimitive)?.booleanOrNull ?: false,
+        id = (annObj?.get("id") as? JsonPrimitive)?.contentOrNull.orEmpty(),
+        title = (annObj?.get("title") as? JsonPrimitive)?.contentOrNull.orEmpty(),
+        message = (annObj?.get("message") as? JsonPrimitive)?.contentOrNull.orEmpty(),
+        ctaText = (annObj?.get("cta_text") as? JsonPrimitive)?.contentOrNull.orEmpty(),
+        ctaUrl = (annObj?.get("cta_url") as? JsonPrimitive)?.contentOrNull.orEmpty(),
+        severity = (annObj?.get("severity") as? JsonPrimitive)?.contentOrNull ?: "info",
+        dismissible = (annObj?.get("dismissible") as? JsonPrimitive)?.booleanOrNull ?: true,
+    )
+
+    fun parseBanner(slot: JsonObject?): RemoteBannerSlot = RemoteBannerSlot(
+        enabled = (slot?.get("enabled") as? JsonPrimitive)?.booleanOrNull ?: false,
+        title = (slot?.get("title") as? JsonPrimitive)?.contentOrNull.orEmpty(),
+        subtitle = (slot?.get("subtitle") as? JsonPrimitive)?.contentOrNull.orEmpty(),
+        imageUrl = (slot?.get("image_url") as? JsonPrimitive)?.contentOrNull.orEmpty(),
+        linkUrl = (slot?.get("link_url") as? JsonPrimitive)?.contentOrNull.orEmpty(),
+        bgColor = (slot?.get("bg_color") as? JsonPrimitive)?.contentOrNull ?: "#6366F1",
+        textColor = (slot?.get("text_color") as? JsonPrimitive)?.contentOrNull ?: "#FFFFFF",
+    )
+
+    val themeObj = uiObj?.get("theme_override") as? JsonObject
+    val themeOverride = RemoteThemeOverride(
+        enabled = (themeObj?.get("enabled") as? JsonPrimitive)?.booleanOrNull ?: false,
+        holidayName = (themeObj?.get("holiday_name") as? JsonPrimitive)?.contentOrNull.orEmpty(),
+        primaryHex = (themeObj?.get("primary_hex") as? JsonPrimitive)?.contentOrNull ?: "#6366F1",
+        accentHex = (themeObj?.get("accent_hex") as? JsonPrimitive)?.contentOrNull ?: "#EC4899",
+        badgeText = (themeObj?.get("badge_text") as? JsonPrimitive)?.contentOrNull.orEmpty(),
+    )
+
+    val adsObj = uiObj?.get("ads") as? JsonObject
+    val ads = RemoteAdsConfig(
+        enabled = (adsObj?.get("enabled") as? JsonPrimitive)?.booleanOrNull ?: true,
+        feedInterval = (adsObj?.get("feed_interval") as? JsonPrimitive)?.intOrNull ?: 8,
+        storiesEnabled = (adsObj?.get("stories_enabled") as? JsonPrimitive)?.booleanOrNull ?: true,
+        bannerEnabled = (adsObj?.get("banner_enabled") as? JsonPrimitive)?.booleanOrNull ?: true,
+    )
+
+    val quickServices = (uiObj?.get("quick_services") as? JsonArray)?.mapNotNull { elem ->
+        val q = elem as? JsonObject ?: return@mapNotNull null
+        val key = (q["key"] as? JsonPrimitive)?.contentOrNull ?: return@mapNotNull null
+        RemoteQuickServiceItem(
+            key = key,
+            title = (q["title"] as? JsonPrimitive)?.contentOrNull.orEmpty(),
+            subtitle = (q["subtitle"] as? JsonPrimitive)?.contentOrNull.orEmpty(),
+            route = (q["route"] as? JsonPrimitive)?.contentOrNull.orEmpty(),
+            enabled = (q["enabled"] as? JsonPrimitive)?.booleanOrNull ?: true,
+            sortOrder = (q["sort_order"] as? JsonPrimitive)?.intOrNull ?: 0,
+            gradientStart = (q["gradient_start"] as? JsonPrimitive)?.contentOrNull ?: "#6366F1",
+            gradientEnd = (q["gradient_end"] as? JsonPrimitive)?.contentOrNull ?: "#8B5CF6",
+        )
+    }.orEmpty()
+
+    val rollouts = (obj["rollouts"] as? JsonObject)?.mapNotNull { (k, v) ->
+        val pct = (v as? JsonPrimitive)?.intOrNull ?: return@mapNotNull null
+        k to pct
+    }?.toMap().orEmpty()
+
+    val brandObj = uiObj?.get("brand_ornament") as? JsonObject
+    val brandOrnament = RemoteBrandOrnament(
+        enabled = (brandObj?.get("enabled") as? JsonPrimitive)?.booleanOrNull ?: false,
+        preset = (brandObj?.get("preset") as? JsonPrimitive)?.contentOrNull ?: "none",
+        customImageUrl = (brandObj?.get("custom_image_url") as? JsonPrimitive)?.contentOrNull.orEmpty(),
+        customLogoLightUrl = (brandObj?.get("custom_logo_light_url") as? JsonPrimitive)?.contentOrNull.orEmpty(),
+        customLogoDarkUrl = (brandObj?.get("custom_logo_dark_url") as? JsonPrimitive)?.contentOrNull.orEmpty(),
+        offsetX = ((brandObj?.get("offset_x") as? JsonPrimitive)?.intOrNull ?: 0).coerceIn(-24, 24),
+        offsetY = ((brandObj?.get("offset_y") as? JsonPrimitive)?.intOrNull ?: -10).coerceIn(-24, 24),
+        scale = (((brandObj?.get("scale") as? JsonPrimitive)?.doubleOrNull ?: 1.0).toFloat()).coerceIn(0.5f, 2.0f),
+        rotationDeg = ((brandObj?.get("rotation_deg") as? JsonPrimitive)?.intOrNull ?: 0).coerceIn(-45, 45),
+        tapAction = (brandObj?.get("tap_action") as? JsonPrimitive)?.contentOrNull ?: "none",
+        tapTitle = (brandObj?.get("tap_title") as? JsonPrimitive)?.contentOrNull.orEmpty(),
+        tapMessage = (brandObj?.get("tap_message") as? JsonPrimitive)?.contentOrNull.orEmpty(),
+        tapUrl = (brandObj?.get("tap_url") as? JsonPrimitive)?.contentOrNull.orEmpty(),
+    )
+
+    val ambientObj = uiObj?.get("ambient_effect") as? JsonObject
+    val ambientEffect = RemoteAmbientEffect(
+        effect = (ambientObj?.get("effect") as? JsonPrimitive)?.contentOrNull ?: "none",
+        density = (ambientObj?.get("density") as? JsonPrimitive)?.contentOrNull ?: "low",
+    )
+
+    val navigationSlots = (uiObj?.get("navigation_slots") as? JsonArray)?.mapNotNull { elem ->
+        val s = elem as? JsonObject ?: return@mapNotNull null
+        val key = (s["key"] as? JsonPrimitive)?.contentOrNull ?: return@mapNotNull null
+        RemoteNavigationSlot(
+            key = key,
+            label = (s["label"] as? JsonPrimitive)?.contentOrNull.orEmpty(),
+            visible = (s["visible"] as? JsonPrimitive)?.booleanOrNull ?: true,
+            sortOrder = (s["sort_order"] as? JsonPrimitive)?.intOrNull ?: 0,
+            badgeText = (s["badge_text"] as? JsonPrimitive)?.contentOrNull.orEmpty(),
+        )
+    }.orEmpty()
+
+    val copyObj = uiObj?.get("copy_overrides") as? JsonObject
+    val copyOverrides = RemoteCopyOverrides(
+        feedForYouTab = (copyObj?.get("feed_for_you_tab") as? JsonPrimitive)?.contentOrNull.orEmpty(),
+        feedFollowingTab = (copyObj?.get("feed_following_tab") as? JsonPrimitive)?.contentOrNull.orEmpty(),
+        maintenanceTitle = (copyObj?.get("maintenance_title") as? JsonPrimitive)?.contentOrNull.orEmpty(),
+        maintenanceMessage = (copyObj?.get("maintenance_message") as? JsonPrimitive)?.contentOrNull.orEmpty(),
+        composerPlaceholder = (copyObj?.get("composer_placeholder") as? JsonPrimitive)?.contentOrNull.orEmpty(),
+    )
+
+    val pricingObj = obj["pricing"] as? JsonObject
+    val pricingMeta = (pricingObj?.get("plans") as? JsonObject)?.mapNotNull { (k, elem) ->
+        val p = elem as? JsonObject ?: return@mapNotNull null
+        k to RemotePricingPlanMeta(
+            enabled = (p["enabled"] as? JsonPrimitive)?.booleanOrNull ?: true,
+            originalPriceToman = (p["original_price_toman"] as? JsonPrimitive)?.longOrNull ?: 0L,
+            badgeText = (p["badge_text"] as? JsonPrimitive)?.contentOrNull.orEmpty(),
+            recommended = (p["recommended"] as? JsonPrimitive)?.booleanOrNull ?: false,
+        )
+    }?.toMap().orEmpty()
+    val premiumFeatures = (pricingObj?.get("premium_features") as? JsonArray)?.mapNotNull { elem ->
+        (elem as? JsonPrimitive)?.contentOrNull?.trim()?.takeIf(String::isNotEmpty)
+    }.orEmpty()
+
+    return RemoteConfigSnapshot(
+        version = (obj["version"] as? JsonPrimitive)?.longOrNull ?: 1L,
+        tiers = tiersMap,
+        maxGroupMembers = maxGroupMembers,
+        announcement = announcement,
+        feedBanner = parseBanner(uiObj?.get("feed_banner") as? JsonObject),
+        exploreBanner = parseBanner(uiObj?.get("explore_banner") as? JsonObject),
+        themeOverride = themeOverride,
+        ads = ads,
+        quickServices = quickServices,
+        brandOrnament = brandOrnament,
+        ambientEffect = ambientEffect,
+        navigationSlots = navigationSlots,
+        copyOverrides = copyOverrides,
+        pricingMeta = pricingMeta,
+        premiumFeatures = premiumFeatures,
+        rollouts = rollouts,
+    )
 }

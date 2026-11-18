@@ -39,6 +39,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import ir.coffevista.vista_native.core.network.SystemGateMonitor
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -120,15 +122,16 @@ fun ServicesScreen(
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val remoteConfig by SystemGateMonitor.remoteConfig.collectAsStateWithLifecycle()
 
-    val quickButtons = remember(
+    val defaultQuickButtons = remember(
         onNavigateToNearby,
         onNavigateToGame,
         onNavigateToTopGroups,
         onNavigateToContacts,
     ) {
         listOf(
-            QuickButtonItem(
+            "nearby" to QuickButtonItem(
                 label = "اطراف من",
                 subtitle = "آدم‌های نزدیکت را پیدا کن",
                 kind = ServicesActionKind.NEARBY,
@@ -136,7 +139,7 @@ fun ServicesScreen(
                 gradientColors = listOf(VistaBrandColors.Indigo, VistaBrandColors.Violet),
                 onClick = onNavigateToNearby,
             ),
-            QuickButtonItem(
+            "game" to QuickButtonItem(
                 label = "بازی",
                 subtitle = "رقابت کن و امتیاز بگیر",
                 kind = ServicesActionKind.GAME,
@@ -144,7 +147,7 @@ fun ServicesScreen(
                 gradientColors = listOf(Color(0xFFFF416C), Color(0xFFFF4B2B)),
                 onClick = onNavigateToGame,
             ),
-            QuickButtonItem(
+            "groups" to QuickButtonItem(
                 label = "گروه‌ها",
                 subtitle = "جمع‌های محبوب ویستا را ببین",
                 kind = ServicesActionKind.GROUPS,
@@ -152,7 +155,7 @@ fun ServicesScreen(
                 gradientColors = listOf(Color(0xFF11998E), Color(0xFF38EF7D)),
                 onClick = onNavigateToTopGroups,
             ),
-            QuickButtonItem(
+            "contacts" to QuickButtonItem(
                 label = "مخاطبین",
                 subtitle = "دوستانت را در ویستا پیدا کن",
                 kind = ServicesActionKind.CONTACTS,
@@ -161,6 +164,30 @@ fun ServicesScreen(
                 onClick = onNavigateToContacts,
             ),
         )
+    }
+
+    val quickButtons = remember(defaultQuickButtons, remoteConfig) {
+        val overrides = remoteConfig?.quickServices.orEmpty()
+        if (overrides.isEmpty()) {
+            defaultQuickButtons.map { it.second }
+        } else {
+            val baseMap = defaultQuickButtons.toMap()
+            overrides
+                .filter { it.enabled }
+                .sortedBy { it.sortOrder }
+                .mapNotNull { ov ->
+                    val base = baseMap[ov.key] ?: return@mapNotNull null
+                    val parsedColors = listOfNotNull(
+                        runCatching { Color(android.graphics.Color.parseColor(ov.gradientStart)) }.getOrNull(),
+                        runCatching { Color(android.graphics.Color.parseColor(ov.gradientEnd)) }.getOrNull(),
+                    ).takeIf { it.size == 2 } ?: base.gradientColors
+                    base.copy(
+                        label = ov.title.ifBlank { base.label },
+                        subtitle = ov.subtitle.ifBlank { base.subtitle },
+                        gradientColors = parsedColors,
+                    )
+                }
+        }
     }
 
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
@@ -178,11 +205,13 @@ fun ServicesScreen(
                         modifier = Modifier.vistaGlass(
                             state = servicesGlassState,
                             shape = RectangleShape,
-                            tint = MaterialTheme.colorScheme.surface,
+                            tint = if (isDarkServices) Color(0xFF1A222C) else Color(0xFFFFFFFF),
                             isDark = isDarkServices,
                             blurRadius = VistaGlassTokens.BarBlur,
+                            tintAlphaOverride = if (isDarkServices) 0.58f else 0.62f,
+                            drawHighlight = true,
                             rimWidth = 0.dp,
-                            shadowElevation = 4.dp,
+                            shadowElevation = 3.dp,
                         ),
                         title = {
                             Text(

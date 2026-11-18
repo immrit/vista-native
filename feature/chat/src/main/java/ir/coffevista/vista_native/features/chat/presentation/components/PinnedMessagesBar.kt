@@ -46,6 +46,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.isSystemInDarkTheme
 import ir.coffevista.vista_native.core.designsystem.glass.VistaGlassState
+import ir.coffevista.vista_native.core.designsystem.glass.VistaGlassTokens
 import ir.coffevista.vista_native.core.designsystem.glass.vistaGlass
 import ir.coffevista.vista_native.features.chat.domain.model.DuelInviteParser
 import ir.coffevista.vista_native.features.chat.domain.model.Message
@@ -53,7 +54,7 @@ import ir.coffevista.vista_native.features.chat.domain.model.MessageContent
 import ir.coffevista.vista_native.features.chat.domain.model.SharedPostParser
 
 /**
- * نوار پیام‌های پین‌شده به سبک تلگرام با قابلیت جابجایی بین چندین پیام پین‌شده.
+ * نوار شناور شیشه‌ای پیام‌های سنجاق‌شده با قابلیت جابجایی بین چندین پیام.
  */
 @Composable
 fun PinnedMessagesBar(
@@ -99,24 +100,34 @@ fun PinnedMessagesBar(
         else currentMessage.attachment?.fileName ?: "رسانه پیوست"
     }
 
+    val isDark = isSystemInDarkTheme()
+    val capsuleShape = RoundedCornerShape(22.dp)
+    val glassTint = if (isDark) Color(0xFF1A222C) else Color(0xFFFFFFFF)
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .height(48.dp)
+            .padding(horizontal = 8.dp, vertical = 2.dp)
+            .height(44.dp)
             .then(
                 if (glassState != null) {
                     Modifier.vistaGlass(
                         state = glassState,
-                        shape = androidx.compose.ui.graphics.RectangleShape,
-                        tint = MaterialTheme.colorScheme.surface,
-                        isDark = isSystemInDarkTheme(),
-                        drawHighlight = false,
-                        rimWidth = 0.dp,
+                        shape = capsuleShape,
+                        tint = glassTint,
+                        isDark = isDark,
+                        blurRadius = VistaGlassTokens.PillBlur,
+                        tintAlphaOverride = if (isDark) 0.58f else 0.62f,
+                        drawHighlight = true,
+                        rimWidth = 0.55.dp,
+                        shadowElevation = 3.dp,
                     )
                 } else {
-                    Modifier.background(MaterialTheme.colorScheme.surface.copy(alpha = 0.96f))
+                    Modifier
+                        .clip(capsuleShape)
+                        .background(glassTint.copy(alpha = 0.90f))
                 },
             )
+            .clip(capsuleShape)
             .clickable(
                 role = Role.Button,
                 onClick = {

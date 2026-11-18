@@ -9,12 +9,15 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import ir.coffevista.vista_native.core.designsystem.component.VistaButton
+import ir.coffevista.vista_native.core.network.SystemGateMonitor
 import kotlinx.coroutines.delay
 
 @Composable
@@ -23,6 +26,11 @@ fun MaintenanceScreen(
     modifier: Modifier = Modifier,
     autoRetryIntervalMillis: Long = 10_000L,
 ) {
+    val remoteConfig by SystemGateMonitor.remoteConfig.collectAsState()
+    val copy = remoteConfig?.copyOverrides
+    val title = copy?.maintenanceTitle?.takeIf { it.isNotBlank() } ?: "در حال بروزرسانی ویستا هستیم"
+    val message = copy?.maintenanceMessage?.takeIf { it.isNotBlank() } ?: "چند دقیقه دیگر دوباره تلاش کنید."
+
     LaunchedEffect(onRetry, autoRetryIntervalMillis) {
         if (autoRetryIntervalMillis > 0L) {
             while (true) {
@@ -40,13 +48,13 @@ fun MaintenanceScreen(
         verticalArrangement = Arrangement.Center,
     ) {
         Text(
-            text = "در حال بروزرسانی ویستا هستیم",
+            text = title,
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold,
             textAlign = TextAlign.Center,
         )
         Text(
-            text = "چند دقیقه دیگر دوباره تلاش کنید.",
+            text = message,
             modifier = Modifier.padding(top = 12.dp, bottom = 24.dp),
             color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.66f),
             textAlign = TextAlign.Center,

@@ -41,7 +41,12 @@ import androidx.lifecycle.repeatOnLifecycle
 import dagger.hilt.android.AndroidEntryPoint
 import ir.coffevista.vista_native.BuildConfig
 import ir.coffevista.vista_native.core.model.session.AuthenticationState
+import ir.coffevista.vista_native.core.model.tier.RemoteTierCapabilitiesOverride
+import ir.coffevista.vista_native.core.model.tier.UserTier
+import ir.coffevista.vista_native.core.model.tier.UserTierPolicy
 import ir.coffevista.vista_native.core.network.BootstrapStatusClient
+import ir.coffevista.vista_native.core.network.RemoteConfigSnapshot
+import ir.coffevista.vista_native.core.network.SystemGateMonitor
 import ir.coffevista.vista_native.features.auth.AuthenticationStateOwner
 import ir.coffevista.vista_native.features.auth.domain.AuthRepository
 import kotlinx.coroutines.withTimeoutOrNull
@@ -221,8 +226,11 @@ class MainActivity : FragmentActivity() {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 while (true) {
                     val status = runCatching { bootstrapStatusClient.fetch() }.getOrNull()
-                    if (status != null && status.fcmResyncEpoch > 0L) {
-                        pushTokenRegistrar.onControlPlaneEpoch(status.fcmResyncEpoch)
+                    if (status != null) {
+                        status.remoteConfig?.let(::syncTierOverrides)
+                        if (status.fcmResyncEpoch > 0L) {
+                            pushTokenRegistrar.onControlPlaneEpoch(status.fcmResyncEpoch)
+                        }
                     }
                     kotlinx.coroutines.delay(60_000L)
                 }
@@ -298,7 +306,13 @@ class MainActivity : FragmentActivity() {
                     } else {
                         LayoutDirection.Rtl
                     }
-                    CompositionLocalProvider(LocalLayoutDirection provides layoutDirection) {
+                    val fullscreenOverlayController = androidx.compose.runtime.remember {
+                        ir.coffevista.vista_native.core.designsystem.component.VistaFullscreenOverlayController()
+                    }
+                    CompositionLocalProvider(
+                        LocalLayoutDirection provides layoutDirection,
+                        ir.coffevista.vista_native.core.designsystem.component.LocalVistaFullscreenOverlay provides fullscreenOverlayController,
+                    ) {
                         Box(modifier = Modifier.fillMaxSize()) {
                             VistaApp(
                                 authenticationStateOwner = authenticationStateOwner,
@@ -332,6 +346,60 @@ class MainActivity : FragmentActivity() {
                                 },
                                 onExitRequested = ::finish,
                             )
+                            val remoteCfg by SystemGateMonitor.remoteConfig.collectAsStateWithLifecycle()
+                            val announcement = remoteCfg?.announcement
+                            var dismissedAnnouncementId by androidx.compose.runtime.remember {
+                                mutableStateOf<String?>(null)
+                            }
+                            if (
+                                announcement != null &&
+                                announcement.enabled &&
+                                (announcement.title.isNotBlank() || announcement.message.isNotBlank()) &&
+                                (!announcement.dismissible || dismissedAnnouncementId != announcement.id)
+                            ) {
+                                Surface(
+                                    modifier = Modifier
+                                        .align(Alignment.TopCenter)
+                                        .safeDrawingPadding()
+                                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                                    shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+                                    color = if (announcement.severity == "critical") {
+                                        MaterialTheme.colorScheme.errorContainer
+                                    } else {
+                                        MaterialTheme.colorScheme.primaryContainer
+                                    },
+                                    tonalElevation = 6.dp,
+                                    shadowElevation = 6.dp,
+                                ) {
+                                    androidx.compose.foundation.layout.Row(
+                                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            if (announcement.title.isNotBlank()) {
+                                                Text(
+                                                    text = announcement.title,
+                                                    style = MaterialTheme.typography.titleSmall,
+                                                )
+                                            }
+                                            if (announcement.message.isNotBlank()) {
+                                                Text(
+                                                    text = announcement.message,
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                )
+                                            }
+                                        }
+                                        if (announcement.dismissible) {
+                                            androidx.compose.material3.TextButton(
+                                                onClick = { dismissedAnnouncementId = announcement.id },
+                                            ) {
+                                                Text("بستن")
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                             availableUpdate?.let { update ->
                                 androidx.compose.material3.AlertDialog(
                                     onDismissRequest = {
@@ -396,6 +464,9 @@ class MainActivity : FragmentActivity() {
                                     },
                                 )
                             }
+                            ir.coffevista.vista_native.core.designsystem.component.VistaFullscreenOverlayHost(
+                                controller = fullscreenOverlayController,
+                            )
                             if (biometricUnlockRequired && sessionStore.isBiometricEnabled()) {
                                 BiometricLockOverlay(
                                     onUnlock = {
@@ -679,6 +750,37 @@ class MainActivity : FragmentActivity() {
             uris = uris,
             rejectedItemCount = shared.getInt(KEY_SHARED_REJECTED_COUNT),
         )
+    }
+
+    private fun syncTierOverrides(remote: RemoteConfigSnapshot) {
+        val mapped = buildMap {
+            remote.tiers.forEach { (key, limits) ->
+                val tier = when (key.lowercase()) {
+                    "normal" -> UserTier.NORMAL
+                    "blacktick", "black_tick" -> UserTier.BLACK_TICK
+                    "goldtick", "gold_tick" -> UserTier.GOLD_TICK
+                    "bluetick", "blue_tick" -> UserTier.BLUE_TICK
+                    else -> return@forEach
+                }
+                put(
+                    tier,
+                    RemoteTierCapabilitiesOverride(
+                        maxPostChars = limits.maxPostChars,
+                        canEditPost = limits.canEditPost,
+                        canEditComment = limits.canEditComment,
+                        maxStoryHours = limits.maxStoryHours,
+                        maxUploadMb = limits.maxUploadMb,
+                        canPostMusic = limits.canPostMusic,
+                        maxVideoDurationMs = limits.maxVideoSeconds?.let { it.toLong() * 1000L },
+                        canHideEngagementCounts = limits.canHideEngagementCounts,
+                        searchPriority = limits.searchPriority,
+                        adsFree = limits.adsFree,
+                        maxGalleryImages = limits.maxGalleryImages,
+                    ),
+                )
+            }
+        }
+        UserTierPolicy.updateRemoteOverrides(mapped)
     }
 
     private companion object {

@@ -88,6 +88,8 @@ import ir.coffevista.vista_native.features.chat.domain.model.RealtimeConnectionS
 import ir.coffevista.vista_native.features.chat.domain.model.TransferState
 import ir.coffevista.vista_native.features.chat.domain.model.inboxPreviewText
 import ir.coffevista.vista_native.features.chat.domain.repository.ChatContentCipher
+import ir.coffevista.vista_native.features.chat.presentation.components.isSecretLocalUri
+import ir.coffevista.vista_native.features.chat.presentation.components.saveChatAttachmentToDevice
 import ir.coffevista.vista_native.features.chat.domain.repository.ChatRepository
 import ir.coffevista.vista_native.features.chat.domain.repository.ChatResult
 import ir.coffevista.vista_native.features.chat.domain.repository.ChatSessionProvider
@@ -251,6 +253,7 @@ class OfflineFirstChatRepository(
             var cursor = if (reset) null else dao.remoteKey(account.accountId, CONVERSATIONS)?.nextCursor
             val seenCursors = mutableSetOf<String>()
             val rowsById = linkedMapOf<String, ConversationEntity>()
+            val remoteDtosById = linkedMapOf<String, ir.coffevista.vista_native.features.chat.data.remote.ConversationDto>()
             val timestamp = now()
             var nextCursor: String? = cursor
             var hasMore = true
@@ -259,6 +262,7 @@ class OfflineFirstChatRepository(
 
             while (pages < pageLimit && hasMore) {
                 val response = api.conversations(PAGE_SIZE_CONVERSATIONS, cursor)
+                response.conversations.forEach { remoteDtosById[it.id] = it }
                 val mapped = response.conversations.map { it.toEntity(account.accountId, cipher, timestamp) }
                 enrichMissingProfiles(mapped).forEach { rowsById[it.id] = it }
                 pages += 1
@@ -274,7 +278,15 @@ class OfflineFirstChatRepository(
                 cursor = nextCursor
             }
 
-            val deduplicatedEntities = rowsById.values
+            val existingById = dao.conversations(account.accountId).associateBy { it.id }
+            val mergedRows = rowsById.values.map { incoming ->
+                mergeRemoteConversationSummary(
+                    existing = existingById[incoming.id],
+                    incoming = incoming,
+                    remoteDto = remoteDtosById[incoming.id],
+                )
+            }
+            val deduplicatedEntities = mergedRows
                 .groupBy { row ->
                     conversationPeerKey(row.type, row.peerId, row.title, row.id)
                 }
@@ -372,9 +384,19 @@ class OfflineFirstChatRepository(
         val cached = dao.conversations(account.accountId).toSuggestedUsers(account.accountId)
         val conversationCandidates = remoteCall {
             val timestamp = now()
-            val rawRows = api.conversations(SUGGESTED_USERS_CONVERSATION_LIMIT, null).conversations
+            val remoteList = api.conversations(SUGGESTED_USERS_CONVERSATION_LIMIT, null).conversations
+            val remoteDtosById = remoteList.associateBy { it.id }
+            val existingById = dao.conversations(account.accountId).associateBy { it.id }
+            val rawRows = remoteList
                 .map { it.toEntity(account.accountId, cipher, timestamp) }
                 .let { enrichMissingProfiles(it) }
+                .map { incoming ->
+                    mergeRemoteConversationSummary(
+                        existing = existingById[incoming.id],
+                        incoming = incoming,
+                        remoteDto = remoteDtosById[incoming.id],
+                    )
+                }
             val deduplicated = rawRows.groupBy { conversationPeerKey(it.type, it.peerId, it.title, it.id) }
                 .values
                 .map { duplicates ->
@@ -740,6 +762,77 @@ class OfflineFirstChatRepository(
 
     override suspend fun cancelDownload(messageId: String): ChatResult<Unit> = downloadMutation {
         mediaDownloader.cancel(it, messageId)
+    }
+
+    override suspend fun saveAttachmentToDevice(message: Message): ChatResult<String> {
+        sessionProvider.synchronize()
+        val account = sessionProvider.account.value ?: return loggedOut()
+        val attachment = message.attachment ?: return ChatResult.Failure("این پیام فایلی ندارد", false)
+        val secretConv = dao.conversationByType(account.accountId, message.conversationId, ConversationType.SECRET.name)
+        val conv = dao.conversation(account.accountId, message.conversationId)
+        val isSecretMessage = (secretConv != null && secretConv.id == message.conversationId) ||
+            conv?.type.equals(ConversationType.SECRET.name, ignoreCase = true) ||
+            message.transportType.equals("secret", ignoreCase = true) ||
+            isSecretLocalUri(attachment.localUri)
+        if (isSecretMessage) {
+            return ChatResult.Failure("ذخیره رسانه در گفتگوی محرمانه مجاز نیست", false)
+        }
+        val downloadKey = message.serverId ?: message.clientId
+        val downloadedPath = dao.download(account.accountId, downloadKey)?.localPath
+            ?.takeIf { path -> File(path).let { it.isFile && it.canRead() } }
+        val localSource = downloadedPath ?: attachment.localUri?.trim()?.takeIf { candidate ->
+            when {
+                candidate.startsWith("content://") -> true
+                candidate.startsWith("file://") -> Uri.parse(candidate).path?.let(::File)?.let { it.isFile && it.canRead() } == true
+                candidate.startsWith("/") -> File(candidate).let { it.isFile && it.canRead() }
+                else -> false
+            }
+        }
+        val remoteUrl = attachment.remoteUrl?.trim()?.takeIf(String::isNotEmpty)
+        val cachedOrDownloadedPath = localSource ?: if (remoteUrl != null && (remoteUrl.startsWith("http://") || remoteUrl.startsWith("https://"))) {
+            mediaDownloader.ensureDownloadedFile(
+                accountId = account.accountId,
+                conversationId = message.conversationId,
+                messageId = downloadKey,
+                remoteUrl = remoteUrl,
+                fileName = attachment.fileName ?: "file",
+                mimeType = attachment.mimeType,
+            )?.absolutePath
+        } else null
+        val source = cachedOrDownloadedPath ?: remoteUrl
+            ?: return ChatResult.Failure("منبع فایل برای ذخیره در دسترس نیست", false)
+        return saveMediaUrlToDevice(
+            sourceUrl = source,
+            fallbackUrl = remoteUrl,
+            kind = attachment.kind,
+            fileName = attachment.fileName,
+            mimeType = attachment.mimeType,
+        )
+    }
+
+    override suspend fun saveMediaUrlToDevice(
+        sourceUrl: String,
+        fallbackUrl: String?,
+        kind: AttachmentKind,
+        fileName: String?,
+        mimeType: String?,
+    ): ChatResult<String> {
+        if (isSecretLocalUri(sourceUrl) || isSecretLocalUri(fallbackUrl)) {
+            return ChatResult.Failure("ذخیره رسانه در گفتگوی محرمانه مجاز نیست", false)
+        }
+        val result = saveChatAttachmentToDevice(
+            context = context,
+            sourceUriOrUrl = sourceUrl,
+            fallbackUrl = fallbackUrl,
+            kind = kind,
+            fileName = fileName,
+            mimeType = mimeType,
+            httpClient = mediaDownloader.httpClient(),
+        )
+        return result.fold(
+            onSuccess = { ChatResult.Success(it) },
+            onFailure = { err -> ChatResult.Failure(err.message ?: "ذخیره فایل انجام نشد", true) },
+        )
     }
 
     override fun observeConversation(conversationId: String): Flow<Conversation?> {
@@ -2652,19 +2745,17 @@ class OfflineFirstChatRepository(
 
     override suspend fun deleteMessage(message: Message, forEveryone: Boolean): ChatResult<Unit> {
         val messageId = message.serverId ?: message.clientId
-        // Immediately record tombstone and purge from local Room DB for zero local latency
-        dao.upsertTombstone(
-            TombstoneEntity(message.accountId, message.conversationId, messageId, now()),
-        )
-        dao.deleteMessageByIdentity(message.accountId, message.conversationId, messageId)
-        // Cancel active upload and purge pending operations & transfer records so it is never re-sent
+        // Cancel active upload immediately and purge all local rows in a single Room transaction.
         cancelledTransfers += message.clientId
         mediaUploader.cancel(message.clientId)
-        dao.deleteTransfer(message.accountId, message.clientId)
-        dao.deletePending(message.accountId, message.clientId)
-        if (message.serverId != null) {
-            dao.deletePending(message.accountId, message.serverId)
-        }
+        dao.deleteMessageLocally(
+            tombstone = TombstoneEntity(message.accountId, message.conversationId, messageId, now()),
+            accountId = message.accountId,
+            conversationId = message.conversationId,
+            messageIdentity = messageId,
+            clientId = message.clientId,
+            serverId = message.serverId,
+        )
         refreshConversationPreview(message.accountId, message.conversationId)
 
         return remoteCall {
@@ -2858,12 +2949,11 @@ class OfflineFirstChatRepository(
                                 event.conversation.isVerified != null
                             if (incomingHasVerification) incomingEntity.isVerified else existing.isVerified
                         }
-                        existing.copy(
-                            title = if (incomingEntity.title.isNotBlank() && incomingEntity.title != "کاربر" && incomingEntity.title != "user") incomingEntity.title else existing.title,
-                            avatarUrl = incomingEntity.avatarUrl ?: existing.avatarUrl,
-                            peerId = incomingEntity.peerId ?: existing.peerId,
-                            lastMessageCiphertext = incomingEntity.lastMessageCiphertext ?: existing.lastMessageCiphertext,
-                            lastMessageAtEpochMillis = incomingEntity.lastMessageAtEpochMillis ?: existing.lastMessageAtEpochMillis,
+                        mergeRemoteConversationSummary(
+                            existing = existing,
+                            incoming = incomingEntity,
+                            remoteDto = event.conversation,
+                        ).copy(
                             unreadCount = if (event.conversation.unreadCount > 0) incomingEntity.unreadCount else existing.unreadCount,
                             isArchived = if (event.conversation.isArchived) true else existing.isArchived,
                             isPinned = if (event.conversation.isPinned) true else existing.isPinned,
@@ -2871,9 +2961,6 @@ class OfflineFirstChatRepository(
                             requestStatus = incomingEntity.requestStatus ?: existing.requestStatus,
                             lastSyncedAtEpochMillis = now(),
                             isMessageRequest = incomingEntity.isMessageRequest,
-                            lastMessageType = incomingEntity.lastMessageType ?: existing.lastMessageType,
-                            lastMessageIsMine = incomingEntity.lastMessageIsMine,
-                            lastMessageStatus = if (incomingEntity.lastMessageStatus != "PENDING") incomingEntity.lastMessageStatus else existing.lastMessageStatus,
                             isVerified = mergedVerified,
                             verificationType = if (mergedVerified) incomingEntity.verificationType ?: existing.verificationType else null,
                             role = if (mergedVerified) incomingEntity.role ?: existing.role else null,
@@ -2895,11 +2982,15 @@ class OfflineFirstChatRepository(
             }
             is RealtimeEvent.Typing -> applyTyping(event.state.conversationId, event.state.userId)
             is RealtimeEvent.Read -> {
-                dao.markOutgoingRead(
-                    account.accountId,
-                    event.receipt.conversationId,
-                    event.receipt.readAtEpochMillis,
-                )
+                if (isOtherParticipantReadReceipt(event.receipt.userId, account.accountId)) {
+                    dao.markOutgoingRead(
+                        account.accountId,
+                        event.receipt.conversationId,
+                        event.receipt.readAtEpochMillis,
+                    )
+                } else {
+                    dao.markConversationRead(account.accountId, event.receipt.conversationId)
+                }
             }
             is RealtimeEvent.ReactionUpdated -> {
                 val conversationId = event.conversationId
@@ -3211,6 +3302,9 @@ class OfflineFirstChatRepository(
             incrementUnread = existingEntity == null && !merged.isMine &&
                 (source == MergeSource.REALTIME || source == MergeSource.NOTIFICATION),
             mutationAtEpochMillis = mutationAt,
+            allowUnarchive = source == MergeSource.OPTIMISTIC ||
+                source == MergeSource.REALTIME ||
+                source == MergeSource.NOTIFICATION,
         )
         val conversationAfterMerge = dao.conversation(merged.accountId, merged.conversationId)
         if (existingEntity == null && source == MergeSource.REALTIME && !merged.isMine) {
@@ -3221,11 +3315,15 @@ class OfflineFirstChatRepository(
             }
         }
         if (source != MergeSource.OPTIMISTIC && (conversationAfterMerge?.title == "کاربر" || conversationAfterMerge?.avatarUrl.isNullOrBlank())) {
-            val refreshed = runCatching {
-                api.conversation(merged.conversationId).toEntity(merged.accountId, cipher, now())
-            }.getOrNull()
+            val remoteDto = runCatching { api.conversation(merged.conversationId) }.getOrNull()
+            val refreshed = remoteDto?.toEntity(merged.accountId, cipher, now())
             if (refreshed != null) {
-                dao.upsertConversations(enrichMissingProfiles(listOf(refreshed)))
+                val safeRefreshed = mergeRemoteConversationSummary(
+                    existing = conversationAfterMerge,
+                    incoming = refreshed,
+                    remoteDto = remoteDto,
+                )
+                dao.upsertConversations(enrichMissingProfiles(listOf(safeRefreshed)))
             } else if (conversationAfterMerge != null) {
                 dao.upsertConversations(enrichMissingProfiles(listOf(conversationAfterMerge)))
             }
@@ -3420,6 +3518,9 @@ class OfflineFirstChatRepository(
                     isMuted = false,
                     requestStatus = null,
                     lastSyncedAtEpochMillis = timestamp,
+                    lastMessageType = latest.messageType,
+                    lastMessageIsMine = latest.isMine,
+                    lastMessageStatus = if (latest.isMine) latest.status else "READ",
                 )
             }
         }
@@ -3658,7 +3759,8 @@ class OfflineFirstChatRepository(
     private suspend fun refreshConversationPreview(accountId: String, conversationId: String) {
         val conversation = dao.conversation(accountId, conversationId) ?: return
         val latest = dao.messages(accountId, conversationId).firstOrNull {
-            it.messageType != "exchange_key" &&
+            it.deletedAtEpochMillis == null &&
+                it.messageType != "exchange_key" &&
                 it.messageType != "exchange_key_reply" &&
                 it.messageType != "security_notice" &&
                 it.messageType != "system_notice" &&
@@ -3672,6 +3774,13 @@ class OfflineFirstChatRepository(
                         cipher.encrypt(accountId, conversationId, "conversation-preview", preview)
                     },
                     lastMessageAtEpochMillis = latest?.createdAtEpochMillis,
+                    lastMessageType = latest?.messageType,
+                    lastMessageIsMine = latest?.isMine ?: false,
+                    lastMessageStatus = when {
+                        latest == null -> "SENT"
+                        latest.isMine -> latest.status
+                        else -> "READ"
+                    },
                     lastSyncedAtEpochMillis = now(),
                 ),
             ),
@@ -4052,4 +4161,84 @@ private fun JsonArray.toReactionDtos(): List<ReactionDto> = mapNotNull { item ->
 
 private fun JsonObject.stringField(vararg keys: String): String? = keys.firstNotNullOfOrNull { key ->
     (get(key) as? JsonPrimitive)?.contentOrNull?.trim()?.takeIf(String::isNotEmpty)
+}
+
+internal fun isOtherParticipantReadReceipt(
+    readerUserId: String?,
+    currentAccountId: String,
+): Boolean {
+    val cleanReader = readerUserId?.trim().orEmpty()
+    val cleanAccount = currentAccountId.trim()
+    return cleanReader.isNotEmpty() && !cleanReader.equals(cleanAccount, ignoreCase = true)
+}
+
+internal fun mergeRemoteConversationSummary(
+    existing: ConversationEntity?,
+    incoming: ConversationEntity,
+    remoteDto: ir.coffevista.vista_native.features.chat.data.remote.ConversationDto?,
+): ConversationEntity {
+    if (existing == null) return incoming
+    val incomingHasSender = remoteDto != null && (
+        remoteDto.isLastMessageFromMe != null ||
+            !remoteDto.lastMessageSenderId.isNullOrBlank()
+        )
+    val incomingHasDelivery = remoteDto != null && (
+        !remoteDto.lastMessageDeliveryStatus.isNullOrBlank() ||
+            remoteDto.lastMessageIsRead ||
+            remoteDto.lastMessageIsSeen ||
+            remoteDto.lastMessageIsDelivered
+        )
+    val existingAt = existing.lastMessageAtEpochMillis ?: Long.MIN_VALUE
+    val incomingAt = incoming.lastMessageAtEpochMillis ?: Long.MIN_VALUE
+    val keepLocalPendingNewer = existing.lastMessageStatus == "PENDING" &&
+        existing.lastMessageAtEpochMillis != null &&
+        (incoming.lastMessageAtEpochMillis == null || existingAt > incomingAt)
+    val sameLastMessageTimestamp = existing.lastMessageAtEpochMillis != null &&
+        existing.lastMessageAtEpochMillis == incoming.lastMessageAtEpochMillis
+
+    val resolvedLastCiphertext = when {
+        keepLocalPendingNewer -> existing.lastMessageCiphertext
+        incoming.lastMessageCiphertext != null -> incoming.lastMessageCiphertext
+        sameLastMessageTimestamp -> existing.lastMessageCiphertext
+        else -> null
+    }
+    val resolvedLastAt = if (keepLocalPendingNewer) {
+        existing.lastMessageAtEpochMillis
+    } else {
+        incoming.lastMessageAtEpochMillis ?: existing.lastMessageAtEpochMillis
+    }
+    val resolvedLastType = when {
+        keepLocalPendingNewer -> existing.lastMessageType
+        incoming.lastMessageType != null -> incoming.lastMessageType
+        sameLastMessageTimestamp -> existing.lastMessageType
+        else -> null
+    }
+    val resolvedIsMine = when {
+        keepLocalPendingNewer -> existing.lastMessageIsMine
+        incomingHasSender -> incoming.lastMessageIsMine
+        sameLastMessageTimestamp -> existing.lastMessageIsMine
+        else -> incoming.lastMessageIsMine
+    }
+    val resolvedStatus = when {
+        keepLocalPendingNewer -> existing.lastMessageStatus
+        incomingHasDelivery -> incoming.lastMessageStatus
+        sameLastMessageTimestamp -> existing.lastMessageStatus
+        incoming.lastMessageStatus != "PENDING" -> incoming.lastMessageStatus
+        else -> existing.lastMessageStatus
+    }
+
+    return incoming.copy(
+        title = if (incoming.title.isNotBlank() && incoming.title != "کاربر" && incoming.title != "user") {
+            incoming.title
+        } else {
+            existing.title
+        },
+        avatarUrl = incoming.avatarUrl ?: existing.avatarUrl,
+        peerId = incoming.peerId ?: existing.peerId,
+        lastMessageCiphertext = resolvedLastCiphertext,
+        lastMessageAtEpochMillis = resolvedLastAt,
+        lastMessageType = resolvedLastType,
+        lastMessageIsMine = resolvedIsMine,
+        lastMessageStatus = resolvedStatus,
+    )
 }

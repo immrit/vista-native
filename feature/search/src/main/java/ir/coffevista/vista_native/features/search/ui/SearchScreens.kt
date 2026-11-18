@@ -103,7 +103,7 @@ import ir.coffevista.vista_native.features.search.data.SearchHistoryType
 import ir.coffevista.vista_native.features.search.data.SearchPost
 import ir.coffevista.vista_native.features.search.data.SearchUser
 
-private val SearchFieldShape = RoundedCornerShape(18.dp)
+private val SearchFieldShape = RoundedCornerShape(26.dp)
 
 @Composable
 fun SearchLauncherScreen(
@@ -155,15 +155,17 @@ fun SearchLauncherScreen(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(56.dp)
+                    .height(52.dp)
                     .vistaGlass(
                         state = searchGlassState,
                         shape = SearchFieldShape,
-                        tint = MaterialTheme.colorScheme.surface,
+                        tint = if (isDarkSearch) Color(0xFF1A222C) else Color(0xFFFFFFFF),
                         isDark = isDarkSearch,
                         blurRadius = VistaGlassTokens.PillBlur,
-                        rimWidth = 0.8.dp,
-                        shadowElevation = 6.dp,
+                        tintAlphaOverride = if (isDarkSearch) 0.58f else 0.62f,
+                        drawHighlight = true,
+                        rimWidth = 0.6.dp,
+                        shadowElevation = 4.dp,
                     )
                     .clip(SearchFieldShape)
                     .clickable(
@@ -368,14 +370,34 @@ private fun SearchField(
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     val showBackIcon = onBack != null
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val glassState = ir.coffevista.vista_native.core.designsystem.glass.LocalVistaGlassState.current
+    val fieldTint = if (isDark) Color(0xFF1A222C) else Color(0xFFFFFFFF)
     Box(
         modifier = Modifier
             .padding(start = 16.dp, top = 12.dp, end = 16.dp, bottom = 8.dp)
             .fillMaxWidth()
-            .height(56.dp)
+            .height(52.dp)
+            .then(
+                if (glassState != null) {
+                    Modifier.vistaGlass(
+                        state = glassState,
+                        shape = SearchFieldShape,
+                        tint = fieldTint,
+                        isDark = isDark,
+                        blurRadius = VistaGlassTokens.PillBlur,
+                        tintAlphaOverride = if (isDark) 0.58f else 0.62f,
+                        drawHighlight = true,
+                        rimWidth = 0.6.dp,
+                        shadowElevation = 4.dp,
+                    )
+                } else {
+                    Modifier
+                        .background(fieldTint.copy(alpha = 0.90f), SearchFieldShape)
+                        .border(0.6.dp, if (isDark) Color(0x24FFFFFF) else Color(0x14000000), SearchFieldShape)
+                },
+            )
             .clip(SearchFieldShape)
-            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.45f))
-            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.75f), SearchFieldShape)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,

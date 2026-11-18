@@ -144,6 +144,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AddComment
 import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.Unarchive
 import androidx.compose.material.icons.filled.ArrowDownward
@@ -156,11 +157,14 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.DoneAll
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.EmojiEmotions
 import androidx.compose.material.icons.filled.Keyboard
 import ir.coffevista.vista_native.core.designsystem.component.VistaEmojiText
 import ir.coffevista.vista_native.core.designsystem.component.VistaEmoji
+import ir.coffevista.vista_native.features.chat.domain.repository.ChatResult
 import ir.coffevista.vista_native.features.chat.presentation.components.EmojiCursorHelper
+import ir.coffevista.vista_native.features.chat.presentation.components.saveChatAttachmentToDevice
 import ir.coffevista.vista_native.features.chat.presentation.components.ChatComposerField
 import ir.coffevista.vista_native.features.chat.presentation.components.ChatComposerController
 import ir.coffevista.vista_native.features.chat.presentation.components.ChatMediaPickerPanel
@@ -170,8 +174,17 @@ import ir.coffevista.vista_native.features.chat.presentation.components.MessageC
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
+import ir.coffevista.vista_native.features.chat.presentation.components.ActiveSendFlight
+import ir.coffevista.vista_native.features.chat.presentation.components.PendingSendFlight
+import ir.coffevista.vista_native.features.chat.presentation.components.TELEGRAM_MINIMAL_SEND_DURATION_MS
+import ir.coffevista.vista_native.features.chat.presentation.components.TELEGRAM_SEND_DURATION_MS
+import ir.coffevista.vista_native.features.chat.presentation.components.TelegramSendBezierEasing
+import ir.coffevista.vista_native.features.chat.presentation.components.TelegramSendFlightOverlay
+import ir.coffevista.vista_native.features.chat.presentation.components.isEligibleSendFlightCandidate
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
@@ -460,6 +473,7 @@ fun ConversationListScreen(
     Box(modifier = Modifier.fillMaxSize()) {
         Scaffold(
         modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             Column(modifier = Modifier.fillMaxWidth()) {
@@ -505,9 +519,11 @@ fun ConversationListScreen(
                 modifier = Modifier.vistaGlass(
                     state = conversationsGlassState,
                     shape = androidx.compose.ui.graphics.RectangleShape,
-                    tint = MaterialTheme.colorScheme.surface,
+                    tint = if (isDarkConversations) Color(0xFF1A222C) else Color(0xFFFFFFFF),
                     isDark = isDarkConversations,
                     blurRadius = VistaGlassTokens.BarBlur,
+                    tintAlphaOverride = if (isDarkConversations) 0.58f else 0.62f,
+                    drawHighlight = true,
                     rimWidth = 0.dp,
                     shadowElevation = 3.dp,
                 ),
@@ -615,7 +631,7 @@ fun ConversationListScreen(
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(
                             top = padding.calculateTopPadding(),
-                            bottom = padding.calculateBottomPadding() + 96.dp,
+                            bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 96.dp,
                         ),
                     ) {
                         if (!state.includeArchived && searchQuery.isBlank()) {
@@ -714,13 +730,10 @@ fun ConversationListScreen(
                 ir.coffevista.vista_native.core.designsystem.component.VistaFloatingActionButton(
                     onClick = onNewMessage,
                     contentDescription = "پیام جدید",
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .offset(y = -45.dp)
-                        .padding(end = 16.dp),
+                    modifier = Modifier.align(AbsoluteAlignment.BottomRight),
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Edit,
+                        imageVector = Icons.Filled.AddComment,
                         contentDescription = null,
                         tint = Color.White,
                         modifier = Modifier.size(24.dp),
@@ -1472,7 +1485,7 @@ private fun EmptyConversationState(searchActive: Boolean, archived: Boolean = fa
             when {
                 searchActive -> "عبارت دیگری را امتحان کنید"
                 archived -> "گفتگوهایی که بایگانی می‌کنید اینجا نمایش داده می‌شوند"
-                else -> "با دکمه مداد پیام جدید شروع کنید"
+                else -> "با دکمه پیام جدید گفتگو را شروع کنید"
             },
             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
             fontSize = 14.sp,
@@ -1639,6 +1652,19 @@ fun MessageDetailRoute(
         onPauseDownload = viewModel::pauseDownload,
         onResumeDownload = viewModel::resumeDownload,
         onCancelDownload = viewModel::cancelDownload,
+        onSaveAttachment = viewModel::saveAttachment,
+        onSaveAttachmentDirect = { message ->
+            when (val res = viewModel.saveAttachmentDirect(message)) {
+                is ChatResult.Success -> Result.success(res.value)
+                is ChatResult.Failure -> Result.failure(IllegalStateException(res.message))
+            }
+        },
+        onSaveExternalMediaDirect = { sourceUrl, fallbackUrl, kind, fileName, mimeType ->
+            when (val res = viewModel.saveExternalMediaDirect(sourceUrl, fallbackUrl, kind, fileName, mimeType)) {
+                is ChatResult.Success -> Result.success(res.value)
+                is ChatResult.Failure -> Result.failure(IllegalStateException(res.message))
+            }
+        },
         onOpenProfile = onOpenProfile,
         onLoadPartnerProfile = viewModel::loadPartnerProfile,
         onStartSecretChat = { viewModel.startSecretChat(onStartSecretChat) },
@@ -1707,6 +1733,9 @@ fun MessageDetailScreen(
     onPauseDownload: (String) -> Unit = {},
     onResumeDownload: (String) -> Unit = {},
     onCancelDownload: (String) -> Unit = {},
+    onSaveAttachment: (Message, (Boolean, String) -> Unit) -> Unit = { _, complete -> complete(false, "") },
+    onSaveAttachmentDirect: (suspend (Message) -> Result<String>)? = null,
+    onSaveExternalMediaDirect: (suspend (String, String?, AttachmentKind, String?, String?) -> Result<String>)? = null,
     onOpenProfile: (String) -> Unit = {},
     onLoadPartnerProfile: (String) -> Unit = {},
     onStartSecretChat: () -> Unit = {},
@@ -1933,7 +1962,9 @@ fun MessageDetailScreen(
     var searchResultIndex by rememberSaveable { mutableStateOf(0) }
     val clipboard = LocalClipboardManager.current
     val listState = rememberLazyListState()
-    val messageRenderItems = remember(state.messages) { buildMessageRenderItems(state.messages) }
+    val messageRenderItems = remember(state.messages) {
+        buildMessageRenderItems(state.messages).distinctBy { it.stableKey }
+    }
     val groupMemberById = remember(state.groupMembers) {
         state.groupMembers.associateBy(GroupMember::userId)
     }
@@ -2064,10 +2095,10 @@ fun MessageDetailScreen(
         val newest = state.messages.firstOrNull()
         val previous = newestMessageKey
         newestMessageKey = newest?.stableKey
-        if (
-            newest != null && previous != null && previous != newest.stableKey &&
-            (newest.isMine || listState.firstVisibleItemIndex <= 1)
-        ) {
+        val shouldScrollToNewest = newest != null && previous != null && previous != newest.stableKey &&
+            (newest.isMine || listState.firstVisibleItemIndex <= 1) &&
+            (listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0)
+        if (shouldScrollToNewest) {
             listState.animateScrollToItem(0)
         }
     }
@@ -2091,16 +2122,70 @@ fun MessageDetailScreen(
     val chatGlassState = rememberVistaGlassState()
     VistaGlassScrollSync(chatGlassState, listState)
     var composerHeightDp by remember { mutableStateOf(72.dp) }
+    val chatEntryMode = LocalChatEntryMode.current
+    var chatRootTopLeft by remember { mutableStateOf(Offset.Zero) }
+    var chatRootSizePx by remember { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
+    var composerInputBoundsInRoot by remember { mutableStateOf<Rect?>(null) }
+    var pendingSendFlight by remember(state.conversationId) { mutableStateOf<PendingSendFlight?>(null) }
+    var activeSendFlight by remember(state.conversationId) { mutableStateOf<ActiveSendFlight?>(null) }
+    var activeFlightTargetBoundsLocal by remember(state.conversationId) { mutableStateOf<Rect?>(null) }
+    val flownSendFlightKeys = remember(state.conversationId) { mutableSetOf<String>() }
+    var sendFlightSeq by remember { mutableStateOf(0L) }
+
+    val displayedMessages = state.messages
+    val displayedRenderItems = messageRenderItems
+    LaunchedEffect(displayedRenderItems, pendingSendFlight) {
+        val pending = pendingSendFlight ?: return@LaunchedEffect
+        val firstPrimary = displayedRenderItems.firstOrNull()?.primary
+        if (firstPrimary != null &&
+            isEligibleSendFlightCandidate(
+                pending = pending,
+                candidateStableKey = firstPrimary.stableKey,
+                candidateText = (firstPrimary.content as? MessageContent.Text)?.value,
+                candidateIsMine = firstPrimary.isMine,
+                candidateIsPending = firstPrimary.status == MessageStatus.PENDING,
+                flownMessageKeys = flownSendFlightKeys,
+            )
+        ) {
+            flownSendFlightKeys += firstPrimary.stableKey
+            val composerPx = with(density) { composerHeightDp.toPx() }
+            val fallbackWidth = pending.startBoundsLocal.width.coerceAtLeast(with(density) { 120.dp.toPx() })
+            val fallbackHeight = with(density) { 44.dp.toPx() }
+            val fallbackRight = (chatRootSizePx.width.toFloat() - with(density) { 12.dp.toPx() })
+                .coerceAtLeast(pending.startBoundsLocal.right)
+            val fallbackBottom = (chatRootSizePx.height.toFloat() - composerPx - with(density) { 10.dp.toPx() })
+                .coerceAtLeast(fallbackHeight)
+            val fallbackTarget = Rect(
+                left = (fallbackRight - fallbackWidth).coerceAtLeast(0f),
+                top = (fallbackBottom - fallbackHeight).coerceAtLeast(0f),
+                right = fallbackRight,
+                bottom = fallbackBottom,
+            )
+            activeFlightTargetBoundsLocal = null
+            activeSendFlight = ActiveSendFlight(
+                flightId = pending.flightId,
+                messageKey = firstPrimary.stableKey,
+                text = pending.text,
+                replyPreview = pending.replyPreview,
+                startBoundsLocal = pending.startBoundsLocal,
+                fallbackTargetBoundsLocal = fallbackTarget,
+            )
+            pendingSendFlight = null
+        } else if (System.currentTimeMillis() - pending.createdAtMs > 1_500L) {
+            pendingSendFlight = null
+        }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
+            .onGloballyPositioned { coords ->
+                chatRootTopLeft = coords.positionInRoot()
+                chatRootSizePx = coords.size
+            }
             .focusProperties { canFocus = !hasPendingAttachments }
             .background(if (isDarkTheme) Color(0xFF101419) else Color(0xFFDFE5E9)),
     ) {
-        val displayedMessages = state.messages
-        val displayedRenderItems = remember(displayedMessages) {
-            buildMessageRenderItems(displayedMessages).distinctBy { it.stableKey }
-        }
         val unreadWindow = remember(state.messages) { unreadMessageWindow(state.messages) }
         val floatingDateEpochMillis by remember(displayedRenderItems, listState) {
             derivedStateOf {
@@ -2269,7 +2354,22 @@ fun MessageDetailScreen(
                                 older == null ||
                                 !isSameLocalDay(renderItem.oldest.createdAtEpochMillis, older.createdAtEpochMillis)
                             )
-                            Column(modifier = Modifier.fillMaxWidth().animateItem()) {
+                            val isFlyingSendTarget = activeSendFlight?.messageKey == message.stableKey
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .animateItem(
+                                        fadeInSpec = null,
+                                        fadeOutSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
+                                        placementSpec = tween(
+                                            durationMillis = TELEGRAM_SEND_DURATION_MS,
+                                            easing = TelegramSendBezierEasing,
+                                        ),
+                                    )
+                                    .graphicsLayer {
+                                        alpha = if (isFlyingSendTarget) 0f else 1f
+                                    },
+                            ) {
                                 if (isDateBoundary) {
                                     DateDivider(renderItem.oldest.createdAtEpochMillis)
                                 }
@@ -2447,6 +2547,12 @@ fun MessageDetailScreen(
                                                     else -> conversationTitleFallback
                                                 },
                                                 onOpenAudioPlayer = { audioPlayerSheetVisible = true },
+                                                onBubbleBoundsInRootChanged = if (isFlyingSendTarget) { boundsInRoot ->
+                                                    activeFlightTargetBoundsLocal = boundsInRoot.translate(
+                                                        -chatRootTopLeft.x,
+                                                        -chatRootTopLeft.y,
+                                                    )
+                                                } else null,
                                             )
                                         }
                                     }
@@ -2461,6 +2567,22 @@ fun MessageDetailScreen(
                     }
                 }
             }
+        }
+
+        activeSendFlight?.let { flight ->
+            TelegramSendFlightOverlay(
+                flight = flight,
+                targetBoundsLocal = activeFlightTargetBoundsLocal,
+                textDirection = resolveMessageTextDirection(flight.text),
+                minimalMotion = chatEntryMode == "minimal",
+                onFlightFinished = { finishedKey ->
+                    if (activeSendFlight?.messageKey == finishedKey) {
+                        activeSendFlight = null
+                        activeFlightTargetBoundsLocal = null
+                    }
+                },
+                modifier = Modifier.zIndex(5f),
+            )
         }
 
         CompositionLocalProvider(LocalVistaGlassState provides chatGlassState) {
@@ -2512,11 +2634,13 @@ fun MessageDetailScreen(
                                     .vistaGlass(
                                         state = chatGlassState,
                                         shape = CircleShape,
-                                        tint = MaterialTheme.colorScheme.surface,
+                                        tint = if (isDarkTheme) Color(0xFF1A222C) else Color(0xFFFFFFFF),
                                         isDark = isDarkTheme,
                                         blurRadius = VistaGlassTokens.PillBlur,
-                                        rimWidth = 0.8.dp,
-                                        shadowElevation = 6.dp,
+                                        tintAlphaOverride = if (isDarkTheme) 0.58f else 0.62f,
+                                        drawHighlight = true,
+                                        rimWidth = 0.6.dp,
+                                        shadowElevation = 5.dp,
                                     )
                                     .clip(CircleShape)
                                     .clickable(role = Role.Button, onClick = {
@@ -2565,9 +2689,9 @@ fun MessageDetailScreen(
                         .vistaGlassHalo(
                             state = chatGlassState,
                             isDark = isDarkTheme,
-                            blurRadius = 20.dp,
-                            startOffsetFraction = 0.18f,
-                            maxAlpha = if (isDarkTheme) 0.54f else 0.58f,
+                            blurRadius = 18.dp,
+                            startOffsetFraction = 0.12f,
+                            maxAlpha = if (isDarkTheme) 0.44f else 0.40f,
                         ),
                 )
                 Column(
@@ -2656,13 +2780,42 @@ fun MessageDetailScreen(
                             onClearReply = { replyingTo = null },
                             onClearEdit = { editingMessage = null },
                             onSend = { text, onDone ->
+                                val cleanText = text.trim()
+                                val inputBounds = composerInputBoundsInRoot
+                                if (chatEntryMode != "off" && cleanText.isNotEmpty() && inputBounds != null) {
+                                    sendFlightSeq += 1L
+                                    pendingSendFlight = PendingSendFlight(
+                                        flightId = sendFlightSeq,
+                                        text = cleanText,
+                                        replyPreview = null,
+                                        startBoundsLocal = inputBounds.translate(-chatRootTopLeft.x, -chatRootTopLeft.y),
+                                        createdAtMs = System.currentTimeMillis(),
+                                    )
+                                }
                                 onSend(text, onDone)
-                                coroutineScope.launch { listState.animateScrollToItem(0) }
+                                if (listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0) {
+                                    coroutineScope.launch { listState.animateScrollToItem(0) }
+                                }
                             },
                             onSendReply = { text, reply, onDone ->
+                                val cleanText = text.trim()
+                                val inputBounds = composerInputBoundsInRoot
+                                if (chatEntryMode != "off" && cleanText.isNotEmpty() && inputBounds != null) {
+                                    sendFlightSeq += 1L
+                                    pendingSendFlight = PendingSendFlight(
+                                        flightId = sendFlightSeq,
+                                        text = cleanText,
+                                        replyPreview = reply.previewText(),
+                                        startBoundsLocal = inputBounds.translate(-chatRootTopLeft.x, -chatRootTopLeft.y),
+                                        createdAtMs = System.currentTimeMillis(),
+                                    )
+                                }
                                 onSendReply(text, reply, onDone)
-                                coroutineScope.launch { listState.animateScrollToItem(0) }
+                                if (listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0) {
+                                    coroutineScope.launch { listState.animateScrollToItem(0) }
+                                }
                             },
+                            onInputFieldBoundsChanged = { composerInputBoundsInRoot = it },
                             onEdit = onEdit,
                             onComposerChanged = onComposerChanged,
                             composerController = composerController,
@@ -2771,15 +2924,15 @@ fun MessageDetailScreen(
         val inSelectionMode = selectedMessageKeys.isNotEmpty()
         val topBarBgColor = when {
             inSelectionMode -> MaterialTheme.colorScheme.primary
-            isDarkTheme -> Color(0xFF1C242F)
+            isDarkTheme -> Color(0xFF1A222C)
             else -> Color(0xFFFFFFFF)
         }
         val topBarGlassAlpha = when {
-            inSelectionMode -> 0.95f
-            isDarkTheme -> 0.82f
-            else -> 0.86f
+            inSelectionMode -> 0.94f
+            isDarkTheme -> 0.58f
+            else -> 0.62f
         }
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .align(Alignment.TopCenter)
@@ -2790,293 +2943,393 @@ fun MessageDetailScreen(
                     }
                 },
         ) {
-            Surface(
-                modifier = Modifier.fillMaxWidth().then(
-                    if (inSelectionMode) Modifier else Modifier.vistaGlass(
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .vistaGlassHalo(
                         state = chatGlassState,
-                        shape = androidx.compose.ui.graphics.RectangleShape,
-                        tint = topBarBgColor,
                         isDark = isDarkTheme,
-                        blurRadius = VistaGlassTokens.BarBlur,
-                        tintAlphaOverride = topBarGlassAlpha,
-                        drawHighlight = false,
-                        rimWidth = 0.dp,
+                        blurRadius = 18.dp,
+                        startOffsetFraction = 0.05f,
+                        maxAlpha = if (isDarkTheme) 0.42f else 0.36f,
+                        fromTop = true,
                     ),
-                ),
-                color = if (inSelectionMode) topBarBgColor.copy(alpha = topBarGlassAlpha) else Color.Transparent,
-                shadowElevation = 0.dp,
+            )
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .windowInsetsPadding(WindowInsets.statusBars.only(WindowInsetsSides.Top)),
             ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .windowInsetsPadding(WindowInsets.statusBars.only(WindowInsetsSides.Top)),
-                ) {
                 if (selectedMessageKeys.isNotEmpty()) {
                     val selectedMessages = state.messages.filter { it.stableKey in selectedMessageKeys }
                     val secret = state.conversation?.type == ConversationType.SECRET
-                    TopAppBar(
-                        windowInsets = WindowInsets(0, 0, 0, 0),
-                        colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(
-                            containerColor = Color.Transparent,
-                            titleContentColor = MaterialTheme.colorScheme.onPrimary,
-                            navigationIconContentColor = MaterialTheme.colorScheme.onPrimary,
-                            actionIconContentColor = MaterialTheme.colorScheme.onPrimary,
-                        ),
-                        navigationIcon = {
-                            IconButton(onClick = ::dismissMessageInteraction) {
-                                Icon(Icons.Default.Close, contentDescription = "خروج از انتخاب پیام")
-                            }
-                        },
-                        title = { Text("${selectedMessages.size} انتخاب شده", fontWeight = FontWeight.SemiBold) },
-                        actions = {
-                            if (!secret) {
-                                if (selectedMessages.size == 1) {
+                    val selectionShape = RoundedCornerShape(24.dp)
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                        shape = selectionShape,
+                        color = topBarBgColor.copy(alpha = topBarGlassAlpha),
+                        shadowElevation = 4.dp,
+                    ) {
+                        TopAppBar(
+                            windowInsets = WindowInsets(0, 0, 0, 0),
+                            colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(
+                                containerColor = Color.Transparent,
+                                titleContentColor = MaterialTheme.colorScheme.onPrimary,
+                                navigationIconContentColor = MaterialTheme.colorScheme.onPrimary,
+                                actionIconContentColor = MaterialTheme.colorScheme.onPrimary,
+                            ),
+                            navigationIcon = {
+                                IconButton(onClick = ::dismissMessageInteraction) {
+                                    Icon(Icons.Default.Close, contentDescription = "خروج از انتخاب پیام")
+                                }
+                            },
+                            title = { Text("${selectedMessages.size} انتخاب شده", fontWeight = FontWeight.SemiBold) },
+                            actions = {
+                                if (!secret) {
+                                    if (selectedMessages.size == 1) {
+                                        IconButton(
+                                            onClick = {
+                                                replyingTo = selectedMessages.first()
+                                                editingMessage = null
+                                                dismissMessageInteraction()
+                                            },
+                                        ) { Icon(Icons.AutoMirrored.Filled.Reply, contentDescription = "پاسخ به پیام") }
+                                    }
                                     IconButton(
+                                        enabled = selectedMessages.isNotEmpty(),
                                         onClick = {
-                                            replyingTo = selectedMessages.first()
-                                            editingMessage = null
+                                            clipboard.setText(AnnotatedString(selectedMessages.joinToString("\n\n") { it.previewText() }))
                                             dismissMessageInteraction()
                                         },
-                                    ) { Icon(Icons.AutoMirrored.Filled.Reply, contentDescription = "پاسخ به پیام") }
+                                    ) { Icon(Icons.Default.ContentCopy, contentDescription = "کپی پیام‌های انتخاب شده") }
+                                    IconButton(
+                                        enabled = selectedMessages.isNotEmpty(),
+                                        onClick = { forwardingMessages = selectedMessages },
+                                    ) { Icon(Icons.AutoMirrored.Filled.Forward, contentDescription = "فوروارد پیام‌های انتخاب شده") }
                                 }
                                 IconButton(
                                     enabled = selectedMessages.isNotEmpty(),
-                                    onClick = {
-                                        clipboard.setText(AnnotatedString(selectedMessages.joinToString("\n\n") { it.previewText() }))
-                                        dismissMessageInteraction()
-                                    },
-                                ) { Icon(Icons.Default.ContentCopy, contentDescription = "کپی پیام‌های انتخاب شده") }
-                                IconButton(
-                                    enabled = selectedMessages.isNotEmpty(),
-                                    onClick = { forwardingMessages = selectedMessages },
-                                ) { Icon(Icons.AutoMirrored.Filled.Forward, contentDescription = "فوروارد پیام‌های انتخاب شده") }
-                            }
-                            IconButton(
-                                enabled = selectedMessages.isNotEmpty(),
-                                onClick = { deletingMessages = selectedMessages },
-                            ) { Icon(Icons.Default.Delete, contentDescription = "حذف پیام‌های انتخاب شده") }
-                        },
-                    )
+                                    onClick = { deletingMessages = selectedMessages },
+                                ) { Icon(Icons.Default.Delete, contentDescription = "حذف پیام‌های انتخاب شده") }
+                            },
+                        )
+                    }
                 } else if (searchVisible) {
-                    TopAppBar(
-                        windowInsets = WindowInsets(0, 0, 0, 0),
-                        colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(
-                            containerColor = Color.Transparent,
-                        ),
-                        title = {
-                            BasicTextField(
-                                value = state.searchQuery,
-                                onValueChange = onSearch,
-                                modifier = Modifier.fillMaxWidth(),
-                                singleLine = true,
-                                keyboardOptions = KeyboardOptions.Default.copy(imeAction = ImeAction.Search),
-                                textStyle = MaterialTheme.typography.bodyLarge.copy(
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    textAlign = TextAlign.Right,
-                                ),
-                                decorationBox = { field ->
-                                    Box(contentAlignment = Alignment.CenterEnd) {
-                                        if (state.searchQuery.isBlank()) {
-                                            Text("جستجو در پیام‌ها...", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                        }
-                                        field()
-                                    }
-                                },
+                    val searchShape = RoundedCornerShape(24.dp)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                            .vistaGlass(
+                                state = chatGlassState,
+                                shape = searchShape,
+                                tint = topBarBgColor,
+                                isDark = isDarkTheme,
+                                blurRadius = VistaGlassTokens.PillBlur,
+                                tintAlphaOverride = topBarGlassAlpha,
+                                drawHighlight = true,
+                                rimWidth = 0.6.dp,
+                                shadowElevation = 4.dp,
                             )
-                        },
-                        navigationIcon = {
-                            IconButton(onClick = {
-                                searchVisible = false
-                                searchResultIndex = 0
-                                onSearch("")
-                            }) {
-                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "بستن جستجوی پیام‌ها")
-                            }
-                        },
-                        actions = {
-                            if (state.isSearching) {
-                                CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                            } else if (state.searchQuery.trim().length >= 2) {
-                                Text(
-                                    if (state.searchResults.isEmpty()) "نتیجه‌ای یافت نشد"
-                                    else "${searchResultIndex + 1}/${state.searchResults.size}",
-                                    fontSize = 12.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                                TextButton(
-                                    enabled = searchResultIndex > 0,
-                                    onClick = { searchResultIndex -= 1 },
-                                ) { Text("↑") }
-                                TextButton(
-                                    enabled = searchResultIndex < state.searchResults.lastIndex,
-                                    onClick = { searchResultIndex += 1 },
-                                ) { Text("↓") }
-                            }
-                        },
-                    )
-                } else {
-                    val conversationTopBarHeight = if (density.fontScale > 1.3f) 72.dp else 56.dp
-                    TopAppBar(
-                        modifier = Modifier.height(conversationTopBarHeight),
-                        windowInsets = WindowInsets(0, 0, 0, 0),
-                        colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(
-                            containerColor = Color.Transparent,
-                            titleContentColor = MaterialTheme.colorScheme.onSurface,
-                            navigationIconContentColor = MaterialTheme.colorScheme.onSurface,
-                            actionIconContentColor = MaterialTheme.colorScheme.onSurface,
-                        ),
-                        title = {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        if (state.conversation?.type == ConversationType.GROUP) {
-                                            groupSheetVisible = true
-                                        } else {
-                                            openPartnerDetails()
+                            .clip(searchShape),
+                    ) {
+                        TopAppBar(
+                            windowInsets = WindowInsets(0, 0, 0, 0),
+                            colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(
+                                containerColor = Color.Transparent,
+                            ),
+                            title = {
+                                BasicTextField(
+                                    value = state.searchQuery,
+                                    onValueChange = onSearch,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true,
+                                    keyboardOptions = KeyboardOptions.Default.copy(imeAction = ImeAction.Search),
+                                    textStyle = MaterialTheme.typography.bodyLarge.copy(
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        textAlign = TextAlign.Right,
+                                    ),
+                                    decorationBox = { field ->
+                                        Box(contentAlignment = Alignment.CenterEnd) {
+                                            if (state.searchQuery.isBlank()) {
+                                                Text("جستجو در پیام‌ها...", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            }
+                                            field()
                                         }
                                     },
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                val resolvedAvatar = state.conversation?.avatarUrl
-                                    ?: state.groupInfo?.imageUrl
-                                    ?: state.partnerProfile?.avatarUrl
-                                val resolvedHeaderTitle: String = when {
-                                    state.conversation?.type == ConversationType.GROUP -> {
-                                        state.groupInfo?.name?.takeIf(String::isNotBlank)
-                                            ?: state.conversation?.title?.takeIf { it.isNotBlank() && it != "کاربر" && it != "user" }
-                                            ?: title
-                                    }
-                                    state.conversation?.title?.takeIf { it.isNotBlank() && it != "کاربر" && it != "user" } != null -> {
-                                        state.conversation!!.title
-                                    }
-                                    state.partnerProfile?.fullName?.takeIf(String::isNotBlank) != null -> {
-                                        state.partnerProfile!!.fullName!!
-                                    }
-                                    state.partnerProfile?.username?.takeIf(String::isNotBlank) != null -> {
-                                        state.partnerProfile!!.username!!
-                                    }
-                                    else -> title
-                                }
-                                ChatAvatarImage(
-                                    model = resolvedAvatar,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(42.dp).clip(CircleShape),
                                 )
-                                Spacer(Modifier.width(10.dp))
-                                Column(
-                                    modifier = Modifier.weight(1f),
-                                    horizontalAlignment = Alignment.Start,
-                                ) {
-                                    val headerIsVerified = state.conversation?.type != ConversationType.GROUP &&
-                                        (state.partnerProfile?.isVerified == true || state.conversation?.isVerified == true)
-                                    val headerVerificationType = state.partnerProfile?.verificationType
-                                        ?.takeIf(String::isNotBlank)
-                                        ?: state.conversation?.verificationType
-                                    val headerRole = state.partnerProfile?.role
-                                        ?.takeIf(String::isNotBlank)
-                                        ?: state.conversation?.role
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        if (isSecretConversation) {
-                                            Icon(
-                                                Icons.Default.Lock,
-                                                contentDescription = null,
-                                                tint = SecretChatGreen,
-                                                modifier = Modifier.size(15.dp),
-                                            )
-                                            Spacer(Modifier.width(4.dp))
-                                        }
-                                        Text(
-                                            resolvedHeaderTitle,
-                                            modifier = Modifier.weight(1f, fill = false),
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                            fontSize = 17.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = if (isSecretConversation && !isDarkTheme) Color(0xFF1B5E20) else Color.Unspecified,
-                                        )
-                                        if (headerIsVerified) {
-                                            ChatUserVerificationBadge(
-                                                isVerified = true,
-                                                verificationType = headerVerificationType,
-                                                role = headerRole,
-                                                size = 16.dp,
-                                            )
-                                        }
-                                    }
-                                    if (isSecretConversation) {
-                                        val secretText = if (state.secretAutoDeleteSeconds > 0) {
-                                            "گفتگوی محرمانه • تایمر: ${formatSecretAutoDeleteLabel(state.secretAutoDeleteSeconds)}"
-                                        } else {
-                                            "گفتگوی محرمانه • رمزگذاری سرتاسری"
-                                        }
-                                        Text(
-                                            secretText,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                            color = SecretChatGreen,
-                                            fontSize = 11.5.sp,
-                                            fontWeight = FontWeight.SemiBold,
-                                        )
+                            },
+                            navigationIcon = {
+                                IconButton(onClick = {
+                                    searchVisible = false
+                                    searchResultIndex = 0
+                                    onSearch("")
+                                }) {
+                                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "بستن جستجوی پیام‌ها")
+                                }
+                            },
+                            actions = {
+                                if (state.isSearching) {
+                                    CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                                } else if (state.searchQuery.trim().length >= 2) {
+                                    Text(
+                                        if (state.searchResults.isEmpty()) "نتیجه‌ای یافت نشد"
+                                        else "${searchResultIndex + 1}/${state.searchResults.size}",
+                                        fontSize = 12.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                    TextButton(
+                                        enabled = searchResultIndex > 0,
+                                        onClick = { searchResultIndex -= 1 },
+                                    ) { Text("↑") }
+                                    TextButton(
+                                        enabled = searchResultIndex < state.searchResults.lastIndex,
+                                        onClick = { searchResultIndex += 1 },
+                                    ) { Text("↓") }
+                                }
+                            },
+                        )
+                    }
+                } else {
+                    val capsuleHeight = if (density.fontScale > 1.3f) 56.dp else 46.dp
+                    val capsuleShape = RoundedCornerShape(capsuleHeight / 2)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        // 1. Floating Back Button Island
+                        Box(
+                            modifier = Modifier
+                                .size(capsuleHeight)
+                                .vistaGlass(
+                                    state = chatGlassState,
+                                    shape = CircleShape,
+                                    tint = topBarBgColor,
+                                    isDark = isDarkTheme,
+                                    blurRadius = VistaGlassTokens.PillBlur,
+                                    tintAlphaOverride = topBarGlassAlpha,
+                                    drawHighlight = true,
+                                    rimWidth = 0.6.dp,
+                                    shadowElevation = 4.dp,
+                                )
+                                .clip(CircleShape)
+                                .clickable(role = Role.Button, onClick = safeBack)
+                                .semantics { contentDescription = "بازگشت" },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.size(22.dp),
+                            )
+                        }
+
+                        // 2. Floating Center Identity Capsule (Avatar + Title + Subtitle)
+                        val resolvedAvatar = state.conversation?.avatarUrl
+                            ?: state.groupInfo?.imageUrl
+                            ?: state.partnerProfile?.avatarUrl
+                        val resolvedHeaderTitle: String = when {
+                            state.conversation?.type == ConversationType.GROUP -> {
+                                state.groupInfo?.name?.takeIf(String::isNotBlank)
+                                    ?: state.conversation?.title?.takeIf { it.isNotBlank() && it != "کاربر" && it != "user" }
+                                    ?: title
+                            }
+                            state.conversation?.title?.takeIf { it.isNotBlank() && it != "کاربر" && it != "user" } != null -> {
+                                state.conversation!!.title
+                            }
+                            state.partnerProfile?.fullName?.takeIf(String::isNotBlank) != null -> {
+                                state.partnerProfile!!.fullName!!
+                            }
+                            state.partnerProfile?.username?.takeIf(String::isNotBlank) != null -> {
+                                state.partnerProfile!!.username!!
+                            }
+                            else -> title
+                        }
+                        Row(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(capsuleHeight)
+                                .vistaGlass(
+                                    state = chatGlassState,
+                                    shape = capsuleShape,
+                                    tint = topBarBgColor,
+                                    isDark = isDarkTheme,
+                                    blurRadius = VistaGlassTokens.PillBlur,
+                                    tintAlphaOverride = topBarGlassAlpha,
+                                    drawHighlight = true,
+                                    rimWidth = 0.6.dp,
+                                    shadowElevation = 4.dp,
+                                )
+                                .clip(capsuleShape)
+                                .clickable {
+                                    if (state.conversation?.type == ConversationType.GROUP) {
+                                        groupSheetVisible = true
                                     } else {
-                                        val subtitle = when {
-                                            state.connectionState == RealtimeConnectionState.CONNECTING ||
-                                            state.connectionState == RealtimeConnectionState.RECONNECTING -> "در حال اتصال..."
-                                            state.connectionState == RealtimeConnectionState.DISCONNECTED -> "در انتظار شبکه..."
-                                            state.conversation?.type == ConversationType.GROUP -> when {
-                                                state.conversation.typingUserIds.isNotEmpty() -> "در حال نوشتن..."
-                                                state.isGroupLoading && state.groupMembers.isEmpty() -> "در حال بررسی اعضا..."
-                                                else -> "${maxOf(state.groupInfo?.memberCount ?: 0, state.groupMembers.size)} عضو"
-                                            }
-                                            state.conversation?.typingUserIds?.isNotEmpty() == true -> "در حال نوشتن..."
-                                            state.presence?.isOnline == true -> "آنلاین"
-                                            state.presence?.canViewLastSeen == true ->
-                                                formatUserPresence(state.presence.lastOnlineAtEpochMillis)
-                                            else -> "آخرین بازدید به تازگی"
-                                        }
-                                        Text(
-                                            subtitle,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                            color = if (subtitle == "آنلاین" || subtitle.startsWith("در حال")) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.Normal,
+                                        openPartnerDetails()
+                                    }
+                                }
+                                .padding(start = 5.dp, end = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            ChatAvatarImage(
+                                model = resolvedAvatar,
+                                contentDescription = null,
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape),
+                            )
+                            Spacer(Modifier.width(9.dp))
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.Center,
+                                horizontalAlignment = Alignment.Start,
+                            ) {
+                                val headerIsVerified = state.conversation?.type != ConversationType.GROUP &&
+                                    (state.partnerProfile?.isVerified == true || state.conversation?.isVerified == true)
+                                val headerVerificationType = state.partnerProfile?.verificationType
+                                    ?.takeIf(String::isNotBlank)
+                                    ?: state.conversation?.verificationType
+                                val headerRole = state.partnerProfile?.role
+                                    ?.takeIf(String::isNotBlank)
+                                    ?: state.conversation?.role
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    if (isSecretConversation) {
+                                        Icon(
+                                            Icons.Default.Lock,
+                                            contentDescription = null,
+                                            tint = SecretChatGreen,
+                                            modifier = Modifier.size(14.dp),
+                                        )
+                                        Spacer(Modifier.width(4.dp))
+                                    }
+                                    Text(
+                                        resolvedHeaderTitle,
+                                        modifier = Modifier.weight(1f, fill = false),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        fontSize = 15.5.sp,
+                                        lineHeight = 18.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isSecretConversation && !isDarkTheme) Color(0xFF1B5E20) else MaterialTheme.colorScheme.onSurface,
+                                    )
+                                    if (headerIsVerified) {
+                                        ChatUserVerificationBadge(
+                                            isVerified = true,
+                                            verificationType = headerVerificationType,
+                                            role = headerRole,
+                                            size = 15.dp,
                                         )
                                     }
                                 }
+                                if (isSecretConversation) {
+                                    val secretText = if (state.secretAutoDeleteSeconds > 0) {
+                                        "گفتگوی محرمانه • تایمر: ${formatSecretAutoDeleteLabel(state.secretAutoDeleteSeconds)}"
+                                    } else {
+                                        "گفتگوی محرمانه • رمزگذاری سرتاسری"
+                                    }
+                                    Text(
+                                        secretText,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        color = SecretChatGreen,
+                                        fontSize = 11.sp,
+                                        lineHeight = 13.5.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                } else {
+                                    val subtitle = when {
+                                        state.connectionState == RealtimeConnectionState.CONNECTING ||
+                                        state.connectionState == RealtimeConnectionState.RECONNECTING -> "در حال اتصال..."
+                                        state.connectionState == RealtimeConnectionState.DISCONNECTED -> "در انتظار شبکه..."
+                                        state.conversation?.type == ConversationType.GROUP -> when {
+                                            state.conversation.typingUserIds.isNotEmpty() -> "در حال نوشتن..."
+                                            state.isGroupLoading && state.groupMembers.isEmpty() -> "در حال بررسی اعضا..."
+                                            else -> "${maxOf(state.groupInfo?.memberCount ?: 0, state.groupMembers.size)} عضو"
+                                        }
+                                        state.conversation?.typingUserIds?.isNotEmpty() == true -> "در حال نوشتن..."
+                                        state.presence?.isOnline == true -> "آنلاین"
+                                        state.presence?.canViewLastSeen == true ->
+                                            formatUserPresence(state.presence.lastOnlineAtEpochMillis)
+                                        else -> "آخرین بازدید به تازگی"
+                                    }
+                                    Text(
+                                        subtitle,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        color = if (subtitle == "آنلاین" || subtitle.startsWith("در حال")) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        fontSize = 11.5.sp,
+                                        lineHeight = 14.sp,
+                                        fontWeight = FontWeight.Medium,
+                                    )
+                                }
                             }
-                        },
-                        navigationIcon = {
-                            IconButton(onClick = safeBack) {
-                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "بازگشت", modifier = Modifier.size(24.dp))
-                            }
-                        },
-                        actions = {
+                        }
+
+                        // 3. Floating Actions Island
+                        Row(
+                            modifier = Modifier
+                                .height(capsuleHeight)
+                                .defaultMinSize(minWidth = capsuleHeight)
+                                .vistaGlass(
+                                    state = chatGlassState,
+                                    shape = capsuleShape,
+                                    tint = topBarBgColor,
+                                    isDark = isDarkTheme,
+                                    blurRadius = VistaGlassTokens.PillBlur,
+                                    tintAlphaOverride = topBarGlassAlpha,
+                                    drawHighlight = true,
+                                    rimWidth = 0.6.dp,
+                                    shadowElevation = 4.dp,
+                                )
+                                .clip(capsuleShape)
+                                .padding(horizontal = if (isSecretConversation) 4.dp else 0.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center,
+                        ) {
                             if (isSecretConversation) {
-                                IconButton(onClick = { autoDeleteDialogVisible = true }) {
+                                IconButton(
+                                    onClick = { autoDeleteDialogVisible = true },
+                                    modifier = Modifier.size(38.dp),
+                                ) {
                                     Icon(
                                         Icons.Default.Timer,
                                         contentDescription = "تنظیم تایمر حذف خودکار",
                                         tint = if (state.secretAutoDeleteSeconds > 0) SecretChatGreen else MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(22.dp),
+                                        modifier = Modifier.size(20.dp),
                                     )
                                 }
-                                IconButton(onClick = {
-                                    onComputeSafetyNumber { }
-                                    safetyNumberDialogVisible = true
-                                }) {
+                                IconButton(
+                                    onClick = {
+                                        onComputeSafetyNumber { }
+                                        safetyNumberDialogVisible = true
+                                    },
+                                    modifier = Modifier.size(38.dp),
+                                ) {
                                     Icon(
                                         Icons.Default.Security,
                                         contentDescription = "کلید رمزنگاری محرمانه",
                                         tint = SecretChatGreen,
-                                        modifier = Modifier.size(22.dp),
+                                        modifier = Modifier.size(20.dp),
                                     )
                                 }
                             }
-                            Box {
+                            Box(contentAlignment = Alignment.Center) {
                                 var menuVisible by remember { mutableStateOf(false) }
-                                IconButton(onClick = { menuVisible = true }) {
-                                    Icon(Icons.Default.MoreVert, contentDescription = "گزینه‌های گفتگو")
+                                IconButton(
+                                    onClick = { menuVisible = true },
+                                    modifier = Modifier.size(capsuleHeight),
+                                ) {
+                                    Icon(
+                                        Icons.Default.MoreVert,
+                                        contentDescription = "گزینه‌های گفتگو",
+                                        tint = MaterialTheme.colorScheme.onSurface,
+                                    )
                                 }
                                 DropdownMenu(expanded = menuVisible, onDismissRequest = { menuVisible = false }) {
                                     DropdownMenuItem(
@@ -3145,8 +3398,8 @@ fun MessageDetailScreen(
                                     }
                                 }
                             }
-                        },
-                    )
+                        }
+                    }
                 }
 
                 if (state.pinnedMessages.isNotEmpty()) {
@@ -3165,29 +3418,20 @@ fun MessageDetailScreen(
                         },
                     )
                 }
-                HorizontalDivider(
-                    thickness = 0.5.dp,
-                    color = if (inSelectionMode) {
-                        Color.Transparent
-                    } else if (isDarkTheme) {
-                        Color(0x18FFFFFF)
-                    } else {
-                        Color(0x12000000)
-                    },
-                )
+                if (!inSelectionMode && !searchVisible) {
+                    ChatMiniAudioPlayer(
+                        glassState = chatGlassState,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                        shape = RoundedCornerShape(22.dp),
+                        onOpenFullPlayer = { audioPlayerSheetVisible = true },
+                        onJumpToMessage = { targetKey ->
+                            val idx = renderItemIndexForMessage(messageRenderItems, targetKey)
+                            if (idx >= 0) coroutineScope.launch { listState.animateScrollToItem(idx) }
+                        },
+                    )
+                }
             }
         }
-            if (!inSelectionMode && !searchVisible) {
-                ChatMiniAudioPlayer(
-                    glassState = chatGlassState,
-                    onOpenFullPlayer = { audioPlayerSheetVisible = true },
-                    onJumpToMessage = { targetKey ->
-                        val idx = renderItemIndexForMessage(messageRenderItems, targetKey)
-                        if (idx >= 0) coroutineScope.launch { listState.animateScrollToItem(idx) }
-                    },
-                )
-            }
-    }
         SnackbarHost(snackbarHostState, Modifier.align(Alignment.BottomCenter))
         if (autoDeleteDialogVisible) {
             SecretChatAutoDeleteDialog(
@@ -3352,6 +3596,19 @@ fun MessageDetailScreen(
                 onRetry(message)
                 dismissMessageInteraction()
             },
+            onSaveAttachment = if (isSecretConversation) null else {
+                {
+                    dismissMessageInteraction()
+                    onSaveAttachment(message) { _, feedback ->
+                        coroutineScope.launch {
+                            snackbarHostState.currentSnackbarData?.dismiss()
+                            if (feedback.isNotBlank()) {
+                                snackbarHostState.showSnackbar(feedback)
+                            }
+                        }
+                    }
+                }
+            },
         )
     }
 
@@ -3449,6 +3706,35 @@ fun MessageDetailScreen(
                 val idx = renderItemIndexForMessage(messageRenderItems, targetKey)
                 if (idx >= 0) coroutineScope.launch { listState.animateScrollToItem(idx) }
             },
+            onSaveTrack = if (isSecretConversation) null else { track ->
+                val matched = state.messages.firstOrNull { it.stableKey == track.id }
+                coroutineScope.launch {
+                    val result = if (matched != null && onSaveAttachmentDirect != null) {
+                        onSaveAttachmentDirect(matched)
+                    } else if (onSaveExternalMediaDirect != null) {
+                        onSaveExternalMediaDirect(
+                            track.url,
+                            track.fallbackUrl,
+                            AttachmentKind.AUDIO,
+                            "${track.title}.mp3",
+                            "audio/mpeg",
+                        )
+                    } else {
+                        saveChatAttachmentToDevice(
+                            context = context,
+                            sourceUriOrUrl = track.url,
+                            fallbackUrl = track.fallbackUrl,
+                            kind = AttachmentKind.AUDIO,
+                            fileName = "${track.title}.mp3",
+                            mimeType = "audio/mpeg",
+                        )
+                    }
+                    val feedback = result.getOrElse { it.message ?: "ذخیره موسیقی انجام نشد" }
+                    android.widget.Toast.makeText(context, feedback, android.widget.Toast.LENGTH_SHORT).show()
+                    snackbarHostState.currentSnackbarData?.dismiss()
+                    snackbarHostState.showSnackbar(feedback)
+                }
+            },
         )
     }
     viewedAttachment?.let { attachment ->
@@ -3517,6 +3803,29 @@ fun MessageDetailScreen(
                 ),
                 initialIndex = initialIndex,
                 onDismiss = { viewedAttachment = null },
+                allowSave = !isSecretConversation,
+                onSaveItem = if (isSecretConversation) null else { item ->
+                    val target = item.messageKey?.let { key ->
+                        state.messages.firstOrNull { it.stableKey == key }
+                    }
+                    if (target != null && onSaveAttachmentDirect != null) {
+                        onSaveAttachmentDirect(target)
+                    } else {
+                        val kind = when {
+                            item.isVideo -> AttachmentKind.VIDEO
+                            item.isGif -> AttachmentKind.GIF
+                            else -> AttachmentKind.IMAGE
+                        }
+                        onSaveExternalMediaDirect?.invoke(item.url, item.fallbackUrl, kind, item.title, null)
+                            ?: saveChatAttachmentToDevice(
+                                context = context,
+                                sourceUriOrUrl = item.url,
+                                fallbackUrl = item.fallbackUrl,
+                                kind = kind,
+                                fileName = item.title,
+                            )
+                    }
+                },
                 onForward = if (isSecretConversation) null else { item ->
                     val target = state.messages.firstOrNull { it.stableKey == item.messageKey }
                     viewedAttachment = null
@@ -3537,7 +3846,41 @@ fun MessageDetailScreen(
                 },
             )
         } else {
-            AttachmentViewer(attachment = attachment, onDismiss = { viewedAttachment = null })
+            val saveViewerAttachment: (suspend () -> Result<String>)? = if (isSecretConversation) null else {
+                {
+                    val matchedMsg = state.messages.firstOrNull { msg ->
+                        val att = msg.attachment ?: return@firstOrNull false
+                        (attachment.remoteUrl != null && att.remoteUrl == attachment.remoteUrl) ||
+                            (attachment.localUri != null && att.localUri == attachment.localUri)
+                    }
+                    if (matchedMsg != null && onSaveAttachmentDirect != null) {
+                        onSaveAttachmentDirect(matchedMsg)
+                    } else {
+                        val src = attachment.localUri?.takeIf(String::isNotBlank)
+                            ?: attachment.remoteUrl?.takeIf(String::isNotBlank)
+                            ?: ""
+                        onSaveExternalMediaDirect?.invoke(
+                            src,
+                            attachment.remoteUrl,
+                            attachment.kind,
+                            attachment.fileName,
+                            attachment.mimeType,
+                        ) ?: saveChatAttachmentToDevice(
+                            context = context,
+                            sourceUriOrUrl = src,
+                            fallbackUrl = attachment.remoteUrl,
+                            kind = attachment.kind,
+                            fileName = attachment.fileName,
+                            mimeType = attachment.mimeType,
+                        )
+                    }
+                }
+            }
+            AttachmentViewer(
+                attachment = attachment,
+                onDismiss = { viewedAttachment = null },
+                onSaveToDevice = saveViewerAttachment,
+            )
         }
     }
     if (pendingAttachmentDrafts.isNotEmpty()) {
@@ -4227,6 +4570,7 @@ private fun MessageBubble(
     musicQueue: List<ChatAudioTrack> = emptyList(),
     senderDisplayName: String = if (message.isMine) "شما" else "مخاطب",
     onOpenAudioPlayer: () -> Unit = {},
+    onBubbleBoundsInRootChanged: ((Rect) -> Unit)? = null,
 ) {
     val isDeleted = message.content == MessageContent.Deleted
     val duelInvite = remember(message.content, message.transportType) {
@@ -4277,16 +4621,22 @@ private fun MessageBubble(
     val density = LocalDensity.current
     val coordinatesHolder = remember(message.stableKey) { LayoutCoordinatesHolder() }
     val chatEntryMode = LocalChatEntryMode.current
-    val entryProgress = if (animateEntry && chatEntryMode != "off") {
-        val progress by animateFloatAsState(
-            targetValue = 1f,
-            animationSpec = tween(
-                durationMillis = if (chatEntryMode == "minimal") 120 else 220,
-                easing = FastOutSlowInEasing,
-            ),
-            label = "message-entry",
-        )
-        progress
+    val entryProgress = if (animateEntry && !message.isMine && chatEntryMode != "off") {
+        val anim = remember(message.stableKey) { Animatable(0f) }
+        LaunchedEffect(message.stableKey, chatEntryMode) {
+            anim.animateTo(
+                targetValue = 1f,
+                animationSpec = tween(
+                    durationMillis = if (chatEntryMode == "minimal") {
+                        TELEGRAM_MINIMAL_SEND_DURATION_MS
+                    } else {
+                        TELEGRAM_SEND_DURATION_MS
+                    },
+                    easing = TelegramSendBezierEasing,
+                ),
+            )
+        }
+        anim.value
     } else {
         1f
     }
@@ -4509,6 +4859,7 @@ private fun MessageBubble(
                         )
                         .onGloballyPositioned { coordinates ->
                             coordinatesHolder.coordinates = coordinates
+                            onBubbleBoundsInRootChanged?.invoke(coordinates.boundsInRoot())
                         }
                         .then(
                             if (isSingleEmoji) {
@@ -4920,33 +5271,39 @@ private fun ComposerContextBanner(
     badgeText: String? = null,
 ) {
     val isDark = isSystemInDarkTheme()
+    val bannerShape = RoundedCornerShape(18.dp)
+    val bannerTint = if (isDark) Color(0xFF1A222C) else Color(0xFFFFFFFF)
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 3.dp)
-            .shadow(3.dp, RoundedCornerShape(18.dp))
-            .clip(RoundedCornerShape(18.dp))
             .then(
                 LocalVistaGlassState.current?.let { gs ->
                     Modifier.vistaGlass(
                         state = gs,
-                        shape = RoundedCornerShape(18.dp),
-                        tint = if (isDark) MaterialTheme.colorScheme.surfaceVariant else Color.White,
+                        shape = bannerShape,
+                        tint = bannerTint,
                         isDark = isDark,
                         blurRadius = VistaGlassTokens.PillBlur,
+                        tintAlphaOverride = if (isDark) 0.58f else 0.62f,
+                        drawHighlight = true,
                         rimWidth = 0.6.dp,
+                        shadowElevation = 3.dp,
                     )
                 } ?: Modifier
+                    .shadow(3.dp, bannerShape)
                     .background(
                         if (isDark) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.95f)
                         else Color.White.copy(alpha = 0.96f),
+                        bannerShape,
                     )
                     .border(
                         0.5.dp,
                         if (isDark) Color(0x22FFFFFF) else Color(0x18000000),
-                        RoundedCornerShape(18.dp),
+                        bannerShape,
                     ),
             )
+            .clip(bannerShape)
             .padding(horizontal = 12.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -6261,6 +6618,7 @@ private fun AttachmentBubble(
 private fun AttachmentViewer(
     attachment: ir.coffevista.vista_native.features.chat.domain.model.Attachment,
     onDismiss: () -> Unit,
+    onSaveToDevice: (suspend () -> Result<String>)? = null,
 ) {
     val source = attachment.localUri?.takeIf(String::isNotBlank)
         ?: attachment.remoteUrl?.takeIf(String::isNotBlank)
@@ -6307,20 +6665,31 @@ private fun AttachmentViewer(
         AttachmentKind.VOICE, AttachmentKind.AUDIO -> AudioAttachmentPlayer(
             source = source,
             title = attachment.audioTitle ?: attachment.fileName ?: "پیام صوتی",
+            isMusic = attachment.kind == AttachmentKind.AUDIO,
             onDismiss = onDismiss,
+            onSaveToDevice = onSaveToDevice,
         )
         AttachmentKind.DOCUMENT, AttachmentKind.UNKNOWN -> DocumentAttachmentViewer(
             source = source,
             fileName = attachment.fileName ?: "فایل",
             mimeType = attachment.mimeType,
             onDismiss = onDismiss,
+            onSaveToDevice = onSaveToDevice,
         )
     }
 }
 
 @Composable
-private fun AudioAttachmentPlayer(source: String, title: String, onDismiss: () -> Unit) {
+private fun AudioAttachmentPlayer(
+    source: String,
+    title: String,
+    isMusic: Boolean = false,
+    onDismiss: () -> Unit,
+    onSaveToDevice: (suspend () -> Result<String>)? = null,
+) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+    var isSaving by remember(source) { mutableStateOf(false) }
     val view = LocalView.current
     var prepared by remember(source) { mutableStateOf(false) }
     var playing by remember(source) { mutableStateOf(false) }
@@ -6430,6 +6799,29 @@ private fun AudioAttachmentPlayer(source: String, title: String, onDismiss: () -
                     ) { Text("${playbackSpeed}×") }
                 }
             }
+            if (onSaveToDevice != null) {
+                OutlinedButton(
+                    enabled = !isSaving,
+                    onClick = {
+                        isSaving = true
+                        coroutineScope.launch {
+                            val feedback = onSaveToDevice().getOrElse { it.message ?: "ذخیره انجام نشد" }
+                            isSaving = false
+                            android.widget.Toast.makeText(context, feedback, android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                ) {
+                    Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        when {
+                            isSaving -> "در حال ذخیره..."
+                            isMusic -> "ذخیره موسیقی"
+                            else -> "ذخیره صدا"
+                        },
+                    )
+                }
+            }
             TextButton(onClick = onDismiss) { Text("بستن") }
         }
     }
@@ -6446,9 +6838,12 @@ private fun DocumentAttachmentViewer(
     fileName: String,
     mimeType: String?,
     onDismiss: () -> Unit,
+    onSaveToDevice: (suspend () -> Result<String>)? = null,
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     var error by remember(source) { mutableStateOf<String?>(null) }
+    var isSaving by remember(source) { mutableStateOf(false) }
     Dialog(onDismissRequest = onDismiss) {
         Column(
             Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(MaterialTheme.colorScheme.surface).padding(22.dp),
@@ -6477,6 +6872,27 @@ private fun DocumentAttachmentViewer(
                         .onFailure { error = "برنامه‌ای برای نمایش این فایل پیدا نشد" }
                 },
             ) { Text("باز کردن فایل") }
+            if (onSaveToDevice != null) {
+                OutlinedButton(
+                    enabled = !isSaving,
+                    onClick = {
+                        isSaving = true
+                        coroutineScope.launch {
+                            val result = onSaveToDevice()
+                            isSaving = false
+                            result.onSuccess { msg ->
+                                android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+                            }.onFailure { err ->
+                                error = err.message ?: "ذخیره فایل انجام نشد"
+                            }
+                        }
+                    },
+                ) {
+                    Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(if (isSaving) "در حال ذخیره..." else "ذخیره در دانلودها")
+                }
+            }
             TextButton(onClick = onDismiss) { Text("بستن") }
         }
     }
@@ -6615,6 +7031,7 @@ private fun ChatComposerBar(
     hasRecordPermission: Boolean,
     onPermissionRequired: () -> Unit,
     attachmentsEnabled: Boolean,
+    onInputFieldBoundsChanged: (Rect) -> Unit = {},
 ) {
     var composerValue by remember(conversationId) {
         mutableStateOf(TextFieldValue("", TextRange.Zero))
@@ -6724,6 +7141,7 @@ private fun ChatComposerBar(
             hasRecordPermission = hasRecordPermission,
             onPermissionRequired = onPermissionRequired,
             attachmentsEnabled = attachmentsEnabled,
+            onInputFieldBoundsChanged = onInputFieldBoundsChanged,
         )
     }
 }
@@ -6791,14 +7209,15 @@ private fun Composer(
     hasRecordPermission: Boolean,
     onPermissionRequired: () -> Unit,
     attachmentsEnabled: Boolean,
+    onInputFieldBoundsChanged: (Rect) -> Unit = {},
 ) {
     val attachmentRotation = remember { Animatable(0f) }
     val composerScope = rememberCoroutineScope()
     var isVoiceActive by remember { mutableStateOf(false) }
     val isDark = isSystemInDarkTheme()
     val composerGlass = LocalVistaGlassState.current
-    val capsuleBg = if (isDark) Color(0xFF1C1C2E) else Color.White
-    val iconTint = if (isDark) Color(0xFF7D8B99) else Color(0xFF707579)
+    val capsuleBg = if (isDark) Color(0xFF1A222C) else Color.White
+    val iconTint = if (isDark) Color(0xFF8C9AA9) else Color(0xFF686E74)
 
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
         Box(
@@ -6823,11 +7242,11 @@ private fun Composer(
                                 shape = RoundedCornerShape(23.dp),
                                 tint = capsuleBg,
                                 isDark = isDark,
-                                blurRadius = VistaGlassTokens.BarBlur,
-                                tintAlphaOverride = if (isDark) 0.84f else 0.88f,
-                                drawHighlight = false,
+                                blurRadius = VistaGlassTokens.PillBlur,
+                                tintAlphaOverride = if (isDark) 0.58f else 0.60f,
+                                drawHighlight = true,
                                 rimWidth = 0.6.dp,
-                                shadowElevation = if (isDark) 2.dp else 4.dp,
+                                shadowElevation = 4.dp,
                             )
                         } else {
                             Modifier
@@ -6882,6 +7301,9 @@ private fun Composer(
                         Box(
                             modifier = Modifier
                                 .weight(1f)
+                                .onGloballyPositioned { coords ->
+                                    onInputFieldBoundsChanged(coords.boundsInRoot())
+                                }
                                 .padding(horizontal = 4.dp),
                             contentAlignment = Alignment.CenterStart,
                         ) {
@@ -6929,35 +7351,56 @@ private fun Composer(
                             }
                         }
 
-                        if (isNotBlank) {
-                            Box(
-                                modifier = Modifier
-                                    .padding(end = 4.dp)
-                                    .size(38.dp)
-                                    .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.primary)
-                                    .clickable {
-                                        onSend()
-                                        if (!isEmojiPanelOpen) {
-                                            controller.openKeyboard()
-                                        }
-                                    }
-                                    .semantics { contentDescription = "ارسال پیام" },
-                                contentAlignment = Alignment.Center,
+                        Box(
+                            modifier = Modifier
+                                .padding(end = 4.dp)
+                                .size(38.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            androidx.compose.animation.AnimatedVisibility(
+                                visible = isNotBlank,
+                                enter = scaleIn(
+                                    initialScale = 0.55f,
+                                    animationSpec = tween(160, easing = TelegramSendBezierEasing),
+                                ) + fadeIn(tween(120)),
+                                exit = scaleOut(
+                                    targetScale = 0.55f,
+                                    animationSpec = tween(120, easing = FastOutSlowInEasing),
+                                ) + fadeOut(tween(100)),
                             ) {
-                                Icon(
-                                    Icons.AutoMirrored.Filled.Send,
-                                    contentDescription = null,
-                                    tint = Color.White,
-                                    modifier = Modifier.size(18.dp),
-                                )
+                                Box(
+                                    modifier = Modifier
+                                        .size(38.dp)
+                                        .clip(CircleShape)
+                                        .background(MaterialTheme.colorScheme.primary)
+                                        .clickable {
+                                            onSend()
+                                            if (!isEmojiPanelOpen) {
+                                                controller.openKeyboard()
+                                            }
+                                        }
+                                        .semantics { contentDescription = "ارسال پیام" },
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Icon(
+                                        Icons.AutoMirrored.Filled.Send,
+                                        contentDescription = null,
+                                        tint = Color.White,
+                                        modifier = Modifier.size(18.dp),
+                                    )
+                                }
                             }
-                        } else {
-                            Spacer(Modifier.size(42.dp))
                         }
                     }
 
-                    if (isBlank) {
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = isBlank,
+                        enter = scaleIn(
+                            initialScale = 0.75f,
+                            animationSpec = tween(150, easing = TelegramSendBezierEasing),
+                        ) + fadeIn(tween(120)),
+                        exit = androidx.compose.animation.ExitTransition.None,
+                    ) {
                         VoiceRecorderDock(
                             modifier = Modifier.fillMaxWidth(),
                             onSendVoice = onSendVoice,
@@ -6991,25 +7434,33 @@ private fun FloatingMessageDateOverlay(
 
 @Composable
 private fun FloatingMessageDateChip(epochMillis: Long) {
+    val isDark = isSystemInDarkTheme()
+    val chipShape = RoundedCornerShape(18.dp)
+    val chipTint = if (isDark) Color(0xFF1A222C) else Color(0xFFFFFFFF)
     Text(
         text = localDayLabel(epochMillis),
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        color = MaterialTheme.colorScheme.onSurface,
         fontSize = 12.sp,
+        fontWeight = FontWeight.Medium,
         modifier = Modifier
-            .shadow(4.dp, RoundedCornerShape(18.dp))
-            .clip(RoundedCornerShape(18.dp))
             .then(
                 LocalVistaGlassState.current?.let { gs ->
                     Modifier.vistaGlass(
                         state = gs,
-                        shape = RoundedCornerShape(18.dp),
-                        tint = MaterialTheme.colorScheme.surface,
-                        isDark = isSystemInDarkTheme(),
+                        shape = chipShape,
+                        tint = chipTint,
+                        isDark = isDark,
                         blurRadius = VistaGlassTokens.PillBlur,
+                        tintAlphaOverride = if (isDark) 0.58f else 0.62f,
+                        drawHighlight = true,
                         rimWidth = 0.6.dp,
+                        shadowElevation = 3.dp,
                     )
-                } ?: Modifier.background(MaterialTheme.colorScheme.surface.copy(alpha = 0.92f)),
+                } ?: Modifier
+                    .shadow(3.dp, chipShape)
+                    .background(chipTint.copy(alpha = 0.90f), chipShape),
             )
+            .clip(chipShape)
             .padding(horizontal = 14.dp, vertical = 6.dp)
             .semantics { contentDescription = "تاریخ گفتگو: " + localDayLabel(epochMillis) },
     )
@@ -7670,97 +8121,378 @@ private fun PartnerDetailsScreen(
     // Do not render labels for unsupported/fake datasets. Every tab below has a
     // concrete Room-backed source and a deterministic index-to-data mapping.
     val tabs = listOf("رسانه", "فایل‌ها", "لینک‌ها", "صدا", "GIF")
+    val isDark = isSystemInDarkTheme()
+    val pageBgColor = if (isDark) Color(0xFF0F141A) else Color(0xFFF2F4F7)
+    val cardBgColor = if (isDark) Color(0xFF1A222C) else Color(0xFFFFFFFF)
+    val cardBorderColor = if (isDark) Color(0x20FFFFFF) else Color(0x10000000)
+    val detailsScrollState = rememberScrollState()
+    val detailsGlassState = rememberVistaGlassState()
+    LaunchedEffect(detailsScrollState.value) {
+        detailsGlassState.invalidate()
+    }
+    val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    val expandedHeaderSpace = statusBarTop + 190.dp
+    val heroAvatar = profile?.avatarUrl ?: conversation?.avatarUrl
+    val presenceText = state.presence?.let { presence ->
+        if (presence.isOnline) "آنلاین" else formatUserPresence(presence.lastOnlineAtEpochMillis)
+    } ?: "آخرین بازدید به تازگی"
+    val isPartnerOnline = state.presence?.isOnline == true
 
     BackHandler(onBack = onDismiss)
     Scaffold(
         modifier = Modifier.fillMaxSize(),
-        containerColor = MaterialTheme.colorScheme.surface,
+        containerColor = pageBgColor,
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { contentPadding ->
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState())
+                .background(pageBgColor)
                 .padding(contentPadding),
         ) {
-            Box(
+            Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .height(280.dp)
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                    .fillMaxSize()
+                    .vistaGlassSource(detailsGlassState)
+                    .background(pageBgColor)
+                    .verticalScroll(detailsScrollState),
             ) {
-                val heroAvatar = profile?.avatarUrl ?: conversation?.avatarUrl
-                if (!heroAvatar.isNullOrBlank()) {
-                    AsyncImage(
-                        model = heroAvatar,
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .blur(25.dp),
-                    )
-                } else {
+                Spacer(Modifier.height(expandedHeaderSpace))
+
+                // 1. Delicate 4-Button Floating Capsules Row
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    ir.coffevista.vista_native.features.chat.presentation.components.VistaProfileGlassActionButton(
+                        icon = Icons.Default.ChatBubbleOutline,
+                        label = "پیام",
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        if (conversation?.type == ConversationType.SECRET && !conversation.peerId.isNullOrBlank()) {
+                            onDismiss()
+                            onOpenProfile(conversation.peerId)
+                        } else {
+                            onDismiss()
+                        }
+                    }
+                    ir.coffevista.vista_native.features.chat.presentation.components.VistaProfileGlassActionButton(
+                        icon = if (conversation?.isMuted == true) Icons.Default.NotificationsOff else Icons.Default.Notifications,
+                        label = if (conversation?.isMuted == true) "صدادار" else "بی‌صدا",
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        onToggleMute()
+                        scope.launch { snackbarHostState.showSnackbar("تنظیمات اعلان گفتگو به‌روزرسانی شد") }
+                    }
+                    ir.coffevista.vista_native.features.chat.presentation.components.VistaProfileGlassActionButton(
+                        icon = Icons.Default.PersonOutline,
+                        label = "پروفایل",
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        conversation?.peerId?.let { peerId ->
+                            onDismiss()
+                            onOpenProfile(peerId)
+                        }
+                    }
+                    ir.coffevista.vista_native.features.chat.presentation.components.VistaProfileGlassActionButton(
+                        icon = Icons.Default.Search,
+                        label = "جستجو",
+                        modifier = Modifier.weight(1f),
+                    ) { onOpenSearch() }
+                }
+
+                Spacer(Modifier.height(10.dp))
+
+                // 2. Grouped Info Card (Bio, Username with Copy action, Last Seen Status)
+                if (state.isPartnerProfileLoading && profile == null) {
                     Box(
                         modifier = Modifier
-                            .fillMaxSize()
-                            .background(
-                                Brush.verticalGradient(
-                                    listOf(
-                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.50f),
-                                        MaterialTheme.colorScheme.tertiary.copy(alpha = 0.40f),
-                                        MaterialTheme.colorScheme.surfaceVariant,
-                                    )
-                                )
-                            ),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            text = displayName.firstOrNull()?.uppercase() ?: "?",
-                            fontSize = 80.sp,
-                            fontWeight = FontWeight.Light,
-                            color = Color.White.copy(alpha = 0.20f),
-                        )
-                    }
-                }
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.verticalGradient(
-                                listOf(
-                                    Color.Black.copy(alpha = 0.12f),
-                                    Color.Black.copy(alpha = 0.25f),
-                                    Color.Black.copy(alpha = 0.66f),
-                                ),
-                            ),
-                        ),
-                )
-                IconButton(
-                    onClick = onDismiss,
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .statusBarsPadding()
-                        .padding(8.dp)
-                        .background(Color.Black.copy(alpha = 0.30f), CircleShape),
-                ) {
-                    Icon(
-                        Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "بازگشت از اطلاعات کاربر",
-                        tint = Color.White,
+                            .fillMaxWidth()
+                            .height(92.dp)
+                            .padding(horizontal = 14.dp)
+                            .background(cardBgColor.copy(alpha = 0.65f), RoundedCornerShape(20.dp)),
                     )
-                }
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .statusBarsPadding()
-                        .padding(8.dp),
-                ) {
-                    IconButton(
-                        onClick = { partnerMenuExpanded = true },
-                        modifier = Modifier.background(Color.Black.copy(alpha = 0.30f), CircleShape),
+                } else {
+                    val cardShape = RoundedCornerShape(20.dp)
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp)
+                            .shadow(if (isDark) 1.dp else 2.dp, cardShape)
+                            .background(cardBgColor, cardShape)
+                            .border(0.55.dp, cardBorderColor, cardShape)
+                            .padding(horizontal = 16.dp, vertical = 14.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        Icon(Icons.Default.MoreVert, contentDescription = "گزینه‌های اطلاعات کاربر", tint = Color.White)
+                        profile?.bio?.takeIf(String::isNotBlank)?.let { bio ->
+                            Column(modifier = Modifier.fillMaxWidth()) {
+                                Text(
+                                    text = bio,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    fontSize = 15.sp,
+                                    lineHeight = 21.sp,
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                                Spacer(Modifier.height(2.dp))
+                                Text(
+                                    text = "بیوگرافی",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 12.sp,
+                                )
+                            }
+                            HorizontalDivider(
+                                thickness = 0.5.dp,
+                                color = cardBorderColor,
+                            )
+                        }
+                        if (username.isNotBlank()) {
+                            val localClipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .clickable {
+                                        localClipboard.setText(AnnotatedString("@$username"))
+                                        scope.launch { snackbarHostState.showSnackbar("نام کاربری در حافظه کپی شد") }
+                                    },
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "@$username",
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Medium,
+                                    )
+                                    Spacer(Modifier.height(2.dp))
+                                    Text(
+                                        text = "نام کاربری",
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        fontSize = 12.sp,
+                                    )
+                                }
+                                Icon(
+                                    imageVector = Icons.Default.ContentCopy,
+                                    contentDescription = "کپی نام کاربری",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(19.dp),
+                                )
+                            }
+                        }
                     }
+                }
+
+                Spacer(Modifier.height(14.dp))
+
+                // 3. Floating Segmented Liquid Glass Pill Tabs
+                ir.coffevista.vista_native.features.chat.presentation.components.VistaSegmentedGlassTabs(
+                    tabs = tabs,
+                    selectedIndex = selectedTabIndex,
+                    onTabSelected = { selectedTabIndex = it },
+                    modifier = Modifier.padding(horizontal = 14.dp),
+                )
+
+                Spacer(Modifier.height(10.dp))
+
+                // 4. Shared Media / Files / Links / Audio / GIFs Card (non-nested so entire page scrolls smoothly)
+                val mediaCardShape = RoundedCornerShape(20.dp)
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp)
+                        .defaultMinSize(minHeight = 460.dp)
+                        .shadow(if (isDark) 1.dp else 2.dp, mediaCardShape)
+                        .background(cardBgColor, mediaCardShape)
+                        .border(0.55.dp, cardBorderColor, mediaCardShape)
+                        .clip(mediaCardShape)
+                        .padding(4.dp),
+                ) {
+                    if (selectedTabIndex == 0 && mediaMessages.isNotEmpty()) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            mediaMessages.chunked(3).forEach { rowMessages ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                ) {
+                                    rowMessages.forEach { message ->
+                                        val attachment = message.attachment
+                                        var localFailed by remember(attachment?.localUri) { mutableStateOf(false) }
+                                        val displayModel = attachment?.localUri?.takeIf { it.isNotBlank() && !localFailed }
+                                            ?: attachment?.remoteUrl
+                                        Box(
+                                            Modifier
+                                                .weight(1f)
+                                                .aspectRatio(1f)
+                                                .clip(RoundedCornerShape(10.dp))
+                                                .clickable {
+                                                    attachment?.let { att ->
+                                                        onAttachmentClick(
+                                                            if (localFailed) att.copy(localUri = null) else att,
+                                                        )
+                                                    }
+                                                },
+                                        ) {
+                                            AsyncImage(
+                                                model = displayModel,
+                                                contentDescription = attachment?.fileName ?: "رسانه",
+                                                contentScale = ContentScale.Crop,
+                                                onError = {
+                                                    if (!attachment?.localUri.isNullOrBlank() &&
+                                                        displayModel == attachment?.localUri &&
+                                                        !attachment?.remoteUrl.isNullOrBlank()
+                                                    ) {
+                                                        localFailed = true
+                                                    }
+                                                },
+                                                modifier = Modifier.fillMaxSize(),
+                                            )
+                                            if (attachment?.kind == AttachmentKind.VIDEO) {
+                                                Icon(
+                                                    Icons.Default.PlayArrow,
+                                                    contentDescription = "ویدیو",
+                                                    tint = Color.White,
+                                                    modifier = Modifier
+                                                        .align(Alignment.BottomEnd)
+                                                        .padding(8.dp),
+                                                )
+                                            }
+                                        }
+                                    }
+                                    repeat(3 - rowMessages.size) {
+                                        Spacer(Modifier.weight(1f))
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        val selectedItems: List<Message> = when (selectedTabIndex) {
+                            0 -> mediaMessages
+                            1 -> fileMessages
+                            2 -> linkMessages
+                            3 -> audioMessages
+                            4 -> gifMessages
+                            else -> emptyList()
+                        }
+                        if (selectedItems.isNotEmpty() && selectedTabIndex != 0) {
+                            val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+                            val internalNavigator = ir.coffevista.vista_native.core.designsystem.navigation.LocalVistaInternalLinkNavigator.current
+                            Column(Modifier.fillMaxWidth()) {
+                                selectedItems.forEach { message: Message ->
+                                    Row(
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                if (selectedTabIndex == 2) {
+                                                    extractFirstUrl((message.content as? MessageContent.Text)?.value.orEmpty())?.let { url ->
+                                                        if (internalNavigator?.openUrl(url) != true) {
+                                                            runCatching { uriHandler.openUri(url) }
+                                                        }
+                                                    }
+                                                } else {
+                                                    message.attachment?.let(onAttachmentClick)
+                                                }
+                                            }
+                                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(38.dp)
+                                                .clip(CircleShape)
+                                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
+                                            contentAlignment = Alignment.Center,
+                                        ) {
+                                            Icon(
+                                                when (message.attachment?.kind) {
+                                                    AttachmentKind.AUDIO, AttachmentKind.VOICE -> Icons.Default.Mic
+                                                    AttachmentKind.GIF -> Icons.Default.EmojiEmotions
+                                                    else -> Icons.Default.AttachFile
+                                                },
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(19.dp),
+                                            )
+                                        }
+                                        Spacer(Modifier.width(12.dp))
+                                        Column(Modifier.weight(1f)) {
+                                            Text(
+                                                message.attachment?.fileName ?: message.previewText(),
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                fontWeight = FontWeight.Medium,
+                                            )
+                                            Text(
+                                                formatConversationTime(message.createdAtEpochMillis),
+                                                maxLines = 1,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            val icon = when (selectedTabIndex) {
+                                0 -> Icons.Default.AttachFile
+                                1 -> Icons.Default.Description
+                                2 -> Icons.Default.AttachFile
+                                3 -> Icons.Default.Mic
+                                else -> Icons.Default.EmojiEmotions
+                            }
+                            val emptyText = when (selectedTabIndex) {
+                                0 -> "هیچ رسانه‌ای یافت نشد"
+                                1 -> "هیچ فایلی یافت نشد"
+                                2 -> "هیچ لینکی یافت نشد"
+                                3 -> "هیچ صدایی یافت نشد"
+                                else -> "هیچ گیفی یافت نشد"
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(320.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Icon(
+                                        imageVector = icon,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(48.dp),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f),
+                                    )
+                                    Spacer(Modifier.height(12.dp))
+                                    Text(
+                                        text = emptyText,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
+                                        fontSize = 14.5.sp,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(220.dp))
+            }
+
+            // Pinned Collapsing Liquid Teardrop / Metaball Notch Header
+            ir.coffevista.vista_native.features.chat.presentation.components.VistaNotchMetaballHeader(
+                displayName = displayName,
+                subtitle = presenceText,
+                isSubtitleHighlighted = isPartnerOnline,
+                avatarUrl = heroAvatar,
+                scrollOffsetPx = detailsScrollState.value,
+                glassState = detailsGlassState,
+                onBack = onDismiss,
+                backContentDescription = "بازگشت از اطلاعات کاربر",
+                menuContentDescription = "گزینه‌های اطلاعات کاربر",
+                onMenuClick = { partnerMenuExpanded = true },
+                menuDropdownContent = {
                     DropdownMenu(
                         expanded = partnerMenuExpanded,
                         onDismissRequest = { partnerMenuExpanded = false },
@@ -7790,352 +8522,21 @@ private fun PartnerDetailsScreen(
                             },
                         )
                     }
-                }
-                Column(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(bottom = 20.dp, start = 20.dp, end = 20.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(110.dp)
-                            .background(MaterialTheme.colorScheme.surface, CircleShape)
-                            .padding(4.dp)
-                            .clip(CircleShape),
-                    ) {
-                        val cleanAvatar = heroAvatar?.trim()?.takeIf { it.isNotEmpty() && !it.equals("null", ignoreCase = true) }
-                        if (!cleanAvatar.isNullOrBlank()) {
-                            SubcomposeAsyncImage(
-                                model = cleanAvatar,
-                                contentDescription = "تصویر $displayName",
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize(),
-                                loading = {
-                                    Box(
-                                        Modifier
-                                            .fillMaxSize()
-                                            .background(
-                                                Brush.linearGradient(
-                                                    listOf(
-                                                        Color(0xFF6C5CE7),
-                                                        Color(0xFF0984E3),
-                                                    )
-                                                )
-                                            ),
-                                        contentAlignment = Alignment.Center,
-                                    ) {
-                                        Text(displayName.firstOrNull()?.uppercase() ?: "?", color = Color.White, fontSize = 42.sp, fontWeight = FontWeight.Bold)
-                                    }
-                                },
-                                error = {
-                                    Box(
-                                        Modifier
-                                            .fillMaxSize()
-                                            .background(
-                                                Brush.linearGradient(
-                                                    listOf(
-                                                        Color(0xFF6C5CE7),
-                                                        Color(0xFF0984E3),
-                                                    )
-                                                )
-                                            ),
-                                        contentAlignment = Alignment.Center,
-                                    ) {
-                                        Text(displayName.firstOrNull()?.uppercase() ?: "?", color = Color.White, fontSize = 42.sp, fontWeight = FontWeight.Bold)
-                                    }
-                                },
-                            )
-                        } else {
-                            Box(
-                                Modifier
-                                    .fillMaxSize()
-                                    .background(
-                                        Brush.linearGradient(
-                                            listOf(
-                                                Color(0xFF6C5CE7),
-                                                Color(0xFF0984E3),
-                                            )
-                                        )
-                                    ),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Text(displayName.firstOrNull()?.uppercase() ?: "?", color = Color.White, fontSize = 42.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    }
-                    Spacer(Modifier.height(16.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = displayName,
-                            modifier = Modifier.weight(1f, fill = false),
-                            color = Color.White,
-                            fontSize = 24.sp,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        ChatUserVerificationBadge(
-                            isVerified = profile?.isVerified == true || conversation?.isVerified == true,
-                            verificationType = profile?.verificationType ?: conversation?.verificationType,
-                            role = profile?.role ?: conversation?.role,
-                            size = 19.dp,
-                            isDarkSurface = true,
-                            spacerWidth = 6.dp,
-                        )
-                    }
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        text = state.presence?.let { presence ->
-                            if (presence.isOnline) "آنلاین" else formatUserPresence(presence.lastOnlineAtEpochMillis)
-                        } ?: "در حال بررسی...",
-                        color = Color.White.copy(alpha = 0.82f),
-                        fontSize = 14.sp,
+                },
+                verificationBadgeContent = {
+                    ChatUserVerificationBadge(
+                        isVerified = profile?.isVerified == true || conversation?.isVerified == true,
+                        verificationType = profile?.verificationType ?: conversation?.verificationType,
+                        role = profile?.role ?: conversation?.role,
+                        size = 18.dp,
+                        isDarkSurface = isDark,
+                        spacerWidth = 5.dp,
                     )
-                }
-            }
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 8.dp)
-                    .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(16.dp))
-                    .padding(horizontal = 8.dp, vertical = 10.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                PartnerDetailsAction(
-                    icon = Icons.Default.ChatBubbleOutline,
-                    label = "پیام",
-                    modifier = Modifier.weight(1f),
-                ) {
-                    if (conversation?.type == ConversationType.SECRET && !conversation.peerId.isNullOrBlank()) {
-                        onDismiss()
-                        onOpenProfile(conversation.peerId)
-                    } else {
-                        onDismiss()
-                    }
-                }
-                PartnerDetailsAction(
-                    icon = if (conversation?.isMuted == true) Icons.Default.NotificationsOff else Icons.Default.Notifications,
-                    label = if (conversation?.isMuted == true) "صدادار" else "بی‌صدا",
-                    modifier = Modifier.weight(1f),
-                ) {
-                    onToggleMute()
-                    scope.launch { snackbarHostState.showSnackbar("تنظیمات اعلان گفتگو به‌روزرسانی شد") }
-                }
-                PartnerDetailsAction(
-                    icon = Icons.Default.PersonOutline,
-                    label = "پروفایل",
-                    modifier = Modifier.weight(1f),
-                ) {
-                    conversation?.peerId?.let { peerId ->
-                        onDismiss()
-                        onOpenProfile(peerId)
-                    }
-                }
-                PartnerDetailsAction(
-                    icon = Icons.Default.Search,
-                    label = "جستجو",
-                    modifier = Modifier.weight(1f),
-                ) { onOpenSearch() }
-            }
-
-            if (state.isPartnerProfileLoading && profile == null) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(92.dp)
-                        .padding(horizontal = 12.dp)
-                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f), RoundedCornerShape(16.dp)),
-                )
-            } else if (username.isNotBlank() || !profile?.bio.isNullOrBlank()) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp)
-                        .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(16.dp))
-                        .padding(horizontal = 16.dp, vertical = 14.dp),
-                    horizontalAlignment = Alignment.Start,
-                ) {
-                    Text(
-                        text = "@$username",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 15.sp,
-                    )
-                    profile?.bio?.let { bio ->
-                        Spacer(Modifier.height(12.dp))
-                        Text(
-                            text = bio,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            fontSize = 15.sp,
-                            lineHeight = 22.sp,
-                            textAlign = TextAlign.End,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                    }
-                    state.presence?.let { presence ->
-                        Spacer(Modifier.height(6.dp))
-                        Text(
-                            text = if (presence.isOnline) "آنلاین" else formatUserPresence(presence.lastOnlineAtEpochMillis),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 13.sp,
-                        )
-                    }
-                }
-            }
-
-            Spacer(Modifier.height(8.dp))
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp)
-                    .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(16.dp)),
-            ) {
-                ScrollableTabRow(selectedTabIndex = selectedTabIndex, edgePadding = 0.dp) {
-                    tabs.forEachIndexed { index, label ->
-                        Tab(selected = selectedTabIndex == index, onClick = { selectedTabIndex = index }, text = { Text(label) })
-                    }
-                }
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(300.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                if (selectedTabIndex == 0 && mediaMessages.isNotEmpty()) {
-                    LazyVerticalGrid(
-                        columns = GridCells.Fixed(3),
-                        contentPadding = PaddingValues(1.dp),
-                        horizontalArrangement = Arrangement.spacedBy(1.dp),
-                        verticalArrangement = Arrangement.spacedBy(1.dp),
-                        modifier = Modifier.fillMaxSize(),
-                    ) {
-                        gridItems(mediaMessages, key = { it.stableKey }) { message ->
-                            val attachment = message.attachment
-                            var localFailed by remember(attachment?.localUri) { mutableStateOf(false) }
-                            val displayModel = attachment?.localUri?.takeIf { it.isNotBlank() && !localFailed }
-                                ?: attachment?.remoteUrl
-                            Box(
-                                Modifier
-                                    .aspectRatio(1f)
-                                    .clip(RoundedCornerShape(4.dp))
-                                    .clickable {
-                                        attachment?.let { att ->
-                                            onAttachmentClick(
-                                                if (localFailed) att.copy(localUri = null) else att,
-                                            )
-                                        }
-                                    }
-                            ) {
-                                AsyncImage(
-                                    model = displayModel,
-                                    contentDescription = attachment?.fileName ?: "رسانه",
-                                    contentScale = ContentScale.Crop,
-                                    onError = {
-                                        if (!attachment?.localUri.isNullOrBlank() &&
-                                            displayModel == attachment?.localUri &&
-                                            !attachment?.remoteUrl.isNullOrBlank()
-                                        ) {
-                                            localFailed = true
-                                        }
-                                    },
-                                    modifier = Modifier.fillMaxSize(),
-                                )
-                                if (attachment?.kind == AttachmentKind.VIDEO) {
-                                    Icon(
-                                        Icons.Default.PlayArrow,
-                                        contentDescription = "ویدیو",
-                                        tint = Color.White,
-                                        modifier = Modifier
-                                            .align(Alignment.BottomEnd)
-                                            .padding(8.dp),
-                                    )
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    val selectedItems: List<Message> = when (selectedTabIndex) {
-                        0 -> mediaMessages
-                        1 -> fileMessages
-                        2 -> linkMessages
-                        3 -> audioMessages
-                        4 -> gifMessages
-                        else -> emptyList()
-                    }
-                    if (selectedItems.isNotEmpty() && selectedTabIndex != 0) {
-                        val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
-                        val internalNavigator = ir.coffevista.vista_native.core.designsystem.navigation.LocalVistaInternalLinkNavigator.current
-                        LazyColumn(Modifier.fillMaxSize()) {
-                            items(selectedItems, key = { it.stableKey }) { message: Message ->
-                                Row(
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .clickable {
-                                            if (selectedTabIndex == 2) {
-                                                extractFirstUrl((message.content as? MessageContent.Text)?.value.orEmpty())?.let { url ->
-                                                    if (internalNavigator?.openUrl(url) != true) {
-                                                        runCatching { uriHandler.openUri(url) }
-                                                    }
-                                                }
-                                            } else {
-                                                message.attachment?.let(onAttachmentClick)
-                                            }
-                                        }
-                                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Icon(
-                                        when (message.attachment?.kind) {
-                                            AttachmentKind.AUDIO, AttachmentKind.VOICE -> Icons.Default.Mic
-                                            AttachmentKind.GIF -> Icons.Default.EmojiEmotions
-                                            else -> Icons.Default.AttachFile
-                                        },
-                                        contentDescription = null,
-                                    )
-                                    Spacer(Modifier.width(10.dp))
-                                    Column(Modifier.weight(1f)) {
-                                        Text(message.attachment?.fileName ?: message.previewText(), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                        Text(formatConversationTime(message.createdAtEpochMillis), maxLines = 1, style = MaterialTheme.typography.bodySmall)
-                                    }
-                                }
-                            }
-                        }
-                        return@Box
-                    }
-                    val icon = when (selectedTabIndex) {
-                        0 -> Icons.Default.AttachFile
-                        1 -> Icons.Default.Description
-                        2 -> Icons.Default.AttachFile
-                        3 -> Icons.Default.Mic
-                        else -> Icons.Default.EmojiEmotions
-                    }
-                    val emptyText = when (selectedTabIndex) {
-                        0 -> "هیچ رسانه‌ای یافت نشد"
-                        1 -> "هیچ فایلی یافت نشد"
-                        2 -> "هیچ لینکی یافت نشد"
-                        3 -> "هیچ صدایی یافت نشد"
-                        else -> "هیچ گیفی یافت نشد"
-                    }
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(
-                            imageVector = icon,
-                            contentDescription = null,
-                            modifier = Modifier.size(56.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f),
-                        )
-                        Spacer(Modifier.height(16.dp))
-                        Text(
-                            text = emptyText,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
-                            fontSize = 16.sp,
-                        )
-                    }
-                }
-            }
+                },
+                modifier = Modifier.align(Alignment.TopCenter),
+            )
         }
     }
-}
 
     if (blockConfirmVisible) {
         val blocked = state.blockStatus?.isBlocked == true

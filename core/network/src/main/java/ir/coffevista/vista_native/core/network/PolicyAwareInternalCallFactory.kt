@@ -1,6 +1,7 @@
 package ir.coffevista.vista_native.core.network
 
 import okhttp3.Call
+import okhttp3.ConnectionPool
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
@@ -81,12 +82,25 @@ class PolicyAwareInternalCallFactory(
         val baseBuilder = OkHttpClient.Builder()
             // Internal REST/realtime must not inherit a stale debugging proxy.
             .proxy(Proxy.NO_PROXY)
+            .connectionPool(ConnectionPool(8, 5, TimeUnit.MINUTES))
             .connectTimeout(20, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .writeTimeout(25, TimeUnit.SECONDS)
             .callTimeout(45, TimeUnit.SECONDS)
             .pingInterval(20, TimeUnit.SECONDS)
             .retryOnConnectionFailure(true)
+            .addInterceptor { chain ->
+                val req = chain.request()
+                val liveReq = if (req.url.encodedPath.startsWith("/v1/chat/")) {
+                    req.newBuilder()
+                        .header("Cache-Control", "no-cache, no-store")
+                        .header("Pragma", "no-cache")
+                        .build()
+                } else {
+                    req
+                }
+                chain.proceed(liveReq)
+            }
             .addInterceptor(BoundedRetryInterceptor())
             .addInterceptor(authorizationInterceptor)
             .addInterceptor { chain ->

@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.absolutePadding
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
@@ -111,9 +112,14 @@ fun VistaButton(
     }
 }
 
+object VistaFabDefaults {
+    val RightMargin = 16.dp
+    val BottomPaddingAboveNavBar = 94.dp
+}
+
 /**
  * Standard Floating Action Button (FAB) across the Vista application.
- * Positioned consistently above the floating bottom navigation bar and system/IME insets.
+ * Positioned identically on the physical right above the floating bottom navigation bar and system/IME insets.
  */
 @Composable
 fun VistaFloatingActionButton(
@@ -143,7 +149,10 @@ fun VistaFloatingActionButton(
     )
     Box(
         modifier = modifier
-            .padding(bottom = 110.dp + bottomInset)
+            .absolutePadding(
+                right = VistaFabDefaults.RightMargin,
+                bottom = VistaFabDefaults.BottomPaddingAboveNavBar + bottomInset,
+            )
             .graphicsLayer {
                 scaleX = pressScale
                 scaleY = pressScale
@@ -158,13 +167,12 @@ fun VistaFloatingActionButton(
                             tint = MaterialTheme.colorScheme.primary,
                             isDark = isDark,
                             blurRadius = VistaGlassTokens.PillBlur,
-                            tintAlphaOverride = 0.88f,
-                            drawHighlight = false,
-                            rimWidth = 0.6.dp,
-                            shadowElevation = 8.dp,
+                            tintAlphaOverride = 0.72f,
+                            drawHighlight = true,
+                            rimWidth = 0.65.dp,
+                            shadowElevation = 6.dp,
                         )
                         .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.88f))
                 } else {
                     Modifier
                         .shadow(6.dp, CircleShape)

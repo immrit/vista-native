@@ -319,9 +319,11 @@ internal fun OtherUserProfileContent(
                     .vistaGlass(
                         state = otherProfileGlassState,
                         shape = RectangleShape,
-                        tint = MaterialTheme.colorScheme.surface,
+                        tint = if (isDarkOtherProfile) androidx.compose.ui.graphics.Color(0xFF1A222C) else androidx.compose.ui.graphics.Color(0xFFFFFFFF),
                         isDark = isDarkOtherProfile,
                         blurRadius = VistaGlassTokens.BarBlur,
+                        tintAlphaOverride = if (isDarkOtherProfile) 0.58f else 0.62f,
+                        drawHighlight = true,
                         rimWidth = 0.dp,
                         shadowElevation = 3.dp,
                     )

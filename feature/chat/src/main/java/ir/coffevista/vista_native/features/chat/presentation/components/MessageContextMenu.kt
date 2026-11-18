@@ -37,6 +37,7 @@ import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.material.icons.filled.CheckCircleOutline
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PushPin
@@ -119,6 +120,7 @@ internal fun MessageContextMenu(
     onInfo: () -> Unit = {},
     onToggleSaveGif: (() -> Unit)? = null,
     isGifSaved: Boolean = false,
+    onSaveAttachment: (() -> Unit)? = null,
     glassState: VistaGlassState? = LocalVistaGlassState.current,
 ) {
     val isDark = isSystemInDarkTheme()
@@ -401,6 +403,7 @@ internal fun MessageContextMenu(
                                 onRetry = onRetry,
                                 onToggleSaveGif = onToggleSaveGif,
                                 isGifSaved = isGifSaved,
+                                onSaveAttachment = onSaveAttachment,
                             )
                         }
                     }
@@ -446,6 +449,7 @@ internal fun MessageContextMenu(
                                     onRetry = onRetry,
                                     onToggleSaveGif = onToggleSaveGif,
                                     isGifSaved = isGifSaved,
+                                    onSaveAttachment = onSaveAttachment,
                                 )
                             }
                         }
@@ -498,6 +502,7 @@ private fun MessageContextMenuActions(
     onRetry: () -> Unit = {},
     onToggleSaveGif: (() -> Unit)? = null,
     isGifSaved: Boolean = false,
+    onSaveAttachment: (() -> Unit)? = null,
 ) {
     Column(modifier = modifier.padding(vertical = 5.dp)) {
         if (policy.canRetry) {
@@ -525,6 +530,21 @@ private fun MessageContextMenuActions(
                 iconColor = iconPrimaryColor,
                 textColor = textPrimaryColor,
                 onClick = onCopy,
+            )
+        }
+        if (policy.canSaveToDevice && onSaveAttachment != null) {
+            val saveLabel = when (message.attachment?.kind) {
+                AttachmentKind.IMAGE, AttachmentKind.VIDEO, AttachmentKind.GIF -> "ذخیره در گالری"
+                AttachmentKind.AUDIO -> "ذخیره موسیقی"
+                AttachmentKind.VOICE -> "ذخیره صدا"
+                else -> "ذخیره فایل"
+            }
+            MessageContextMenuItem(
+                icon = Icons.Default.Download,
+                label = saveLabel,
+                iconColor = iconPrimaryColor,
+                textColor = textPrimaryColor,
+                onClick = onSaveAttachment,
             )
         }
         if (message.attachment?.kind == AttachmentKind.GIF && onToggleSaveGif != null) {

@@ -555,9 +555,8 @@ class MessagesViewModel @Inject constructor(
                             error = result.message,
                         )
                     }
-                    refresh()
                 }
-                is ChatResult.Success -> refresh()
+                is ChatResult.Success -> Unit
             }
         }
     }
@@ -616,9 +615,8 @@ class MessagesViewModel @Inject constructor(
                             error = result.message,
                         )
                     }
-                    refresh()
                 }
-                is ChatResult.Success -> refresh()
+                is ChatResult.Success -> Unit
             }
         }
     }
@@ -746,6 +744,45 @@ class MessagesViewModel @Inject constructor(
     fun resumeDownload(messageId: String) = downloadMutation { repository.resumeDownload(messageId) }
 
     fun cancelDownload(messageId: String) = downloadMutation { repository.cancelDownload(messageId) }
+
+    fun saveAttachment(message: Message, onResult: (Boolean, String) -> Unit = { _, _ -> }) {
+        if (mutableState.value.isSecret) {
+            onResult(false, "ذخیره رسانه در گفتگوی محرمانه مجاز نیست")
+            return
+        }
+        viewModelScope.launch {
+            when (val result = repository.saveAttachmentToDevice(message)) {
+                is ChatResult.Success -> onResult(true, result.value)
+                is ChatResult.Failure -> onResult(false, result.message)
+            }
+        }
+    }
+
+    suspend fun saveAttachmentDirect(message: Message): ChatResult<String> {
+        if (mutableState.value.isSecret) {
+            return ChatResult.Failure("ذخیره رسانه در گفتگوی محرمانه مجاز نیست", false)
+        }
+        return repository.saveAttachmentToDevice(message)
+    }
+
+    suspend fun saveExternalMediaDirect(
+        sourceUrl: String,
+        fallbackUrl: String? = null,
+        kind: AttachmentKind,
+        fileName: String? = null,
+        mimeType: String? = null,
+    ): ChatResult<String> {
+        if (mutableState.value.isSecret) {
+            return ChatResult.Failure("ذخیره رسانه در گفتگوی محرمانه مجاز نیست", false)
+        }
+        return repository.saveMediaUrlToDevice(
+            sourceUrl = sourceUrl,
+            fallbackUrl = fallbackUrl,
+            kind = kind,
+            fileName = fileName,
+            mimeType = mimeType,
+        )
+    }
 
     private fun downloadMutation(block: suspend () -> ChatResult<*>) {
         viewModelScope.launch {

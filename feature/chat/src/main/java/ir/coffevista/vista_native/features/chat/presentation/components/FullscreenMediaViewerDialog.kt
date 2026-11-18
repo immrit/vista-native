@@ -11,8 +11,10 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import android.view.ViewGroup
 import android.view.Window
 import android.view.WindowManager
+import androidx.activity.compose.BackHandler
 import androidx.annotation.OptIn
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
@@ -38,15 +40,22 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.systemBarsIgnoringVisibility
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -75,6 +84,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -106,6 +116,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -115,6 +126,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
 import androidx.core.content.FileProvider
+import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -129,6 +141,7 @@ import coil.ImageLoader
 import coil.compose.SubcomposeAsyncImage
 import coil.imageLoader
 import coil.request.ImageRequest
+import ir.coffevista.vista_native.core.designsystem.component.VistaFullscreenSurface
 import ir.coffevista.vista_native.core.designsystem.glass.VistaGlassState
 import ir.coffevista.vista_native.core.designsystem.glass.VistaGlassTokens
 import ir.coffevista.vista_native.core.designsystem.glass.rememberVistaGlassState
@@ -171,6 +184,8 @@ fun FullscreenMediaViewerDialog(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
     sourceBounds: Rect? = null,
+    allowSave: Boolean = true,
+    onSaveItem: (suspend (MediaViewerItem) -> Result<String>)? = null,
     onForward: ((MediaViewerItem) -> Unit)? = null,
     onDelete: ((MediaViewerItem) -> Unit)? = null,
     onShowInChat: ((MediaViewerItem) -> Unit)? = null,
@@ -204,14 +219,12 @@ fun FullscreenMediaViewerDialog(
         isDraggingToDismiss = false
     }
 
-    Dialog(
+    VistaFullscreenSurface(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(
-            usePlatformDefaultWidth = false,
-            decorFitsSystemWindows = false,
-        ),
     ) {
-        ConfigureViewerSystemBars(chromeVisible = chromeVisible && !isDraggingToDismiss)
+        BackHandler(enabled = true, onBack = onDismiss)
+        ConfigureViewerSystemBars(chromeVisible = chromeVisible || isDraggingToDismiss)
+        val safeInsets = rememberViewerSafeInsets()
 
         val mediaGlassState = rememberVistaGlassState()
         val density = LocalDensity.current
@@ -234,10 +247,16 @@ fun FullscreenMediaViewerDialog(
             }
         }
 
+        val backdropInteraction = remember { MutableInteractionSource() }
         Box(
             modifier = modifier
                 .fillMaxSize()
-                .background(Color.Black.copy(alpha = backgroundAlpha)),
+                .background(Color.Black.copy(alpha = backgroundAlpha))
+                .clickable(
+                    interactionSource = backdropInteraction,
+                    indication = null,
+                    onClick = {},
+                ),
         ) {
             HorizontalPager(
                 state = pagerState,
@@ -263,6 +282,7 @@ fun FullscreenMediaViewerDialog(
                         isCurrentPage = pagerState.currentPage == page,
                         chromeVisible = chromeVisible && !isDraggingToDismiss,
                         glassState = mediaGlassState,
+                        bottomSafePadding = safeInsets.calculateBottomPadding(),
                         onToggleChrome = { chromeVisible = !chromeVisible },
                         onVerticalDragDelta = { delta ->
                             isDraggingToDismiss = true
@@ -307,7 +327,7 @@ fun FullscreenMediaViewerDialog(
                 }
             }
 
-            // هدر تلگرامی با قابلیت مخفی‌سازی کامل با لمس عکس (نمایش تمام‌صفحه عکس)
+            // هدر شیشه‌ای شناور با قابلیت مخفی‌سازی کامل با لمس تصویر (نمایش تمام‌صفحه)
             AnimatedVisibility(
                 visible = chromeVisible && !isDraggingToDismiss,
                 enter = fadeIn(tween(180)) + slideInVertically(tween(200)) { -it },
@@ -316,6 +336,7 @@ fun FullscreenMediaViewerDialog(
             ) {
                 ViewerTopBar(
                     glassState = mediaGlassState,
+                    safeInsets = safeInsets,
                     currentIndex = pagerState.currentPage,
                     totalCount = mediaItems.size,
                     senderName = currentItem?.senderName,
@@ -325,7 +346,7 @@ fun FullscreenMediaViewerDialog(
                 )
             }
 
-            // فوتر تلگرامی: کپشن قابل باز شدن + نوار اکشن‌ها (ذخیره، اشتراک، نمایش در چت، فوروارد، حذف)
+            // فوتر شیشه‌ای شناور: کپشن قابل باز شدن + نوار اکشن‌ها (ذخیره، اشتراک، نمایش در چت، فوروارد، حذف)
             AnimatedVisibility(
                 visible = chromeVisible && !isDraggingToDismiss && currentItem != null,
                 enter = fadeIn(tween(180)) + slideInVertically(tween(200)) { it },
@@ -333,20 +354,32 @@ fun FullscreenMediaViewerDialog(
                 modifier = Modifier.align(Alignment.BottomCenter),
             ) {
                 currentItem?.let { item ->
+                    val canSaveItem = allowSave && !isSecretLocalUri(item.url)
                     ViewerBottomBar(
                         glassState = mediaGlassState,
+                        safeInsets = safeInsets,
                         item = item,
                         isSaving = isSavingToGallery,
-                        onSaveToGallery = {
-                            if (!isSavingToGallery) {
-                                isSavingToGallery = true
-                                coroutineScope.launch {
-                                    val saved = saveMediaToGallery(context, item)
-                                    isSavingToGallery = false
-                                    statusBannerText = if (saved) {
-                                        "در گالری ذخیره شد"
-                                    } else {
-                                        "ذخیره رسانه انجام نشد"
+                        onSaveToGallery = if (!canSaveItem) null else {
+                            {
+                                if (!isSavingToGallery) {
+                                    isSavingToGallery = true
+                                    coroutineScope.launch {
+                                        val kind = when {
+                                            item.isVideo -> ir.coffevista.vista_native.features.chat.domain.model.AttachmentKind.VIDEO
+                                            item.isGif -> ir.coffevista.vista_native.features.chat.domain.model.AttachmentKind.GIF
+                                            else -> ir.coffevista.vista_native.features.chat.domain.model.AttachmentKind.IMAGE
+                                        }
+                                        val result = onSaveItem?.invoke(item)
+                                            ?: saveChatAttachmentToDevice(
+                                                context = context,
+                                                sourceUriOrUrl = item.url,
+                                                fallbackUrl = item.fallbackUrl,
+                                                kind = kind,
+                                                fileName = item.title,
+                                            )
+                                        isSavingToGallery = false
+                                        statusBannerText = result.getOrElse { "ذخیره رسانه انجام نشد" }
                                     }
                                 }
                             }
@@ -373,8 +406,7 @@ fun FullscreenMediaViewerDialog(
                 exit = fadeOut(tween(140)),
                 modifier = Modifier
                     .align(Alignment.TopCenter)
-                    .statusBarsPadding()
-                    .padding(top = 68.dp),
+                    .padding(top = safeInsets.calculateTopPadding() + 68.dp),
             ) {
                 Box(
                     modifier = Modifier
@@ -416,37 +448,129 @@ fun FullscreenMediaViewerDialog(
     modifier = modifier,
 )
 
+@kotlin.OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun rememberViewerSafeInsets(): PaddingValues {
+    val view = LocalView.current
+    val density = LocalDensity.current
+    val layoutDirection = LocalLayoutDirection.current
+    val activityWindow = remember(view) { view.context.findViewerActivity()?.window }
+
+    val activityRootInsets = remember(activityWindow, view, density) {
+        val sourceView = activityWindow?.decorView ?: view
+        ViewCompat.getRootWindowInsets(sourceView)?.getInsetsIgnoringVisibility(
+            WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout(),
+        )
+    }
+
+    val composeIgnoringPadding = WindowInsets.systemBarsIgnoringVisibility
+        .union(WindowInsets.displayCutout)
+        .asPaddingValues()
+
+    return with(density) {
+        val top = maxOf(
+            (activityRootInsets?.top ?: 0).toDp(),
+            composeIgnoringPadding.calculateTopPadding(),
+        )
+        val bottom = maxOf(
+            (activityRootInsets?.bottom ?: 0).toDp(),
+            composeIgnoringPadding.calculateBottomPadding(),
+        )
+        val rawStartPx = if (layoutDirection == LayoutDirection.Rtl) {
+            activityRootInsets?.right ?: 0
+        } else {
+            activityRootInsets?.left ?: 0
+        }
+        val rawEndPx = if (layoutDirection == LayoutDirection.Rtl) {
+            activityRootInsets?.left ?: 0
+        } else {
+            activityRootInsets?.right ?: 0
+        }
+        PaddingValues(
+            start = maxOf(rawStartPx.toDp(), composeIgnoringPadding.calculateStartPadding(layoutDirection)),
+            top = top,
+            end = maxOf(rawEndPx.toDp(), composeIgnoringPadding.calculateEndPadding(layoutDirection)),
+            bottom = bottom,
+        )
+    }
+}
+
+private fun applyLockedEdgeToEdgeDialogWindow(window: Window) {
+    WindowCompat.setDecorFitsSystemWindows(window, false)
+    window.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+    window.addFlags(
+        WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+            WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS,
+    )
+    window.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+    @Suppress("DEPRECATION")
+    window.statusBarColor = android.graphics.Color.TRANSPARENT
+    @Suppress("DEPRECATION")
+    window.navigationBarColor = android.graphics.Color.TRANSPARENT
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        window.isStatusBarContrastEnforced = false
+        window.isNavigationBarContrastEnforced = false
+    }
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+        val cutoutMode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+        } else {
+            WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
+        val attrs = window.attributes
+        val missingScreenFlag = (attrs.flags and WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN) == 0
+        val needsUpdate = missingScreenFlag ||
+            attrs.layoutInDisplayCutoutMode != cutoutMode ||
+            (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
+                (attrs.fitInsetsTypes != 0 || attrs.fitInsetsSides != 0))
+        if (needsUpdate) {
+            attrs.flags = attrs.flags or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+            attrs.layoutInDisplayCutoutMode = cutoutMode
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                attrs.fitInsetsTypes = 0
+                attrs.fitInsetsSides = 0
+            }
+            window.attributes = attrs
+        }
+    }
+}
+
 @Composable
 private fun ConfigureViewerSystemBars(chromeVisible: Boolean) {
     val view = LocalView.current
     val dialogWindow = (view.parent as? DialogWindowProvider)?.window
     val activityWindow = remember(view) { view.context.findViewerActivity()?.window }
 
+    SideEffect {
+        if (dialogWindow != null) {
+            applyLockedEdgeToEdgeDialogWindow(dialogWindow)
+        }
+    }
+
     DisposableEffect(dialogWindow, activityWindow) {
         val targetWindow = dialogWindow ?: activityWindow
-        if (targetWindow != null) {
-            WindowCompat.setDecorFitsSystemWindows(targetWindow, false)
-            @Suppress("DEPRECATION")
-            targetWindow.statusBarColor = android.graphics.Color.TRANSPARENT
-            @Suppress("DEPRECATION")
-            targetWindow.navigationBarColor = android.graphics.Color.TRANSPARENT
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                targetWindow.attributes = targetWindow.attributes.apply {
-                    layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
-                }
-            }
+        if (dialogWindow != null) {
+            applyLockedEdgeToEdgeDialogWindow(dialogWindow)
         }
+        val controller = targetWindow?.let { WindowCompat.getInsetsController(it, view) }
+        val previousLightStatus = controller?.isAppearanceLightStatusBars ?: false
+        val previousLightNav = controller?.isAppearanceLightNavigationBars ?: false
         onDispose {
             val restoreWindow = dialogWindow ?: activityWindow
             if (restoreWindow != null) {
-                val controller = WindowCompat.getInsetsController(restoreWindow, view)
-                controller.show(WindowInsetsCompat.Type.systemBars())
+                val restoreController = WindowCompat.getInsetsController(restoreWindow, view)
+                restoreController.show(WindowInsetsCompat.Type.systemBars())
+                restoreController.isAppearanceLightStatusBars = previousLightStatus
+                restoreController.isAppearanceLightNavigationBars = previousLightNav
             }
         }
     }
 
     LaunchedEffect(chromeVisible, dialogWindow, activityWindow) {
         val targetWindow = dialogWindow ?: activityWindow ?: return@LaunchedEffect
+        if (dialogWindow != null) {
+            applyLockedEdgeToEdgeDialogWindow(dialogWindow)
+        }
         val controller = WindowCompat.getInsetsController(targetWindow, view)
         controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         controller.isAppearanceLightStatusBars = false
@@ -462,6 +586,7 @@ private fun ConfigureViewerSystemBars(chromeVisible: Boolean) {
 @Composable
 private fun ViewerTopBar(
     glassState: VistaGlassState,
+    safeInsets: PaddingValues,
     currentIndex: Int,
     totalCount: Int,
     senderName: String?,
@@ -469,35 +594,47 @@ private fun ViewerTopBar(
     title: String?,
     onBack: () -> Unit,
 ) {
+    val layoutDirection = LocalLayoutDirection.current
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .background(
                 Brush.verticalGradient(
                     listOf(
-                        Color.Black.copy(alpha = 0.62f),
+                        Color.Black.copy(alpha = 0.52f),
                         Color.Black.copy(alpha = 0.0f),
                     ),
                 ),
             )
-            .vistaGlass(
-                state = glassState,
-                shape = RectangleShape,
-                tint = Color(0xFF0A0E14),
-                isDark = true,
-                blurRadius = VistaGlassTokens.BarBlur,
-                tintAlphaOverride = 0.44f,
-                drawHighlight = false,
-                rimWidth = 0.dp,
-            )
-            .statusBarsPadding()
-            .padding(horizontal = 8.dp, vertical = 6.dp),
+            .padding(
+                start = safeInsets.calculateStartPadding(layoutDirection) + 12.dp,
+                end = safeInsets.calculateEndPadding(layoutDirection) + 12.dp,
+                top = safeInsets.calculateTopPadding() + 8.dp,
+                bottom = 8.dp,
+            ),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            IconButton(onClick = onBack) {
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .vistaGlass(
+                        state = glassState,
+                        shape = CircleShape,
+                        tint = Color(0xFF141B24),
+                        isDark = true,
+                        blurRadius = VistaGlassTokens.PillBlur,
+                        tintAlphaOverride = 0.56f,
+                        drawHighlight = true,
+                        rimWidth = 0.6.dp,
+                        shadowElevation = 4.dp,
+                    )
+                    .clickable(onClick = onBack),
+                contentAlignment = Alignment.Center,
+            ) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                     contentDescription = "بستن نمایشگر",
@@ -505,16 +642,29 @@ private fun ViewerTopBar(
                 )
             }
 
-            Spacer(Modifier.width(4.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .vistaGlass(
+                        state = glassState,
+                        shape = RoundedCornerShape(22.dp),
+                        tint = Color(0xFF141B24),
+                        isDark = true,
+                        blurRadius = VistaGlassTokens.PillBlur,
+                        tintAlphaOverride = 0.56f,
+                        drawHighlight = true,
+                        rimWidth = 0.6.dp,
+                        shadowElevation = 4.dp,
+                    )
+                    .padding(horizontal = 14.dp, vertical = 6.dp),
+            ) {
                 val primaryLabel = senderName?.takeIf(String::isNotBlank)
                     ?: title?.takeIf(String::isNotBlank)
                     ?: "رسانه"
                 Text(
                     text = primaryLabel,
                     color = Color.White,
-                    fontSize = 15.5.sp,
+                    fontSize = 15.sp,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -523,8 +673,8 @@ private fun ViewerTopBar(
                 if (dateLabel != null) {
                     Text(
                         text = dateLabel.toPersianDigits(),
-                        color = Color.White.copy(alpha = 0.74f),
-                        fontSize = 12.sp,
+                        color = Color.White.copy(alpha = 0.76f),
+                        fontSize = 11.5.sp,
                         maxLines = 1,
                     )
                 }
@@ -533,9 +683,18 @@ private fun ViewerTopBar(
             if (totalCount > 1) {
                 Box(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(Color.White.copy(alpha = 0.14f))
-                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                        .vistaGlass(
+                            state = glassState,
+                            shape = RoundedCornerShape(20.dp),
+                            tint = Color(0xFF141B24),
+                            isDark = true,
+                            blurRadius = VistaGlassTokens.PillBlur,
+                            tintAlphaOverride = 0.56f,
+                            drawHighlight = true,
+                            rimWidth = 0.6.dp,
+                            shadowElevation = 4.dp,
+                        )
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
                 ) {
                     Text(
                         text = "${currentIndex + 1} از $totalCount".toPersianDigits(),
@@ -552,15 +711,17 @@ private fun ViewerTopBar(
 @Composable
 private fun ViewerBottomBar(
     glassState: VistaGlassState,
+    safeInsets: PaddingValues,
     item: MediaViewerItem,
     isSaving: Boolean,
-    onSaveToGallery: () -> Unit,
+    onSaveToGallery: (() -> Unit)?,
     onShare: () -> Unit,
     onForward: (() -> Unit)?,
     onShowInChat: (() -> Unit)?,
     onDelete: (() -> Unit)?,
 ) {
     var captionExpanded by remember(item.url, item.caption) { mutableStateOf(false) }
+    val layoutDirection = LocalLayoutDirection.current
 
     Column(
         modifier = Modifier
@@ -569,57 +730,80 @@ private fun ViewerBottomBar(
                 Brush.verticalGradient(
                     listOf(
                         Color.Black.copy(alpha = 0.0f),
-                        Color.Black.copy(alpha = 0.68f),
+                        Color.Black.copy(alpha = 0.56f),
                     ),
                 ),
             )
-            .vistaGlass(
-                state = glassState,
-                shape = RectangleShape,
-                tint = Color(0xFF0A0E14),
-                isDark = true,
-                blurRadius = VistaGlassTokens.BarBlur,
-                tintAlphaOverride = 0.48f,
-                drawHighlight = false,
-                rimWidth = 0.dp,
-            )
-            .navigationBarsPadding()
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+            .padding(
+                start = safeInsets.calculateStartPadding(layoutDirection) + 12.dp,
+                end = safeInsets.calculateEndPadding(layoutDirection) + 12.dp,
+                top = 10.dp,
+                bottom = safeInsets.calculateBottomPadding() + 12.dp,
+            ),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         val cleanCaption = item.caption?.trim().orEmpty()
         if (cleanCaption.isNotEmpty()) {
-            Text(
-                text = cleanCaption,
-                color = Color.White.copy(alpha = 0.94f),
-                fontSize = 14.sp,
-                lineHeight = 20.sp,
-                maxLines = if (captionExpanded) 12 else 2,
-                overflow = TextOverflow.Ellipsis,
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .vistaGlass(
+                        state = glassState,
+                        shape = RoundedCornerShape(18.dp),
+                        tint = Color(0xFF141B24),
+                        isDark = true,
+                        blurRadius = VistaGlassTokens.PillBlur,
+                        tintAlphaOverride = 0.58f,
+                        drawHighlight = true,
+                        rimWidth = 0.6.dp,
+                        shadowElevation = 4.dp,
+                    )
                     .animateContentSize(animationSpec = tween(180))
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
                     ) { captionExpanded = !captionExpanded }
-                    .padding(horizontal = 6.dp, vertical = 6.dp),
-            )
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+            ) {
+                Text(
+                    text = cleanCaption,
+                    color = Color.White.copy(alpha = 0.95f),
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp,
+                    maxLines = if (captionExpanded) 12 else 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
         }
 
         // برای ویدیوها فاصله بالای نوار اکشن می‌افتد؛ نوار کنترل ویدیو در VideoPage بالای فوتر قرار می‌گیرد.
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 2.dp),
+                .vistaGlass(
+                    state = glassState,
+                    shape = RoundedCornerShape(26.dp),
+                    tint = Color(0xFF141B24),
+                    isDark = true,
+                    blurRadius = VistaGlassTokens.PillBlur,
+                    tintAlphaOverride = 0.56f,
+                    drawHighlight = true,
+                    rimWidth = 0.6.dp,
+                    shadowElevation = 5.dp,
+                )
+                .padding(horizontal = 8.dp, vertical = 6.dp),
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            ViewerActionButton(
-                icon = Icons.Default.Download,
-                label = "ذخیره",
-                isLoading = isSaving,
-                onClick = onSaveToGallery,
-            )
+            if (onSaveToGallery != null) {
+                ViewerActionButton(
+                    icon = Icons.Default.Download,
+                    label = "ذخیره",
+                    isLoading = isSaving,
+                    onClick = onSaveToGallery,
+                )
+            }
             ViewerActionButton(
                 icon = Icons.Default.Share,
                 label = "اشتراک",
@@ -909,6 +1093,7 @@ private fun VideoPage(
     isCurrentPage: Boolean,
     chromeVisible: Boolean,
     glassState: VistaGlassState,
+    bottomSafePadding: Dp = 0.dp,
     onToggleChrome: () -> Unit,
     onVerticalDragDelta: (Float) -> Unit,
     onVerticalDragRelease: () -> Unit,
@@ -1054,8 +1239,7 @@ private fun VideoPage(
             exit = fadeOut(tween(150)) + slideOutVertically(tween(180)) { it / 2 },
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .navigationBarsPadding()
-                .padding(bottom = 72.dp, start = 14.dp, end = 14.dp),
+                .padding(bottom = bottomSafePadding + 84.dp, start = 14.dp, end = 14.dp),
         ) {
             Column(
                 modifier = Modifier
@@ -1285,15 +1469,4 @@ private fun openMediaInputStream(context: Context, url: String): InputStream? {
     return when {
         url.startsWith("/") -> File(url).takeIf(File::isFile)?.let(::FileInputStream)
         uri.scheme == "file" && !uri.path.isNullOrBlank() -> File(uri.path!!).takeIf(File::isFile)?.let(::FileInputStream)
-        uri.scheme == "content" -> context.contentResolver.openInputStream(uri)
-        uri.scheme == "http" || uri.scheme == "https" -> {
-            val client = OkHttpClient()
-            val response = client.newCall(Request.Builder().url(url).build()).execute()
-            if (response.isSuccessful) response.body?.byteStream() else {
-                response.close()
-                null
-            }
-        }
-        else -> null
-    }
-}
+        uri.sche

@@ -1,11 +1,13 @@
 package ir.coffevista.vista_native.features.profile.settings.privacy
 
 import android.content.Context
+import android.os.Build
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import ir.coffevista.vista_native.core.common.DeviceMetadataProvider
 import ir.coffevista.vista_native.core.common.SessionCredentialsProvider
 import ir.coffevista.vista_native.core.security.BiometricAuthenticator
 import ir.coffevista.vista_native.core.security.SessionStore
@@ -265,7 +267,7 @@ class ActiveSessionsViewModel @Inject constructor(
 
         return SessionItemUiModel(
             id = session.id,
-            deviceName = session.deviceName?.takeIf(String::isNotBlank) ?: "دستگاه ناشناس",
+            deviceName = resolveDisplayDeviceName(session, rawPlatform),
             clientSubtitle = subtitle,
             platform = rawPlatform,
             ip = session.ipAddress.orEmpty(),
@@ -275,6 +277,49 @@ class ActiveSessionsViewModel @Inject constructor(
             approvalStatus = session.approvalStatus.ifBlank { "approved" },
             isCurrent = session.isCurrentSession,
         )
+    }
+
+    private fun resolveDisplayDeviceName(session: ActiveSessionDto, platform: String): String {
+        val rawName = session.deviceName?.trim().orEmpty()
+        if (rawName.isNotBlank() && !isGenericDeviceName(rawName)) {
+            return rawName
+        }
+        val manufacturer = session.deviceInfo["manufacturer"]?.jsonPrimitive?.content?.trim().orEmpty()
+        val model = session.deviceInfo["device_model"]?.jsonPrimitive?.content?.trim().orEmpty()
+            .ifBlank { session.deviceInfo["model"]?.jsonPrimitive?.content?.trim().orEmpty() }
+        val brand = session.deviceInfo["brand"]?.jsonPrimitive?.content?.trim().orEmpty()
+        if (model.isNotBlank() && !isGenericDeviceName(model)) {
+            return if (platform == "android") {
+                DeviceMetadataProvider.formatAndroidDeviceName(manufacturer, model, brand)
+            } else {
+                model
+            }
+        }
+        val browser = session.deviceInfo["browser"]?.jsonPrimitive?.content?.trim().orEmpty()
+        val osName = session.deviceInfo["os_name"]?.jsonPrimitive?.content?.trim().orEmpty()
+        if (browser.isNotBlank() && !isGenericDeviceName(browser)) {
+            return if (osName.isNotBlank()) "$browser ($osName)" else browser
+        }
+        if (session.isCurrentSession) {
+            return DeviceMetadataProvider.current?.metadata()?.deviceName
+                ?.takeIf { it.isNotBlank() && !isGenericDeviceName(it) }
+                ?: DeviceMetadataProvider.formatAndroidDeviceName(Build.MANUFACTURER, Build.MODEL, Build.BRAND)
+        }
+        return rawName.takeIf(String::isNotBlank) ?: "دستگاه ناشناس"
+    }
+
+    private fun isGenericDeviceName(value: String): Boolean {
+        val normalized = value.trim().lowercase()
+        return normalized.isBlank() ||
+            normalized == "vista android" ||
+            normalized == "vista web" ||
+            normalized == "vista (web)" ||
+            normalized == "vista (android)" ||
+            normalized == "vista desktop" ||
+            normalized == "vista ios" ||
+            normalized == "vista app" ||
+            normalized == "android" ||
+            normalized == "web"
     }
 
     private fun buildClientSubtitle(platform: String, appVersion: String, osVersion: String): String {

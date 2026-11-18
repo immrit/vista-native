@@ -16,9 +16,27 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.luminance
+import ir.coffevista.vista_native.core.designsystem.component.LocalMiniPlayerSlot
+import ir.coffevista.vista_native.core.designsystem.glass.VistaGlassScrollSync
+import ir.coffevista.vista_native.core.designsystem.glass.VistaGlassTokens
+import ir.coffevista.vista_native.core.designsystem.glass.rememberVistaGlassState
+import ir.coffevista.vista_native.core.designsystem.glass.vistaGlass
+import ir.coffevista.vista_native.core.designsystem.glass.vistaGlassSource
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -254,14 +272,24 @@ internal fun PostDetailContent(
     onCancelReplyOrEdit: () -> Unit = {},
 ) {
     var fullscreenMedia by remember { mutableStateOf<Pair<List<String>, Int>?>(null) }
-    Column(
+    val postDetailGlassState = rememberVistaGlassState()
+    val detailListState = rememberLazyListState()
+    VistaGlassScrollSync(postDetailGlassState, detailListState)
+    val isDarkDetail = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    val topHeaderHeight = statusBarTop + 56.dp + LocalMiniPlayerSlot.current.extraHeight
+
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background),
     ) {
-        PostDetailAppBar(onBack)
-        VistaMiniPlayerHost()
-        Box(modifier = Modifier.fillMaxSize()) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .vistaGlassSource(postDetailGlassState)
+                .background(MaterialTheme.colorScheme.background),
+        ) {
             when (val state = uiState) {
                 PostDetailUiState.Loading -> {
                     CircularProgressIndicator(
@@ -278,6 +306,9 @@ internal fun PostDetailContent(
                 is PostDetailUiState.Content -> {
                     ReadOnlyPostDetail(
                         state = state,
+                        listState = detailListState,
+                        topContentPadding = topHeaderHeight,
+                        bottomContentPadding = 96.dp,
                         onRefresh = onRefresh,
                         onMediaClick = { imgs, idx -> fullscreenMedia = imgs to idx },
                         onAuthorClick = { onAuthorClick(state.post.userId) },
@@ -305,24 +336,68 @@ internal fun PostDetailContent(
                         canDelete = canDelete,
                         canReport = canReport,
                         isCommentAuthor = isCommentAuthor,
-                        onSubmitComment = onSubmitComment,
-                        onCancelReplyOrEdit = onCancelReplyOrEdit,
                     )
                 }
             }
-            fullscreenMedia?.let { (images, initialIndex) ->
-                VistaFullscreenImageViewer(
-                    images = images,
-                    initialIndex = initialIndex,
-                    onDismiss = { fullscreenMedia = null },
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .align(Alignment.TopCenter)
+                .vistaGlass(
+                    state = postDetailGlassState,
+                    shape = RectangleShape,
+                    tint = if (isDarkDetail) Color(0xFF1A222C) else Color.White,
+                    isDark = isDarkDetail,
+                    blurRadius = VistaGlassTokens.BarBlur,
+                    tintAlphaOverride = if (isDarkDetail) 0.58f else 0.62f,
+                    drawHighlight = true,
+                    rimWidth = 0.dp,
+                    shadowElevation = 3.dp,
+                )
+                .statusBarsPadding(),
+        ) {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                PostDetailAppBar(onBack = onBack, isDark = isDarkDetail)
+                VistaMiniPlayerHost(glassState = postDetailGlassState)
+            }
+        }
+
+        if (uiState is PostDetailUiState.Content) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.BottomCenter),
+            ) {
+                CommentComposer(
+                    replyingTo = commentsState.replyingTo,
+                    editingComment = commentsState.editingComment,
+                    mentionCandidates = commentMentionCandidates(commentsState.comments),
+                    onSubmit = onSubmitComment,
+                    onCancelReplyOrEdit = onCancelReplyOrEdit,
+                    isSubmitting = commentsState.isSubmitting,
+                    error = commentsState.error,
+                    glassState = postDetailGlassState,
                 )
             }
+        }
+
+        fullscreenMedia?.let { (images, initialIndex) ->
+            VistaFullscreenImageViewer(
+                images = images,
+                initialIndex = initialIndex,
+                onDismiss = { fullscreenMedia = null },
+            )
         }
     }
 }
 
 @Composable
-private fun PostDetailAppBar(onBack: () -> Unit) {
+private fun PostDetailAppBar(
+    onBack: () -> Unit,
+    isDark: Boolean = false,
+) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -339,14 +414,19 @@ private fun PostDetailAppBar(onBack: () -> Unit) {
                 .align(Alignment.CenterStart)
                 .padding(horizontal = 12.dp)
                 .size(40.dp)
+                .clip(CircleShape)
+                .background(
+                    if (isDark) Color.White.copy(alpha = 0.08f) else Color.Black.copy(alpha = 0.04f),
+                    CircleShape,
+                )
+                .border(
+                    width = 0.6.dp,
+                    color = if (isDark) Color.White.copy(alpha = 0.22f) else Color.White.copy(alpha = 0.72f),
+                    shape = CircleShape,
+                )
                 .clickable(onClick = onBack)
                 .padding(9.dp)
                 .testTag(PostDetailTestTags.Back),
-        )
-        HorizontalDivider(
-            modifier = Modifier.align(Alignment.BottomCenter),
-            thickness = 0.5.dp,
-            color = MaterialTheme.colorScheme.outlineVariant,
         )
     }
 }
@@ -355,6 +435,9 @@ private fun PostDetailAppBar(onBack: () -> Unit) {
 @Composable
 private fun ReadOnlyPostDetail(
     state: PostDetailUiState.Content,
+    listState: LazyListState,
+    topContentPadding: androidx.compose.ui.unit.Dp,
+    bottomContentPadding: androidx.compose.ui.unit.Dp,
     onRefresh: () -> Unit = {},
     onMediaClick: ((List<String>, Int) -> Unit)? = null,
     onAuthorClick: () -> Unit,
@@ -383,8 +466,6 @@ private fun ReadOnlyPostDetail(
     canDelete: (ir.coffevista.vista_native.features.feed.data.Comment) -> Boolean,
     canReport: (ir.coffevista.vista_native.features.feed.data.Comment) -> Boolean,
     isCommentAuthor: (ir.coffevista.vista_native.features.feed.data.Comment) -> Boolean,
-    onSubmitComment: (CommentDraft) -> Unit,
-    onCancelReplyOrEdit: () -> Unit,
 ) {
     val context = LocalContext.current
     val backgroundMusicPlayer = remember {
@@ -442,7 +523,11 @@ private fun ReadOnlyPostDetail(
         if (state.isStale) {
             Text(
                 text = "نمایش نسخه ذخیره‌شده",
-                modifier = Modifier.fillMaxWidth().background(androidx.compose.ui.graphics.Color(0xFFEF6C00)).padding(horizontal = 16.dp, vertical = 10.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = topContentPadding)
+                    .background(androidx.compose.ui.graphics.Color(0xFFEF6C00))
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
                 color = androidx.compose.ui.graphics.Color.White, fontSize = 13.sp, fontWeight = FontWeight.Medium,
             )
         }
@@ -451,7 +536,14 @@ private fun ReadOnlyPostDetail(
             onRefresh = onRefresh,
             modifier = Modifier.weight(1f),
         ) {
-            LazyColumn(modifier = Modifier.fillMaxSize()) {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(
+                    top = if (state.isStale) 0.dp else topContentPadding,
+                    bottom = bottomContentPadding,
+                ),
+            ) {
               item {
                 VistaFeedPostCard(
                     post = state.post,
@@ -540,15 +632,6 @@ private fun ReadOnlyPostDetail(
           }
         }
         }
-        CommentComposer(
-            replyingTo = commentsState.replyingTo,
-            editingComment = commentsState.editingComment,
-            mentionCandidates = commentMentionCandidates(commentsState.comments),
-            onSubmit = onSubmitComment,
-            onCancelReplyOrEdit = onCancelReplyOrEdit,
-            isSubmitting = commentsState.isSubmitting,
-            error = commentsState.error,
-        )
     }
 }
 

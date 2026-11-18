@@ -28,8 +28,29 @@ data class UserTierCapabilities(
         get() = tier != UserTier.NORMAL
 }
 
+data class RemoteTierCapabilitiesOverride(
+    val maxPostChars: Int? = null,
+    val canEditPost: Boolean? = null,
+    val canEditComment: Boolean? = null,
+    val maxStoryHours: Int? = null,
+    val maxUploadMb: Int? = null,
+    val canPostMusic: Boolean? = null,
+    val maxVideoDurationMs: Long? = null,
+    val canHideEngagementCounts: Boolean? = null,
+    val searchPriority: Int? = null,
+    val adsFree: Boolean? = null,
+    val maxGalleryImages: Int? = null,
+)
+
 object UserTierPolicy {
     private const val MB = 1024L * 1024L
+
+    @Volatile
+    private var liveOverrides: Map<UserTier, RemoteTierCapabilitiesOverride> = emptyMap()
+
+    fun updateRemoteOverrides(overrides: Map<UserTier, RemoteTierCapabilitiesOverride>) {
+        liveOverrides = overrides.toMap()
+    }
 
     private val BLUE_TOKENS = setOf("blue", "bluetick", "bluebadge", "official", "identity")
     private val BLACK_TOKENS = setOf("black", "blacktick", "blackbadge", "dark", "creator", "founder")
@@ -66,7 +87,27 @@ object UserTierPolicy {
         return UserTier.NORMAL
     }
 
-    fun capabilitiesFor(tier: UserTier): UserTierCapabilities = when (tier) {
+    fun capabilitiesFor(tier: UserTier): UserTierCapabilities {
+        val base = defaultCapabilitiesFor(tier)
+        val ov = liveOverrides[tier] ?: return base
+        val mergedUploadMb = ov.maxUploadMb?.takeIf { it > 0 } ?: base.maxUploadMb
+        return base.copy(
+            maxPostChars = ov.maxPostChars?.takeIf { it > 0 } ?: base.maxPostChars,
+            canEditPost = ov.canEditPost ?: base.canEditPost,
+            canEditComment = ov.canEditComment ?: base.canEditComment,
+            maxStoryHours = ov.maxStoryHours?.takeIf { it > 0 } ?: base.maxStoryHours,
+            maxUploadMb = mergedUploadMb,
+            maxUploadBytes = mergedUploadMb.toLong() * MB,
+            canPostMusic = ov.canPostMusic ?: base.canPostMusic,
+            maxVideoDurationMs = ov.maxVideoDurationMs?.takeIf { it > 0L } ?: base.maxVideoDurationMs,
+            canHideEngagementCounts = ov.canHideEngagementCounts ?: base.canHideEngagementCounts,
+            searchPriority = ov.searchPriority?.takeIf { it > 0 } ?: base.searchPriority,
+            adsFree = ov.adsFree ?: base.adsFree,
+            maxGalleryImages = ov.maxGalleryImages?.takeIf { it > 0 } ?: base.maxGalleryImages,
+        )
+    }
+
+    fun defaultCapabilitiesFor(tier: UserTier): UserTierCapabilities = when (tier) {
         UserTier.BLUE_TICK -> UserTierCapabilities(
             tier = UserTier.BLUE_TICK,
             maxPostChars = 1500,

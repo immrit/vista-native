@@ -82,7 +82,9 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import android.content.Context
 import android.view.inputmethod.InputMethodManager
@@ -144,6 +146,7 @@ fun VistaShell(
     onExitRequested: () -> Unit,
     content: ShellFeatureContent,
     modifier: Modifier = Modifier,
+    navigationSlots: List<ShellNavigationSlotOverride> = emptyList(),
 ) {
     VistaShellSystemBars()
     val navController = rememberNavController()
@@ -1212,6 +1215,7 @@ fun VistaShell(
                 selectedTab = selectedTab,
                 glassState = glassState,
                 chatBadgeCount = content.chatBadgeCount,
+                navigationSlots = navigationSlots,
                 onSelect = { tab ->
                     if (tab == ShellTab.Feed) {
                         isBottomIslandVisible = true
@@ -1263,6 +1267,7 @@ private fun VistaBottomIsland(
     chatBadgeCount: Int,
     onSelect: (ShellTab) -> Unit,
     modifier: Modifier = Modifier,
+    navigationSlots: List<ShellNavigationSlotOverride> = emptyList(),
 ) {
     val density = LocalDensity.current
     val bottomInset = with(density) {
@@ -1271,11 +1276,6 @@ private fun VistaBottomIsland(
             WindowInsets.ime.getBottom(density),
         ).toDp()
     }
-    val background = MaterialTheme.colorScheme.background
-    val blurSupported = rememberVistaGlassBlurSupported()
-    // With real backdrop blur the content must stay visible beneath the capsule, so the legacy
-    // opaque fade is toned down; without blur the original fade keeps the bar legible.
-    val fadeScale = if (blurSupported) 0.68f else 1f
     val isLight = MaterialTheme.colorScheme.background.luminance() > 0.5f
     val isDark = !isLight
     Box(
@@ -1285,27 +1285,27 @@ private fun VistaBottomIsland(
             .vistaGlassHalo(
                 state = glassState,
                 isDark = isDark,
-                blurRadius = 22.dp,
-                startOffsetFraction = 0.16f,
-                maxAlpha = if (isDark) 0.54f else 0.58f,
+                blurRadius = 16.dp,
+                startOffsetFraction = 0.22f,
+                maxAlpha = if (isDark) 0.40f else 0.42f,
             ),
         contentAlignment = Alignment.BottomCenter,
     ) {
         Surface(
             modifier = Modifier
-                .padding(start = 20.dp, end = 20.dp, bottom = 14.dp + bottomInset)
+                .padding(start = 18.dp, end = 18.dp, bottom = 12.dp + bottomInset)
                 .fillMaxWidth()
                 .height(58.dp)
                 .vistaGlass(
                     state = glassState,
                     shape = RoundedCornerShape(29.dp),
-                    tint = if (!isLight) Color(0xFF1C242F) else MaterialTheme.colorScheme.surface,
-                    isDark = !isLight,
+                    tint = if (isDark) Color(0xFF18202B) else Color.White,
+                    isDark = isDark,
                     blurRadius = VistaGlassTokens.BarBlur,
-                    tintAlphaOverride = if (!isLight) 0.82f else 0.85f,
-                    drawHighlight = false,
+                    tintAlphaOverride = if (isDark) 0.58f else 0.60f,
+                    drawHighlight = true,
                     rimWidth = 0.6.dp,
-                    shadowElevation = 8.dp,
+                    shadowElevation = 5.dp,
                 ),
             shape = RoundedCornerShape(29.dp),
             color = Color.Transparent,
@@ -1314,14 +1314,32 @@ private fun VistaBottomIsland(
             Row(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(horizontal = 6.dp, vertical = 4.dp),
+                    .padding(horizontal = 5.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceAround,
+                horizontalArrangement = Arrangement.spacedBy(3.dp),
             ) {
-                ShellTab.entries.forEach { tab ->
+                val slotMap = remember(navigationSlots) {
+                    navigationSlots.associateBy { it.key.trim().lowercase() }
+                }
+                val visibleTabs = remember(slotMap) {
+                    ShellTab.entries
+                        .filter { tab ->
+                            tab == ShellTab.Feed || (slotMap[tab.name.lowercase()]?.visible != false)
+                        }
+                        .sortedWith(
+                            compareBy(
+                                { slotMap[it.name.lowercase()]?.sortOrder ?: it.ordinal },
+                                { it.ordinal },
+                            ),
+                        )
+                }
+                visibleTabs.forEach { tab ->
+                    val slot = slotMap[tab.name.lowercase()]
+                    val tabLabel = slot?.label?.takeIf { it.isNotBlank() } ?: tab.labelFa
+                    val slotBadgeText = slot?.badgeText?.trim().orEmpty()
                     val selected = tab == selectedTab
                     val activeColor = MaterialTheme.colorScheme.primary
-                    val inactiveColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    val inactiveColor = if (isLight) Color(0xFF1A1D21) else Color(0xFFD5DCE6)
                     val tabScale by animateFloatAsState(
                         targetValue = if (selected) 1.05f else 1.0f,
                         animationSpec = spring(
@@ -1332,7 +1350,7 @@ private fun VistaBottomIsland(
                     )
                     val pillAlpha by animateFloatAsState(
                         targetValue = if (selected) 1f else 0f,
-                        animationSpec = tween(durationMillis = 200),
+                        animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
                         label = "tab_pill_${tab.name}",
                     )
                     val tabIconColor by animateColorAsState(
@@ -1342,30 +1360,25 @@ private fun VistaBottomIsland(
                     )
                     Box(
                         modifier = Modifier
+                            .weight(1f)
+                            .height(50.dp)
                             .testTag("shell-tab-${tab.name.lowercase()}")
                             .graphicsLayer {
                                 scaleX = tabScale
                                 scaleY = tabScale
                             }
-                            .width(58.dp)
-                            .height(44.dp)
-                            .clip(RoundedCornerShape(22.dp))
+                            .clip(RoundedCornerShape(25.dp))
                             .background(
-                                activeColor.copy(alpha = (if (isLight) 0.12f else 0.20f) * pillAlpha),
-                                RoundedCornerShape(22.dp),
-                            )
-                            .border(
-                                width = 0.6.dp,
-                                color = activeColor.copy(alpha = (if (isLight) 0.20f else 0.32f) * pillAlpha),
-                                shape = RoundedCornerShape(22.dp),
+                                activeColor.copy(alpha = (if (isLight) 0.12f else 0.19f) * pillAlpha),
+                                RoundedCornerShape(25.dp),
                             )
                             .clickable(
                                 interactionSource = remember { MutableInteractionSource() },
                                 indication = ripple(bounded = true),
                                 onClick = { onSelect(tab) },
                             )
-                            .semantics {
-                                contentDescription = tab.labelFa
+                            .semantics(mergeDescendants = true) {
+                                contentDescription = tabLabel
                                 role = Role.Tab
                                 this.selected = selected
                             },
@@ -1376,17 +1389,30 @@ private fun VistaBottomIsland(
                                 if (tab == ShellTab.Chat && chatBadgeCount > 0) {
                                     VistaNotificationBadge(
                                         count = chatBadgeCount,
-                                        borderColor = MaterialTheme.colorScheme.surface,
+                                        borderColor = if (isDark) Color(0xFF18202B) else Color.White,
                                         modifier = Modifier.testTag("shell-chat-badge"),
                                     )
+                                } else if (slotBadgeText.isNotBlank()) {
+                                    Surface(
+                                        shape = RoundedCornerShape(6.dp),
+                                        color = MaterialTheme.colorScheme.primary,
+                                    ) {
+                                        Text(
+                                            text = slotBadgeText.take(6),
+                                            color = Color.White,
+                                            fontSize = 8.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                                        )
+                                    }
                                 }
-                            }
+                            },
                         ) {
                             VistaNavigationIcon(
                                 tab = tab,
                                 selected = selected,
                                 color = tabIconColor,
-                                modifier = Modifier.size(25.dp),
+                                modifier = Modifier.size(24.dp),
                             )
                         }
                     }

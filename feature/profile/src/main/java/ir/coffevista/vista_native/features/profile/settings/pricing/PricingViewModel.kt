@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import ir.coffevista.vista_native.core.model.session.AuthenticationState
 import ir.coffevista.vista_native.core.model.session.AuthenticationStateProvider
+import ir.coffevista.vista_native.core.network.SystemGateMonitor
 import ir.coffevista.vista_native.features.profile.data.OwnProfileRepository
 import java.text.NumberFormat
 import java.util.Locale
@@ -18,6 +19,7 @@ import kotlinx.coroutines.launch
 data class PricingUiState(
     val plans: List<PricingPlanUiModel> = emptyList(),
     val coinPackages: List<CoinPackageDto> = emptyList(),
+    val remotePremiumFeatures: List<String> = emptyList(),
     val isLoading: Boolean = true,
     val errorMessage: String? = null,
     val isRequestingPayment: Boolean = false,
@@ -44,13 +46,19 @@ class PricingViewModel @Inject constructor(
             val plansDeferred = runCatching { api.getPlans() }
             val packagesDeferred = runCatching { api.getCoinPackages() }
 
-            val plans = plansDeferred.getOrNull()
+            val plansBody = plansDeferred.getOrNull()
                 ?.takeIf { it.isSuccessful }
                 ?.body()
-                ?.plans
+
+            val remoteCfg = SystemGateMonitor.remoteConfig.value
+            val plans = plansBody?.plans
                 .orEmpty()
                 .filter { it.priceToman > 0L }
                 .mapNotNull(::toUiPlan)
+
+            val dynamicFeatures = plansBody?.premiumFeatures
+                ?.takeIf { it.isNotEmpty() }
+                ?: remoteCfg?.premiumFeatures.orEmpty()
 
             val packages = packagesDeferred.getOrNull()
                 ?.takeIf { it.isSuccessful }
@@ -69,6 +77,7 @@ class PricingViewModel @Inject constructor(
                 it.copy(
                     plans = plans,
                     coinPackages = packages,
+                    remotePremiumFeatures = dynamicFeatures,
                     isLoading = false,
                     errorMessage = if (plans.isEmpty() && packages.isEmpty()) "کاتالوگ در دسترس نیست. دوباره تلاش کنید" else null,
                 )
@@ -181,14 +190,34 @@ class PricingViewModel @Inject constructor(
     }
 
     private fun toUiPlan(plan: PricingPlanDto): PricingPlanUiModel? {
+        val remoteMeta = SystemGateMonitor.remoteConfig.value?.pricingMeta?.get(plan.planType)
+        val enabled = plan.meta?.enabled ?: remoteMeta?.enabled ?: true
+        if (!enabled) return null
+
         val meta = when (plan.planType) {
             "monthly" -> PlanMeta("vista_premium_monthly", "ماهانه", "انعطاف‌پذیر برای شروع")
             "three_monthly" -> PlanMeta("vista_premium_3monthly", "سه‌ماهه", "سه ماه پریمیوم پیوسته", "پیشنهاد ویستا")
             "yearly" -> PlanMeta("vista_premium_yearly", "سالانه", "یک سال کامل پریمیوم")
             else -> return null
         }
-        val amount = NumberFormat.getIntegerInstance(Locale("fa")).format(plan.priceToman)
-        return PricingPlanUiModel(meta.productId, meta.title, "$amount تومان", meta.description, meta.badge)
+        val formatter = NumberFormat.getIntegerInstance(Locale("fa"))
+        val amount = formatter.format(plan.priceToman)
+        val originalToman = plan.meta?.originalPriceToman?.takeIf { it > plan.priceToman }
+            ?: remoteMeta?.originalPriceToman?.takeIf { it > plan.priceToman }
+        val originalFormatted = originalToman?.let { "${formatter.format(it)} تومان" }
+        val badgeText = plan.meta?.badgeText?.takeIf { it.isNotBlank() }
+            ?: remoteMeta?.badgeText?.takeIf { it.isNotBlank() }
+            ?: if (plan.meta?.recommended == true || remoteMeta?.recommended == true) "پیشنهاد ویستا" else meta.badge
+
+        return PricingPlanUiModel(
+            id = meta.productId,
+            title = meta.title,
+            price = "$amount تومان",
+            description = meta.description,
+            badge = badgeText,
+            originalPrice = originalFormatted,
+            recommended = plan.meta?.recommended ?: remoteMeta?.recommended ?: (plan.planType == "three_monthly"),
+        )
     }
 
     private data class PlanMeta(

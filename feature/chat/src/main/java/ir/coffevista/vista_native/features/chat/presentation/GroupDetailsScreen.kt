@@ -108,13 +108,23 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import coil.compose.SubcomposeAsyncImage
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.runtime.LaunchedEffect
 import ir.coffevista.vista_native.core.designsystem.R
 import ir.coffevista.vista_native.core.designsystem.component.VistaSwitch
+import ir.coffevista.vista_native.core.designsystem.glass.rememberVistaGlassState
+import ir.coffevista.vista_native.core.designsystem.glass.vistaGlassSource
 import ir.coffevista.vista_native.features.chat.domain.model.AttachmentKind
 import ir.coffevista.vista_native.features.chat.domain.model.ChatUser
 import ir.coffevista.vista_native.features.chat.domain.model.ConversationType
 import ir.coffevista.vista_native.features.chat.domain.model.GroupMember
 import ir.coffevista.vista_native.features.chat.domain.model.MessageContent
+import ir.coffevista.vista_native.features.chat.presentation.components.VistaNotchMetaballHeader
+import ir.coffevista.vista_native.features.chat.presentation.components.VistaProfileGlassActionButton
+import ir.coffevista.vista_native.features.chat.presentation.components.VistaSegmentedGlassTabs
 import ir.coffevista.vista_native.features.chat.presentation.components.extractFirstUrl
 import ir.coffevista.vista_native.features.chat.presentation.messages.MessagesUiState
 import kotlinx.coroutines.launch
@@ -245,226 +255,56 @@ fun GroupDetailsScreen(
     }
 
     val inviteLink = info?.inviteCode?.let { "https://cafevista.ir/group/$it" }
+    val isDark = isSystemInDarkTheme()
+    val pageBgColor = if (isDark) Color(0xFF0F141A) else Color(0xFFF2F4F7)
+    val cardBgColor = if (isDark) Color(0xFF1A222C) else Color(0xFFFFFFFF)
+    val groupScrollState = rememberScrollState()
+    val groupGlassState = rememberVistaGlassState()
+    LaunchedEffect(groupScrollState.value) {
+        groupGlassState.invalidate()
+    }
+    val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    val expandedHeaderSpace = statusBarTop + 190.dp
+    val heroAvatar = (info?.imageUrl ?: conversation?.avatarUrl)?.trim()
+        ?.takeIf { it.isNotEmpty() && !it.equals("null", ignoreCase = true) }
+    val adminCount = state.groupMembers.count { it.isAdmin || it.userId == info?.createdByUserId }
+    val groupSubtitle = "${info?.memberCount ?: state.groupMembers.size} عضو • $adminCount مدیر"
 
     BackHandler(onBack = onDismiss)
     Scaffold(
         modifier = modifier.fillMaxSize().testTag("group-details-screen"),
-        containerColor = MaterialTheme.colorScheme.surface,
+        containerColor = pageBgColor,
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { contentPadding ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(pageBgColor)
+                .padding(contentPadding),
+        ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(contentPadding),
+                .vistaGlassSource(groupGlassState)
+                .background(pageBgColor)
+                .verticalScroll(groupScrollState),
         ) {
-            // Immersive Parallax/Blurred Hero Header (280dp, matching PartnerDetailsScreen)
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(280.dp)
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
-            ) {
-                val heroAvatar = (info?.imageUrl ?: conversation?.avatarUrl)?.trim()
-                    ?.takeIf { it.isNotEmpty() && !it.equals("null", ignoreCase = true) }
-                if (!heroAvatar.isNullOrBlank()) {
-                    SubcomposeAsyncImage(
-                        model = heroAvatar,
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .blur(25.dp),
-                        loading = { HeroBackdropFallback(displayName) },
-                        error = { HeroBackdropFallback(displayName) },
-                    )
-                } else {
-                    HeroBackdropFallback(displayName)
-                }
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.verticalGradient(
-                                listOf(
-                                    Color.Black.copy(alpha = 0.12f),
-                                    Color.Black.copy(alpha = 0.25f),
-                                    Color.Black.copy(alpha = 0.66f),
-                                ),
-                            ),
-                        ),
-                )
-                IconButton(
-                    onClick = onDismiss,
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .statusBarsPadding()
-                        .padding(8.dp)
-                        .background(Color.Black.copy(alpha = 0.30f), CircleShape),
-                ) {
-                    Icon(
-                        Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "بازگشت از اطلاعات گروه",
-                        tint = Color.White,
-                    )
-                }
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .statusBarsPadding()
-                        .padding(8.dp),
-                ) {
-                    IconButton(
-                        onClick = { menuExpanded = true },
-                        modifier = Modifier
-                            .background(Color.Black.copy(alpha = 0.30f), CircleShape),
-                    ) {
-                        Icon(
-                            Icons.Default.MoreVert,
-                            contentDescription = "گزینه‌های گروه",
-                            tint = Color.White,
-                        )
-                    }
-                    DropdownMenu(
-                        expanded = menuExpanded,
-                        onDismissRequest = { menuExpanded = false },
-                    ) {
-                        if (isAdmin) {
-                            DropdownMenuItem(
-                                text = { Text("ویرایش نام گروه") },
-                                onClick = {
-                                    menuExpanded = false
-                                    editedNameText = displayName
-                                    editNameDialogVisible = true
-                                },
-                                leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) },
-                            )
-                            DropdownMenuItem(
-                                text = { Text("افزودن عضو") },
-                                onClick = {
-                                    menuExpanded = false
-                                    selectedTabIndex = 0
-                                    addMembersExpanded = true
-                                },
-                                leadingIcon = { Icon(Icons.Default.PersonAdd, contentDescription = null) },
-                            )
-                        }
-                        if (inviteLink != null) {
-                            DropdownMenuItem(
-                                text = { Text("کپی لینک دعوت") },
-                                onClick = {
-                                    menuExpanded = false
-                                    clipboard.setText(AnnotatedString(inviteLink))
-                                    scope.launch { snackbarHostState.showSnackbar("لینک دعوت کپی شد") }
-                                },
-                                leadingIcon = { Icon(Icons.Default.ContentCopy, contentDescription = null) },
-                            )
-                            DropdownMenuItem(
-                                text = { Text("اشتراک لینک دعوت") },
-                                onClick = {
-                                    menuExpanded = false
-                                    val sendIntent = Intent().apply {
-                                        action = Intent.ACTION_SEND
-                                        putExtra(Intent.EXTRA_TEXT, "دعوت به گروه $displayName در Vista:\n$inviteLink")
-                                        type = "text/plain"
-                                    }
-                                    context.startActivity(Intent.createChooser(sendIntent, "اشتراک لینک دعوت"))
-                                },
-                                leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) },
-                            )
-                        }
-                        DropdownMenuItem(
-                            text = { Text("تازه‌سازی اطلاعات") },
-                            onClick = {
-                                menuExpanded = false
-                                onRefresh()
-                            },
-                            leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null) },
-                        )
-                        HorizontalDivider()
-                        DropdownMenuItem(
-                            text = {
-                                Text(
-                                    if (isCreator) "حذف گروه برای همه" else "ترک گروه",
-                                    color = MaterialTheme.colorScheme.error,
-                                )
-                            },
-                            onClick = {
-                                menuExpanded = false
-                                if (isCreator) onDelete() else onLeave()
-                            },
-                            leadingIcon = {
-                                Icon(
-                                    Icons.Default.Delete,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.error,
-                                )
-                            },
-                        )
-                    }
-                }
+            Spacer(Modifier.height(expandedHeaderSpace))
 
-                // Avatar and Group title
-                Column(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(bottom = 20.dp, start = 20.dp, end = 20.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(110.dp)
-                            .background(MaterialTheme.colorScheme.surface, CircleShape)
-                            .padding(4.dp)
-                            .clip(CircleShape),
-                    ) {
-                        if (!heroAvatar.isNullOrBlank()) {
-                            SubcomposeAsyncImage(
-                                model = heroAvatar,
-                                contentDescription = "تصویر $displayName",
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize(),
-                                loading = { GroupAvatarFallback(displayName) },
-                                error = { GroupAvatarFallback(displayName) },
-                            )
-                        } else {
-                            GroupAvatarFallback(displayName)
-                        }
-                    }
-                    Spacer(Modifier.height(14.dp))
-                    Text(
-                        text = displayName,
-                        color = Color.White,
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    val adminCount = state.groupMembers.count { it.isAdmin || it.userId == info?.createdByUserId }
-                    Text(
-                        text = "${info?.memberCount ?: state.groupMembers.size} عضو • $adminCount مدیر",
-                        color = Color.White.copy(alpha = 0.85f),
-                        fontSize = 14.sp,
-                    )
-                }
-            }
-
-            // Quick Actions Row (Messages, Mute, Search, Add/Invite with spring tactile feedback)
+            // Quick Actions Row (Messages, Mute, Search, Add/Invite with Liquid Glass capsules)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 8.dp)
-                    .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(16.dp))
-                    .padding(horizontal = 8.dp, vertical = 10.dp),
+                    .padding(horizontal = 14.dp, vertical = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                TactileGroupAction(
+                VistaProfileGlassActionButton(
                     icon = Icons.Default.ChatBubbleOutline,
                     label = "پیام",
                     modifier = Modifier.weight(1f),
                 ) { onDismiss() }
-                TactileGroupAction(
+                VistaProfileGlassActionButton(
                     icon = if (conversation?.isMuted == true) Icons.Default.NotificationsOff else Icons.Default.Notifications,
                     label = if (conversation?.isMuted == true) "صدادار" else "بی‌صدا",
                     modifier = Modifier.weight(1f),
@@ -472,7 +312,7 @@ fun GroupDetailsScreen(
                     onToggleMute()
                     scope.launch { snackbarHostState.showSnackbar("تنظیمات اعلان گروه به‌روزرسانی شد") }
                 }
-                TactileGroupAction(
+                VistaProfileGlassActionButton(
                     icon = Icons.Default.Search,
                     label = "جستجو",
                     modifier = Modifier.weight(1f),
@@ -480,7 +320,7 @@ fun GroupDetailsScreen(
                     selectedTabIndex = 0
                     onOpenSearch()
                 }
-                TactileGroupAction(
+                VistaProfileGlassActionButton(
                     icon = if (isAdmin) Icons.Default.PersonAdd else Icons.Default.AttachFile,
                     label = if (isAdmin) "افزودن" else "دعوت",
                     modifier = Modifier.weight(1f),
@@ -495,12 +335,14 @@ fun GroupDetailsScreen(
                 }
             }
 
+            Spacer(Modifier.height(10.dp))
+
             // Group Metadata Card (Capacity, Role, Bio, Invite Link, Status)
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp)
-                    .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(16.dp))
+                    .padding(horizontal = 14.dp)
+                    .background(cardBgColor, RoundedCornerShape(20.dp))
                     .padding(vertical = 6.dp),
             ) {
                 // Capacity Row
@@ -609,37 +451,45 @@ fun GroupDetailsScreen(
                 }
             }
 
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(14.dp))
 
             // 5 Tabs Section (اعضا, رسانه, فایل‌ها, لینک‌ها, صدا)
+            val tabLabelsWithCounts = remember(
+                tabs,
+                state.groupMembers.size,
+                mediaMessages.size,
+                fileMessages.size,
+                linkMessages.size,
+                audioMessages.size,
+            ) {
+                tabs.mapIndexed { index, label ->
+                    val count = when (index) {
+                        0 -> state.groupMembers.size
+                        1 -> mediaMessages.size
+                        2 -> fileMessages.size
+                        3 -> linkMessages.size
+                        4 -> audioMessages.size
+                        else -> 0
+                    }
+                    "$label ($count)"
+                }
+            }
+            VistaSegmentedGlassTabs(
+                tabs = tabLabelsWithCounts,
+                selectedIndex = selectedTabIndex,
+                onTabSelected = { selectedTabIndex = it },
+                modifier = Modifier.padding(horizontal = 14.dp),
+            )
+
+            Spacer(Modifier.height(10.dp))
+
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp)
-                    .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(16.dp)),
+                    .padding(horizontal = 14.dp)
+                    .background(cardBgColor, RoundedCornerShape(20.dp))
+                    .clip(RoundedCornerShape(20.dp)),
             ) {
-                ScrollableTabRow(
-                    selectedTabIndex = selectedTabIndex,
-                    edgePadding = 8.dp,
-                    divider = { HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)) },
-                ) {
-                    tabs.forEachIndexed { index, label ->
-                        val count = when (index) {
-                            0 -> state.groupMembers.size
-                            1 -> mediaMessages.size
-                            2 -> fileMessages.size
-                            3 -> linkMessages.size
-                            4 -> audioMessages.size
-                            else -> 0
-                        }
-                        Tab(
-                            selected = selectedTabIndex == index,
-                            onClick = { selectedTabIndex = index },
-                            text = { Text("$label ($count)", fontSize = 13.sp) },
-                        )
-                    }
-                }
-
                 // Tab Content
                 Box(
                     modifier = Modifier
@@ -1103,6 +953,100 @@ fun GroupDetailsScreen(
             }
 
             Spacer(Modifier.height(24.dp))
+        }
+
+            VistaNotchMetaballHeader(
+                displayName = displayName,
+                subtitle = groupSubtitle,
+                isSubtitleHighlighted = false,
+                avatarUrl = heroAvatar,
+                scrollOffsetPx = groupScrollState.value,
+                glassState = groupGlassState,
+                onBack = onDismiss,
+                backContentDescription = "بازگشت از اطلاعات گروه",
+                menuContentDescription = "گزینه‌های گروه",
+                onMenuClick = { menuExpanded = true },
+                menuDropdownContent = {
+                    DropdownMenu(
+                        expanded = menuExpanded,
+                        onDismissRequest = { menuExpanded = false },
+                    ) {
+                        if (isAdmin) {
+                            DropdownMenuItem(
+                                text = { Text("ویرایش نام گروه") },
+                                onClick = {
+                                    menuExpanded = false
+                                    editedNameText = displayName
+                                    editNameDialogVisible = true
+                                },
+                                leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("افزودن عضو") },
+                                onClick = {
+                                    menuExpanded = false
+                                    selectedTabIndex = 0
+                                    addMembersExpanded = true
+                                },
+                                leadingIcon = { Icon(Icons.Default.PersonAdd, contentDescription = null) },
+                            )
+                        }
+                        if (inviteLink != null) {
+                            DropdownMenuItem(
+                                text = { Text("کپی لینک دعوت") },
+                                onClick = {
+                                    menuExpanded = false
+                                    clipboard.setText(AnnotatedString(inviteLink))
+                                    scope.launch { snackbarHostState.showSnackbar("لینک دعوت کپی شد") }
+                                },
+                                leadingIcon = { Icon(Icons.Default.ContentCopy, contentDescription = null) },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("اشتراک لینک دعوت") },
+                                onClick = {
+                                    menuExpanded = false
+                                    val sendIntent = Intent().apply {
+                                        action = Intent.ACTION_SEND
+                                        putExtra(Intent.EXTRA_TEXT, "دعوت به گروه $displayName در Vista:\n$inviteLink")
+                                        type = "text/plain"
+                                    }
+                                    context.startActivity(Intent.createChooser(sendIntent, "اشتراک لینک دعوت"))
+                                },
+                                leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) },
+                            )
+                        }
+                        DropdownMenuItem(
+                            text = { Text("تازه‌سازی اطلاعات") },
+                            onClick = {
+                                menuExpanded = false
+                                onRefresh()
+                            },
+                            leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null) },
+                        )
+                        HorizontalDivider()
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    if (isCreator) "حذف گروه برای همه" else "ترک گروه",
+                                    color = MaterialTheme.colorScheme.error,
+                                )
+                            },
+                            onClick = {
+                                menuExpanded = false
+                                if (isCreator) onDelete() else onLeave()
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    Icons.Default.Delete,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.error,
+                                )
+                            },
+                        )
+                    }
+                },
+                modifier = Modifier.align(Alignment.TopCenter),
+            )
         }
     }
 

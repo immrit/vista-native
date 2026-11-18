@@ -13,6 +13,14 @@ enum class ShellTab(val labelFa: String, val glyph: String) {
     Profile("نمایه", "◎"),
 }
 
+data class ShellNavigationSlotOverride(
+    val key: String,
+    val label: String = "",
+    val visible: Boolean = true,
+    val sortOrder: Int = 0,
+    val badgeText: String = "",
+)
+
 @Serializable
 @Keep
 enum class ShellDeferredKind { POST, PROFILE, GROUP, CHAT, GAME, NOTIFICATIONS, NEARBY }

@@ -73,6 +73,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ir.coffevista.vista_native.features.feed.ui.components.ReportReasonDialog
 import ir.coffevista.vista_native.core.designsystem.component.VistaEmojiText
+import ir.coffevista.vista_native.core.designsystem.glass.LocalVistaGlassState
+import ir.coffevista.vista_native.core.designsystem.glass.VistaGlassState
+import ir.coffevista.vista_native.core.designsystem.glass.VistaGlassTokens
+import ir.coffevista.vista_native.core.designsystem.glass.vistaGlass
+import ir.coffevista.vista_native.core.designsystem.glass.vistaGlassHalo
+import androidx.compose.ui.graphics.luminance
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import ir.coffevista.vista_native.core.designsystem.R as DesignSystemR
@@ -1067,11 +1073,12 @@ internal fun CommentComposer(
     isSubmitting: Boolean = false,
     error: String? = null,
     currentUserAvatarUrl: String? = null,
+    glassState: VistaGlassState? = LocalVistaGlassState.current,
 ) {
     var text by rememberSaveable(replyingTo?.id, editingComment?.id) { 
         mutableStateOf(editingComment?.content ?: "") 
     }
-    val isDark = isSystemInDarkTheme()
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f || isSystemInDarkTheme()
     val canSend = text.trim().isNotEmpty() && text.trim().codePointCount(0, text.trim().length) <= 2200 && !isSubmitting
 
     val mentionMatch = remember(text) {
@@ -1096,16 +1103,15 @@ internal fun CommentComposer(
             .distinctBy { it.userId }
     }
 
-    Surface(
-        color = if (isDark) MaterialTheme.colorScheme.surface else Color.White,
-        shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
-        shadowElevation = 10.dp,
-    ) {
+    val composerBody: @Composable () -> Unit = {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime))
-                .padding(16.dp)
+                .padding(
+                    horizontal = if (glassState != null) 12.dp else 16.dp,
+                    vertical = if (glassState != null) 10.dp else 16.dp,
+                )
         ) {
             // Mention autocomplete chip row
             if (mentionMatch != null && availableMentions.isNotEmpty()) {
@@ -1128,7 +1134,7 @@ internal fun CommentComposer(
                                     selectedMentions = selectedMentions + (candidate.userId to candidate.username)
                                 },
                                 shape = RoundedCornerShape(16.dp),
-                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
                             ) {
                                 Row(
                                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
@@ -1156,20 +1162,38 @@ internal fun CommentComposer(
                 )
             }
 
-            // Reply banner matching Flutter CommentInputField
+            val bannerShape = RoundedCornerShape(16.dp)
+            val bannerModifier = if (glassState != null) {
+                Modifier
+                    .fillMaxWidth()
+                    .vistaGlass(
+                        state = glassState,
+                        shape = bannerShape,
+                        tint = if (isDark) Color(0xFF1A222C) else Color.White,
+                        isDark = isDark,
+                        blurRadius = VistaGlassTokens.PillBlur,
+                        tintAlphaOverride = if (isDark) 0.62f else 0.68f,
+                        drawHighlight = true,
+                        rimWidth = 0.6.dp,
+                        shadowElevation = 2.dp,
+                    )
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            } else {
+                Modifier
+                    .fillMaxWidth()
+                    .clip(bannerShape)
+                    .background(if (isDark) Color(0xFF303030) else Color(0xFFF5F5F5))
+                    .border(
+                        width = 1.dp,
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
+                        shape = bannerShape,
+                    )
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            }
+
+            // Reply banner
             if (replyingTo != null) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(if (isDark) Color(0xFF303030) else Color(0xFFF5F5F5))
-                        .border(
-                            width = 1.dp,
-                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
-                            shape = RoundedCornerShape(12.dp),
-                        )
-                        .padding(horizontal = 12.dp, vertical = 8.dp)
-                ) {
+                Box(modifier = bannerModifier) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
@@ -1197,19 +1221,10 @@ internal fun CommentComposer(
                         )
                     }
                 }
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(8.dp))
             } else if (editingComment != null) {
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(if (isDark) Color(0xFF303030) else Color(0xFFF5F5F5))
-                        .border(
-                            width = 1.dp,
-                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
-                            shape = RoundedCornerShape(12.dp),
-                        )
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    modifier = bannerModifier,
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -1229,12 +1244,32 @@ internal fun CommentComposer(
                             .clickable { onCancelReplyOrEdit() },
                     )
                 }
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(8.dp))
             }
 
-            // Input row
+            // Input row (floating Liquid Glass capsule when glassState != null)
+            val capsuleShape = RoundedCornerShape(24.dp)
+            val rowContainerModifier = if (glassState != null) {
+                Modifier
+                    .fillMaxWidth()
+                    .vistaGlass(
+                        state = glassState,
+                        shape = capsuleShape,
+                        tint = if (isDark) Color(0xFF1A222C) else Color.White,
+                        isDark = isDark,
+                        blurRadius = VistaGlassTokens.PillBlur,
+                        tintAlphaOverride = if (isDark) 0.58f else 0.62f,
+                        drawHighlight = true,
+                        rimWidth = 0.6.dp,
+                        shadowElevation = 4.dp,
+                    )
+                    .padding(horizontal = 8.dp, vertical = 6.dp)
+            } else {
+                Modifier.fillMaxWidth()
+            }
+
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = rowContainerModifier,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 val composerAvatarModifier = Modifier
@@ -1260,20 +1295,27 @@ internal fun CommentComposer(
                     )
                 }
                 
-                Spacer(Modifier.width(12.dp))
+                Spacer(Modifier.width(10.dp))
 
                 Box(
                     modifier = Modifier
                         .weight(1f)
-                        .heightIn(min = 40.dp, max = 120.dp)
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                        .border(
-                            width = 1.dp,
-                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
-                            shape = RoundedCornerShape(20.dp),
-                        )
-                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                        .heightIn(min = 38.dp, max = 120.dp)
+                        .then(
+                            if (glassState != null) {
+                                Modifier.padding(horizontal = 6.dp, vertical = 6.dp)
+                            } else {
+                                Modifier
+                                    .clip(RoundedCornerShape(20.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                                    .border(
+                                        width = 1.dp,
+                                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
+                                        shape = RoundedCornerShape(20.dp),
+                                    )
+                                    .padding(horizontal = 16.dp, vertical = 10.dp)
+                            },
+                        ),
                     contentAlignment = Alignment.CenterStart,
                 ) {
                     BasicTextField(
@@ -1298,7 +1340,7 @@ internal fun CommentComposer(
                             if (text.isEmpty()) {
                                 Text(
                                     text = if (replyingTo != null) "پاسخ خود را بنویسید..." else "نظر خود را بنویسید...",
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
                                     fontSize = 14.sp,
                                 )
                             }
@@ -1312,7 +1354,7 @@ internal fun CommentComposer(
                 // Send button matching Vista theme
                 Box(
                     modifier = Modifier
-                        .size(40.dp)
+                        .size(38.dp)
                         .clip(CircleShape)
                         .background(
                             if (canSend) Color(0xFF6366F1)
@@ -1335,7 +1377,7 @@ internal fun CommentComposer(
                 ) {
                     if (isSubmitting) {
                         CircularProgressIndicator(
-                            modifier = Modifier.size(20.dp),
+                            modifier = Modifier.size(18.dp),
                             strokeWidth = 2.dp,
                             color = Color.White,
                         )
@@ -1343,7 +1385,7 @@ internal fun CommentComposer(
                         Image(
                             painter = painterResource(DesignSystemR.drawable.vista_post_send),
                             contentDescription = "ارسال نظر",
-                            modifier = Modifier.size(20.dp),
+                            modifier = Modifier.size(19.dp),
                             colorFilter = ColorFilter.tint(
                                 if (canSend) Color.White
                                 else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
@@ -1352,6 +1394,28 @@ internal fun CommentComposer(
                     }
                 }
             }
+        }
+    }
+
+    if (glassState != null) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .vistaGlassHalo(
+                    state = glassState,
+                    isDark = isDark,
+                    fromTop = false,
+                ),
+        ) {
+            composerBody()
+        }
+    } else {
+        Surface(
+            color = if (isDark) MaterialTheme.colorScheme.surface else Color.White,
+            shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+            shadowElevation = 10.dp,
+        ) {
+            composerBody()
         }
     }
 }

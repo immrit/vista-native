@@ -41,6 +41,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
@@ -115,6 +116,7 @@ fun ChatAudioPlayerSheet(
     onJumpToMessage: ((String) -> Unit)? = null,
     onJumpToPost: ((String) -> Unit)? = null,
     onShareTrack: ((ChatAudioTrack) -> Unit)? = null,
+    onSaveTrack: ((ChatAudioTrack) -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val playerState by ChatAudioPlayer.state.collectAsState()
@@ -307,6 +309,7 @@ fun ChatAudioPlayerSheet(
                                 }
                             },
                             onShare = { shareHandler(item) },
+                            onSave = onSaveTrack?.let { cb -> { cb(item) } },
                             onJump = when {
                                 item.postId != null && onJumpToPost != null -> {
                                     { onJumpToPost(item.postId!!) }
@@ -619,6 +622,16 @@ fun ChatAudioPlayerSheet(
                                         )
                                     }
                                     HorizontalDivider()
+                                    if (onSaveTrack != null) {
+                                        DropdownMenuItem(
+                                            text = { Text("ذخیره در موسیقی‌ها") },
+                                            leadingIcon = { Icon(Icons.Default.Download, contentDescription = null) },
+                                            onClick = {
+                                                optionsMenuExpanded = false
+                                                onSaveTrack(track)
+                                            },
+                                        )
+                                    }
                                     DropdownMenuItem(
                                         text = { Text("اشتراک‌گذاری") },
                                         leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) },
@@ -666,6 +679,7 @@ private fun PlaylistTrackRow(
     subtitleColor: Color,
     onClick: () -> Unit,
     onShare: () -> Unit,
+    onSave: (() -> Unit)? = null,
     onJump: (() -> Unit)?,
     jumpLabel: String = "نمایش در گفتگو",
 ) {
@@ -772,6 +786,16 @@ private fun PlaylistTrackRow(
                         onClick()
                     },
                 )
+                if (onSave != null) {
+                    DropdownMenuItem(
+                        text = { Text("ذخیره در موسیقی‌ها") },
+                        leadingIcon = { Icon(Icons.Default.Download, contentDescription = null) },
+                        onClick = {
+                            rowMenuExpanded = false
+                            onSave()
+                        },
+                    )
+                }
                 DropdownMenuItem(
                     text = { Text("اشتراک‌گذاری") },
                     leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) },

@@ -46,6 +46,26 @@ class VistaApplication : Application(), Configuration.Provider, ImageLoaderFacto
         }
         ir.coffevista.vista_native.core.common.DeviceIdProvider.current =
             ir.coffevista.vista_native.core.common.DeviceIdProvider { deviceId }
+        val appVerName = runCatching {
+            packageManager.getPackageInfo(packageName, 0).versionName
+        }.getOrNull()?.takeIf(String::isNotBlank) ?: "1.0.0"
+        val deviceDisplayName = ir.coffevista.vista_native.core.common.DeviceMetadataProvider.formatAndroidDeviceName(
+            manufacturer = Build.MANUFACTURER,
+            model = Build.MODEL,
+            brand = Build.BRAND,
+        )
+        val deviceModelName = Build.MODEL?.trim().orEmpty().ifBlank { "Android" }
+        val osRelease = Build.VERSION.RELEASE?.trim().orEmpty().ifBlank { "14" }
+        val vistaUa = "VistaAndroid/$appVerName (Android $osRelease; $deviceDisplayName)"
+        val cachedDeviceMetadata = ir.coffevista.vista_native.core.common.DeviceMetadata(
+            deviceName = deviceDisplayName,
+            deviceModel = deviceModelName,
+            osVersion = "Android $osRelease",
+            appVersion = appVerName,
+            userAgent = vistaUa,
+        )
+        ir.coffevista.vista_native.core.common.DeviceMetadataProvider.current =
+            ir.coffevista.vista_native.core.common.DeviceMetadataProvider { cachedDeviceMetadata }
         val sessionPrefs = getSharedPreferences(
             ir.coffevista.vista_native.core.common.SessionCredentialsProvider.PREFS_NAME,
             MODE_PRIVATE,
