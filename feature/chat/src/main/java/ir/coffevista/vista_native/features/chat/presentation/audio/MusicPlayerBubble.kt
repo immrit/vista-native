@@ -195,7 +195,7 @@ fun MusicPlayerBubble(
                     onPlayTap()
                 }
             }
-            .padding(horizontal = 4.dp, vertical = 4.dp),
+            .padding(horizontal = 0.dp, vertical = 2.dp),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),

@@ -113,32 +113,41 @@ fun TopGroupsScreen(
             modifier = modifier.fillMaxSize(),
             containerColor = MaterialTheme.colorScheme.background,
             topBar = {
-                TopAppBar(
-                    title = {
-                        Text(
-                            text = "برترین گروه‌ها",
-                            style = MaterialTheme.typography.titleMedium.copy(
-                                fontFamily = VistaFontFamily,
-                                fontWeight = FontWeight.ExtraBold,
-                                fontSize = 18.sp,
-                                color = MaterialTheme.colorScheme.onBackground,
-                            ),
-                        )
-                    },
-                    navigationIcon = {
-                        IconButton(onClick = onBack) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Rounded.ArrowForward,
-                                contentDescription = "بازگشت",
-                                tint = MaterialTheme.colorScheme.onBackground,
-                                modifier = Modifier.size(24.dp),
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.background),
+                ) {
+                    ir.coffevista.vista_native.core.designsystem.component.VistaAppBarAmbientOverlay(
+                        modifier = Modifier.matchParentSize(),
+                    )
+                    TopAppBar(
+                        title = {
+                            Text(
+                                text = "برترین گروه‌ها",
+                                style = MaterialTheme.typography.titleMedium.copy(
+                                    fontFamily = VistaFontFamily,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 18.sp,
+                                    color = MaterialTheme.colorScheme.onBackground,
+                                ),
                             )
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.background,
-                    ),
-                )
+                        },
+                        navigationIcon = {
+                            IconButton(onClick = onBack) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Rounded.ArrowForward,
+                                    contentDescription = "بازگشت",
+                                    tint = MaterialTheme.colorScheme.onBackground,
+                                    modifier = Modifier.size(24.dp),
+                                )
+                            }
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = androidx.compose.ui.graphics.Color.Transparent,
+                        ),
+                    )
+                }
             },
         ) { innerPadding ->
             Box(

@@ -213,7 +213,7 @@ fun VoicePlayerBubble(
     Row(
         modifier = modifier
             .widthIn(min = 224.dp, max = 286.dp)
-            .padding(horizontal = 4.dp, vertical = 4.dp),
+            .padding(horizontal = 0.dp, vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(

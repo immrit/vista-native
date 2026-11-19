@@ -746,10 +746,6 @@ internal fun FeedScreenContent(
             }
         }
 
-        remoteConfig?.ambientEffect?.let { ambient ->
-            VistaFeedAmbientParticles(ambientEffect = ambient)
-        }
-
         AnimatedVisibility(
             visible = isBarsVisible,
             enter = slideInVertically(
@@ -782,32 +778,37 @@ internal fun FeedScreenContent(
                         shadowElevation = 3.dp,
                     ),
             ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .statusBarsPadding(),
-                ) {
-                    FeedAppBar(
-                        onNotificationClick = onNotificationClick,
-                        unreadNotificationCount = unreadNotificationCount,
-                        ornament = remoteConfig?.brandOrnament ?: RemoteBrandOrnament(),
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    ir.coffevista.vista_native.core.designsystem.component.VistaAppBarAmbientOverlay(
+                        modifier = Modifier.matchParentSize(),
                     )
-                    FeedTabs(
-                        selectedKind = selectedKind,
-                        copyOverrides = remoteConfig?.copyOverrides ?: RemoteCopyOverrides(),
-                        onKindSelected = { kind ->
-                            updateBarsVisibility(true)
-                            onKindSelected(kind)
-                        },
-                    )
-                    VistaMiniPlayerHost(glassState = feedGlassState)
-                    FeedPostUploadBanner(
-                        uploadState = postUploadState,
-                        onRetry = onRetryUpload,
-                        onCancel = onCancelUpload,
-                        onDismiss = onDismissUpload,
-                        onBannerDisplayed = onUploadBannerDisplayed,
-                    )
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .statusBarsPadding(),
+                    ) {
+                        FeedAppBar(
+                            onNotificationClick = onNotificationClick,
+                            unreadNotificationCount = unreadNotificationCount,
+                            ornament = remoteConfig?.brandOrnament ?: RemoteBrandOrnament(),
+                        )
+                        FeedTabs(
+                            selectedKind = selectedKind,
+                            copyOverrides = remoteConfig?.copyOverrides ?: RemoteCopyOverrides(),
+                            onKindSelected = { kind ->
+                                updateBarsVisibility(true)
+                                onKindSelected(kind)
+                            },
+                        )
+                        VistaMiniPlayerHost(glassState = feedGlassState)
+                        FeedPostUploadBanner(
+                            uploadState = postUploadState,
+                            onRetry = onRetryUpload,
+                            onCancel = onCancelUpload,
+                            onDismiss = onDismissUpload,
+                            onBannerDisplayed = onUploadBannerDisplayed,
+                        )
+                    }
                 }
             }
         }

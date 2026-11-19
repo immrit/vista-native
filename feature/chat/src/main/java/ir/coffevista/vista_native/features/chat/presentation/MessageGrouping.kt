@@ -1,8 +1,11 @@
 package ir.coffevista.vista_native.features.chat.presentation
 
+import androidx.compose.foundation.shape.AbsoluteRoundedCornerShape
+import androidx.compose.ui.unit.dp
 import ir.coffevista.vista_native.features.chat.domain.model.AttachmentKind
 import ir.coffevista.vista_native.features.chat.domain.model.Message
 import ir.coffevista.vista_native.features.chat.domain.model.MessageStatus
+import java.util.Calendar
 import kotlin.math.abs
 
 internal data class MessageRenderItem(
@@ -166,6 +169,63 @@ internal fun unreadMessageWindow(messages: List<Message>): UnreadMessageWindow {
     )
 }
 
+internal const val TELEGRAM_X_BUBBLE_RADIUS_DP = 18f
+internal const val TELEGRAM_X_BUBBLE_MERGED_RADIUS_DP = 6f
+internal const val TELEGRAM_X_IMAGE_INNER_RADIUS_DP = 4f
+internal const val TELEGRAM_X_BUBBLE_GAP_SEPARATE_DP = 3f
+internal const val TELEGRAM_X_BUBBLE_GAP_MERGED_DP = 1.5f
+
+internal data class TelegramXCornerRadiiDp(
+    val topLeft: Float,
+    val topRight: Float,
+    val bottomLeft: Float,
+    val bottomRight: Float,
+)
+
+internal fun TelegramXCornerRadiiDp.toAbsoluteShape(): AbsoluteRoundedCornerShape =
+    AbsoluteRoundedCornerShape(
+        topLeft = topLeft.dp,
+        topRight = topRight.dp,
+        bottomLeft = bottomLeft.dp,
+        bottomRight = bottomRight.dp,
+    )
+
+internal fun telegramXOuterCornerRadii(
+    cornerRounding: MessageBubbleCornerRounding,
+): TelegramXCornerRadiiDp = TelegramXCornerRadiiDp(
+    topLeft = if (cornerRounding.topLeft) TELEGRAM_X_BUBBLE_RADIUS_DP else TELEGRAM_X_BUBBLE_MERGED_RADIUS_DP,
+    topRight = if (cornerRounding.topRight) TELEGRAM_X_BUBBLE_RADIUS_DP else TELEGRAM_X_BUBBLE_MERGED_RADIUS_DP,
+    bottomLeft = if (cornerRounding.bottomLeft) TELEGRAM_X_BUBBLE_RADIUS_DP else TELEGRAM_X_BUBBLE_MERGED_RADIUS_DP,
+    bottomRight = if (cornerRounding.bottomRight) TELEGRAM_X_BUBBLE_RADIUS_DP else TELEGRAM_X_BUBBLE_MERGED_RADIUS_DP,
+)
+
+internal fun telegramXInnerCornerRadii(
+    cornerRounding: MessageBubbleCornerRounding,
+    insetDp: Float = 2f,
+    roundTop: Boolean = true,
+    roundBottom: Boolean = true,
+    flatCornerDp: Float = TELEGRAM_X_IMAGE_INNER_RADIUS_DP,
+): TelegramXCornerRadiiDp {
+    val outer = telegramXOuterCornerRadii(cornerRounding)
+    fun inner(edgeRounded: Boolean, outerDp: Float): Float =
+        if (!edgeRounded) flatCornerDp else (outerDp - insetDp).coerceAtLeast(flatCornerDp)
+
+    return TelegramXCornerRadiiDp(
+        topLeft = inner(roundTop, outer.topLeft),
+        topRight = inner(roundTop, outer.topRight),
+        bottomLeft = inner(roundBottom, outer.bottomLeft),
+        bottomRight = inner(roundBottom, outer.bottomRight),
+    )
+}
+
+/**
+ * Exact Telegram X corner rounding policy (`TGMessage.java:3884-3900`):
+ * `mergeTop = !headerDisabled()` (true for all regular bubbles) and
+ * `mergeBottom = !groupPosition.isLastInGroup`.
+ *
+ * Outgoing (right-aligned): topRight is always 6.dp; bottomRight is 18.dp on standalone/last, 6.dp otherwise.
+ * Incoming (left-aligned): topLeft is always 6.dp; bottomLeft is 18.dp on standalone/last, 6.dp otherwise.
+ */
 internal fun messageBubbleCornerRounding(
     isMine: Boolean,
     groupPosition: MessageGroupPosition,
@@ -173,13 +233,13 @@ internal fun messageBubbleCornerRounding(
     if (isMine) {
         MessageBubbleCornerRounding(
             topLeft = true,
-            topRight = groupPosition.isFirstInGroup,
+            topRight = false,
             bottomLeft = true,
             bottomRight = groupPosition.isLastInGroup,
         )
     } else {
         MessageBubbleCornerRounding(
-            topLeft = groupPosition.isFirstInGroup,
+            topLeft = false,
             topRight = true,
             bottomLeft = groupPosition.isLastInGroup,
             bottomRight = true,
@@ -211,7 +271,17 @@ private fun messagesShareVisualGroup(current: Message, neighbor: Message?): Bool
         !current.isSystemNotice &&
         !neighbor.isSystemNotice &&
         current.senderId == neighbor.senderId &&
-        abs(current.createdAtEpochMillis - neighbor.createdAtEpochMillis) < GROUP_WINDOW_MILLIS
+        current.isMine == neighbor.isMine &&
+        abs(current.createdAtEpochMillis - neighbor.createdAtEpochMillis) < GROUP_WINDOW_MILLIS &&
+        isSameCalendarDay(current.createdAtEpochMillis, neighbor.createdAtEpochMillis)
+
+private fun isSameCalendarDay(firstEpochMillis: Long, secondEpochMillis: Long): Boolean {
+    val first = Calendar.getInstance().apply { timeInMillis = firstEpochMillis }
+    val second = Calendar.getInstance().apply { timeInMillis = secondEpochMillis }
+    return first.get(Calendar.ERA) == second.get(Calendar.ERA) &&
+        first.get(Calendar.YEAR) == second.get(Calendar.YEAR) &&
+        first.get(Calendar.DAY_OF_YEAR) == second.get(Calendar.DAY_OF_YEAR)
+}
 
 private const val GROUP_WINDOW_MILLIS = 15 * 60 * 1_000L
 private const val IMPLICIT_ALBUM_NEIGHBOR_MILLIS = 25_000L

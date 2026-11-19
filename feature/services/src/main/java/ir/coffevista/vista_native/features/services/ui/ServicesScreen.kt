@@ -201,49 +201,57 @@ fun ServicesScreen(
             containerColor = MaterialTheme.colorScheme.background,
             topBar = {
                 Column(modifier = Modifier.fillMaxWidth()) {
-                    TopAppBar(
-                        modifier = Modifier.vistaGlass(
-                            state = servicesGlassState,
-                            shape = RectangleShape,
-                            tint = if (isDarkServices) Color(0xFF1A222C) else Color(0xFFFFFFFF),
-                            isDark = isDarkServices,
-                            blurRadius = VistaGlassTokens.BarBlur,
-                            tintAlphaOverride = if (isDarkServices) 0.58f else 0.62f,
-                            drawHighlight = true,
-                            rimWidth = 0.dp,
-                            shadowElevation = 3.dp,
-                        ),
-                        title = {
-                            Text(
-                                text = "سرویس‌ها",
-                                style = MaterialTheme.typography.headlineMedium.copy(
-                                    fontFamily = VistaFontFamily,
-                                    fontWeight = FontWeight.Black,
-                                    fontSize = 22.sp,
-                                    color = MaterialTheme.colorScheme.onBackground,
-                                    letterSpacing = (-0.4).sp,
-                                ),
-                            )
-                        },
-                        actions = {
-                            IconButton(
-                                onClick = { viewModel.refresh() },
-                                modifier = Modifier.semantics {
-                                    contentDescription = "به‌روزرسانی"
-                                },
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Refresh,
-                                    contentDescription = "به‌روزرسانی",
-                                    tint = MaterialTheme.colorScheme.onBackground,
-                                    modifier = Modifier.size(24.dp),
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .vistaGlass(
+                                state = servicesGlassState,
+                                shape = RectangleShape,
+                                tint = if (isDarkServices) Color(0xFF1A222C) else Color(0xFFFFFFFF),
+                                isDark = isDarkServices,
+                                blurRadius = VistaGlassTokens.BarBlur,
+                                tintAlphaOverride = if (isDarkServices) 0.58f else 0.62f,
+                                drawHighlight = true,
+                                rimWidth = 0.dp,
+                                shadowElevation = 3.dp,
+                            ),
+                    ) {
+                        ir.coffevista.vista_native.core.designsystem.component.VistaAppBarAmbientOverlay(
+                            modifier = Modifier.matchParentSize(),
+                        )
+                        TopAppBar(
+                            title = {
+                                Text(
+                                    text = "سرویس‌ها",
+                                    style = MaterialTheme.typography.headlineMedium.copy(
+                                        fontFamily = VistaFontFamily,
+                                        fontWeight = FontWeight.Black,
+                                        fontSize = 22.sp,
+                                        color = MaterialTheme.colorScheme.onBackground,
+                                        letterSpacing = (-0.4).sp,
+                                    ),
                                 )
-                            }
-                        },
-                        colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = Color.Transparent,
-                        ),
-                    )
+                            },
+                            actions = {
+                                IconButton(
+                                    onClick = { viewModel.refresh() },
+                                    modifier = Modifier.semantics {
+                                        contentDescription = "به‌روزرسانی"
+                                    },
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Refresh,
+                                        contentDescription = "به‌روزرسانی",
+                                        tint = MaterialTheme.colorScheme.onBackground,
+                                        modifier = Modifier.size(24.dp),
+                                    )
+                                }
+                            },
+                            colors = TopAppBarDefaults.topAppBarColors(
+                                containerColor = Color.Transparent,
+                            ),
+                        )
+                    }
                     VistaMiniPlayerHost(glassState = servicesGlassState)
                 }
             },

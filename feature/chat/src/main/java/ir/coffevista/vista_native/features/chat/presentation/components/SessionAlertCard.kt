@@ -40,6 +40,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.Role
@@ -66,6 +67,7 @@ fun SessionAlertCard(
     isActionPending: Boolean,
     onAction: (action: String) -> Unit,
     modifier: Modifier = Modifier,
+    shape: Shape = RoundedCornerShape(18.dp),
 ) {
     val isDark = isSystemInDarkTheme()
     val status = alert.status.lowercase()
@@ -96,9 +98,9 @@ fun SessionAlertCard(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(18.dp))
+                    .clip(shape)
                     .background(cardBg)
-                    .border(1.dp, cardBorder, RoundedCornerShape(18.dp))
+                    .border(1.dp, cardBorder, shape)
                     .padding(14.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {

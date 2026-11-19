@@ -2130,6 +2130,7 @@ fun MessageDetailScreen(
     var chatRootTopLeft by remember { mutableStateOf(Offset.Zero) }
     var chatRootSizePx by remember { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
     var composerInputBoundsInRoot by remember { mutableStateOf<Rect?>(null) }
+    var composerReplyBannerBoundsInRoot by remember { mutableStateOf<Rect?>(null) }
     val textMeasurer = rememberTextMeasurer()
     var pendingSendFlight by remember(state.conversationId) { mutableStateOf<PendingSendFlight?>(null) }
     var activeSendFlight by remember(state.conversationId) { mutableStateOf<ActiveSendFlight?>(null) }
@@ -2160,7 +2161,7 @@ fun MessageDetailScreen(
             val screenWidthPx = chatRootSizePx.width.toFloat().coerceAtLeast(with(density) { 360.dp.toPx() })
             val screenHeightPx = chatRootSizePx.height.toFloat().coerceAtLeast(with(density) { 400.dp.toPx() })
             val maxBubbleWidthPx = (screenWidthPx * 0.82f).coerceAtLeast(with(density) { 120.dp.toPx() })
-            val maxTextWidthPx = (maxBubbleWidthPx - with(density) { 24.dp.toPx() }).roundToInt().coerceAtLeast(1)
+            val maxTextWidthPx = (maxBubbleWidthPx - with(density) { 24.dp.toPx() }).toInt().coerceAtLeast(1)
             val measured = runCatching {
                 textMeasurer.measure(
                     text = AnnotatedString(pending.text),
@@ -2186,7 +2187,14 @@ fun MessageDetailScreen(
                 inputBoundsLocal = pending.startBoundsLocal,
                 estimatedBubbleWidthPx = estimatedWidthPx,
                 isRtlText = isRtlText,
-            )
+            ).let { resolved ->
+                val replyTop = pending.replyStartBoundsLocal?.top
+                if (replyTop != null && replyTop < resolved.top) {
+                    resolved.copy(top = replyTop)
+                } else {
+                    resolved
+                }
+            }
             val composerPx = with(density) { composerHeightDp.toPx() }
             val fallbackTarget = resolveSendFlightTargetFallbackBounds(
                 rootWidthPx = screenWidthPx,
@@ -2216,6 +2224,10 @@ fun MessageDetailScreen(
                 targetAlignRight = firstPrimary.isMine,
                 targetIsFirstInGroup = targetGroupPos.isFirstInGroup,
                 targetIsLastInGroup = targetGroupPos.isLastInGroup,
+                replySender = pending.replySender,
+                replyStartBoundsLocal = pending.replyStartBoundsLocal,
+                formattedTime = formatTime(firstPrimary.createdAtEpochMillis),
+                topClipPx = with(density) { effectiveTopPadding.toPx() },
             )
             pendingSendFlight = null
         } else if (System.currentTimeMillis() - pending.createdAtMs > 1_500L) {
@@ -2472,13 +2484,15 @@ fun MessageDetailScreen(
                                         ) {
                                             Column(
                                                 modifier = Modifier.fillMaxWidth(),
-                                                horizontalAlignment = if (message.isMine) Alignment.End else Alignment.Start,
+                                                horizontalAlignment = if (message.isMine) AbsoluteAlignment.Right else AbsoluteAlignment.Left,
                                             ) {
                                                 MediaAlbumBubble(
                                                     messages = renderItem.messages,
                                                     downloads = state.downloads,
                                                     settingsPreferences = state.settingsPreferences,
                                                     connectionTransport = state.connectionTransport,
+                                                    isFirstInGroup = groupPosition.isFirstInGroup,
+                                                    isLastInGroup = groupPosition.isLastInGroup,
                                                     selectionMode = selectedMessageKeys.isNotEmpty(),
                                                     selected = messageKeys.all(selectedMessageKeys::contains),
                                                     onToggleSelection = { toggleMessageSelection(messageKeys) },
@@ -2865,6 +2879,9 @@ fun MessageDetailScreen(
                                         replyPreview = reply.previewText(),
                                         startBoundsLocal = inputBounds.translate(-chatRootTopLeft.x, -chatRootTopLeft.y),
                                         createdAtMs = System.currentTimeMillis(),
+                                        replySender = reply.replyDisplayName(title),
+                                        replyStartBoundsLocal = composerReplyBannerBoundsInRoot
+                                            ?.translate(-chatRootTopLeft.x, -chatRootTopLeft.y),
                                     )
                                 }
                                 onSendReply(text, reply, onDone)
@@ -2873,6 +2890,7 @@ fun MessageDetailScreen(
                                 }
                             },
                             onInputFieldBoundsChanged = { composerInputBoundsInRoot = it },
+                            onReplyBannerBoundsChanged = { composerReplyBannerBoundsInRoot = it },
                             onEdit = onEdit,
                             onComposerChanged = onComposerChanged,
                             composerController = composerController,
@@ -4076,6 +4094,8 @@ private fun MediaAlbumBubble(
         ir.coffevista.vista_native.core.datastore.SettingsPreferences(),
     connectionTransport: ir.coffevista.vista_native.core.common.ConnectionTransport =
         ir.coffevista.vista_native.core.common.ConnectionTransport.WIFI,
+    isFirstInGroup: Boolean = true,
+    isLastInGroup: Boolean = true,
     selectionMode: Boolean,
     selected: Boolean,
     onToggleSelection: () -> Unit,
@@ -4097,6 +4117,17 @@ private fun MediaAlbumBubble(
         (message.content as? MessageContent.Text)?.value?.trim()?.takeIf(String::isNotEmpty)
     }
     val screenWidth = LocalConfiguration.current.screenWidthDp.dp
+    val cornerRounding = messageBubbleCornerRounding(
+        isMine = primary.isMine,
+        groupPosition = MessageGroupPosition(isFirstInGroup, isLastInGroup),
+    )
+    val bubbleShape = telegramXOuterCornerRadii(cornerRounding).toAbsoluteShape()
+    val innerGridShape = telegramXInnerCornerRadii(
+        cornerRounding = cornerRounding,
+        insetDp = 2f,
+        roundTop = true,
+        roundBottom = caption == null,
+    ).toAbsoluteShape()
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -4117,8 +4148,8 @@ private fun MediaAlbumBubble(
             .absolutePadding(
                 left = if (primary.isMine) 12.dp else 6.dp,
                 right = if (primary.isMine) 6.dp else 12.dp,
-                top = 3.dp,
-                bottom = 3.dp,
+                top = if (isFirstInGroup) 3.dp else 1.5.dp,
+                bottom = if (isLastInGroup) 3.dp else 1.5.dp,
             ),
         horizontalArrangement = if (primary.isMine) Arrangement.Start else Arrangement.End,
     ) {
@@ -4166,31 +4197,45 @@ private fun MediaAlbumBubble(
                     }
                 }
             }
-            Column(
-                modifier = Modifier
-                    .align(
-                        if (primary.isMine) AbsoluteAlignment.CenterRight
-                        else AbsoluteAlignment.CenterLeft,
-                    )
-                    .widthIn(min = 140.dp, max = screenWidth * 0.74f)
-                    .fillMaxWidth()
-                    .onGloballyPositioned { coordinates ->
-                        coordinatesHolder.coordinates = coordinates
-                    }
-                    .then(
-                        if (selected) {
-                            Modifier.border(
-                                2.dp,
-                                MaterialTheme.colorScheme.primary.copy(alpha = 0.72f),
-                                RoundedCornerShape(12.dp),
-                            )
-                        } else {
-                            Modifier
-                        },
-                    )
-                    .testTag("media-album"),
-            ) {
-                Box {
+            val albumBaseModifier = Modifier
+                .align(
+                    if (primary.isMine) AbsoluteAlignment.CenterRight
+                    else AbsoluteAlignment.CenterLeft,
+                )
+                .widthIn(min = 140.dp, max = screenWidth * 0.74f)
+                .fillMaxWidth()
+                .shadow(
+                    elevation = 1.dp,
+                    shape = bubbleShape,
+                    ambientColor = Color.Black.copy(alpha = 0.06f),
+                    spotColor = Color.Black.copy(alpha = 0.08f),
+                )
+                .clip(bubbleShape)
+                .then(
+                    if (primary.isMine) {
+                        Modifier.background(Brush.linearGradient(listOf(VistaBrandColors.Indigo, VistaBrandColors.VioletDeep)))
+                    } else {
+                        Modifier.background(MaterialTheme.colorScheme.surfaceVariant)
+                    },
+                )
+                .then(
+                    if (selected) {
+                        Modifier.border(
+                            2.dp,
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.72f),
+                            bubbleShape,
+                        )
+                    } else {
+                        Modifier
+                    },
+                )
+                .onGloballyPositioned { coordinates ->
+                    coordinatesHolder.coordinates = coordinates
+                }
+                .padding(2.dp)
+                .testTag("media-album")
+            Column(modifier = albumBaseModifier) {
+                Box(modifier = Modifier.fillMaxWidth().clip(innerGridShape)) {
                     MediaAlbumGrid(
                         messages = visibleMessages,
                         downloads = downloads,
@@ -4218,16 +4263,10 @@ private fun MediaAlbumBubble(
                     }
                 }
                 if (caption != null) {
-                    Spacer(Modifier.height(4.dp))
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(
-                                if (primary.isMine) VistaBrandColors.VioletDeep
-                                else MaterialTheme.colorScheme.surfaceVariant,
-                            )
-                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
                     ) {
                         VistaEmojiText(
                             text = caption,
@@ -4243,7 +4282,7 @@ private fun MediaAlbumBubble(
                             maxLines = 4,
                             overflow = TextOverflow.Ellipsis,
                         )
-                        Spacer(Modifier.height(4.dp))
+                        Spacer(Modifier.height(3.dp))
                         Box(modifier = Modifier.align(AbsoluteAlignment.Right)) {
                             AlbumMessageMeta(message = primary)
                         }
@@ -4273,15 +4312,15 @@ private fun MediaAlbumGrid(
     onCancelDownload: (String) -> Unit,
     onAttachmentClick: (ir.coffevista.vista_native.features.chat.domain.model.Attachment) -> Unit,
 ) {
-    val tile: @Composable (Message, Modifier, AbsoluteRoundedCornerShape) -> Unit =
-        { message, modifier, shape ->
+    val tile: @Composable (Message, Modifier) -> Unit =
+        { message, modifier ->
             MediaAlbumTile(
                 message = message,
                 downloadTask = downloads[message.serverId ?: message.clientId],
                 settingsPreferences = settingsPreferences,
                 connectionTransport = connectionTransport,
                 modifier = modifier,
-                shape = shape,
+                shape = androidx.compose.ui.graphics.RectangleShape,
                 selectionMode = selectionMode,
                 onToggleSelection = onToggleSelection,
                 onLongPress = onLongPress,
@@ -4296,66 +4335,30 @@ private fun MediaAlbumGrid(
         }
     when (messages.size) {
         2 -> Row(Modifier.aspectRatio(1.75f)) {
-            tile(
-                messages[0],
-                Modifier.weight(1f).fillMaxSize(),
-                AbsoluteRoundedCornerShape(topLeft = 12.dp, bottomLeft = 12.dp),
-            )
-            Spacer(Modifier.width(1.dp))
-            tile(
-                messages[1],
-                Modifier.weight(1f).fillMaxSize(),
-                AbsoluteRoundedCornerShape(topRight = 12.dp, bottomRight = 12.dp),
-            )
+            tile(messages[0], Modifier.weight(1f).fillMaxSize())
+            Spacer(Modifier.width(1.5.dp))
+            tile(messages[1], Modifier.weight(1f).fillMaxSize())
         }
         3 -> Row(Modifier.aspectRatio(1.5f)) {
-            tile(
-                messages[0],
-                Modifier.weight(2f).fillMaxSize(),
-                AbsoluteRoundedCornerShape(topLeft = 12.dp, bottomLeft = 12.dp),
-            )
-            Spacer(Modifier.width(1.dp))
+            tile(messages[0], Modifier.weight(2f).fillMaxSize())
+            Spacer(Modifier.width(1.5.dp))
             Column(Modifier.weight(1f).fillMaxSize()) {
-                tile(
-                    messages[1],
-                    Modifier.weight(1f).fillMaxSize(),
-                    AbsoluteRoundedCornerShape(topRight = 12.dp),
-                )
-                Spacer(Modifier.height(1.dp))
-                tile(
-                    messages[2],
-                    Modifier.weight(1f).fillMaxSize(),
-                    AbsoluteRoundedCornerShape(bottomRight = 12.dp),
-                )
+                tile(messages[1], Modifier.weight(1f).fillMaxSize())
+                Spacer(Modifier.height(1.5.dp))
+                tile(messages[2], Modifier.weight(1f).fillMaxSize())
             }
         }
         4 -> Column(Modifier.aspectRatio(1f)) {
             Row(Modifier.weight(1f).fillMaxWidth()) {
-                tile(
-                    messages[0],
-                    Modifier.weight(1f).fillMaxSize(),
-                    AbsoluteRoundedCornerShape(topLeft = 12.dp),
-                )
-                Spacer(Modifier.width(1.dp))
-                tile(
-                    messages[1],
-                    Modifier.weight(1f).fillMaxSize(),
-                    AbsoluteRoundedCornerShape(topRight = 12.dp),
-                )
+                tile(messages[0], Modifier.weight(1f).fillMaxSize())
+                Spacer(Modifier.width(1.5.dp))
+                tile(messages[1], Modifier.weight(1f).fillMaxSize())
             }
-            Spacer(Modifier.height(1.dp))
+            Spacer(Modifier.height(1.5.dp))
             Row(Modifier.weight(1f).fillMaxWidth()) {
-                tile(
-                    messages[2],
-                    Modifier.weight(1f).fillMaxSize(),
-                    AbsoluteRoundedCornerShape(bottomLeft = 12.dp),
-                )
-                Spacer(Modifier.width(1.dp))
-                tile(
-                    messages[3],
-                    Modifier.weight(1f).fillMaxSize(),
-                    AbsoluteRoundedCornerShape(bottomRight = 12.dp),
-                )
+                tile(messages[2], Modifier.weight(1f).fillMaxSize())
+                Spacer(Modifier.width(1.5.dp))
+                tile(messages[3], Modifier.weight(1f).fillMaxSize())
             }
         }
         else -> {
@@ -4364,20 +4367,11 @@ private fun MediaAlbumGrid(
                 rows.forEachIndexed { rowIndex, indices ->
                     Row(Modifier.weight(1f).fillMaxWidth()) {
                         indices.forEachIndexed { columnIndex, messageIndex ->
-                            tile(
-                                messages[messageIndex],
-                                Modifier.weight(1f).fillMaxSize(),
-                                adaptiveAlbumTileShape(
-                                    rowIndex = rowIndex,
-                                    columnIndex = columnIndex,
-                                    rowCount = rows.size,
-                                    columnCount = indices.size,
-                                ),
-                            )
-                            if (columnIndex != indices.lastIndex) Spacer(Modifier.width(1.dp))
+                            tile(messages[messageIndex], Modifier.weight(1f).fillMaxSize())
+                            if (columnIndex != indices.lastIndex) Spacer(Modifier.width(1.5.dp))
                         }
                     }
-                    if (rowIndex != rows.lastIndex) Spacer(Modifier.height(1.dp))
+                    if (rowIndex != rows.lastIndex) Spacer(Modifier.height(1.5.dp))
                 }
             }
         }
@@ -4394,7 +4388,7 @@ private fun MediaAlbumTile(
     connectionTransport: ir.coffevista.vista_native.core.common.ConnectionTransport =
         ir.coffevista.vista_native.core.common.ConnectionTransport.WIFI,
     modifier: Modifier,
-    shape: AbsoluteRoundedCornerShape,
+    shape: androidx.compose.ui.graphics.Shape,
     selectionMode: Boolean,
     onToggleSelection: () -> Unit,
     onLongPress: () -> Unit,
@@ -4575,18 +4569,6 @@ private fun AlbumMessageMeta(
     }
 }
 
-private fun adaptiveAlbumTileShape(
-    rowIndex: Int,
-    columnIndex: Int,
-    rowCount: Int,
-    columnCount: Int,
-): AbsoluteRoundedCornerShape = AbsoluteRoundedCornerShape(
-    topLeft = if (rowIndex == 0 && columnIndex == 0) 12.dp else 0.dp,
-    topRight = if (rowIndex == 0 && columnIndex == columnCount - 1) 12.dp else 0.dp,
-    bottomLeft = if (rowIndex == rowCount - 1 && columnIndex == 0) 12.dp else 0.dp,
-    bottomRight = if (rowIndex == rowCount - 1 && columnIndex == columnCount - 1) 12.dp else 0.dp,
-)
-
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun MessageBubble(
@@ -4727,8 +4709,8 @@ private fun MessageBubble(
             .absolutePadding(
                 left = if (message.isMine) 12.dp else 6.dp,
                 right = if (message.isMine) 6.dp else 12.dp,
-                top = 3.dp,
-                bottom = 3.dp,
+                top = if (isFirstInGroup) TELEGRAM_X_BUBBLE_GAP_SEPARATE_DP.dp else TELEGRAM_X_BUBBLE_GAP_MERGED_DP.dp,
+                bottom = if (isLastInGroup) TELEGRAM_X_BUBBLE_GAP_SEPARATE_DP.dp else TELEGRAM_X_BUBBLE_GAP_MERGED_DP.dp,
             ),
         horizontalArrangement = if (message.isMine) Arrangement.Start else Arrangement.End,
     ) {
@@ -4736,24 +4718,34 @@ private fun MessageBubble(
                 isMine = message.isMine,
                 groupPosition = MessageGroupPosition(isFirstInGroup, isLastInGroup),
             )
-            val shape = AbsoluteRoundedCornerShape(
-                topLeft = if (cornerRounding.topLeft) 18.dp else 6.dp,
-                topRight = if (cornerRounding.topRight) 18.dp else 6.dp,
-                bottomLeft = if (cornerRounding.bottomLeft) 18.dp else 6.dp,
-                bottomRight = if (cornerRounding.bottomRight) 18.dp else 6.dp,
-            )
+            val shape = telegramXOuterCornerRadii(cornerRounding).toAbsoluteShape()
             val screenWidth = LocalConfiguration.current.screenWidthDp.dp
             val isSingleEmoji = singleEmoji != null
+            val isRichCardBubble = !isDeleted &&
+                !isSingleEmoji &&
+                (duelInvite != null || sessionAlert != null || sharedPost != null)
             val isVisualMediaBubble = !isDeleted &&
                 !isSingleEmoji &&
-                duelInvite == null &&
-                sessionAlert == null &&
-                sharedPost == null &&
+                !isRichCardBubble &&
                 message.attachment?.kind in setOf(
                     AttachmentKind.IMAGE,
                     AttachmentKind.GIF,
                     AttachmentKind.VIDEO,
                 )
+            val isFileOrAudioBubble = !isDeleted &&
+                !isSingleEmoji &&
+                !isRichCardBubble &&
+                message.attachment?.kind in setOf(
+                    AttachmentKind.VOICE,
+                    AttachmentKind.AUDIO,
+                    AttachmentKind.DOCUMENT,
+                    AttachmentKind.UNKNOWN,
+                )
+            val hasHeaderAbove = !isDeleted &&
+                (message.isForwarded || !message.replyToContent.isNullOrBlank())
+            val hasFooterBelowMedia = text.isNotBlank() ||
+                (!isDeleted && message.reactions.isNotEmpty())
+            val drawTimeOverMedia = isVisualMediaBubble && !hasFooterBelowMedia && !message.isForwarded
             val base = Modifier
                 .then(
                     if (isSingleEmoji) {
@@ -4919,18 +4911,18 @@ private fun MessageBubble(
                             onBubbleBoundsInRootChanged?.invoke(coordinates.boundsInRoot())
                         }
                         .then(
-                            if (isSingleEmoji) {
-                                Modifier.padding(0.dp)
-                            } else if (isVisualMediaBubble) {
-                                Modifier.padding(3.dp)
-                            } else {
-                                Modifier.padding(start = 12.dp, top = 8.dp, end = 12.dp, bottom = 6.dp)
-                            }
+                            when {
+                                isSingleEmoji -> Modifier.padding(0.dp)
+                                isVisualMediaBubble -> Modifier.padding(2.dp)
+                                isRichCardBubble -> Modifier.padding(3.dp)
+                                isFileOrAudioBubble -> Modifier.padding(start = 10.dp, top = 8.dp, end = 10.dp, bottom = 6.dp)
+                                else -> Modifier.padding(start = 12.dp, top = 8.dp, end = 12.dp, bottom = 6.dp)
+                            },
                         ),
                 ) {
                 if (!isDeleted && message.isForwarded) {
                     Row(
-                        if (isVisualMediaBubble) {
+                        if (isVisualMediaBubble || isRichCardBubble) {
                             Modifier.padding(start = 9.dp, top = 5.dp, end = 9.dp, bottom = 4.dp)
                         } else {
                             Modifier.padding(bottom = 4.dp)
@@ -4962,7 +4954,7 @@ private fun MessageBubble(
                         modifier = Modifier
                             .fillMaxWidth()
                             .then(
-                                if (isVisualMediaBubble) {
+                                if (isVisualMediaBubble || isRichCardBubble) {
                                     Modifier.padding(start = 6.dp, top = 4.dp, end = 6.dp, bottom = 4.dp)
                                 } else {
                                     Modifier.padding(bottom = 6.dp)
@@ -5038,6 +5030,72 @@ private fun MessageBubble(
                         }
                     }
                 }
+                val mediaClipShape = remember(cornerRounding, hasHeaderAbove, hasFooterBelowMedia) {
+                    telegramXInnerCornerRadii(
+                        cornerRounding = cornerRounding,
+                        insetDp = 2f,
+                        roundTop = !hasHeaderAbove,
+                        roundBottom = !hasFooterBelowMedia,
+                    ).toAbsoluteShape()
+                }
+                val cardShape = remember(cornerRounding, hasHeaderAbove) {
+                    telegramXInnerCornerRadii(
+                        cornerRounding = cornerRounding,
+                        insetDp = 3f,
+                        roundTop = !hasHeaderAbove,
+                        roundBottom = false,
+                        flatCornerDp = 10f,
+                    ).toAbsoluteShape()
+                }
+                val overlayMetaFooter: @Composable () -> Unit = {
+                    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Color.Black.copy(alpha = 0.45f))
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null,
+                                ) {
+                                    if (selectionMode) {
+                                        onToggleSelection()
+                                    } else if (!isDeleted) {
+                                        onOpenContextMenu(coordinatesHolder.coordinates?.takeIf { it.isAttached }?.boundsInWindow())
+                                    }
+                                }
+                                .padding(horizontal = 6.dp, vertical = 2.dp),
+                        ) {
+                            if (isSecretConversation && secretAutoDeleteSeconds > 0) {
+                                Icon(
+                                    imageVector = Icons.Default.Timer,
+                                    contentDescription = "تایمر خودکار",
+                                    tint = Color.White.copy(alpha = 0.9f),
+                                    modifier = Modifier.size(11.dp),
+                                )
+                                Spacer(Modifier.width(2.5.dp))
+                            }
+                            if (message.editedAtEpochMillis != null) {
+                                Text(
+                                    "ویرایش",
+                                    color = Color.White.copy(alpha = 0.78f),
+                                    fontSize = 10.sp,
+                                    fontStyle = FontStyle.Italic,
+                                )
+                                Spacer(Modifier.width(4.dp))
+                            }
+                            Text(
+                                formatTime(message.createdAtEpochMillis),
+                                color = Color.White,
+                                fontSize = 11.sp,
+                            )
+                            if (message.isMine) {
+                                Spacer(Modifier.width(3.dp))
+                                MessageStatusMark(message.status)
+                            }
+                        }
+                    }
+                }
                 if (!isDeleted) message.attachment?.let { attachment ->
                     AttachmentBubble(
                         message = message,
@@ -5056,10 +5114,12 @@ private fun MessageBubble(
                         onResumeDownload = onResumeDownload,
                         onCancelDownload = onCancelDownload,
                         onAttachmentClick = onAttachmentClick,
+                        mediaClipShape = mediaClipShape,
+                        overlayMetaFooter = if (drawTimeOverMedia) overlayMetaFooter else null,
                     )
                     if (text.isNotBlank()) {
                         Spacer(Modifier.height(if (isVisualMediaBubble) 4.dp else 6.dp))
-                    } else if (isVisualMediaBubble) {
+                    } else if (isVisualMediaBubble && !drawTimeOverMedia) {
                         Spacer(Modifier.height(2.dp))
                     }
                 }
@@ -5123,9 +5183,13 @@ private fun MessageBubble(
                             previewStatus = previewState?.status ?: DuelPreviewLoadStatus.IDLE,
                             onRequestPreview = onRequestDuelPreview,
                             onStartGame = onOpenGame,
+                            shape = cardShape,
                         )
-                        Spacer(Modifier.height(4.dp))
-                        Box(Modifier.align(AbsoluteAlignment.Right)) {
+                        Box(
+                            Modifier
+                                .align(AbsoluteAlignment.Right)
+                                .padding(start = 8.dp, top = 4.dp, end = 8.dp, bottom = 2.dp),
+                        ) {
                             metaFooter()
                         }
                     }
@@ -5137,9 +5201,13 @@ private fun MessageBubble(
                             onAction = { action ->
                                 onSessionAlertAction(message, sessionAlert.sessionId, action)
                             },
+                            shape = cardShape,
                         )
-                        Spacer(Modifier.height(4.dp))
-                        Box(Modifier.align(AbsoluteAlignment.Right)) {
+                        Box(
+                            Modifier
+                                .align(AbsoluteAlignment.Right)
+                                .padding(start = 8.dp, top = 4.dp, end = 8.dp, bottom = 2.dp),
+                        ) {
                             metaFooter()
                         }
                     }
@@ -5149,9 +5217,13 @@ private fun MessageBubble(
                             post = sharedPost,
                             isMine = message.isMine,
                             onViewPost = onOpenPost,
+                            shape = cardShape,
                         )
-                        Spacer(Modifier.height(4.dp))
-                        Box(Modifier.align(AbsoluteAlignment.Right)) {
+                        Box(
+                            Modifier
+                                .align(AbsoluteAlignment.Right)
+                                .padding(start = 8.dp, top = 4.dp, end = 8.dp, bottom = 2.dp),
+                        ) {
                             metaFooter()
                         }
                     }
@@ -5186,20 +5258,20 @@ private fun MessageBubble(
                             .align(AbsoluteAlignment.Right)
                             .then(
                                 if (isVisualMediaBubble) {
-                                    Modifier.padding(start = 9.dp, end = 9.dp, bottom = 3.dp)
+                                    Modifier.padding(start = 10.dp, end = 10.dp, bottom = 4.dp)
                                 } else {
                                     Modifier
                                 },
                             ),
                         layoutDirection = if (isRtlMessage) LayoutDirection.Rtl else LayoutDirection.Ltr,
                     )
-                } else {
+                } else if (!drawTimeOverMedia) {
                     Box(
                         Modifier
                             .align(AbsoluteAlignment.Right)
                             .then(
                                 if (isVisualMediaBubble) {
-                                    Modifier.padding(start = 9.dp, top = 2.dp, end = 9.dp, bottom = 3.dp)
+                                    Modifier.padding(start = 10.dp, top = 2.dp, end = 10.dp, bottom = 4.dp)
                                 } else {
                                     Modifier
                                 },
@@ -5219,7 +5291,7 @@ private fun MessageBubble(
                         modifier = Modifier
                             .padding(top = 4.dp)
                             .then(
-                                if (isVisualMediaBubble) Modifier.padding(horizontal = 9.dp)
+                                if (isVisualMediaBubble || isRichCardBubble) Modifier.padding(horizontal = 9.dp)
                                 else Modifier
                             ),
                     )
@@ -5234,7 +5306,7 @@ private fun MessageBubble(
                     modifier = Modifier
                         .padding(top = 5.dp)
                         .then(
-                            if (isVisualMediaBubble) Modifier.padding(start = 9.dp, end = 9.dp, bottom = 3.dp)
+                            if (isVisualMediaBubble || isRichCardBubble) Modifier.padding(start = 9.dp, end = 9.dp, bottom = 3.dp)
                             else Modifier
                         ),
                 )
@@ -5326,12 +5398,13 @@ private fun ComposerContextBanner(
     onDismiss: () -> Unit,
     badgeIcon: androidx.compose.ui.graphics.vector.ImageVector? = null,
     badgeText: String? = null,
+    modifier: Modifier = Modifier,
 ) {
     val isDark = isSystemInDarkTheme()
     val bannerShape = RoundedCornerShape(18.dp)
     val bannerTint = if (isDark) Color(0xFF1A222C) else Color(0xFFFFFFFF)
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 3.dp)
             .then(
@@ -6216,6 +6289,8 @@ private fun AttachmentBubble(
     onResumeDownload: (String) -> Unit = {},
     onCancelDownload: (String) -> Unit = {},
     onAttachmentClick: (ir.coffevista.vista_native.features.chat.domain.model.Attachment) -> Unit = {},
+    mediaClipShape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(16.dp),
+    overlayMetaFooter: (@Composable () -> Unit)? = null,
 ) {
     val foreground = if (message.isMine) Color.White else MaterialTheme.colorScheme.onSurface
     val isGif = attachment.kind == AttachmentKind.GIF
@@ -6260,7 +6335,7 @@ private fun AttachmentBubble(
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(min = 140.dp, max = 280.dp)
-                        .clip(RoundedCornerShape(15.dp))
+                        .clip(mediaClipShape)
                         .clickable {
                             when {
                                 isDownloaded -> onAttachmentClick(attachment.copy(localUri = effectiveLocalUri))
@@ -6345,9 +6420,9 @@ private fun AttachmentBubble(
                         if (badgeText != null) {
                             Box(
                                 modifier = Modifier
-                                    .align(Alignment.BottomCenter)
-                                    .padding(bottom = 10.dp)
-                                    .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(12.dp))
+                                    .align(AbsoluteAlignment.TopLeft)
+                                    .padding(8.dp)
+                                    .background(Color.Black.copy(alpha = 0.45f), RoundedCornerShape(12.dp))
                                     .padding(horizontal = 8.dp, vertical = 3.dp),
                             ) {
                                 Text(
@@ -6357,6 +6432,15 @@ private fun AttachmentBubble(
                                     fontWeight = FontWeight.Medium,
                                 )
                             }
+                        }
+                    }
+                    if (overlayMetaFooter != null) {
+                        Box(
+                            modifier = Modifier
+                                .align(AbsoluteAlignment.BottomRight)
+                                .padding(6.dp),
+                        ) {
+                            overlayMetaFooter()
                         }
                     }
                 }
@@ -6370,7 +6454,7 @@ private fun AttachmentBubble(
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(min = 160.dp, max = 260.dp)
-                        .clip(RoundedCornerShape(15.dp))
+                        .clip(mediaClipShape)
                         .background(Color(0xFF1E1E1E))
                         .clickable {
                             when {
@@ -6458,12 +6542,21 @@ private fun AttachmentBubble(
                     if (!badge.isNullOrBlank()) {
                         Box(
                             modifier = Modifier
-                                .align(Alignment.BottomStart)
+                                .align(AbsoluteAlignment.TopLeft)
                                 .padding(8.dp)
-                                .background(Color.Black.copy(alpha = 0.65f), RoundedCornerShape(10.dp))
+                                .background(Color.Black.copy(alpha = 0.45f), RoundedCornerShape(12.dp))
                                 .padding(horizontal = 7.dp, vertical = 3.dp),
                         ) {
                             Text(badge, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                        }
+                    }
+                    if (overlayMetaFooter != null) {
+                        Box(
+                            modifier = Modifier
+                                .align(AbsoluteAlignment.BottomRight)
+                                .padding(6.dp),
+                        ) {
+                            overlayMetaFooter()
                         }
                     }
                 }
@@ -6540,11 +6633,7 @@ private fun AttachmentBubble(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(
-                            if (message.isMine) Color.White.copy(alpha = 0.12f)
-                            else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
-                        )
+                        .clip(RoundedCornerShape(10.dp))
                         .clickable {
                             when {
                                 isDownloaded -> onAttachmentClick(attachment.copy(localUri = effectiveLocalUri))
@@ -6553,7 +6642,7 @@ private fun AttachmentBubble(
                                 else -> onStartDownload()
                             }
                         }
-                        .padding(10.dp),
+                        .padding(vertical = 2.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
@@ -6563,10 +6652,10 @@ private fun AttachmentBubble(
                             .background(
                                 when {
                                     isDownloading -> Color.Transparent
-                                    isDownloaded -> if (message.isMine) Color.White.copy(alpha = 0.22f) else MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
-                                    else -> if (message.isMine) Color.White.copy(alpha = 0.25f) else MaterialTheme.colorScheme.primary
+                                    isDownloaded -> if (message.isMine) Color.White.copy(alpha = 0.24f) else VistaBrandColors.Indigo.copy(alpha = 0.14f)
+                                    else -> if (message.isMine) Color.White.copy(alpha = 0.24f) else VistaBrandColors.Indigo
                                 },
-                                CircleShape
+                                CircleShape,
                             ),
                         contentAlignment = Alignment.Center,
                     ) {
@@ -6590,7 +6679,7 @@ private fun AttachmentBubble(
                                 Icon(
                                     Icons.Default.ArrowDownward,
                                     contentDescription = "دانلود فایل",
-                                    tint = if (message.isMine) Color.White else MaterialTheme.colorScheme.onPrimary,
+                                    tint = Color.White,
                                     modifier = Modifier.size(22.dp),
                                 )
                             }
@@ -6598,8 +6687,8 @@ private fun AttachmentBubble(
                                 Icon(
                                     Icons.Default.Description,
                                     contentDescription = "فایل",
-                                    tint = if (message.isMine) Color.White else MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(24.dp),
+                                    tint = if (message.isMine) Color.White else VistaBrandColors.Indigo,
+                                    modifier = Modifier.size(22.dp),
                                 )
                             }
                         }
@@ -6610,7 +6699,7 @@ private fun AttachmentBubble(
                             text = attachment.fileName ?: "فایل پیوست",
                             color = foreground,
                             fontWeight = FontWeight.SemiBold,
-                            fontSize = 13.sp,
+                            fontSize = 14.sp,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
@@ -6635,8 +6724,10 @@ private fun AttachmentBubble(
                         }
                         Text(
                             text = subtitle,
-                            color = foreground.copy(alpha = 0.72f),
-                            fontSize = 11.sp,
+                            color = foreground.copy(alpha = 0.74f),
+                            fontSize = 11.5.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }
@@ -7089,9 +7180,16 @@ private fun ChatComposerBar(
     onPermissionRequired: () -> Unit,
     attachmentsEnabled: Boolean,
     onInputFieldBoundsChanged: (Rect) -> Unit = {},
+    onReplyBannerBoundsChanged: (Rect?) -> Unit = {},
 ) {
     var composerValue by remember(conversationId) {
         mutableStateOf(TextFieldValue("", TextRange.Zero))
+    }
+
+    LaunchedEffect(replyingTo) {
+        if (replyingTo == null) {
+            onReplyBannerBoundsChanged(null)
+        }
     }
 
     LaunchedEffect(editingMessage) {
@@ -7127,6 +7225,9 @@ private fun ChatComposerBar(
                     badgeIcon = if (isStoryReply) Icons.Outlined.AutoStories else if (isNoteReply) Icons.Outlined.EditNote else null,
                     badgeText = if (isStoryReply) "استوری" else if (isNoteReply) "یادداشت" else null,
                     onDismiss = onClearReply,
+                    modifier = Modifier.onGloballyPositioned { coords ->
+                        onReplyBannerBoundsChanged(coords.boundsInRoot())
+                    },
                 )
             }
         }

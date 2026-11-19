@@ -256,7 +256,7 @@ internal fun NotificationsScreenContent(
                 }
             }
 
-            Column(
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .align(Alignment.TopCenter)
@@ -272,38 +272,43 @@ internal fun NotificationsScreenContent(
                         shadowElevation = 3.dp,
                     ),
             ) {
-                TopAppBar(
-                    title = {
-                        Text(
-                            text = "اعلان‌ها",
-                            modifier = Modifier.fillMaxWidth(),
-                            textAlign = TextAlign.Center,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                    },
-                    navigationIcon = {
-                        IconButton(onClick = onBack) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "بازگشت")
-                        }
-                    },
-                    actions = {
-                        IconButton(onClick = onMarkAllAsRead) {
-                            Icon(Icons.Default.DoneAll, contentDescription = "علامت‌گذاری همه به عنوان خوانده شده")
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = Color.Transparent,
-                    ),
+                ir.coffevista.vista_native.core.designsystem.component.VistaAppBarAmbientOverlay(
+                    modifier = Modifier.matchParentSize(),
                 )
-                VistaMiniPlayerHost(glassState = notificationsGlassState)
-                if (!isInitialLoading) {
-                    NotificationFilterTabs(
-                        tabs = tabs,
-                        selectedFilter = selectedFilter,
-                        unreadCounts = state.unreadCountsByFilter,
-                        isDark = isDarkNotif,
-                        onSelected = { selectedFilter = it },
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    TopAppBar(
+                        title = {
+                            Text(
+                                text = "اعلان‌ها",
+                                modifier = Modifier.fillMaxWidth(),
+                                textAlign = TextAlign.Center,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        },
+                        navigationIcon = {
+                            IconButton(onClick = onBack) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "بازگشت")
+                            }
+                        },
+                        actions = {
+                            IconButton(onClick = onMarkAllAsRead) {
+                                Icon(Icons.Default.DoneAll, contentDescription = "علامت‌گذاری همه به عنوان خوانده شده")
+                            }
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = Color.Transparent,
+                        ),
                     )
+                    VistaMiniPlayerHost(glassState = notificationsGlassState)
+                    if (!isInitialLoading) {
+                        NotificationFilterTabs(
+                            tabs = tabs,
+                            selectedFilter = selectedFilter,
+                            unreadCounts = state.unreadCountsByFilter,
+                            isDark = isDarkNotif,
+                            onSelected = { selectedFilter = it },
+                        )
+                    }
                 }
             }
         }

@@ -42,6 +42,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -91,6 +92,7 @@ fun SharedPostCard(
     modifier: Modifier = Modifier,
     onViewPost: (String) -> Unit = {},
     onHashtagClick: (String) -> Unit = {},
+    shape: Shape = RoundedCornerShape(14.dp),
 ) {
     val isDarkTheme = isSystemInDarkTheme()
     val primaryTextColor = if (isMine) Color.White else MaterialTheme.colorScheme.onSurface
@@ -109,9 +111,9 @@ fun SharedPostCard(
     Column(
         modifier = modifier
             .widthIn(min = 230.dp, max = 290.dp)
-            .clip(RoundedCornerShape(14.dp))
+            .clip(shape)
             .background(cardBackground)
-            .border(0.75.dp, cardBorder, RoundedCornerShape(14.dp))
+            .border(0.75.dp, cardBorder, shape)
             .clickable(role = Role.Button, onClick = { onViewPost(post.postId) })
             .semantics { contentDescription = "پست اشتراک‌گذاری‌شده از ${post.authorName}" },
     ) {

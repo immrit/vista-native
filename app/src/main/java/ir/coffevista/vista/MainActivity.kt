@@ -309,9 +309,17 @@ class MainActivity : FragmentActivity() {
                     val fullscreenOverlayController = androidx.compose.runtime.remember {
                         ir.coffevista.vista_native.core.designsystem.component.VistaFullscreenOverlayController()
                     }
+                    val remoteCfg by SystemGateMonitor.remoteConfig.collectAsStateWithLifecycle()
+                    val ambientSpec = androidx.compose.runtime.remember(remoteCfg?.ambientEffect) {
+                        ir.coffevista.vista_native.core.designsystem.component.VistaAmbientEffectSpec(
+                            effect = remoteCfg?.ambientEffect?.effect ?: "none",
+                            density = remoteCfg?.ambientEffect?.density ?: "low",
+                        )
+                    }
                     CompositionLocalProvider(
                         LocalLayoutDirection provides layoutDirection,
                         ir.coffevista.vista_native.core.designsystem.component.LocalVistaFullscreenOverlay provides fullscreenOverlayController,
+                        ir.coffevista.vista_native.core.designsystem.component.LocalVistaAmbientEffect provides ambientSpec,
                     ) {
                         Box(modifier = Modifier.fillMaxSize()) {
                             VistaApp(
@@ -346,7 +354,6 @@ class MainActivity : FragmentActivity() {
                                 },
                                 onExitRequested = ::finish,
                             )
-                            val remoteCfg by SystemGateMonitor.remoteConfig.collectAsStateWithLifecycle()
                             val announcement = remoteCfg?.announcement
                             var dismissedAnnouncementId by androidx.compose.runtime.remember {
                                 mutableStateOf<String?>(null)

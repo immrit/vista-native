@@ -241,11 +241,20 @@ fun HashtagPostsScreen(
     Box(modifier = Modifier.fillMaxSize()) {
         Scaffold(
             topBar = {
-                TopAppBar(
-                    title = { Text("#$normalized", maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                    navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "بازگشت") } },
-                    colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
-                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.surface),
+                ) {
+                    ir.coffevista.vista_native.core.designsystem.component.VistaAppBarAmbientOverlay(
+                        modifier = Modifier.matchParentSize(),
+                    )
+                    TopAppBar(
+                        title = { Text("#$normalized", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                        navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "بازگشت") } },
+                        colors = TopAppBarDefaults.topAppBarColors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
+                    )
+                }
             },
         ) { padding ->
             PullToRefreshBox(

@@ -349,111 +349,120 @@ fun NearbyScreen(
             containerColor = MaterialTheme.colorScheme.background,
             snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
             topBar = {
-                TopAppBar(
-                    title = {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            Text(
-                                text = "اطراف من",
-                                maxLines = 1,
-                                style = MaterialTheme.typography.titleLarge.copy(
-                                    fontFamily = VistaFontFamily,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    fontSize = 19.sp,
-                                    color = VistaBrandColors.Indigo,
-                                ),
-                            )
-                            if (!state.locationCity.isNullOrBlank()) {
-                                Surface(
-                                    shape = RoundedCornerShape(50),
-                                    color = VistaBrandColors.Indigo.copy(alpha = 0.10f),
-                                ) {
-                                    Text(
-                                        text = state.locationCity!!,
-                                        maxLines = 1,
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-                                        style = MaterialTheme.typography.labelSmall.copy(
-                                            fontFamily = VistaFontFamily,
-                                            color = VistaBrandColors.Indigo,
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.SemiBold,
-                                        ),
-                                    )
-                                }
-                            }
-                        }
-                    },
-                    navigationIcon = {
-                        IconButton(onClick = onBack) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Rounded.ArrowForward,
-                                contentDescription = "بازگشت",
-                                tint = MaterialTheme.colorScheme.onBackground,
-                                modifier = Modifier.size(22.dp),
-                            )
-                        }
-                    },
-                    actions = {
-                        // Grid <-> Card Deck Toggle
-                        IconButton(
-                            onClick = {
-                                val nextMode = if (state.viewMode == NearbyViewMode.GRID) {
-                                    NearbyViewMode.DECK
-                                } else {
-                                    NearbyViewMode.GRID
-                                }
-                                viewModel.setViewMode(nextMode)
-                            }
-                        ) {
-                            Icon(
-                                imageVector = if (state.viewMode == NearbyViewMode.GRID) {
-                                    Icons.Rounded.ViewAgenda
-                                } else {
-                                    Icons.Rounded.GridView
-                                },
-                                contentDescription = if (state.viewMode == NearbyViewMode.GRID) "نمای کارتی" else "نمای شبکه‌ای",
-                                tint = MaterialTheme.colorScheme.onBackground,
-                                modifier = Modifier.size(21.dp),
-                            )
-                        }
-
-                        // Likes, Chat Requests & Matches Badge Button
-                        IconButton(onClick = onOpenLikes) {
-                            VistaBadgedBox(
-                                badge = {
-                                    if (state.totalInboxBadge > 0) {
-                                        VistaNotificationBadge(
-                                            count = state.totalInboxBadge,
-                                            borderColor = MaterialTheme.colorScheme.surface,
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.background),
+                ) {
+                    ir.coffevista.vista_native.core.designsystem.component.VistaAppBarAmbientOverlay(
+                        modifier = Modifier.matchParentSize(),
+                    )
+                    TopAppBar(
+                        title = {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Text(
+                                    text = "اطراف من",
+                                    maxLines = 1,
+                                    style = MaterialTheme.typography.titleLarge.copy(
+                                        fontFamily = VistaFontFamily,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        fontSize = 19.sp,
+                                        color = VistaBrandColors.Indigo,
+                                    ),
+                                )
+                                if (!state.locationCity.isNullOrBlank()) {
+                                    Surface(
+                                        shape = RoundedCornerShape(50),
+                                        color = VistaBrandColors.Indigo.copy(alpha = 0.10f),
+                                    ) {
+                                        Text(
+                                            text = state.locationCity!!,
+                                            maxLines = 1,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                            style = MaterialTheme.typography.labelSmall.copy(
+                                                fontFamily = VistaFontFamily,
+                                                color = VistaBrandColors.Indigo,
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                            ),
                                         )
                                     }
                                 }
+                            }
+                        },
+                        navigationIcon = {
+                            IconButton(onClick = onBack) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Rounded.ArrowForward,
+                                    contentDescription = "بازگشت",
+                                    tint = MaterialTheme.colorScheme.onBackground,
+                                    modifier = Modifier.size(22.dp),
+                                )
+                            }
+                        },
+                        actions = {
+                            // Grid <-> Card Deck Toggle
+                            IconButton(
+                                onClick = {
+                                    val nextMode = if (state.viewMode == NearbyViewMode.GRID) {
+                                        NearbyViewMode.DECK
+                                    } else {
+                                        NearbyViewMode.GRID
+                                    }
+                                    viewModel.setViewMode(nextMode)
+                                }
                             ) {
                                 Icon(
-                                    imageVector = Icons.Rounded.Favorite,
-                                    contentDescription = "درخواست‌ها، لایک‌ها و مچ‌ها",
-                                    tint = VistaBrandColors.Indigo,
+                                    imageVector = if (state.viewMode == NearbyViewMode.GRID) {
+                                        Icons.Rounded.ViewAgenda
+                                    } else {
+                                        Icons.Rounded.GridView
+                                    },
+                                    contentDescription = if (state.viewMode == NearbyViewMode.GRID) "نمای کارتی" else "نمای شبکه‌ای",
+                                    tint = MaterialTheme.colorScheme.onBackground,
                                     modifier = Modifier.size(21.dp),
                                 )
                             }
-                        }
 
-                        // Preferences Button
-                        IconButton(onClick = { viewModel.setPreferencesSheetVisible(true) }) {
-                            Icon(
-                                imageVector = Icons.Rounded.Tune,
-                                contentDescription = "تنظیمات کاوش",
-                                tint = MaterialTheme.colorScheme.onBackground,
-                                modifier = Modifier.size(21.dp),
-                            )
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.background,
-                    ),
-                )
+                            // Likes, Chat Requests & Matches Badge Button
+                            IconButton(onClick = onOpenLikes) {
+                                VistaBadgedBox(
+                                    badge = {
+                                        if (state.totalInboxBadge > 0) {
+                                            VistaNotificationBadge(
+                                                count = state.totalInboxBadge,
+                                                borderColor = MaterialTheme.colorScheme.surface,
+                                            )
+                                        }
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Favorite,
+                                        contentDescription = "درخواست‌ها، لایک‌ها و مچ‌ها",
+                                        tint = VistaBrandColors.Indigo,
+                                        modifier = Modifier.size(21.dp),
+                                    )
+                                }
+                            }
+
+                            // Preferences Button
+                            IconButton(onClick = { viewModel.setPreferencesSheetVisible(true) }) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Tune,
+                                    contentDescription = "تنظیمات کاوش",
+                                    tint = MaterialTheme.colorScheme.onBackground,
+                                    modifier = Modifier.size(21.dp),
+                                )
+                            }
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = Color.Transparent,
+                        ),
+                    )
+                }
             },
         ) { innerPadding ->
             Column(

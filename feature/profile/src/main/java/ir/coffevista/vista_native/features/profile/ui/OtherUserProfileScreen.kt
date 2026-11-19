@@ -326,10 +326,16 @@ internal fun OtherUserProfileContent(
                         drawHighlight = true,
                         rimWidth = 0.dp,
                         shadowElevation = 3.dp,
-                    )
-                    .statusBarsPadding(),
+                    ),
             ) {
-                Column(modifier = Modifier.fillMaxWidth()) {
+                ir.coffevista.vista_native.core.designsystem.component.VistaAppBarAmbientOverlay(
+                    modifier = Modifier.matchParentSize(),
+                )
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .statusBarsPadding(),
+                ) {
                     OtherProfileAppBar(
                         username = state.profile?.username,
                         verified = state.profile?.isVerified == true,

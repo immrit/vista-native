@@ -146,69 +146,77 @@ fun SearchLauncherScreen(
                 onRefresh = viewModel::refreshTrending,
             )
         }
-        Column(
+        Box(
             modifier = Modifier
                 .align(Alignment.TopCenter)
-                .fillMaxWidth()
-                .padding(start = 16.dp, top = 12.dp, end = 16.dp, bottom = 8.dp),
+                .fillMaxWidth(),
         ) {
-            Box(
+            ir.coffevista.vista_native.core.designsystem.component.VistaAppBarAmbientOverlay(
+                modifier = Modifier.matchParentSize(),
+            )
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(52.dp)
-                    .vistaGlass(
-                        state = searchGlassState,
-                        shape = SearchFieldShape,
-                        tint = if (isDarkSearch) Color(0xFF1A222C) else Color(0xFFFFFFFF),
-                        isDark = isDarkSearch,
-                        blurRadius = VistaGlassTokens.PillBlur,
-                        tintAlphaOverride = if (isDarkSearch) 0.58f else 0.62f,
-                        drawHighlight = true,
-                        rimWidth = 0.6.dp,
-                        shadowElevation = 4.dp,
-                    )
-                    .clip(SearchFieldShape)
-                    .clickable(
-                        role = Role.Button,
-                        indication = null,
-                        interactionSource = remember { MutableInteractionSource() },
-                        onClick = onOpenWorkspace,
-                    )
-                    .testTag(SearchTestTags.LauncherField)
-                    .padding(horizontal = 16.dp),
-                contentAlignment = Alignment.CenterStart,
+                    .padding(start = 16.dp, top = 12.dp, end = 16.dp, bottom = 8.dp),
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    SearchGlyph(
-                        modifier = Modifier.size(23.dp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Spacer(Modifier.width(12.dp))
-                    Text(
-                        text = "جستجوی کاربران",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Spacer(Modifier.weight(1f))
-                    IconButton(
-                        onClick = onOpenQrScanner,
-                        modifier = Modifier.testTag(SearchTestTags.LauncherQrScanner),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.QrCodeScanner,
-                            contentDescription = "اسکن کد QR",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp)
+                        .vistaGlass(
+                            state = searchGlassState,
+                            shape = SearchFieldShape,
+                            tint = if (isDarkSearch) Color(0xFF1A222C) else Color(0xFFFFFFFF),
+                            isDark = isDarkSearch,
+                            blurRadius = VistaGlassTokens.PillBlur,
+                            tintAlphaOverride = if (isDarkSearch) 0.58f else 0.62f,
+                            drawHighlight = true,
+                            rimWidth = 0.6.dp,
+                            shadowElevation = 4.dp,
                         )
+                        .clip(SearchFieldShape)
+                        .clickable(
+                            role = Role.Button,
+                            indication = null,
+                            interactionSource = remember { MutableInteractionSource() },
+                            onClick = onOpenWorkspace,
+                        )
+                        .testTag(SearchTestTags.LauncherField)
+                        .padding(horizontal = 16.dp),
+                    contentAlignment = Alignment.CenterStart,
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        SearchGlyph(
+                            modifier = Modifier.size(23.dp),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Text(
+                            text = "جستجوی کاربران",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(Modifier.weight(1f))
+                        IconButton(
+                            onClick = onOpenQrScanner,
+                            modifier = Modifier.testTag(SearchTestTags.LauncherQrScanner),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.QrCodeScanner,
+                                contentDescription = "اسکن کد QR",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
                 }
+                if (miniExtraHeight > 0.dp) {
+                    Spacer(Modifier.height(8.dp))
+                }
+                VistaMiniPlayerHost(
+                    glassState = searchGlassState,
+                    shape = RoundedCornerShape(18.dp),
+                )
             }
-            if (miniExtraHeight > 0.dp) {
-                Spacer(Modifier.height(8.dp))
-            }
-            VistaMiniPlayerHost(
-                glassState = searchGlassState,
-                shape = RoundedCornerShape(18.dp),
-            )
         }
     }
 }
@@ -307,21 +315,28 @@ internal fun SearchWorkspaceContent(
             .background(MaterialTheme.colorScheme.background)
             .testTag(SearchTestTags.Workspace),
     ) {
-        SearchField(
-            value = state.query,
-            onValueChange = onQueryChanged,
-            onSubmit = onSubmit,
-            onFocusChanged = onFocusChanged,
-            onClear = onClearQuery,
-            onBack = onBack,
-            onOpenQrScanner = onOpenQrScanner,
-            focusRequester = focusRequester,
-        )
-        if (state.hasQuery) {
-            SearchTabs(
-                selected = state.selectedTab,
-                onSelected = onSelectTab,
+        Box(modifier = Modifier.fillMaxWidth()) {
+            ir.coffevista.vista_native.core.designsystem.component.VistaAppBarAmbientOverlay(
+                modifier = Modifier.matchParentSize(),
             )
+            Column(modifier = Modifier.fillMaxWidth()) {
+                SearchField(
+                    value = state.query,
+                    onValueChange = onQueryChanged,
+                    onSubmit = onSubmit,
+                    onFocusChanged = onFocusChanged,
+                    onClear = onClearQuery,
+                    onBack = onBack,
+                    onOpenQrScanner = onOpenQrScanner,
+                    focusRequester = focusRequester,
+                )
+                if (state.hasQuery) {
+                    SearchTabs(
+                        selected = state.selectedTab,
+                        onSelected = onSelectTab,
+                    )
+                }
+            }
         }
         val workspaceMiniExtra = LocalMiniPlayerSlot.current.extraHeight
         VistaMiniPlayerHost(

@@ -38,6 +38,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.Role
@@ -74,6 +75,7 @@ fun DuelInviteCard(
     onRequestPreview: (String) -> Unit,
     onStartGame: (targetGamePath: String) -> Unit,
     modifier: Modifier = Modifier,
+    shape: Shape = RoundedCornerShape(18.dp),
 ) {
     LaunchedEffect(invite.matchId) {
         onRequestPreview(invite.matchId)
@@ -158,9 +160,9 @@ fun DuelInviteCard(
         Column(
             modifier = modifier
                 .widthIn(min = 248.dp, max = 296.dp)
-                .clip(RoundedCornerShape(18.dp))
+                .clip(shape)
                 .background(cardBg)
-                .border(1.dp, cardBorder, RoundedCornerShape(18.dp))
+                .border(1.dp, cardBorder, shape)
                 .semantics { contentDescription = "کارت دعوت به دوئل ویستا کوییز از طرف $inviterName" },
         ) {
             // Gradient Header Ribbon

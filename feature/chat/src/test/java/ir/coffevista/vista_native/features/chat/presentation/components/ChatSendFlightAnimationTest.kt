@@ -80,4 +80,58 @@ class ChatSendFlightAnimationTest {
         assertEquals(target.top, end.top, 0.01f)
         assertEquals(target.bottom, end.bottom, 0.01f)
     }
+
+    @Test
+    fun `evaluateSendFlightFrame models Telegram dual-axis arc, text scale, and overshoot`() {
+        val start = Rect(left = 680f, top = 2040f, right = 920f, bottom = 2150f)
+        val target = Rect(left = 744f, top = 1880f, right = 1044f, bottom = 1990f)
+        val overshoot = 12f
+
+        val t0 = evaluateSendFlightFrame(
+            rawProgress = 0f,
+            start = start,
+            target = target,
+            alignToRight = true,
+            rightOvershootPx = overshoot,
+        )
+        assertEquals(start.left, t0.rect.left, 0.01f)
+        assertEquals(start.right + overshoot, t0.rect.right, 0.01f)
+        assertEquals(0f, t0.alphaProgress, 0.01f)
+        assertEquals(TELEGRAM_COMPOSER_TO_BUBBLE_TEXT_SCALE, t0.textScale, 0.001f)
+
+        val t25 = evaluateSendFlightFrame(
+            rawProgress = 0.25f,
+            start = start,
+            target = target,
+            alignToRight = true,
+            rightOvershootPx = overshoot,
+        )
+        assertTrue(
+            "Horizontal easeOut(easeOutQuint) leads vertical bezier for Telegram's curved arc",
+            t25.progressX > t25.progressY,
+        )
+
+        val t40 = evaluateSendFlightFrame(
+            rawProgress = 0.40f,
+            start = start,
+            target = target,
+            alignToRight = true,
+            rightOvershootPx = overshoot,
+        )
+        assertEquals(1f, t40.alphaProgress, 0.01f)
+
+        val tEnd = evaluateSendFlightFrame(
+            rawProgress = 1f,
+            start = start,
+            target = target,
+            alignToRight = true,
+            rightOvershootPx = overshoot,
+        )
+        assertEquals(target.left, tEnd.rect.left, 0.01f)
+        assertEquals(target.right, tEnd.rect.right, 0.01f)
+        assertEquals(target.top, tEnd.rect.top, 0.01f)
+        assertEquals(target.bottom, tEnd.rect.bottom, 0.01f)
+        assertEquals(1f, tEnd.textScale, 0.001f)
+        assertEquals(1f, tEnd.shadowAlpha, 0.001f)
+    }
 }

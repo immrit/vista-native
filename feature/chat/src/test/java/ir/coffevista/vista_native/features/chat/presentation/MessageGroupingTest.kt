@@ -44,25 +44,78 @@ class MessageGroupingTest {
     }
 
     @Test
-    fun `own group squares only the right joining edge`() {
+    fun `own bubbles follow Telegram X merge corners across all group positions`() {
+        val standalone = MessageGroupPosition(isFirstInGroup = true, isLastInGroup = true)
         val oldest = MessageGroupPosition(isFirstInGroup = true, isLastInGroup = false)
+        val middle = MessageGroupPosition(isFirstInGroup = false, isLastInGroup = false)
         val newest = MessageGroupPosition(isFirstInGroup = false, isLastInGroup = true)
 
-        assertTrue(messageBubbleCornerRounding(isMine = true, groupPosition = oldest).topRight)
-        assertFalse(messageBubbleCornerRounding(isMine = true, groupPosition = oldest).bottomRight)
-        assertFalse(messageBubbleCornerRounding(isMine = true, groupPosition = newest).topRight)
-        assertTrue(messageBubbleCornerRounding(isMine = true, groupPosition = newest).bottomRight)
+        listOf(standalone, oldest, middle, newest).forEach { pos ->
+            val corners = messageBubbleCornerRounding(isMine = true, groupPosition = pos)
+            assertTrue(corners.topLeft)
+            assertFalse("Telegram X outgoing topRight is always 6dp sharp", corners.topRight)
+            assertTrue(corners.bottomLeft)
+            assertEquals(pos.isLastInGroup, corners.bottomRight)
+        }
     }
 
     @Test
-    fun `peer group mirrors its joining edge on the left`() {
+    fun `peer bubbles mirror Telegram X merge corners on the left`() {
+        val standalone = MessageGroupPosition(isFirstInGroup = true, isLastInGroup = true)
         val oldest = MessageGroupPosition(isFirstInGroup = true, isLastInGroup = false)
+        val middle = MessageGroupPosition(isFirstInGroup = false, isLastInGroup = false)
         val newest = MessageGroupPosition(isFirstInGroup = false, isLastInGroup = true)
 
-        assertTrue(messageBubbleCornerRounding(isMine = false, groupPosition = oldest).topLeft)
-        assertFalse(messageBubbleCornerRounding(isMine = false, groupPosition = oldest).bottomLeft)
-        assertFalse(messageBubbleCornerRounding(isMine = false, groupPosition = newest).topLeft)
-        assertTrue(messageBubbleCornerRounding(isMine = false, groupPosition = newest).bottomLeft)
+        listOf(standalone, oldest, middle, newest).forEach { pos ->
+            val corners = messageBubbleCornerRounding(isMine = false, groupPosition = pos)
+            assertFalse("Telegram X incoming topLeft is always 6dp sharp", corners.topLeft)
+            assertTrue(corners.topRight)
+            assertEquals(pos.isLastInGroup, corners.bottomLeft)
+            assertTrue(corners.bottomRight)
+        }
+    }
+
+    @Test
+    fun `telegram X outer and concentric inner radii compute exact 18dp 6dp and 16dp 4dp`() {
+        val standaloneOwn = messageBubbleCornerRounding(
+            isMine = true,
+            groupPosition = MessageGroupPosition(isFirstInGroup = true, isLastInGroup = true),
+        )
+        val outer = telegramXOuterCornerRadii(standaloneOwn)
+        assertEquals(18f, outer.topLeft, 0.01f)
+        assertEquals(6f, outer.topRight, 0.01f)
+        assertEquals(18f, outer.bottomLeft, 0.01f)
+        assertEquals(18f, outer.bottomRight, 0.01f)
+
+        val innerMedia = telegramXInnerCornerRadii(standaloneOwn, insetDp = 2f, roundTop = true, roundBottom = true)
+        assertEquals(16f, innerMedia.topLeft, 0.01f)
+        assertEquals(4f, innerMedia.topRight, 0.01f)
+        assertEquals(16f, innerMedia.bottomLeft, 0.01f)
+        assertEquals(16f, innerMedia.bottomRight, 0.01f)
+
+        val innerWithCaption = telegramXInnerCornerRadii(standaloneOwn, insetDp = 2f, roundTop = false, roundBottom = false)
+        assertEquals(4f, innerWithCaption.topLeft, 0.01f)
+        assertEquals(4f, innerWithCaption.bottomRight, 0.01f)
+    }
+
+    @Test
+    fun `midnight calendar day change prevents visual bubble grouping even within fifteen minutes`() {
+        val cal = java.util.Calendar.getInstance().apply {
+            set(2026, java.util.Calendar.NOVEMBER, 19, 0, 1, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }
+        val afterMidnight = cal.timeInMillis
+        val beforeMidnight = afterMidnight - 3 * 60 * 1_000L // 23:58 previous day (only 3 min apart)
+
+        val messages = listOf(
+            message("after-midnight", "account", afterMidnight),
+            message("before-midnight", "account", beforeMidnight),
+        )
+
+        val newestPos = messageGroupPosition(messages, 0)
+        val oldestPos = messageGroupPosition(messages, 1)
+        assertTrue(newestPos.isFirstInGroup && newestPos.isLastInGroup)
+        assertTrue(oldestPos.isFirstInGroup && oldestPos.isLastInGroup)
     }
 
     @Test
