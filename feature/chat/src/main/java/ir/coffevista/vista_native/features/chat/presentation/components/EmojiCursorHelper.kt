@@ -17,6 +17,7 @@ object EmojiCursorHelper {
     fun snapToGraphemeBoundary(text: String, index: Int): Int {
         if (text.isEmpty() || index <= 0) return 0
         if (index >= text.length) return text.length
+        if (!hasComplexGrapheme(text)) return index
 
         val iterator = BreakIterator.getCharacterInstance()
         iterator.setText(text)
@@ -36,9 +37,36 @@ object EmojiCursorHelper {
      */
     fun snapSelection(text: String, selection: TextRange): TextRange {
         if (text.isEmpty()) return TextRange.Zero
+        if (!hasComplexGrapheme(text)) {
+            val safeStart = selection.start.coerceIn(0, text.length)
+            val safeEnd = selection.end.coerceIn(0, text.length)
+            return if (safeStart == selection.start && safeEnd == selection.end) {
+                selection
+            } else {
+                TextRange(safeStart, safeEnd)
+            }
+        }
         val safeStart = snapToGraphemeBoundary(text, selection.start)
         val safeEnd = if (selection.collapsed) safeStart else snapToGraphemeBoundary(text, selection.end)
         return TextRange(safeStart, safeEnd)
+    }
+
+    private fun hasComplexGrapheme(text: String): Boolean {
+        for (i in text.indices) {
+            val ch = text[i]
+            if (Character.isSurrogate(ch) ||
+                ch == '\u200D' ||
+                ch == '\uFE0F' ||
+                ch == '\uFE0E' ||
+                ch == '\r' ||
+                ch in '\u0300'..'\u036F' ||
+                ch in '\u064B'..'\u065F' ||
+                ch in '\u2600'..'\u27BF'
+            ) {
+                return true
+            }
+        }
+        return false
     }
 
     /**

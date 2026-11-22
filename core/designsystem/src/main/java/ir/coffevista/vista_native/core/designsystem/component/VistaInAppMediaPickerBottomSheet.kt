@@ -1,15 +1,10 @@
 package ir.coffevista.vista_native.core.designsystem.component
 
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.media.MediaPlayer
 import android.net.Uri
-import android.os.Build
-import android.util.LruCache
-import android.util.Size
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -56,13 +51,16 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -73,10 +71,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.TextStyle
@@ -86,13 +81,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import ir.coffevista.vista_native.core.designsystem.glass.VistaGlassScrollSync
 import ir.coffevista.vista_native.core.designsystem.glass.rememberVistaGlassState
 import ir.coffevista.vista_native.core.designsystem.glass.vistaGlassSource
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaBrandColors
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.util.Locale
 
 enum class VistaInAppPickerMode {
@@ -104,15 +100,6 @@ enum class VistaInAppPickerMode {
     GIF_SINGLE,
     AUDIO_SINGLE,
     DOCUMENT_SINGLE,
-}
-
-private object VistaThumbnailMemoryCache {
-    private val cache = LruCache<String, ImageBitmap>(80)
-
-    fun get(key: String): ImageBitmap? = cache.get(key)
-    fun put(key: String, bitmap: ImageBitmap) {
-        cache.put(key, bitmap)
-    }
 }
 
 /**
@@ -148,25 +135,61 @@ fun VistaInAppMediaPickerBottomSheet(
     var selectedAlbum by remember(mode) { mutableStateOf<String?>(null) }
     var fileCategory by remember(mode) { mutableStateOf(VistaFileCategoryFilter.ALL) }
     val selectedUris = remember(mode) { mutableStateListOf<Uri>() }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var refreshTick by remember { mutableIntStateOf(0) }
+    var permissionRequestCount by remember(mode) { mutableIntStateOf(0) }
 
-    var hasPermission by remember(mode) {
-        mutableStateOf(
-            when (mode) {
-                VistaInAppPickerMode.AUDIO_SINGLE -> hasVistaAudioPermission(context)
-                VistaInAppPickerMode.DOCUMENT_SINGLE -> hasVistaFilesReadPermission(context)
-                else -> hasVistaGalleryPermission(context, galleryFilter)
-            },
-        )
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                refreshTick++
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    val isGalleryMode = mode != VistaInAppPickerMode.AUDIO_SINGLE &&
+        mode != VistaInAppPickerMode.DOCUMENT_SINGLE
+    val galleryAccessState = remember(mode, galleryFilter, refreshTick, permissionRequestCount) {
+        if (isGalleryMode) getVistaGalleryAccessState(context, galleryFilter) else VistaGalleryAccessState.FULL
+    }
+    val hasPermission = remember(mode, galleryAccessState, refreshTick, permissionRequestCount) {
+        when (mode) {
+            VistaInAppPickerMode.AUDIO_SINGLE -> hasVistaAudioPermission(context)
+            VistaInAppPickerMode.DOCUMENT_SINGLE -> hasVistaFilesReadPermission(context)
+            else -> galleryAccessState != VistaGalleryAccessState.DENIED
+        }
     }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
-    ) { results ->
-        hasPermission = results.values.any { it } || when (mode) {
-            VistaInAppPickerMode.AUDIO_SINGLE -> hasVistaAudioPermission(context)
-            VistaInAppPickerMode.DOCUMENT_SINGLE -> hasVistaFilesReadPermission(context)
-            else -> hasVistaGalleryPermission(context, galleryFilter)
+    ) {
+        permissionRequestCount++
+    }
+
+    val systemPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia(),
+    ) { uri ->
+        if (uri != null) {
+            if (isMulti) {
+                onMultipleSelected(listOf(uri))
+            } else {
+                onSingleSelected(uri)
+            }
+            onDismiss()
         }
+    }
+
+    val launchSystemPicker: () -> Unit = {
+        val mediaType = when (mode) {
+            VistaInAppPickerMode.VIDEO_SINGLE -> ActivityResultContracts.PickVisualMedia.VideoOnly
+            VistaInAppPickerMode.IMAGE_SINGLE,
+            VistaInAppPickerMode.IMAGE_MULTI,
+            VistaInAppPickerMode.GIF_SINGLE -> ActivityResultContracts.PickVisualMedia.ImageOnly
+            else -> ActivityResultContracts.PickVisualMedia.ImageAndVideo
+        }
+        runCatching { systemPickerLauncher.launch(PickVisualMediaRequest(mediaType)) }
     }
 
     var isLoading by remember(mode) { mutableStateOf(true) }
@@ -212,7 +235,7 @@ fun VistaInAppMediaPickerBottomSheet(
         onDispose { stopAudioPreview() }
     }
 
-    LaunchedEffect(mode, hasPermission) {
+    LaunchedEffect(mode, galleryAccessState, hasPermission, refreshTick, permissionRequestCount) {
         isLoading = true
         when (mode) {
             VistaInAppPickerMode.AUDIO_SINGLE -> {
@@ -226,7 +249,7 @@ fun VistaInAppMediaPickerBottomSheet(
             }
             else -> {
                 galleryItems = if (hasPermission) {
-                    queryVistaGalleryMedia(context, filter = galleryFilter, limit = 260)
+                    queryVistaGalleryMedia(context, filter = galleryFilter, limit = 300)
                 } else {
                     emptyList()
                 }
@@ -387,6 +410,48 @@ fun VistaInAppMediaPickerBottomSheet(
                     }
                 }
 
+                if (isGalleryMode &&
+                    (galleryAccessState == VistaGalleryAccessState.PARTIAL_VISUAL_ONLY ||
+                        galleryAccessState == VistaGalleryAccessState.MISSING_VIDEO_ONLY)
+                ) {
+                    Surface(
+                        color = VistaBrandColors.Indigo.copy(alpha = if (isDark) 0.16f else 0.10f),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 6.dp),
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Text(
+                                text = "دسترسی محدود است — برای مشاهده همه ویدیوها و عکس‌ها دسترسی را کامل کنید",
+                                fontSize = 11.5.sp,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.weight(1f),
+                                lineHeight = 16.sp,
+                            )
+                            TextButton(
+                                onClick = {
+                                    permissionLauncher.launch(requiredVistaGalleryPermissions(galleryFilter))
+                                },
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                            ) {
+                                Text(
+                                    text = "تکمیل دسترسی",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = VistaBrandColors.Indigo,
+                                )
+                            }
+                        }
+                    }
+                }
+
                 HorizontalDivider(
                     color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f),
                     thickness = 0.6.dp,
@@ -408,6 +473,7 @@ fun VistaInAppMediaPickerBottomSheet(
                                 title = when (mode) {
                                     VistaInAppPickerMode.AUDIO_SINGLE -> "دسترسی به فایل‌های صوتی"
                                     VistaInAppPickerMode.DOCUMENT_SINGLE -> "دسترسی به فایل‌های دستگاه"
+                                    VistaInAppPickerMode.VIDEO_SINGLE -> "دسترسی به ویدیوهای دستگاه"
                                     else -> "دسترسی به رسانه‌های دستگاه"
                                 },
                                 description = "برای نمایش مستقیم فایل‌ها درون برنامه بدون باز شدن فایل‌های سیستم، لطفاً دسترسی لازم را فعال کنید.",
@@ -420,6 +486,7 @@ fun VistaInAppMediaPickerBottomSheet(
                                     permissionLauncher.launch(perms)
                                 },
                                 onSettingsClick = { openVistaAppSettings(context) },
+                                onSystemPickerClick = if (isGalleryMode) launchSystemPicker else null,
                             )
                         }
 
@@ -487,8 +554,9 @@ fun VistaInAppMediaPickerBottomSheet(
                                                 contentAlignment = Alignment.Center,
                                             ) {
                                                 track.toAlbumArtUri()?.let { artUri ->
-                                                    VistaLocalThumbnailImage(
+                                                    VistaLocalMediaThumbnailImage(
                                                         uri = artUri,
+                                                        isVideo = false,
                                                         targetSizePx = 144,
                                                         modifier = Modifier.fillMaxSize(),
                                                     )
@@ -626,12 +694,20 @@ fun VistaInAppMediaPickerBottomSheet(
                                 )
                             }
                             if (filtered.isEmpty()) {
-                                VistaInAppEmptyMessage(
-                                    message = if (mode == VistaInAppPickerMode.GIF_SINGLE) {
-                                        "هیچ فایل GIF در حافظه دستگاه یافت نشد"
-                                    } else {
-                                        "موردی در گالری دستگاه یافت نشد"
+                                VistaInAppEmptyGalleryState(
+                                    message = when {
+                                        mode == VistaInAppPickerMode.GIF_SINGLE ->
+                                            "هیچ فایل GIF در حافظه دستگاه یافت نشد"
+                                        mode == VistaInAppPickerMode.VIDEO_SINGLE ->
+                                            "ویدیویی در گالری یافت نشد یا دسترسی محدود است"
+                                        else -> "موردی در گالری دستگاه یافت نشد"
                                     },
+                                    showPermissionActions = galleryAccessState != VistaGalleryAccessState.FULL,
+                                    onGrantClick = {
+                                        permissionLauncher.launch(requiredVistaGalleryPermissions(galleryFilter))
+                                    },
+                                    onSettingsClick = { openVistaAppSettings(context) },
+                                    onSystemPickerClick = launchSystemPicker,
                                 )
                             } else {
                                 val gridState = rememberLazyGridState()
@@ -676,8 +752,9 @@ fun VistaInAppMediaPickerBottomSheet(
                                                     },
                                                 ),
                                         ) {
-                                            VistaLocalThumbnailImage(
+                                            VistaLocalMediaThumbnailImage(
                                                 uri = uri,
+                                                isVideo = item.isVideo,
                                                 targetSizePx = 320,
                                                 modifier = Modifier.fillMaxSize(),
                                             )
@@ -764,62 +841,6 @@ fun VistaInAppMediaPickerBottomSheet(
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun VistaLocalThumbnailImage(
-    uri: Uri,
-    targetSizePx: Int,
-    modifier: Modifier = Modifier,
-) {
-    val context = LocalContext.current
-    val cacheKey = "${uri}_$targetSizePx"
-    var bitmap by remember(cacheKey) { mutableStateOf(VistaThumbnailMemoryCache.get(cacheKey)) }
-
-    LaunchedEffect(cacheKey) {
-        if (bitmap != null) return@LaunchedEffect
-        val loaded = withContext(Dispatchers.IO) {
-            runCatching {
-                val bmp: Bitmap? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    runCatching {
-                        context.contentResolver.loadThumbnail(
-                            uri,
-                            Size(targetSizePx, targetSizePx),
-                            null,
-                        )
-                    }.getOrNull()
-                } else {
-                    null
-                }
-                val resolved = bmp ?: context.contentResolver.openInputStream(uri)?.use { stream ->
-                    BitmapFactory.decodeStream(
-                        stream,
-                        null,
-                        BitmapFactory.Options().apply { inSampleSize = 4 },
-                    )
-                }
-                resolved?.asImageBitmap()
-            }.getOrNull()
-        }
-        if (loaded != null) {
-            VistaThumbnailMemoryCache.put(cacheKey, loaded)
-            bitmap = loaded
-        }
-    }
-
-    val currentBitmap = bitmap
-    if (currentBitmap != null) {
-        Image(
-            bitmap = currentBitmap,
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = modifier,
-        )
-    } else {
-        Box(
-            modifier = modifier.background(Color(0xFF1E2632).copy(alpha = 0.35f)),
-        )
     }
 }
 
@@ -947,6 +968,7 @@ private fun VistaInAppPermissionCard(
     description: String,
     onGrantClick: () -> Unit,
     onSettingsClick: () -> Unit,
+    onSystemPickerClick: (() -> Unit)? = null,
 ) {
     Column(
         modifier = Modifier
@@ -1005,6 +1027,56 @@ private fun VistaInAppPermissionCard(
             )
             Spacer(Modifier.width(6.dp))
             Text("باز کردن تنظیمات برنامه")
+        }
+        if (onSystemPickerClick != null) {
+            Spacer(Modifier.height(6.dp))
+            TextButton(onClick = onSystemPickerClick) {
+                Text("انتخاب از گالری سیستم", color = VistaBrandColors.Indigo)
+            }
+        }
+    }
+}
+
+@Composable
+private fun VistaInAppEmptyGalleryState(
+    message: String,
+    showPermissionActions: Boolean,
+    onGrantClick: () -> Unit,
+    onSettingsClick: () -> Unit,
+    onSystemPickerClick: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Text(
+            text = message,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 13.5.sp,
+            textAlign = TextAlign.Center,
+        )
+        Spacer(Modifier.height(14.dp))
+        if (showPermissionActions) {
+            Button(
+                onClick = onGrantClick,
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = VistaBrandColors.Indigo),
+            ) {
+                Text("تأیید و اعطای دسترسی", color = Color.White, fontWeight = FontWeight.Bold)
+            }
+            Spacer(Modifier.height(6.dp))
+            TextButton(onClick = onSettingsClick) {
+                Text("تنظیمات برنامه", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        OutlinedButton(
+            onClick = onSystemPickerClick,
+            shape = RoundedCornerShape(16.dp),
+        ) {
+            Text("انتخاب از گالری سیستم")
         }
     }
 }

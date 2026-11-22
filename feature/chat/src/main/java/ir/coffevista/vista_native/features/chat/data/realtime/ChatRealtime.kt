@@ -425,6 +425,7 @@ class ChatRealtimeCoordinator(
     private val internalBaseUrl: String,
     private val reconnectPolicy: ReconnectPolicy = ReconnectPolicy(),
     private val networkMonitor: NetworkMonitor? = null,
+    private val clockMs: () -> Long = { System.currentTimeMillis() },
 ) {
     private val foreground = MutableStateFlow(false)
     private val mutableState = MutableStateFlow(RealtimeConnectionState.DISCONNECTED)
@@ -433,15 +434,45 @@ class ChatRealtimeCoordinator(
     private var runner: Job? = null
     private var activeSocket: ChatSocket? = null
     private var syncHandler: (suspend () -> Unit)? = null
+    private var syncCheckHandler: (suspend () -> Boolean)? = null
     private var presenceHandler: (suspend (Boolean) -> Unit)? = null
     private var pollingJob: Job? = null
     private var presenceJob: Job? = null
+    @Volatile
+    private var lastRestReachableAtMs: Long = 0L
+    @Volatile
+    private var isInFallbackPolling: Boolean = false
+    private var consecutivePollFailures: Int = 0
 
     val state: StateFlow<RealtimeConnectionState> = mutableState.asStateFlow()
     val events = mutableEvents.asSharedFlow()
 
     fun setSyncHandler(handler: suspend () -> Unit) {
         syncHandler = handler
+        syncCheckHandler = null
+    }
+
+    fun setSyncCheckHandler(handler: suspend () -> Boolean) {
+        syncCheckHandler = handler
+        syncHandler = { handler() }
+    }
+
+    fun notifyRestReachable() {
+        lastRestReachableAtMs = clockMs()
+        consecutivePollFailures = 0
+        if (foreground.value &&
+            sessionProvider.account.value != null &&
+            networkMonitor?.currentState() != NetworkState.OFFLINE
+        ) {
+            val current = mutableState.value
+            if (current == RealtimeConnectionState.CONNECTING ||
+                current == RealtimeConnectionState.AUTHENTICATING ||
+                current == RealtimeConnectionState.RECONNECTING ||
+                isInFallbackPolling
+            ) {
+                mutableState.value = RealtimeConnectionState.CONNECTED
+            }
+        }
     }
 
     fun setPresenceHandler(handler: suspend (Boolean) -> Unit) {
@@ -505,7 +536,7 @@ class ChatRealtimeCoordinator(
             }
             if (pollingJob != null) {
                 scope.launch {
-                    runCatching { syncHandler?.invoke() }
+                    runSyncCheck()
                 }
             }
         } else {
@@ -521,6 +552,7 @@ class ChatRealtimeCoordinator(
         runner?.cancel()
         runner = null
         stopPolling()
+        lastRestReachableAtMs = 0L
         presenceJob?.cancel()
         presenceJob = null
         activeSocket?.close()
@@ -528,15 +560,53 @@ class ChatRealtimeCoordinator(
         mutableState.value = RealtimeConnectionState.DISCONNECTED
     }
 
-    private fun startPolling() {
+    private suspend fun runSyncCheck(): Boolean {
+        val checker = syncCheckHandler
+        if (checker != null) {
+            val ok = runCatching { checker() }.getOrDefault(false)
+            if (ok) {
+                consecutivePollFailures = 0
+                lastRestReachableAtMs = clockMs()
+                if (foreground.value &&
+                    sessionProvider.account.value != null &&
+                    networkMonitor?.currentState() != NetworkState.OFFLINE
+                ) {
+                    mutableState.value = RealtimeConnectionState.CONNECTED
+                }
+            } else {
+                consecutivePollFailures++
+                if (consecutivePollFailures >= 2 &&
+                    foreground.value &&
+                    sessionProvider.account.value != null &&
+                    networkMonitor?.currentState() != NetworkState.OFFLINE
+                ) {
+                    mutableState.value = RealtimeConnectionState.RECONNECTING
+                }
+            }
+            return ok
+        }
+        val legacy = syncHandler ?: return false
+        return runCatching {
+            legacy()
+            true
+        }.getOrDefault(false)
+    }
+
+    private fun startPolling(skipImmediate: Boolean = false) {
         if (pollingJob?.isActive == true) return
+        isInFallbackPolling = true
         pollingJob = scope.launch {
-            // Immediate sync when entering polling fallback mode
-            runCatching { syncHandler?.invoke() }
+            // Immediate sync when entering polling fallback mode unless caller already checked
+            if (!skipImmediate) {
+                runSyncCheck()
+            }
             while (isActive) {
                 delay(3_000L) // Poll every 3 seconds while in foreground for rapid real-time updates
-                if (foreground.value && sessionProvider.account.value != null) {
-                    runCatching { syncHandler?.invoke() }
+                if (foreground.value &&
+                    sessionProvider.account.value != null &&
+                    networkMonitor?.currentState() != NetworkState.OFFLINE
+                ) {
+                    runSyncCheck()
                 }
             }
         }
@@ -545,6 +615,8 @@ class ChatRealtimeCoordinator(
     private fun stopPolling() {
         pollingJob?.cancel()
         pollingJob = null
+        isInFallbackPolling = false
+        consecutivePollFailures = 0
     }
 
     private suspend fun connectionLoop(account: ChatAccount) {
@@ -560,7 +632,8 @@ class ChatRealtimeCoordinator(
                     networkMonitor.state.first { it == NetworkState.ONLINE }
                 }
                 val currentAccount = sessionProvider.account.value ?: return
-                if (!isFallbackPolling) {
+                val restRecentlyOk = lastRestReachableAtMs > 0L && (clockMs() - lastRestReachableAtMs) < 30_000L
+                if (!isFallbackPolling && !restRecentlyOk) {
                     mutableState.value = if (attempt == 0) {
                         RealtimeConnectionState.CONNECTING
                     } else {
@@ -584,10 +657,12 @@ class ChatRealtimeCoordinator(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Throwable) {
-                Log.w(
-                    "VistaChatRealtime",
-                    "Realtime stream failure (${failure.javaClass.simpleName}: ${failure.message}), checking fallback...",
-                )
+                runCatching {
+                    Log.w(
+                        "VistaChatRealtime",
+                        "Realtime stream failure (${failure.javaClass.simpleName}: ${failure.message}), checking fallback...",
+                    )
+                }
                 if (failure is ChatSocketOpenException && failure.statusCode == 401) {
                     refreshedSession = sessionProvider.refresh()
                 }
@@ -600,13 +675,17 @@ class ChatRealtimeCoordinator(
                     if (isOffline) {
                         mutableState.value = RealtimeConnectionState.DISCONNECTED
                         stopPolling()
+                    } else if (syncCheckHandler != null) {
+                        val syncOk = runSyncCheck()
+                        if (!syncOk && (consecutivePollFailures >= 2 || lastRestReachableAtMs == 0L)) {
+                            mutableState.value = RealtimeConnectionState.RECONNECTING
+                        }
+                        isFallbackPolling = true
+                        startPolling(skipImmediate = true)
                     } else {
-                        // Gateway error or server temporarily unavailable:
-                        // Show RECONNECTING in the UI so the user knows the app is reconnecting!
-                        // NEVER lie by setting CONNECTED!
                         mutableState.value = RealtimeConnectionState.RECONNECTING
                         isFallbackPolling = true
-                        startPolling()
+                        startPolling(skipImmediate = false)
                     }
                 }
             } finally {
@@ -618,8 +697,8 @@ class ChatRealtimeCoordinator(
                 continue
             }
             val delayMs = if (isFallbackPolling) {
-                // In fallback polling mode, check the websocket in the background every 45s
-                45_000L
+                // In fallback polling mode, retry websocket in the background every 15s
+                15_000L
             } else {
                 reconnectPolicy.delayMillis(attempt++)
             }

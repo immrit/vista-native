@@ -43,6 +43,11 @@
 
 # Kotlinx Serialization
 -keepattributes *Annotation*,Signature,InnerClasses,EnclosingMethod
+-keep @kotlinx.serialization.Serializable class ir.coffevista.vista_native.** { *; }
+-keep class ir.coffevista.vista_native.**$Companion {
+    kotlinx.serialization.KSerializer serializer(...);
+}
+-keep class ir.coffevista.vista_native.**$$serializer { *; }
 -keepclassmembers class * {
     @kotlinx.serialization.SerialName <fields>;
     @kotlinx.serialization.Serializable <fields>;

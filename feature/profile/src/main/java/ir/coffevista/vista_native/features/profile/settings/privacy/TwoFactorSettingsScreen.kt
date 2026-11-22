@@ -69,6 +69,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import ir.coffevista.vista_native.core.designsystem.component.rememberBufferedTextState
 import ir.coffevista.vista_native.features.profile.settings.components.VistaSettingsDivider
 import ir.coffevista.vista_native.features.profile.settings.components.VistaSettingsGroup
 import ir.coffevista.vista_native.features.profile.settings.components.VistaSettingsSection
@@ -173,9 +174,13 @@ fun TwoFactorSettingsScreen(
                             title = "رمز عبور دومرحله‌ای فعلی",
                             description = "برای تغییر رمز، ابتدا رمز عبور دومرحله‌ای فعلی خود را وارد کنید.",
                         ) {
-                            OutlinedTextField(
-                                value = uiState.currentPasswordInput,
+                            val (bufferedCurrentPassword, onCurrentPasswordChange) = rememberBufferedTextState(
+                                externalValue = uiState.currentPasswordInput,
                                 onValueChange = viewModel::updateCurrentPassword,
+                            )
+                            OutlinedTextField(
+                                value = bufferedCurrentPassword,
+                                onValueChange = onCurrentPasswordChange,
                                 label = { Text("رمز عبور دومرحله‌ای فعلی") },
                                 singleLine = true,
                                 visualTransformation = PasswordVisualTransformation(),
@@ -198,9 +203,13 @@ fun TwoFactorSettingsScreen(
                             title = "انتخاب رمز عبور دومرحله‌ای",
                             description = "این رمز هنگام ورود از دستگاه جدید پس از کد تایید پیامکی یا رمز عادی از شما پرسیده می‌شود (حداقل ۶ کاراکتر).",
                         ) {
-                            OutlinedTextField(
-                                value = uiState.newPasswordInput,
+                            val (bufferedNewPassword, onNewPasswordChange) = rememberBufferedTextState(
+                                externalValue = uiState.newPasswordInput,
                                 onValueChange = viewModel::updateNewPassword,
+                            )
+                            OutlinedTextField(
+                                value = bufferedNewPassword,
+                                onValueChange = onNewPasswordChange,
                                 label = { Text("رمز عبور دومرحله‌ای") },
                                 singleLine = true,
                                 visualTransformation = PasswordVisualTransformation(),
@@ -223,9 +232,13 @@ fun TwoFactorSettingsScreen(
                             title = "تکرار رمز عبور دومرحله‌ای",
                             description = "برای اطمینان از صحت رمز، دوباره آن را وارد کنید.",
                         ) {
-                            OutlinedTextField(
-                                value = uiState.confirmPasswordInput,
+                            val (bufferedConfirmPassword, onConfirmPasswordChange) = rememberBufferedTextState(
+                                externalValue = uiState.confirmPasswordInput,
                                 onValueChange = viewModel::updateConfirmPassword,
+                            )
+                            OutlinedTextField(
+                                value = bufferedConfirmPassword,
+                                onValueChange = onConfirmPasswordChange,
                                 label = { Text("تکرار رمز عبور دومرحله‌ای") },
                                 singleLine = true,
                                 visualTransformation = PasswordVisualTransformation(),
@@ -248,9 +261,13 @@ fun TwoFactorSettingsScreen(
                             title = "راهنمای رمز (اختیاری)",
                             description = "یک راهنما برای به خاطر آوردن رمز بسازید. راهنما نباید با خود رمز عبور یکسان باشد.",
                         ) {
-                            OutlinedTextField(
-                                value = uiState.hintInput,
+                            val (bufferedHint, onHintChange) = rememberBufferedTextState(
+                                externalValue = uiState.hintInput,
                                 onValueChange = viewModel::updateHintInput,
+                            )
+                            OutlinedTextField(
+                                value = bufferedHint,
+                                onValueChange = onHintChange,
                                 label = { Text("راهنمای رمز") },
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth(),
@@ -280,9 +297,13 @@ fun TwoFactorSettingsScreen(
                             title = "ایمیل بازیابی دومرحله‌ای",
                             description = "یک کد تایید ۶ رقمی به این ایمیل ارسال می‌شود تا در صورت فراموشی رمز دومرحله‌ای بتوانید حساب خود را بازیابی کنید.",
                         ) {
-                            OutlinedTextField(
-                                value = uiState.recoveryEmailInput,
+                            val (bufferedRecoveryEmail, onRecoveryEmailChange) = rememberBufferedTextState(
+                                externalValue = uiState.recoveryEmailInput,
                                 onValueChange = viewModel::updateRecoveryEmailInput,
+                            )
+                            OutlinedTextField(
+                                value = bufferedRecoveryEmail,
+                                onValueChange = onRecoveryEmailChange,
                                 label = { Text("ایمیل بازیابی") },
                                 singleLine = true,
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
@@ -309,9 +330,13 @@ fun TwoFactorSettingsScreen(
                             title = "تایید ایمیل بازیابی",
                             description = "کد ۶ رقمی ارسال‌شده به ${uiState.pendingEmailPattern ?: "ایمیل بازیابی"} را وارد کنید تا تایید دو مرحله‌ای نهایی شود.",
                         ) {
-                            OutlinedTextField(
-                                value = uiState.confirmCodeInput,
+                            val (bufferedConfirmCode, onConfirmCodeChange) = rememberBufferedTextState(
+                                externalValue = uiState.confirmCodeInput,
                                 onValueChange = viewModel::updateConfirmCodeInput,
+                            )
+                            OutlinedTextField(
+                                value = bufferedConfirmCode,
+                                onValueChange = onConfirmCodeChange,
                                 label = { Text("کد ۶ رقمی") },
                                 singleLine = true,
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
@@ -370,18 +395,26 @@ fun TwoFactorSettingsScreen(
                             title = "تغییر راهنمای رمز",
                             description = "رمز عبور دومرحله‌ای فعلی و راهنمای جدید را وارد کنید.",
                         ) {
-                            OutlinedTextField(
-                                value = uiState.currentPasswordInput,
+                            val (bufferedCurrentPassword, onCurrentPasswordChange) = rememberBufferedTextState(
+                                externalValue = uiState.currentPasswordInput,
                                 onValueChange = viewModel::updateCurrentPassword,
+                            )
+                            OutlinedTextField(
+                                value = bufferedCurrentPassword,
+                                onValueChange = onCurrentPasswordChange,
                                 label = { Text("رمز عبور دومرحله‌ای فعلی") },
                                 singleLine = true,
                                 visualTransformation = PasswordVisualTransformation(),
                                 modifier = Modifier.fillMaxWidth(),
                             )
                             Spacer(Modifier.height(12.dp))
-                            OutlinedTextField(
-                                value = uiState.hintInput,
+                            val (bufferedHint, onHintChange) = rememberBufferedTextState(
+                                externalValue = uiState.hintInput,
                                 onValueChange = viewModel::updateHintInput,
+                            )
+                            OutlinedTextField(
+                                value = bufferedHint,
+                                onValueChange = onHintChange,
                                 label = { Text("راهنمای جدید (خالی برای حذف)") },
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth(),
@@ -403,18 +436,26 @@ fun TwoFactorSettingsScreen(
                             title = "تغییر ایمیل بازیابی",
                             description = "پس از وارد کردن رمز فعلی، کد تایید ۶ رقمی به ایمیل بازیابی جدید ارسال خواهد شد.",
                         ) {
-                            OutlinedTextField(
-                                value = uiState.currentPasswordInput,
+                            val (bufferedCurrentPassword, onCurrentPasswordChange) = rememberBufferedTextState(
+                                externalValue = uiState.currentPasswordInput,
                                 onValueChange = viewModel::updateCurrentPassword,
+                            )
+                            OutlinedTextField(
+                                value = bufferedCurrentPassword,
+                                onValueChange = onCurrentPasswordChange,
                                 label = { Text("رمز عبور دومرحله‌ای فعلی") },
                                 singleLine = true,
                                 visualTransformation = PasswordVisualTransformation(),
                                 modifier = Modifier.fillMaxWidth(),
                             )
                             Spacer(Modifier.height(12.dp))
-                            OutlinedTextField(
-                                value = uiState.recoveryEmailInput,
+                            val (bufferedRecoveryEmail, onRecoveryEmailChange) = rememberBufferedTextState(
+                                externalValue = uiState.recoveryEmailInput,
                                 onValueChange = viewModel::updateRecoveryEmailInput,
+                            )
+                            OutlinedTextField(
+                                value = bufferedRecoveryEmail,
+                                onValueChange = onRecoveryEmailChange,
                                 label = { Text("ایمیل بازیابی جدید") },
                                 singleLine = true,
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
@@ -532,9 +573,13 @@ private fun TelegramTwoFactorIntroAndPrereqs(
                     )
                     Spacer(Modifier.height(10.dp))
                     if (uiState.accountEmailSessionId == null) {
-                        OutlinedTextField(
-                            value = uiState.accountEmailInput,
+                        val (bufferedEmail, onBufferedEmailChange) = rememberBufferedTextState(
+                            externalValue = uiState.accountEmailInput,
                             onValueChange = onEmailChange,
+                        )
+                        OutlinedTextField(
+                            value = bufferedEmail,
+                            onValueChange = onBufferedEmailChange,
                             label = { Text("آدرس ایمیل") },
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
@@ -549,9 +594,13 @@ private fun TelegramTwoFactorIntroAndPrereqs(
                             Text(if (uiState.isSendingAccountEmail) "در حال ارسال..." else "ارسال کد تایید ایمیل")
                         }
                     } else {
-                        OutlinedTextField(
-                            value = uiState.accountEmailCodeInput,
+                        val (bufferedCode, onBufferedCodeChange) = rememberBufferedTextState(
+                            externalValue = uiState.accountEmailCodeInput,
                             onValueChange = onCodeChange,
+                        )
+                        OutlinedTextField(
+                            value = bufferedCode,
+                            onValueChange = onBufferedCodeChange,
                             label = { Text("کد تایید ایمیل") },
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),

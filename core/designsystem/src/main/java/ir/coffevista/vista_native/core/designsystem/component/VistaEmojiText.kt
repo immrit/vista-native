@@ -150,7 +150,13 @@ class VistaEmojiSpan(
             var hasPotentialEmoji = false
             for (i in text.indices) {
                 val c = text[i]
-                if (c.code >= 0x2000 || c == '#' || c == '*' || (c in '0'..'9')) {
+                if (Character.isSurrogate(c) ||
+                    c == '\uFE0F' ||
+                    c == '\u20E3' ||
+                    c == '\u00A9' ||
+                    c == '\u00AE' ||
+                    c.code in 0x203C..0x3299
+                ) {
                     hasPotentialEmoji = true
                     break
                 }

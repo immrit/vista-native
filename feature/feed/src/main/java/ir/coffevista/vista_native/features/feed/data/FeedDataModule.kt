@@ -20,6 +20,12 @@ abstract class FeedDataModule {
 
     @Binds
     @Singleton
+    abstract fun bindPostDraftStorage(
+        impl: AddPostDraftStore,
+    ): PostDraftStorage
+
+    @Binds
+    @Singleton
     abstract fun bindFeedRepository(
         impl: OfflineFirstFeedRepository
     ): FeedRepository

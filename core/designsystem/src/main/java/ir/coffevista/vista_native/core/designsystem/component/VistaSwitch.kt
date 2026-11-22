@@ -9,6 +9,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -46,6 +47,7 @@ fun VistaSwitch(
     thumbSize: Dp = 20.dp,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
+    val haptics = rememberVistaHaptics()
 
     val trackColor by animateColorAsState(
         targetValue = when {
@@ -86,26 +88,33 @@ fun VistaSwitch(
 
     Box(
         modifier = modifier
-            .size(width = trackWidth, height = trackHeight)
-            .clip(RoundedCornerShape(percent = 50))
-            .background(trackColor)
+            .defaultMinSize(minWidth = 48.dp, minHeight = 44.dp)
             .clickable(
                 interactionSource = interactionSource,
-                indication = ripple(bounded = false, radius = 16.dp),
+                indication = ripple(bounded = false, radius = 22.dp),
                 enabled = enabled && onCheckedChange != null,
                 role = Role.Switch,
             ) {
+                haptics.tap()
                 onCheckedChange?.invoke(!checked)
             },
-        contentAlignment = Alignment.CenterStart,
+        contentAlignment = Alignment.Center,
     ) {
         Box(
             modifier = Modifier
-                .offset(x = thumbOffset)
-                .size(thumbSize)
-                .clip(CircleShape)
-                .background(thumbInnerAnimatedColor)
-                .border(width = 2.5.dp, color = thumbBorderColor, shape = CircleShape),
-        )
+                .size(width = trackWidth, height = trackHeight)
+                .clip(RoundedCornerShape(percent = 50))
+                .background(trackColor),
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            Box(
+                modifier = Modifier
+                    .offset(x = thumbOffset)
+                    .size(thumbSize)
+                    .clip(CircleShape)
+                    .background(thumbInnerAnimatedColor)
+                    .border(width = 2.5.dp, color = thumbBorderColor, shape = CircleShape),
+            )
+        }
     }
 }

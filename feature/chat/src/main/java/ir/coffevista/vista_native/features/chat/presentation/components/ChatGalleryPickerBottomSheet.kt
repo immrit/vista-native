@@ -63,13 +63,18 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import ir.coffevista.vista_native.core.common.toPersianDigits
+import ir.coffevista.vista_native.core.designsystem.component.VistaGalleryAccessState
 import ir.coffevista.vista_native.core.designsystem.component.VistaGalleryFilter
 import ir.coffevista.vista_native.core.designsystem.component.VistaGalleryMediaItem
+import ir.coffevista.vista_native.core.designsystem.component.VistaLocalMediaThumbnailImage
 import ir.coffevista.vista_native.core.designsystem.component.VistaMediaBrowserHelpers
-import ir.coffevista.vista_native.core.designsystem.component.hasVistaGalleryPermission
+import ir.coffevista.vista_native.core.designsystem.component.getVistaGalleryAccessState
 import ir.coffevista.vista_native.core.designsystem.component.openVistaAppSettings
 import ir.coffevista.vista_native.core.designsystem.component.queryVistaGalleryMedia
 import ir.coffevista.vista_native.core.designsystem.component.requiredVistaGalleryPermissions
@@ -136,21 +141,41 @@ internal fun TelegramGalleryGridContent(
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val isDark = isSystemInDarkTheme()
-    var hasPermission by remember { mutableStateOf(hasVistaGalleryPermission(context)) }
+    var refreshTick by remember { mutableIntStateOf(0) }
+    var permissionRequestCount by remember { mutableIntStateOf(0) }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                refreshTick++
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    val accessState = remember(filter, refreshTick, permissionRequestCount) {
+        getVistaGalleryAccessState(context, filter)
+    }
+    val hasPermission = accessState != VistaGalleryAccessState.DENIED
     var allMediaItems by remember { mutableStateOf<List<VistaGalleryMediaItem>>(emptyList()) }
     var isLoading by remember { mutableStateOf(false) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { permissions ->
-        hasPermission = permissions.values.any { it } || hasVistaGalleryPermission(context)
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) {
+        permissionRequestCount++
     }
 
-    LaunchedEffect(hasPermission) {
+    LaunchedEffect(hasPermission, accessState, filter, refreshTick, permissionRequestCount) {
         if (hasPermission) {
             isLoading = true
-            allMediaItems = queryVistaGalleryMedia(context, filter = VistaGalleryFilter.ALL, limit = 240)
+            allMediaItems = queryVistaGalleryMedia(context, filter = filter, limit = 300)
+            isLoading = false
+        } else {
+            allMediaItems = emptyList()
             isLoading = false
         }
     }
@@ -211,7 +236,7 @@ internal fun TelegramGalleryGridContent(
                     Spacer(Modifier.height(16.dp))
                     Button(
                         onClick = {
-                            permissionLauncher.launch(requiredVistaGalleryPermissions())
+                            permissionLauncher.launch(requiredVistaGalleryPermissions(filter))
                         },
                         shape = RoundedCornerShape(16.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = VistaBrandColors.Indigo),
@@ -231,171 +256,226 @@ internal fun TelegramGalleryGridContent(
                 }
             }
 
-            isLoading -> {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(bottom = bottomContentPadding),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    CircularProgressIndicator(
-                        color = VistaBrandColors.Indigo,
-                        modifier = Modifier.size(34.dp),
-                    )
-                }
-            }
-
-            mediaItems.isEmpty() -> {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(start = 24.dp, end = 24.dp, bottom = bottomContentPadding),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
-                ) {
-                    Text(
-                        text = when (filter) {
-                            VistaGalleryFilter.VIDEOS -> "هیچ ویدیویی در دستگاه یافت نشد"
-                            VistaGalleryFilter.IMAGES -> "هیچ تصویری در دستگاه یافت نشد"
-                            else -> "هیچ تصویر یا ویدیویی در دستگاه یافت نشد"
-                        },
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 13.5.sp,
-                    )
-                    Spacer(Modifier.height(10.dp))
-                    TextButton(onClick = onCameraTileClick) {
-                        Text("ثبت تصویر با دوربین", color = VistaBrandColors.Indigo, fontWeight = FontWeight.SemiBold)
-                    }
-                }
-            }
-
             else -> {
-                val heroItems = mediaItems.take(4)
-                val remainingItems = if (mediaItems.size > 4) mediaItems.drop(4) else emptyList()
-                val tileSpacing = 2.dp
-
-                LazyVerticalGrid(
-                    state = gridState,
-                    columns = GridCells.Fixed(3),
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(
-                        start = 2.dp,
-                        end = 2.dp,
-                        top = 2.dp,
-                        bottom = bottomContentPadding,
-                    ),
-                    horizontalArrangement = Arrangement.spacedBy(tileSpacing),
-                    verticalArrangement = Arrangement.spacedBy(tileSpacing),
-                ) {
-                    item(
-                        key = "telegram-camera-hero-block",
-                        span = { GridItemSpan(3) },
+                Column(modifier = Modifier.fillMaxSize()) {
+                    if (accessState == VistaGalleryAccessState.PARTIAL_VISUAL_ONLY ||
+                        accessState == VistaGalleryAccessState.MISSING_VIDEO_ONLY
                     ) {
-                        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-                            val cellSize = ((maxWidth - tileSpacing * 2) / 3f).coerceAtLeast(48.dp)
-                            val heroHeight = cellSize * 2 + tileSpacing
-
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(heroHeight),
-                                horizontalArrangement = Arrangement.spacedBy(tileSpacing),
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(VistaBrandColors.Indigo.copy(alpha = if (isDark) 0.16f else 0.10f))
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Text(
+                                text = "دسترسی به ویدیوها یا همه فایل‌ها محدود است",
+                                fontSize = 11.5.sp,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.weight(1f),
+                            )
+                            TextButton(
+                                onClick = {
+                                    permissionLauncher.launch(requiredVistaGalleryPermissions(filter))
+                                },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
                             ) {
-                                // کاشی ۲-ردیفه دوربین (مشابه تلگرام)
-                                TelegramCameraHeroTile(
-                                    hasCameraPermission = hasCameraPermission,
-                                    isPreviewActive = isCameraPreviewActive,
-                                    isDark = isDark,
-                                    onClick = onCameraTileClick,
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .fillMaxHeight(),
+                                Text(
+                                    text = "تکمیل دسترسی",
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = VistaBrandColors.Indigo,
                                 )
-
-                                // ۴ کاشی مربع ۲×۲ در کنار دوربین
-                                Column(
-                                    modifier = Modifier
-                                        .weight(2f)
-                                        .fillMaxHeight(),
-                                    verticalArrangement = Arrangement.spacedBy(tileSpacing),
-                                ) {
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .weight(1f),
-                                        horizontalArrangement = Arrangement.spacedBy(tileSpacing),
-                                    ) {
-                                        for (slot in 0..1) {
-                                            val item = heroItems.getOrNull(slot)
-                                            if (item != null) {
-                                                val uri = item.toUri()
-                                                TelegramGalleryMediaTile(
-                                                    item = item,
-                                                    selectedIndex = selectedUris.indexOf(uri),
-                                                    onToggle = {
-                                                        if (uri in selectedUris) {
-                                                            selectedUris.remove(uri)
-                                                        } else {
-                                                            selectedUris.add(uri)
-                                                        }
-                                                    },
-                                                    modifier = Modifier
-                                                        .weight(1f)
-                                                        .fillMaxHeight(),
-                                                )
-                                            } else {
-                                                Spacer(Modifier.weight(1f).fillMaxHeight())
-                                            }
-                                        }
-                                    }
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .weight(1f),
-                                        horizontalArrangement = Arrangement.spacedBy(tileSpacing),
-                                    ) {
-                                        for (slot in 2..3) {
-                                            val item = heroItems.getOrNull(slot)
-                                            if (item != null) {
-                                                val uri = item.toUri()
-                                                TelegramGalleryMediaTile(
-                                                    item = item,
-                                                    selectedIndex = selectedUris.indexOf(uri),
-                                                    onToggle = {
-                                                        if (uri in selectedUris) {
-                                                            selectedUris.remove(uri)
-                                                        } else {
-                                                            selectedUris.add(uri)
-                                                        }
-                                                    },
-                                                    modifier = Modifier
-                                                        .weight(1f)
-                                                        .fillMaxHeight(),
-                                                )
-                                            } else {
-                                                Spacer(Modifier.weight(1f).fillMaxHeight())
-                                            }
-                                        }
-                                    }
-                                }
                             }
                         }
                     }
 
-                    items(remainingItems, key = { it.id }) { item ->
-                        val uri = item.toUri()
-                        TelegramGalleryMediaTile(
-                            item = item,
-                            selectedIndex = selectedUris.indexOf(uri),
-                            onToggle = {
-                                if (uri in selectedUris) {
-                                    selectedUris.remove(uri)
-                                } else {
-                                    selectedUris.add(uri)
+                    Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                        when {
+                            isLoading -> {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(bottom = bottomContentPadding),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    CircularProgressIndicator(
+                                        color = VistaBrandColors.Indigo,
+                                        modifier = Modifier.size(34.dp),
+                                    )
                                 }
-                            },
-                            modifier = Modifier.aspectRatio(1f),
-                        )
+                            }
+
+                            mediaItems.isEmpty() -> {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(start = 24.dp, end = 24.dp, bottom = bottomContentPadding),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center,
+                                ) {
+                                    Text(
+                                        text = when (filter) {
+                                            VistaGalleryFilter.VIDEOS -> "هیچ ویدیویی در دستگاه یافت نشد"
+                                            VistaGalleryFilter.IMAGES -> "هیچ تصویری در دستگاه یافت نشد"
+                                            else -> "هیچ تصویر یا ویدیویی در دستگاه یافت نشد"
+                                        },
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        fontSize = 13.5.sp,
+                                    )
+                                    if (accessState != VistaGalleryAccessState.FULL) {
+                                        Spacer(Modifier.height(10.dp))
+                                        Button(
+                                            onClick = {
+                                                permissionLauncher.launch(requiredVistaGalleryPermissions(filter))
+                                            },
+                                            shape = RoundedCornerShape(16.dp),
+                                            colors = ButtonDefaults.buttonColors(containerColor = VistaBrandColors.Indigo),
+                                        ) {
+                                            Text("تکمیل دسترسی گالری", fontWeight = FontWeight.Bold, color = Color.White)
+                                        }
+                                    }
+                                    Spacer(Modifier.height(6.dp))
+                                    TextButton(onClick = onCameraTileClick) {
+                                        Text("ثبت تصویر با دوربین", color = VistaBrandColors.Indigo, fontWeight = FontWeight.SemiBold)
+                                    }
+                                }
+                            }
+
+                            else -> {
+                                val heroItems = mediaItems.take(4)
+                                val remainingItems = if (mediaItems.size > 4) mediaItems.drop(4) else emptyList()
+                                val tileSpacing = 2.dp
+
+                                LazyVerticalGrid(
+                                    state = gridState,
+                                    columns = GridCells.Fixed(3),
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentPadding = PaddingValues(
+                                        start = 2.dp,
+                                        end = 2.dp,
+                                        top = 2.dp,
+                                        bottom = bottomContentPadding,
+                                    ),
+                                    horizontalArrangement = Arrangement.spacedBy(tileSpacing),
+                                    verticalArrangement = Arrangement.spacedBy(tileSpacing),
+                                ) {
+                                    item(
+                                        key = "telegram-camera-hero-block",
+                                        span = { GridItemSpan(3) },
+                                    ) {
+                                        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                                            val cellSize = ((maxWidth - tileSpacing * 2) / 3f).coerceAtLeast(48.dp)
+                                            val heroHeight = cellSize * 2 + tileSpacing
+
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .height(heroHeight),
+                                                horizontalArrangement = Arrangement.spacedBy(tileSpacing),
+                                            ) {
+                                                // کاشی ۲-ردیفه دوربین (مشابه تلگرام)
+                                                TelegramCameraHeroTile(
+                                                    hasCameraPermission = hasCameraPermission,
+                                                    isPreviewActive = isCameraPreviewActive,
+                                                    isDark = isDark,
+                                                    onClick = onCameraTileClick,
+                                                    modifier = Modifier
+                                                        .weight(1f)
+                                                        .fillMaxHeight(),
+                                                )
+
+                                                // ۴ کاشی مربع ۲×۲ در کنار دوربین
+                                                Column(
+                                                    modifier = Modifier
+                                                        .weight(2f)
+                                                        .fillMaxHeight(),
+                                                    verticalArrangement = Arrangement.spacedBy(tileSpacing),
+                                                ) {
+                                                    Row(
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .weight(1f),
+                                                        horizontalArrangement = Arrangement.spacedBy(tileSpacing),
+                                                    ) {
+                                                        for (slot in 0..1) {
+                                                            val item = heroItems.getOrNull(slot)
+                                                            if (item != null) {
+                                                                val uri = item.toUri()
+                                                                TelegramGalleryMediaTile(
+                                                                    item = item,
+                                                                    selectedIndex = selectedUris.indexOf(uri),
+                                                                    onToggle = {
+                                                                        if (uri in selectedUris) {
+                                                                            selectedUris.remove(uri)
+                                                                        } else {
+                                                                            selectedUris.add(uri)
+                                                                        }
+                                                                    },
+                                                                    modifier = Modifier
+                                                                        .weight(1f)
+                                                                        .fillMaxHeight(),
+                                                                )
+                                                            } else {
+                                                                Spacer(Modifier.weight(1f).fillMaxHeight())
+                                                            }
+                                                        }
+                                                    }
+                                                    Row(
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .weight(1f),
+                                                        horizontalArrangement = Arrangement.spacedBy(tileSpacing),
+                                                    ) {
+                                                        for (slot in 2..3) {
+                                                            val item = heroItems.getOrNull(slot)
+                                                            if (item != null) {
+                                                                val uri = item.toUri()
+                                                                TelegramGalleryMediaTile(
+                                                                    item = item,
+                                                                    selectedIndex = selectedUris.indexOf(uri),
+                                                                    onToggle = {
+                                                                        if (uri in selectedUris) {
+                                                                            selectedUris.remove(uri)
+                                                                        } else {
+                                                                            selectedUris.add(uri)
+                                                                        }
+                                                                    },
+                                                                    modifier = Modifier
+                                                                        .weight(1f)
+                                                                        .fillMaxHeight(),
+                                                                )
+                                                            } else {
+                                                                Spacer(Modifier.weight(1f).fillMaxHeight())
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    items(remainingItems, key = { it.id }) { item ->
+                                        val uri = item.toUri()
+                                        TelegramGalleryMediaTile(
+                                            item = item,
+                                            selectedIndex = selectedUris.indexOf(uri),
+                                            onToggle = {
+                                                if (uri in selectedUris) {
+                                                    selectedUris.remove(uri)
+                                                } else {
+                                                    selectedUris.add(uri)
+                                                }
+                                            },
+                                            modifier = Modifier.aspectRatio(1f),
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -422,39 +502,50 @@ private fun TelegramGalleryMediaTile(
         label = "gallery-tile-scale",
     )
 
+    val tileModifier = Modifier
+        .fillMaxSize()
+        .graphicsLayer {
+            scaleX = scale
+            scaleY = scale
+        }
+        .clip(RoundedCornerShape(if (isSelected) 8.dp else 4.dp))
+        .then(
+            if (isSelected) {
+                Modifier.border(
+                    width = 2.dp,
+                    color = VistaBrandColors.Indigo,
+                    shape = RoundedCornerShape(8.dp),
+                )
+            } else {
+                Modifier
+            },
+        )
+
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(4.dp))
             .background(Color(0xFF141A22).copy(alpha = 0.25f))
             .clickable(onClick = onToggle),
     ) {
-        AsyncImage(
-            model = ImageRequest.Builder(context)
-                .data(itemUri)
-                .crossfade(true)
-                .size(320)
-                .build(),
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier
-                .fillMaxSize()
-                .graphicsLayer {
-                    scaleX = scale
-                    scaleY = scale
-                }
-                .clip(RoundedCornerShape(if (isSelected) 8.dp else 4.dp))
-                .then(
-                    if (isSelected) {
-                        Modifier.border(
-                            width = 2.dp,
-                            color = VistaBrandColors.Indigo,
-                            shape = RoundedCornerShape(8.dp),
-                        )
-                    } else {
-                        Modifier
-                    },
-                ),
-        )
+        if (item.isVideo) {
+            VistaLocalMediaThumbnailImage(
+                uri = itemUri,
+                isVideo = true,
+                targetSizePx = 320,
+                modifier = tileModifier,
+            )
+        } else {
+            AsyncImage(
+                model = ImageRequest.Builder(context)
+                    .data(itemUri)
+                    .crossfade(true)
+                    .size(320)
+                    .build(),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = tileModifier,
+            )
+        }
 
         // برچسب زمان ویدیو
         if (item.isVideo) {

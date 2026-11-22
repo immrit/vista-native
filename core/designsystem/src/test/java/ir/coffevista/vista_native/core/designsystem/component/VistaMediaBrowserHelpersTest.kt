@@ -172,4 +172,82 @@ class VistaMediaBrowserHelpersTest {
         assertEquals("", VistaMediaBrowserHelpers.inferExtension("noextfile", ""))
         assertEquals("", VistaMediaBrowserHelpers.extensionFromFileName("statement"))
     }
+
+    @Test
+    fun `resolveGalleryAccessState distinguishes full partial and missing video access`() {
+        assertEquals(
+            VistaGalleryAccessState.FULL,
+            resolveGalleryAccessState(
+                sdkInt = 32,
+                filter = VistaGalleryFilter.VIDEOS,
+                hasImages = false,
+                hasVideos = false,
+                hasSelectedVisual = false,
+                hasLegacyStorage = true,
+            ),
+        )
+        assertEquals(
+            VistaGalleryAccessState.DENIED,
+            resolveGalleryAccessState(
+                sdkInt = 32,
+                filter = VistaGalleryFilter.VIDEOS,
+                hasImages = false,
+                hasVideos = false,
+                hasSelectedVisual = false,
+                hasLegacyStorage = false,
+            ),
+        )
+        assertEquals(
+            VistaGalleryAccessState.MISSING_VIDEO_ONLY,
+            resolveGalleryAccessState(
+                sdkInt = 33,
+                filter = VistaGalleryFilter.ALL,
+                hasImages = true,
+                hasVideos = false,
+                hasSelectedVisual = false,
+                hasLegacyStorage = false,
+            ),
+        )
+        assertEquals(
+            VistaGalleryAccessState.DENIED,
+            resolveGalleryAccessState(
+                sdkInt = 33,
+                filter = VistaGalleryFilter.VIDEOS,
+                hasImages = true,
+                hasVideos = false,
+                hasSelectedVisual = false,
+                hasLegacyStorage = false,
+            ),
+        )
+        assertEquals(
+            VistaGalleryAccessState.PARTIAL_VISUAL_ONLY,
+            resolveGalleryAccessState(
+                sdkInt = 34,
+                filter = VistaGalleryFilter.VIDEOS,
+                hasImages = false,
+                hasVideos = false,
+                hasSelectedVisual = true,
+                hasLegacyStorage = false,
+            ),
+        )
+        assertEquals(
+            VistaGalleryAccessState.FULL,
+            resolveGalleryAccessState(
+                sdkInt = 34,
+                filter = VistaGalleryFilter.VIDEOS,
+                hasImages = false,
+                hasVideos = true,
+                hasSelectedVisual = true,
+                hasLegacyStorage = false,
+            ),
+        )
+    }
+
+    @Test
+    fun `resolveMediaTimestampSec normalizes millis and falls back to dateModified`() {
+        assertEquals(1_700_000_000L, resolveMediaTimestampSec(1_700_000_000L, 1_690_000_000L))
+        assertEquals(1_710_000_000L, resolveMediaTimestampSec(0L, 1_710_000_000L))
+        assertEquals(1_720_000_123L, resolveMediaTimestampSec(1_720_000_123_456L, 1_700_000_000L))
+        assertEquals(0L, resolveMediaTimestampSec(-5L, 0L))
+    }
 }

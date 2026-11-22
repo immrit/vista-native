@@ -13,6 +13,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import ir.coffevista.vista_native.core.designsystem.glass.VistaGlassScrollSync
 import ir.coffevista.vista_native.core.designsystem.component.LocalMiniPlayerSlot
 import ir.coffevista.vista_native.core.designsystem.component.VistaMiniPlayerHost
+import ir.coffevista.vista_native.core.designsystem.component.rememberVistaHaptics
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.ui.text.style.TextDirection
 import android.widget.Toast
@@ -822,14 +823,19 @@ internal fun ProfileActionButton(
     primary: Boolean = false,
     pending: Boolean = false,
 ) {
+    val haptics = rememberVistaHaptics()
     val interaction = if (onClick != null) {
-        Modifier.clickable(enabled = !pending, onClick = onClick)
+        Modifier.clickable(enabled = !pending) {
+            haptics.tap()
+            onClick()
+        }
     } else {
         Modifier.semantics { disabled() }
     }
     Box(
         modifier = modifier
-            .height(36.dp)
+            .height(40.dp)
+            .clip(RoundedCornerShape(8.dp))
             .background(
                 color = if (primary) {
                     MaterialTheme.colorScheme.primary

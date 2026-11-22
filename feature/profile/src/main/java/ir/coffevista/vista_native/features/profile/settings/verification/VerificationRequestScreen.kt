@@ -73,6 +73,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import ir.coffevista.vista_native.core.designsystem.component.VistaCoinIcon
+import ir.coffevista.vista_native.core.designsystem.component.rememberBufferedTextState
 import ir.coffevista.vista_native.features.profile.data.VerificationStatusDto
 import kotlinx.coroutines.delay
 
@@ -231,14 +232,19 @@ fun VerificationRequestScreen(
                     style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
                 )
 
+                val (bufferedCategory, onCategoryChange) = rememberBufferedTextState(
+                    externalValue = uiState.category,
+                    onValueChange = viewModel::onCategoryChanged,
+                )
+
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     suggestedCategories.forEach { preset ->
                         FilterChip(
-                            selected = uiState.category.trim() == preset,
-                            onClick = { if (formEnabled) viewModel.onCategoryChanged(preset) },
+                            selected = bufferedCategory.trim() == preset,
+                            onClick = { if (formEnabled) onCategoryChange(preset) },
                             enabled = formEnabled,
                             label = { Text(text = preset, style = MaterialTheme.typography.labelMedium) },
                         )
@@ -246,8 +252,8 @@ fun VerificationRequestScreen(
                 }
 
                 OutlinedTextField(
-                    value = uiState.category,
-                    onValueChange = viewModel::onCategoryChanged,
+                    value = bufferedCategory,
+                    onValueChange = onCategoryChange,
                     modifier = Modifier.fillMaxWidth(),
                     placeholder = { Text("یا دسته‌بندی خود را بنویسید") },
                     singleLine = true,
@@ -309,9 +315,13 @@ fun VerificationRequestScreen(
                     )
                 }
 
-                OutlinedTextField(
-                    value = uiState.notes,
+                val (bufferedNotes, onNotesChange) = rememberBufferedTextState(
+                    externalValue = uiState.notes,
                     onValueChange = viewModel::onNotesChanged,
+                )
+                OutlinedTextField(
+                    value = bufferedNotes,
+                    onValueChange = onNotesChange,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(100.dp),

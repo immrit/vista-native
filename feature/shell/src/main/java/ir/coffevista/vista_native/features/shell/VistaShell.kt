@@ -38,6 +38,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.BorderStroke
@@ -49,6 +50,7 @@ import ir.coffevista.vista_native.core.designsystem.component.LocalHomeTabClick
 import ir.coffevista.vista_native.core.designsystem.component.LocalMiniPlayerSlot
 import ir.coffevista.vista_native.core.designsystem.component.LocalNavigateToPremium
 import ir.coffevista.vista_native.core.designsystem.component.VistaMiniPlayerSlot
+import ir.coffevista.vista_native.core.designsystem.component.rememberVistaHaptics
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
@@ -1333,6 +1335,7 @@ private fun VistaBottomIsland(
                             ),
                         )
                 }
+                val haptics = rememberVistaHaptics()
                 visibleTabs.forEach { tab ->
                     val slot = slotMap[tab.name.lowercase()]
                     val tabLabel = slot?.label?.takeIf { it.isNotBlank() } ?: tab.labelFa
@@ -1340,8 +1343,14 @@ private fun VistaBottomIsland(
                     val selected = tab == selectedTab
                     val activeColor = MaterialTheme.colorScheme.primary
                     val inactiveColor = if (isLight) Color(0xFF1A1D21) else Color(0xFFD5DCE6)
+                    val tabInteractionSource = remember { MutableInteractionSource() }
+                    val isTabPressed by tabInteractionSource.collectIsPressedAsState()
                     val tabScale by animateFloatAsState(
-                        targetValue = if (selected) 1.05f else 1.0f,
+                        targetValue = when {
+                            isTabPressed -> 0.93f
+                            selected -> 1.05f
+                            else -> 1.0f
+                        },
                         animationSpec = spring(
                             dampingRatio = Spring.DampingRatioMediumBouncy,
                             stiffness = Spring.StiffnessMedium,
@@ -1373,9 +1382,12 @@ private fun VistaBottomIsland(
                                 RoundedCornerShape(25.dp),
                             )
                             .clickable(
-                                interactionSource = remember { MutableInteractionSource() },
+                                interactionSource = tabInteractionSource,
                                 indication = ripple(bounded = true),
-                                onClick = { onSelect(tab) },
+                                onClick = {
+                                    haptics.tap()
+                                    onSelect(tab)
+                                },
                             )
                             .semantics(mergeDescendants = true) {
                                 contentDescription = tabLabel

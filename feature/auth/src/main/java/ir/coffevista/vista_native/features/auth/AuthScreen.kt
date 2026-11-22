@@ -72,6 +72,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ir.coffevista.vista_native.core.designsystem.component.VistaAuthLogo
+import ir.coffevista.vista_native.core.designsystem.component.rememberBufferedTextState
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaBrandColors
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaComponentSize
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaRadii
@@ -598,9 +599,13 @@ private fun AuthTextField(
         errorBorderColor = MaterialTheme.colorScheme.error,
         cursorColor = VistaBrandColors.Indigo,
     )
-    BasicTextField(
-        value = value,
+    val (bufferedValue, handleValueChange) = rememberBufferedTextState(
+        externalValue = value,
         onValueChange = onValueChange,
+    )
+    BasicTextField(
+        value = bufferedValue,
+        onValueChange = handleValueChange,
         modifier = modifier
             .fillMaxWidth()
             .height(VistaComponentSize.TextField),
@@ -618,7 +623,7 @@ private fun AuthTextField(
         cursorBrush = SolidColor(VistaBrandColors.Indigo),
         decorationBox = { innerTextField ->
             OutlinedTextFieldDefaults.DecorationBox(
-                value = value,
+                value = bufferedValue,
                 innerTextField = innerTextField,
                 enabled = enabled,
                 singleLine = true,

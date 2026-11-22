@@ -136,6 +136,11 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import coil.compose.AsyncImage
 import ir.coffevista.vista_native.core.common.toPersianDigits
+import ir.coffevista.vista_native.core.designsystem.component.VistaGalleryAccessState
+import ir.coffevista.vista_native.core.designsystem.component.VistaGalleryFilter
+import ir.coffevista.vista_native.core.designsystem.component.VistaLocalMediaThumbnailImage
+import ir.coffevista.vista_native.core.designsystem.component.getVistaGalleryAccessState
+import ir.coffevista.vista_native.core.designsystem.component.requiredVistaGalleryPermissions
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaBrandColors
 import ir.coffevista.vista_native.features.stories.ui.canvas.StoryHaptics
 import ir.coffevista.vista_native.features.stories.ui.canvas.StoryStage
@@ -194,9 +199,33 @@ internal fun StoryCameraStudio(
                 PackageManager.PERMISSION_GRANTED,
         )
     }
-    var hasMediaPermission by remember {
-        mutableStateOf(checkMediaReadPermission(context))
+    var selectedAlbumFilter by remember { mutableIntStateOf(0) } // 0 = All, 1 = Photos, 2 = Videos
+    var refreshTick by remember { mutableIntStateOf(0) }
+    var permissionRequestCount by remember { mutableIntStateOf(0) }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                hasCameraPermission = ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.CAMERA,
+                ) == PackageManager.PERMISSION_GRANTED
+                refreshTick++
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
+
+    val activeGalleryFilter = when (selectedAlbumFilter) {
+        1 -> VistaGalleryFilter.IMAGES
+        2 -> VistaGalleryFilter.VIDEOS
+        else -> VistaGalleryFilter.ALL
+    }
+    val mediaAccessState = remember(activeGalleryFilter, refreshTick, permissionRequestCount) {
+        getVistaGalleryAccessState(context, activeGalleryFilter)
+    }
+    val hasMediaPermission = mediaAccessState != VistaGalleryAccessState.DENIED
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions(),
@@ -204,7 +233,7 @@ internal fun StoryCameraStudio(
         hasCameraPermission = result[Manifest.permission.CAMERA] == true ||
             ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
             PackageManager.PERMISSION_GRANTED
-        hasMediaPermission = checkMediaReadPermission(context)
+        permissionRequestCount++
     }
 
     LaunchedEffect(Unit) {
@@ -216,16 +245,11 @@ internal fun StoryCameraStudio(
                 add(Manifest.permission.RECORD_AUDIO)
             }
             if (!hasMediaPermission) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    add(Manifest.permission.READ_MEDIA_IMAGES)
-                    add(Manifest.permission.READ_MEDIA_VIDEO)
-                } else {
-                    add(Manifest.permission.READ_EXTERNAL_STORAGE)
-                }
+                addAll(requiredVistaGalleryPermissions(VistaGalleryFilter.ALL))
             }
         }
         if (needed.isNotEmpty()) {
-            permissionLauncher.launch(needed.toTypedArray())
+            permissionLauncher.launch(needed.distinct().toTypedArray())
         }
     }
 
@@ -321,11 +345,14 @@ internal fun StoryCameraStudio(
 
     // Continuous Swipe-Up Gallery Drawer Progress (0f = Camera, 1f = Full Gallery)
     val sheetProgress = remember { Animatable(0f) }
-    var selectedAlbumFilter by remember { mutableIntStateOf(0) } // 0 = All, 1 = Photos, 2 = Videos
     var galleryItems by remember { mutableStateOf<List<StoryGalleryMediaItem>>(emptyList()) }
 
-    LaunchedEffect(hasMediaPermission, selectedAlbumFilter) {
-        galleryItems = queryMergedGalleryMedia(context, selectedAlbumFilter)
+    LaunchedEffect(mediaAccessState, selectedAlbumFilter, refreshTick, permissionRequestCount) {
+        galleryItems = if (mediaAccessState != VistaGalleryAccessState.DENIED) {
+            queryMergedGalleryMedia(context, selectedAlbumFilter)
+        } else {
+            emptyList()
+        }
     }
 
     fun animateSheetTo(target: Float, initialVelocity: Float = 0f) {
@@ -870,12 +897,21 @@ internal fun StoryCameraStudio(
                                 contentAlignment = Alignment.Center,
                             ) {
                                 if (latestMedia != null) {
-                                    AsyncImage(
-                                        model = latestMedia.uri,
-                                        contentDescription = "گالری",
-                                        modifier = Modifier.fillMaxSize(),
-                                        contentScale = ContentScale.Crop,
-                                    )
+                                    if (latestMedia.isVideo) {
+                                        VistaLocalMediaThumbnailImage(
+                                            uri = latestMedia.uri,
+                                            isVideo = true,
+                                            targetSizePx = 128,
+                                            modifier = Modifier.fillMaxSize(),
+                                        )
+                                    } else {
+                                        AsyncImage(
+                                            model = latestMedia.uri,
+                                            contentDescription = "گالری",
+                                            modifier = Modifier.fillMaxSize(),
+                                            contentScale = ContentScale.Crop,
+                                        )
+                                    }
                                 } else {
                                     Icon(
                                         imageVector = Icons.Default.PhotoLibrary,
@@ -1231,18 +1267,10 @@ internal fun StoryCameraStudio(
                                 )
                                 Spacer(Modifier.height(16.dp))
                                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                    if (!hasMediaPermission) {
+                                    if (!hasMediaPermission || mediaAccessState != VistaGalleryAccessState.FULL) {
                                         Button(
                                             onClick = {
-                                                val perms = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                                    arrayOf(
-                                                        Manifest.permission.READ_MEDIA_IMAGES,
-                                                        Manifest.permission.READ_MEDIA_VIDEO,
-                                                    )
-                                                } else {
-                                                    arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
-                                                }
-                                                permissionLauncher.launch(perms)
+                                                permissionLauncher.launch(requiredVistaGalleryPermissions(activeGalleryFilter))
                                             },
                                             shape = RoundedCornerShape(18.dp),
                                             colors = ButtonDefaults.buttonColors(containerColor = VistaBrandColors.Indigo),
@@ -1267,57 +1295,100 @@ internal fun StoryCameraStudio(
                             }
                         }
                     } else {
-                        LazyVerticalGrid(
-                            columns = GridCells.Fixed(3),
-                            contentPadding = PaddingValues(horizontal = 3.dp, vertical = 4.dp),
-                            horizontalArrangement = Arrangement.spacedBy(2.5.dp),
-                            verticalArrangement = Arrangement.spacedBy(2.5.dp),
-                            modifier = Modifier.fillMaxSize(),
-                        ) {
-                            items(
-                                items = galleryItems,
-                                key = { "${if (it.isVideo) "v" else "i"}_${it.id}" },
-                            ) { item ->
-                                Box(
+                        Column(modifier = Modifier.fillMaxSize()) {
+                            if (mediaAccessState == VistaGalleryAccessState.PARTIAL_VISUAL_ONLY ||
+                                mediaAccessState == VistaGalleryAccessState.MISSING_VIDEO_ONLY
+                            ) {
+                                Row(
                                     modifier = Modifier
-                                        .aspectRatio(9f / 16f)
-                                        .clip(RoundedCornerShape(6.dp))
-                                        .background(Color(0xFF1C1D26))
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 12.dp, vertical = 4.dp)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(Color.White.copy(alpha = 0.10f))
                                         .clickable {
-                                            haptics.snap()
-                                            latestOnMediaSelected(item.uri, item.isVideo)
-                                        },
+                                            permissionLauncher.launch(requiredVistaGalleryPermissions(activeGalleryFilter))
+                                        }
+                                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween,
                                 ) {
-                                    AsyncImage(
-                                        model = item.uri,
-                                        contentDescription = null,
-                                        modifier = Modifier.fillMaxSize(),
-                                        contentScale = ContentScale.Crop,
+                                    Text(
+                                        text = "دسترسی به ویدیوها یا همه فایل‌ها محدود است",
+                                        color = Color.White.copy(alpha = 0.88f),
+                                        fontSize = 11.5.sp,
                                     )
-                                    if (item.isVideo) {
-                                        val totalSec = (item.durationMs / 1000L).coerceAtLeast(0L)
-                                        Row(
-                                            modifier = Modifier
-                                                .align(Alignment.BottomEnd)
-                                                .padding(6.dp)
-                                                .clip(RoundedCornerShape(6.dp))
-                                                .background(Color.Black.copy(alpha = 0.65f))
-                                                .padding(horizontal = 5.dp, vertical = 2.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(2.dp),
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.PlayArrow,
+                                    Text(
+                                        text = "تکمیل دسترسی",
+                                        color = VistaBrandColors.Indigo,
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                    )
+                                }
+                            }
+
+                            LazyVerticalGrid(
+                                columns = GridCells.Fixed(3),
+                                contentPadding = PaddingValues(horizontal = 3.dp, vertical = 4.dp),
+                                horizontalArrangement = Arrangement.spacedBy(2.5.dp),
+                                verticalArrangement = Arrangement.spacedBy(2.5.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxWidth(),
+                            ) {
+                                items(
+                                    items = galleryItems,
+                                    key = { "${if (it.isVideo) "v" else "i"}_${it.id}" },
+                                ) { item ->
+                                    Box(
+                                        modifier = Modifier
+                                            .aspectRatio(9f / 16f)
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(Color(0xFF1C1D26))
+                                            .clickable {
+                                                haptics.snap()
+                                                latestOnMediaSelected(item.uri, item.isVideo)
+                                            },
+                                    ) {
+                                        if (item.isVideo) {
+                                            VistaLocalMediaThumbnailImage(
+                                                uri = item.uri,
+                                                isVideo = true,
+                                                targetSizePx = 320,
+                                                modifier = Modifier.fillMaxSize(),
+                                            )
+                                        } else {
+                                            AsyncImage(
+                                                model = item.uri,
                                                 contentDescription = null,
-                                                tint = Color.White,
-                                                modifier = Modifier.size(11.dp),
+                                                modifier = Modifier.fillMaxSize(),
+                                                contentScale = ContentScale.Crop,
                                             )
-                                            Text(
-                                                text = "%02d:%02d".format(totalSec / 60, totalSec % 60).toPersianDigits(),
-                                                color = Color.White,
-                                                fontSize = 10.sp,
-                                                fontWeight = FontWeight.Bold,
-                                            )
+                                        }
+                                        if (item.isVideo) {
+                                            val totalSec = (item.durationMs / 1000L).coerceAtLeast(0L)
+                                            Row(
+                                                modifier = Modifier
+                                                    .align(Alignment.BottomEnd)
+                                                    .padding(6.dp)
+                                                    .clip(RoundedCornerShape(6.dp))
+                                                    .background(Color.Black.copy(alpha = 0.65f))
+                                                    .padding(horizontal = 5.dp, vertical = 2.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.PlayArrow,
+                                                    contentDescription = null,
+                                                    tint = Color.White,
+                                                    modifier = Modifier.size(11.dp),
+                                                )
+                                                Text(
+                                                    text = "%02d:%02d".format(totalSec / 60, totalSec % 60).toPersianDigits(),
+                                                    color = Color.White,
+                                                    fontSize = 10.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                )
+                                            }
                                         }
                                     }
                                 }
@@ -1905,92 +1976,106 @@ private class StoryCamera2Controller(
     }
 }
 
-private fun checkMediaReadPermission(context: Context): Boolean {
-    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-        ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_IMAGES) ==
-            PackageManager.PERMISSION_GRANTED ||
-            ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_VIDEO) ==
-            PackageManager.PERMISSION_GRANTED
-    } else {
-        ContextCompat.checkSelfPermission(context, Manifest.permission.READ_EXTERNAL_STORAGE) ==
-            PackageManager.PERMISSION_GRANTED
-    }
+private fun resolveStoryMediaTimestampSec(dateAdded: Long, dateModified: Long): Long {
+    val normAdded = if (dateAdded > 10_000_000_000L) dateAdded / 1000L else dateAdded.coerceAtLeast(0L)
+    val normModified = if (dateModified > 10_000_000_000L) dateModified / 1000L else dateModified.coerceAtLeast(0L)
+    return maxOf(normAdded, normModified)
 }
 
 private suspend fun queryMergedGalleryMedia(
     context: Context,
     albumFilter: Int,
 ): List<StoryGalleryMediaItem> = withContext(Dispatchers.IO) {
-    runCatching {
-        val items = ArrayList<StoryGalleryMediaItem>(120)
-        if (albumFilter == 0 || albumFilter == 1) {
+    val items = ArrayList<StoryGalleryMediaItem>(200)
+    val resolver = context.contentResolver
+
+    if (albumFilter == 0 || albumFilter == 1) {
+        runCatching {
+            val imageContentUri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)
+            } else {
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+            }
             val projection = arrayOf(
                 MediaStore.Images.Media._ID,
                 MediaStore.Images.Media.DATE_ADDED,
+                MediaStore.Images.Media.DATE_MODIFIED,
             )
-            context.contentResolver.query(
-                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+            resolver.query(
+                imageContentUri,
                 projection,
                 null,
                 null,
                 "${MediaStore.Images.Media.DATE_ADDED} DESC",
             )?.use { cursor ->
-                val idCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
-                val dateCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATE_ADDED)
-                var count = 0
-                while (cursor.moveToNext() && count < 90) {
-                    val id = cursor.getLong(idCol)
-                    val dateSec = cursor.getLong(dateCol)
-                    val uri = ContentUris.withAppendedId(
-                        MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                        id,
-                    )
-                    items += StoryGalleryMediaItem(
-                        id = id,
-                        uri = uri,
-                        isVideo = false,
-                        dateAddedSec = dateSec,
-                    )
-                    count++
+                val idCol = cursor.getColumnIndex(MediaStore.Images.Media._ID)
+                if (idCol >= 0) {
+                    val dateCol = cursor.getColumnIndex(MediaStore.Images.Media.DATE_ADDED)
+                    val modCol = cursor.getColumnIndex(MediaStore.Images.Media.DATE_MODIFIED)
+                    var count = 0
+                    while (cursor.moveToNext() && count < 120) {
+                        val id = cursor.getLong(idCol)
+                        val dateSec = if (dateCol >= 0) cursor.getLong(dateCol) else 0L
+                        val modSec = if (modCol >= 0) cursor.getLong(modCol) else 0L
+                        val uri = ContentUris.withAppendedId(imageContentUri, id)
+                        items += StoryGalleryMediaItem(
+                            id = id,
+                            uri = uri,
+                            isVideo = false,
+                            dateAddedSec = resolveStoryMediaTimestampSec(dateSec, modSec),
+                        )
+                        count++
+                    }
                 }
             }
         }
-        if (albumFilter == 0 || albumFilter == 2) {
+    }
+
+    if (albumFilter == 0 || albumFilter == 2) {
+        runCatching {
+            val videoContentUri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)
+            } else {
+                MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+            }
             val projection = arrayOf(
                 MediaStore.Video.Media._ID,
                 MediaStore.Video.Media.DURATION,
                 MediaStore.Video.Media.DATE_ADDED,
+                MediaStore.Video.Media.DATE_MODIFIED,
             )
-            context.contentResolver.query(
-                MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+            resolver.query(
+                videoContentUri,
                 projection,
                 null,
                 null,
                 "${MediaStore.Video.Media.DATE_ADDED} DESC",
             )?.use { cursor ->
-                val idCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media._ID)
-                val durCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DURATION)
-                val dateCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DATE_ADDED)
-                var count = 0
-                while (cursor.moveToNext() && count < 60) {
-                    val id = cursor.getLong(idCol)
-                    val dur = cursor.getLong(durCol)
-                    val dateSec = cursor.getLong(dateCol)
-                    val uri = ContentUris.withAppendedId(
-                        MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
-                        id,
-                    )
-                    items += StoryGalleryMediaItem(
-                        id = id,
-                        uri = uri,
-                        isVideo = true,
-                        durationMs = dur,
-                        dateAddedSec = dateSec,
-                    )
-                    count++
+                val idCol = cursor.getColumnIndex(MediaStore.Video.Media._ID)
+                if (idCol >= 0) {
+                    val durCol = cursor.getColumnIndex(MediaStore.Video.Media.DURATION)
+                    val dateCol = cursor.getColumnIndex(MediaStore.Video.Media.DATE_ADDED)
+                    val modCol = cursor.getColumnIndex(MediaStore.Video.Media.DATE_MODIFIED)
+                    var count = 0
+                    while (cursor.moveToNext() && count < 180) {
+                        val id = cursor.getLong(idCol)
+                        val dur = if (durCol >= 0) runCatching { cursor.getLong(durCol) }.getOrDefault(0L) else 0L
+                        val dateSec = if (dateCol >= 0) runCatching { cursor.getLong(dateCol) }.getOrDefault(0L) else 0L
+                        val modSec = if (modCol >= 0) runCatching { cursor.getLong(modCol) }.getOrDefault(0L) else 0L
+                        val uri = ContentUris.withAppendedId(videoContentUri, id)
+                        items += StoryGalleryMediaItem(
+                            id = id,
+                            uri = uri,
+                            isVideo = true,
+                            durationMs = dur.coerceAtLeast(0L),
+                            dateAddedSec = resolveStoryMediaTimestampSec(dateSec, modSec),
+                        )
+                        count++
+                    }
                 }
             }
         }
-        items.sortedByDescending { it.dateAddedSec }.take(120)
-    }.getOrDefault(emptyList())
+    }
+
+    items.sortedByDescending { it.dateAddedSec }.take(200)
 }

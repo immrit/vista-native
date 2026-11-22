@@ -1,6 +1,7 @@
 package ir.coffevista.vista_native.features.feed.ui.create
 
 import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -66,11 +67,13 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -94,7 +97,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import ir.coffevista.vista_native.core.designsystem.component.rememberVistaHaptics
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -117,29 +124,61 @@ fun AddPostScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val coroutineScope = rememberCoroutineScope()
+    val haptics = rememberVistaHaptics()
 
     var showLocationDialog by remember { mutableStateOf(false) }
     var showMusicTrimSheet by remember { mutableStateOf(false) }
     var showDiscardDraftDialog by remember { mutableStateOf(false) }
+    var isSavingDraft by remember { mutableStateOf(false) }
+    var isNavigatingToTrimmer by remember { mutableStateOf(false) }
     var showPremiumBottomSheet by remember { mutableStateOf(false) }
     var premiumPromptFeature by remember { mutableStateOf<String?>(null) }
     val captionFocusRequester = remember { FocusRequester() }
 
-    val hasUnsavedContent = remember(uiState.content, uiState.selectedImages, uiState.selectedVideo, uiState.selectedMusicUri) {
-        uiState.content.isNotBlank() || uiState.selectedImages.isNotEmpty() || uiState.selectedVideo != null || uiState.selectedMusicUri != null
-    }
+    val hasUnsavedContent = uiState.hasDraftableContent
+    val latestUiState by rememberUpdatedState(uiState)
 
-    androidx.activity.compose.BackHandler(enabled = hasUnsavedContent) {
+    androidx.activity.compose.BackHandler(enabled = hasUnsavedContent && !isSavingDraft) {
         showDiscardDraftDialog = true
     }
 
     fun handleBack() {
+        if (isSavingDraft) return
         if (hasUnsavedContent) {
             showDiscardDraftDialog = true
         } else {
             onBack()
         }
+    }
+
+    fun navigateToTrimmerSafely(uri: Uri) {
+        isNavigatingToTrimmer = true
+        onNavigateToTrimmer(uri)
+    }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> isNavigatingToTrimmer = false
+                Lifecycle.Event.ON_STOP -> {
+                    val current = latestUiState
+                    if (
+                        current.hasDraftableContent &&
+                        !current.isUploading &&
+                        !current.isSuccess &&
+                        !isNavigatingToTrimmer &&
+                        !viewModel.wasDraftDiscarded()
+                    ) {
+                        viewModel.saveDraft()
+                    }
+                }
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     // Share intent / preloaded media
@@ -151,6 +190,7 @@ fun AddPostScreen(
     // Result of the video trimmer screen, handed over by the navigation layer.
     LaunchedEffect(trimmedVideoPath) {
         val path = trimmedVideoPath ?: return@LaunchedEffect
+        isNavigatingToTrimmer = false
         viewModel.onVideoTrimmedFromPath(path)
         onTrimmedVideoConsumed()
     }
@@ -204,7 +244,7 @@ fun AddPostScreen(
                 when (pickerMode) {
                     ir.coffevista.vista_native.core.designsystem.component.VistaInAppPickerMode.VIDEO_SINGLE -> {
                         viewModel.onVideoPicked(uri)
-                        onNavigateToTrimmer(uri)
+                        navigateToTrimmerSafely(uri)
                     }
                     ir.coffevista.vista_native.core.designsystem.component.VistaInAppPickerMode.AUDIO_SINGLE -> {
                         viewModel.onMusicFileSelected(uri)
@@ -272,6 +312,30 @@ fun AddPostScreen(
                                 imageVector = Icons.Default.Close,
                                 contentDescription = "بستن",
                             )
+                        }
+                    },
+                    actions = {
+                        if (hasUnsavedContent && !uiState.isUploading) {
+                            TextButton(
+                                enabled = !isSavingDraft,
+                                onClick = {
+                                    haptics.confirm()
+                                    coroutineScope.launch {
+                                        isSavingDraft = true
+                                        val saved = viewModel.saveDraftNow()
+                                        isSavingDraft = false
+                                        if (saved) {
+                                            Toast.makeText(context, "پیش‌نویس ذخیره شد", Toast.LENGTH_SHORT).show()
+                                        }
+                                        onBack()
+                                    }
+                                },
+                            ) {
+                                Text(
+                                    text = if (isSavingDraft) "در حال ذخیره…" else "پیش‌نویس",
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                            }
                         }
                     },
                     colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
@@ -402,6 +466,40 @@ fun AddPostScreen(
                         .fillMaxSize()
                         .verticalScroll(rememberScrollState()),
                 ) {
+                    // Restored draft banner
+                    AnimatedVisibility(visible = uiState.isDraftRestored) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 6.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f))
+                                .padding(horizontal = 12.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Text(
+                                text = "پیش‌نویس ذخیره‌شده بازیابی شد",
+                                fontSize = 12.5.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            )
+                            TextButton(
+                                onClick = {
+                                    haptics.tap()
+                                    viewModel.discardDraft(resetComposer = true)
+                                },
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                            ) {
+                                Text(
+                                    text = "پاک کردن",
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.error,
+                                )
+                            }
+                        }
+                    }
+
                     // Upload Progress Banner
                     AnimatedVisibility(visible = uiState.isUploading) {
                         Column(
@@ -447,6 +545,7 @@ fun AddPostScreen(
                         isVerified = uiState.authorIsVerified,
                         verificationType = uiState.authorVerificationType,
                         content = uiState.content,
+                        maxCharLength = uiState.maxCharLength,
                         onContentChanged = viewModel::onContentChanged,
                         focusRequester = captionFocusRequester,
                     ) {
@@ -461,7 +560,7 @@ fun AddPostScreen(
                                             videoUri = previewUri,
                                             aspectRatio = uiState.aspectRatio.floatValue,
                                             durationMs = uiState.videoDurationMs,
-                                            onEdit = { onNavigateToTrimmer(uiState.videoSourceUri ?: previewUri) },
+                                            onEdit = { navigateToTrimmerSafely(uiState.videoSourceUri ?: previewUri) },
                                             onRemove = viewModel::removeVideo,
                                         )
                                     }
@@ -539,13 +638,19 @@ fun AddPostScreen(
                                     onClick = { showLocationDialog = true },
                                     label = { Text(location, fontSize = 12.sp) },
                                     trailingIcon = {
-                                        Icon(
-                                            imageVector = Icons.Default.Close,
-                                            contentDescription = "حذف مکان",
+                                        Box(
                                             modifier = Modifier
-                                                .size(18.dp)
+                                                .size(28.dp)
+                                                .clip(CircleShape)
                                                 .clickable { viewModel.onLocationSelected(null) },
-                                        )
+                                            contentAlignment = Alignment.Center,
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Close,
+                                                contentDescription = "حذف مکان",
+                                                modifier = Modifier.size(16.dp),
+                                            )
+                                        }
                                     },
                                 )
                             }
@@ -847,7 +952,7 @@ fun AddPostScreen(
         // Location Dialog
         if (showDiscardDraftDialog) {
             AlertDialog(
-                onDismissRequest = { showDiscardDraftDialog = false },
+                onDismissRequest = { if (!isSavingDraft) showDiscardDraftDialog = false },
                 title = {
                     Text(
                         text = "ذخیره پیش‌نویس؟",
@@ -864,18 +969,28 @@ fun AddPostScreen(
                 },
                 confirmButton = {
                     TextButton(
+                        enabled = !isSavingDraft,
                         onClick = {
-                            viewModel.saveDraft()
-                            showDiscardDraftDialog = false
-                            onBack()
+                            haptics.confirm()
+                            coroutineScope.launch {
+                                isSavingDraft = true
+                                val saved = viewModel.saveDraftNow()
+                                isSavingDraft = false
+                                if (saved) {
+                                    Toast.makeText(context, "پیش‌نویس ذخیره شد", Toast.LENGTH_SHORT).show()
+                                }
+                                showDiscardDraftDialog = false
+                                onBack()
+                            }
                         },
                     ) {
-                        Text("ذخیره پیش‌نویس", fontWeight = FontWeight.Bold)
+                        Text(if (isSavingDraft) "در حال ذخیره…" else "ذخیره پیش‌نویس", fontWeight = FontWeight.Bold)
                     }
                 },
                 dismissButton = {
                     Row {
                         TextButton(
+                            enabled = !isSavingDraft,
                             onClick = {
                                 viewModel.discardDraft()
                                 showDiscardDraftDialog = false
@@ -884,7 +999,10 @@ fun AddPostScreen(
                         ) {
                             Text("حذف", color = MaterialTheme.colorScheme.error)
                         }
-                        TextButton(onClick = { showDiscardDraftDialog = false }) {
+                        TextButton(
+                            enabled = !isSavingDraft,
+                            onClick = { showDiscardDraftDialog = false },
+                        ) {
                             Text("انصراف")
                         }
                     }

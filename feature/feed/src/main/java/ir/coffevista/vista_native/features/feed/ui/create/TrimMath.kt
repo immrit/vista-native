@@ -15,6 +15,71 @@ internal object TrimMath {
     /** Smallest clip the user may pick (unless the source itself is shorter). */
     const val MIN_CLIP_MS: Long = 3_000L
 
+    /** Smallest video trim range when dragging handles interactively. */
+    const val MIN_VIDEO_TRIM_MS: Long = 1_000L
+
+    /**
+     * Clamps `[startMs, endMs]` inside `[0, durationMs]` while enforcing `[minLenMs, maxLenMs]`.
+     * When [anchorStart] is `true`, `startMs` is kept fixed (as much as bounds allow) and `endMs`
+     * adjusts; otherwise `endMs` stays fixed and `startMs` adjusts.
+     */
+    fun clampRange(
+        startMs: Long,
+        endMs: Long,
+        durationMs: Long,
+        minLenMs: Long = MIN_VIDEO_TRIM_MS,
+        maxLenMs: Long = durationMs,
+        anchorStart: Boolean = false,
+    ): Pair<Long, Long> {
+        if (durationMs <= 0L) return 0L to 0L
+        val maxLen = maxLenMs.coerceIn(1L, durationMs)
+        val minLen = minLenMs.coerceIn(1L, maxLen)
+        var s = startMs.coerceIn(0L, durationMs)
+        var e = endMs.coerceIn(0L, durationMs)
+        if (e < s) {
+            if (anchorStart) {
+                e = (s + minLen).coerceAtMost(durationMs)
+                if (e - s < minLen) s = (e - minLen).coerceAtLeast(0L)
+            } else {
+                s = (e - minLen).coerceAtLeast(0L)
+                if (e - s < minLen) e = (s + minLen).coerceAtMost(durationMs)
+            }
+        }
+        val len = e - s
+        if (len < minLen) {
+            if (anchorStart) {
+                e = (s + minLen).coerceAtMost(durationMs)
+                if (e - s < minLen) s = (e - minLen).coerceAtLeast(0L)
+            } else {
+                s = (e - minLen).coerceAtLeast(0L)
+                if (e - s < minLen) e = (s + minLen).coerceAtMost(durationMs)
+            }
+        } else if (len > maxLen) {
+            if (anchorStart) {
+                e = (s + maxLen).coerceAtMost(durationMs)
+            } else {
+                s = (e - maxLen).coerceAtLeast(0L)
+            }
+        }
+        return s.coerceIn(0L, durationMs) to e.coerceIn(0L, durationMs)
+    }
+
+    /**
+     * Translates the selected window `[startMs, endMs]` by [deltaMs] without changing its length,
+     * clamping cleanly inside `[0, durationMs]`.
+     */
+    fun slideRange(
+        startMs: Long,
+        endMs: Long,
+        deltaMs: Long,
+        durationMs: Long,
+    ): Pair<Long, Long> {
+        if (durationMs <= 0L) return 0L to 0L
+        val len = (endMs - startMs).coerceIn(0L, durationMs)
+        val newStart = (startMs + deltaMs).coerceIn(0L, (durationMs - len).coerceAtLeast(0L))
+        return newStart to (newStart + len)
+    }
+
     /**
      * Length of the window for a requested clip length: never longer than the source, never
      * longer than the allowed maximum and never shorter than [MIN_CLIP_MS] (unless the source is).

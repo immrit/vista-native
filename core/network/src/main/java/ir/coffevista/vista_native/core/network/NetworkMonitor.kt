@@ -94,10 +94,13 @@ class AndroidNetworkMonitor @Inject constructor(
         val network = connectivity.activeNetwork ?: return NetworkState.OFFLINE
         val capabilities = connectivity.getNetworkCapabilities(network)
             ?: return NetworkState.OFFLINE
-        return if (
-            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
-        ) {
+        val hasInternet = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+        val notSuspended = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_SUSPENDED)
+        } else {
+            true
+        }
+        return if (hasInternet && notSuspended) {
             NetworkState.ONLINE
         } else {
             NetworkState.OFFLINE

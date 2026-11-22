@@ -1,7 +1,7 @@
 package ir.coffevista.vista_native.features.feed.ui.components
 
-import android.content.Context
 import android.net.Uri
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.ViewGroup
 import android.widget.FrameLayout
@@ -32,6 +32,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -49,6 +50,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.DefaultLoadControl
@@ -84,6 +86,8 @@ fun VistaFeedVideoPlayer(
     var isPlaying by remember { mutableStateOf(false) }
     var isBuffering by remember(videoUrl, shouldAutoPlay) { mutableStateOf(shouldAutoPlay) }
     var hasRenderedFirstFrame by remember(videoUrl) { mutableStateOf(false) }
+    var hasPlaybackError by remember(videoUrl) { mutableStateOf(false) }
+    var retryCount by remember(videoUrl) { mutableIntStateOf(0) }
 
     val activePlayingUrl by FeedVideoPlaybackCoordinator.activePlayingVideoUrl.collectAsStateWithLifecycle()
 
@@ -120,11 +124,12 @@ fun VistaFeedVideoPlayer(
         }
     }
 
-    LaunchedEffect(shouldAutoPlay) {
+    LaunchedEffect(shouldAutoPlay, exoPlayer) {
         if (!shouldAutoPlay && exoPlayer.isPlaying) {
             exoPlayer.pause()
         } else if (shouldAutoPlay && !hasInitiatedPlayback) {
             hasInitiatedPlayback = true
+            hasPlaybackError = false
             isBuffering = true
             exoPlayer.prepare()
             exoPlayer.playWhenReady = true
@@ -132,13 +137,27 @@ fun VistaFeedVideoPlayer(
         }
     }
 
-    LaunchedEffect(activePlayingUrl) {
+    LaunchedEffect(hasPlaybackError, exoPlayer) {
+        if (hasPlaybackError && retryCount < 1) {
+            kotlinx.coroutines.delay(450L)
+            retryCount += 1
+            hasPlaybackError = false
+            isBuffering = true
+            exoPlayer.prepare()
+            exoPlayer.playWhenReady = shouldAutoPlay
+            if (shouldAutoPlay) {
+                exoPlayer.play()
+            }
+        }
+    }
+
+    LaunchedEffect(activePlayingUrl, exoPlayer) {
         if (activePlayingUrl != null && activePlayingUrl != videoUrl) {
             exoPlayer.pause()
         }
     }
 
-    LaunchedEffect(isMuted) {
+    LaunchedEffect(isMuted, exoPlayer) {
         exoPlayer.volume = if (isMuted) 0f else 1f
     }
 
@@ -146,6 +165,9 @@ fun VistaFeedVideoPlayer(
         val listener = object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
                 isBuffering = playbackState == Player.STATE_BUFFERING
+                if (playbackState == Player.STATE_READY) {
+                    hasPlaybackError = false
+                }
             }
 
             override fun onIsPlayingChanged(playing: Boolean) {
@@ -157,6 +179,14 @@ fun VistaFeedVideoPlayer(
 
             override fun onRenderedFirstFrame() {
                 hasRenderedFirstFrame = true
+                isBuffering = false
+            }
+
+            override fun onPlayerError(error: PlaybackException) {
+                Log.w("VistaFeedVideoPlayer", "Playback failed for $videoUrl: ${error.errorCodeName}", error)
+                isPlaying = false
+                isBuffering = false
+                hasPlaybackError = true
             }
         }
         exoPlayer.addListener(listener)
@@ -183,7 +213,7 @@ fun VistaFeedVideoPlayer(
     var currentProgress by remember { mutableStateOf(0f) }
     val glassState = LocalVistaGlassState.current
 
-    LaunchedEffect(isPlaying, glassState) {
+    LaunchedEffect(isPlaying, glassState, exoPlayer) {
         while (isPlaying) {
             val duration = exoPlayer.duration
             if (duration > 0) {
@@ -219,6 +249,14 @@ fun VistaFeedVideoPlayer(
                     )
                 }
             },
+            update = { playerView ->
+                if (playerView.player !== exoPlayer) {
+                    playerView.player = exoPlayer
+                }
+            },
+            onRelease = { playerView ->
+                playerView.player = null
+            },
             modifier = Modifier
                 .fillMaxSize()
                 .then(
@@ -227,10 +265,12 @@ fun VistaFeedVideoPlayer(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
                         ) {
-                            if (!hasInitiatedPlayback) {
+                            if (!hasInitiatedPlayback || hasPlaybackError || exoPlayer.playerError != null || exoPlayer.playbackState == Player.STATE_IDLE) {
                                 hasInitiatedPlayback = true
+                                hasPlaybackError = false
                                 isBuffering = true
                                 exoPlayer.prepare()
+                                exoPlayer.playWhenReady = true
                                 exoPlayer.play()
                             } else if (exoPlayer.isPlaying) {
                                 exoPlayer.pause()
@@ -263,9 +303,9 @@ fun VistaFeedVideoPlayer(
             )
         }
 
-        // Play/Pause Overlay indicator when paused or waiting for manual start under data saver
+        // Play/Pause Overlay indicator when paused, waiting for manual start under data saver, or recovering from error
         AnimatedVisibility(
-            visible = !isPlaying && !isBuffering && (hasRenderedFirstFrame || !hasInitiatedPlayback),
+            visible = !isPlaying && !isBuffering && (hasRenderedFirstFrame || !hasInitiatedPlayback || hasPlaybackError),
             enter = fadeIn(),
             exit = fadeOut(),
         ) {
@@ -275,11 +315,13 @@ fun VistaFeedVideoPlayer(
                     .clip(CircleShape)
                     .background(Color.Black.copy(alpha = 0.58f))
                     .clickable {
-                        if (!hasInitiatedPlayback) {
+                        if (!hasInitiatedPlayback || hasPlaybackError || exoPlayer.playerError != null || exoPlayer.playbackState == Player.STATE_IDLE) {
                             hasInitiatedPlayback = true
+                            hasPlaybackError = false
                             isBuffering = true
                             exoPlayer.prepare()
                         }
+                        exoPlayer.playWhenReady = true
                         exoPlayer.play()
                     },
                 contentAlignment = Alignment.Center,

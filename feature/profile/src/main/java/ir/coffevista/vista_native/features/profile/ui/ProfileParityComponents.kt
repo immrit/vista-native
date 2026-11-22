@@ -97,11 +97,13 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.foundation.text.ClickableText
 import androidx.compose.material3.Text
+import androidx.compose.material3.ripple
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import ir.coffevista.vista_native.core.designsystem.component.VistaEmojiText
 import ir.coffevista.vista_native.core.designsystem.component.VistaFloatingActionButton
+import ir.coffevista.vista_native.core.designsystem.component.rememberVistaHaptics
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -1313,65 +1315,117 @@ internal fun ProfilePostCard(
         }
 
         // Action Buttons Row (Placed exactly like Feed: Like, Comment, Bookmark, Share, Spacer, 3-dots)
+        val actionHaptics = rememberVistaHaptics()
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 10.dp),
+                .padding(start = 12.dp, end = 12.dp, top = 2.dp, bottom = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            ProfileHeart(
-                filled = post.isLiked,
+            Box(
                 modifier = Modifier
-                    .size(19.dp)
-                    .clickable { onLikeClick() },
-            )
+                    .size(40.dp)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = ripple(bounded = false, radius = 22.dp),
+                        onClick = {
+                            actionHaptics.confirm()
+                            onLikeClick()
+                        },
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                ProfileHeart(
+                    filled = post.isLiked,
+                    modifier = Modifier.size(19.dp),
+                )
+            }
             if (!post.hideLikeCount) {
                 Text(
                     text = post.likeCount.toString().toPersianDigits(),
-                    modifier = Modifier.padding(start = 4.dp),
+                    modifier = Modifier.padding(end = 6.dp),
                     fontSize = 13.sp,
                     color = actionTint,
                 )
             }
-            Spacer(Modifier.width(14.dp))
-            Image(
-                painter = painterResource(DesignSystemR.drawable.vista_post_comment),
-                contentDescription = "دیدگاه",
+            Spacer(Modifier.width(4.dp))
+            Box(
                 modifier = Modifier
-                    .size(19.dp)
-                    .clickable { onCommentClick() },
-                colorFilter = ColorFilter.tint(actionTint),
-            )
+                    .size(40.dp)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = ripple(bounded = false, radius = 22.dp),
+                        onClick = {
+                            actionHaptics.tap()
+                            onCommentClick()
+                        },
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Image(
+                    painter = painterResource(DesignSystemR.drawable.vista_post_comment),
+                    contentDescription = "دیدگاه",
+                    modifier = Modifier.size(19.dp),
+                    colorFilter = ColorFilter.tint(actionTint),
+                )
+            }
             if (!post.hideCommentCount) {
                 Text(
                     text = post.commentCount.toString().toPersianDigits(),
-                    modifier = Modifier.padding(start = 4.dp),
+                    modifier = Modifier.padding(end = 6.dp),
                     fontSize = 13.sp,
                     color = actionTint,
                 )
             }
-            Spacer(Modifier.width(14.dp))
-            BookmarkIcon(
-                filled = post.isSaved,
-                inactiveColor = actionTint,
+            Spacer(Modifier.width(4.dp))
+            Box(
                 modifier = Modifier
-                    .size(19.dp)
-                    .clickable { onSaveClick() },
-            )
-            Spacer(Modifier.width(14.dp))
-            Image(
-                painter = painterResource(DesignSystemR.drawable.vista_post_send),
-                contentDescription = "اشتراک‌گذاری",
+                    .size(40.dp)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = ripple(bounded = false, radius = 22.dp),
+                        onClick = {
+                            actionHaptics.confirm()
+                            onSaveClick()
+                        },
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                BookmarkIcon(
+                    filled = post.isSaved,
+                    inactiveColor = actionTint,
+                    modifier = Modifier.size(19.dp),
+                )
+            }
+            Spacer(Modifier.width(4.dp))
+            Box(
                 modifier = Modifier
-                    .size(19.dp)
-                    .clickable(onClick = onShareClick),
-                colorFilter = ColorFilter.tint(actionTint),
-            )
+                    .size(40.dp)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = ripple(bounded = false, radius = 22.dp),
+                        onClick = {
+                            actionHaptics.tap()
+                            onShareClick()
+                        },
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Image(
+                    painter = painterResource(DesignSystemR.drawable.vista_post_send),
+                    contentDescription = "اشتراک‌گذاری",
+                    modifier = Modifier.size(19.dp),
+                    colorFilter = ColorFilter.tint(actionTint),
+                )
+            }
             Spacer(Modifier.weight(1f))
             Box {
                 IconButton(
-                    onClick = { showMenu = true },
-                    modifier = Modifier.size(32.dp),
+                    onClick = {
+                        actionHaptics.tap()
+                        showMenu = true
+                    },
+                    modifier = Modifier.size(40.dp),
                 ) {
                     Icon(
                         imageVector = Icons.Default.MoreHoriz,

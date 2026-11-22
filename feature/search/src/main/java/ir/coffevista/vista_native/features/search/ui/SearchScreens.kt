@@ -35,6 +35,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.ripple
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
@@ -46,6 +47,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import ir.coffevista.vista_native.core.designsystem.component.LocalMiniPlayerSlot
 import ir.coffevista.vista_native.core.designsystem.component.VistaMiniPlayerHost
+import ir.coffevista.vista_native.core.designsystem.component.rememberBufferedTextState
+import ir.coffevista.vista_native.core.designsystem.component.rememberVistaHaptics
 import androidx.compose.ui.unit.Dp
 import ir.coffevista.vista_native.core.designsystem.glass.VistaGlassScrollSync
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -159,6 +162,7 @@ fun SearchLauncherScreen(
                     .fillMaxWidth()
                     .padding(start = 16.dp, top = 12.dp, end = 16.dp, bottom = 8.dp),
             ) {
+                val haptics = rememberVistaHaptics()
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -177,9 +181,12 @@ fun SearchLauncherScreen(
                         .clip(SearchFieldShape)
                         .clickable(
                             role = Role.Button,
-                            indication = null,
+                            indication = ripple(bounded = true),
                             interactionSource = remember { MutableInteractionSource() },
-                            onClick = onOpenWorkspace,
+                            onClick = {
+                                haptics.tap()
+                                onOpenWorkspace()
+                            },
                         )
                         .testTag(SearchTestTags.LauncherField)
                         .padding(horizontal = 16.dp),
@@ -388,6 +395,19 @@ private fun SearchField(
     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val glassState = ir.coffevista.vista_native.core.designsystem.glass.LocalVistaGlassState.current
     val fieldTint = if (isDark) Color(0xFF1A222C) else Color(0xFFFFFFFF)
+    val haptics = rememberVistaHaptics()
+    val (bufferedValue, handleValueChange) = rememberBufferedTextState(
+        externalValue = value,
+        onValueChange = onValueChange,
+    )
+    val clearAction: () -> Unit = {
+        if (value.isNotEmpty()) {
+            onClear()
+        } else {
+            handleValueChange("")
+            onClear()
+        }
+    }
     Box(
         modifier = Modifier
             .padding(start = 16.dp, top = 12.dp, end = 16.dp, bottom = 8.dp)
@@ -415,8 +435,9 @@ private fun SearchField(
             .clip(SearchFieldShape)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
-                indication = null,
+                indication = ripple(bounded = true),
             ) {
+                haptics.tap()
                 focusRequester.requestFocus()
                 keyboard?.show()
             }
@@ -427,10 +448,11 @@ private fun SearchField(
             if (showBackIcon) {
                 IconButton(
                     onClick = {
+                        haptics.tap()
                         keyboard?.hide()
                         focusManager.clearFocus()
-                        if (value.isNotEmpty()) {
-                            onClear()
+                        if (bufferedValue.isNotEmpty()) {
+                            clearAction()
                         }
                         onBack?.invoke()
                     },
@@ -451,8 +473,8 @@ private fun SearchField(
                 Spacer(Modifier.width(10.dp))
             }
             BasicTextField(
-                value = value,
-                onValueChange = onValueChange,
+                value = bufferedValue,
+                onValueChange = handleValueChange,
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxHeight()
@@ -475,7 +497,7 @@ private fun SearchField(
                 singleLine = true,
                 decorationBox = { inner ->
                     Box(contentAlignment = Alignment.CenterStart) {
-                        if (value.isEmpty()) {
+                        if (bufferedValue.isEmpty()) {
                             Text(
                                 text = "جستجوی کاربران",
                                 style = MaterialTheme.typography.bodyLarge,
@@ -487,18 +509,21 @@ private fun SearchField(
                 },
             )
             AnimatedVisibility(
-                visible = value.isNotEmpty(),
+                visible = bufferedValue.isNotEmpty(),
                 enter = fadeIn(tween(200)),
                 exit = fadeOut(tween(200)),
             ) {
                 SmallIconButton(
                     description = "پاک کردن عبارت جستجو",
                     tag = SearchTestTags.ClearQuery,
-                    onClick = onClear,
+                    onClick = {
+                        haptics.tap()
+                        clearAction()
+                    },
                 ) { color -> CloseGlyph(Modifier.size(21.dp), color) }
             }
             AnimatedVisibility(
-                visible = value.isEmpty(),
+                visible = bufferedValue.isEmpty(),
                 enter = fadeIn(tween(200)),
                 exit = fadeOut(tween(200)),
             ) {

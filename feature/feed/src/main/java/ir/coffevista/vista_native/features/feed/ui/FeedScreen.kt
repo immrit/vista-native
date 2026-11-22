@@ -125,6 +125,7 @@ import ir.coffevista.vista_native.features.feed.ui.components.ReportReasonDialog
 import ir.coffevista.vista_native.core.designsystem.component.VistaBadgedBox
 import ir.coffevista.vista_native.core.designsystem.component.VistaEmojiText
 import ir.coffevista.vista_native.core.designsystem.component.VistaFloatingActionButton
+import ir.coffevista.vista_native.core.designsystem.component.rememberVistaHaptics
 import ir.coffevista.vista_native.core.designsystem.component.VistaNotificationBadge
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material3.ripple
@@ -146,6 +147,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -1603,27 +1605,37 @@ private fun PostMedia(
             showHeartBurst = false
         }
     }
+    val vistaHaptics = rememberVistaHaptics()
+    val latestPost by rememberUpdatedState(post)
+    val latestMediaUrl by rememberUpdatedState(mediaUrl)
+    val latestPagerState by rememberUpdatedState(pagerState)
+    val latestOnDoubleTap by rememberUpdatedState(onDoubleTap)
+    val latestOnClick by rememberUpdatedState(onClick)
+    val latestOnMediaClick by rememberUpdatedState(onMediaClick)
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant)
-            .pointerInput(post.id, post.isLiked, post.likeCount) {
+            .pointerInput(post.id) {
                 detectTapGestures(
                     onDoubleTap = {
                         heartBurstKey += 1
-                        onDoubleTap()
+                        vistaHaptics.confirm()
+                        latestOnDoubleTap()
                     },
                     onTap = {
-                        if (post.videoUrl.isNullOrBlank() && onMediaClick != null) {
-                            val images = post.imageUrls.ifEmpty { listOfNotNull(mediaUrl) }
+                        val currentPost = latestPost
+                        val currentMediaClick = latestOnMediaClick
+                        if (currentPost.videoUrl.isNullOrBlank() && currentMediaClick != null) {
+                            val images = currentPost.imageUrls.ifEmpty { listOfNotNull(latestMediaUrl) }
                             if (images.isNotEmpty()) {
-                                val page = pagerState?.currentPage ?: 0
-                                onMediaClick(images, page)
+                                val page = latestPagerState?.currentPage ?: 0
+                                currentMediaClick(images, page)
                                 return@detectTapGestures
                             }
                         }
-                        onClick()
+                        latestOnClick()
                     },
                 )
             }
@@ -1832,7 +1844,7 @@ private fun PostActionRow(
     }
     val heartTint = if (isDark) actionTint else Color.Black.copy(alpha = 0.87f)
     val clipboard = LocalClipboardManager.current
-    val haptics = LocalHapticFeedback.current
+    val vistaHaptics = rememberVistaHaptics()
     var menuExpanded by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
 
@@ -1861,85 +1873,133 @@ private fun PostActionRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 10.dp),
+            .padding(start = 12.dp, end = 12.dp, top = 2.dp, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        HeartIcon(
-            filled = post.isLiked,
-            inactiveColor = heartTint,
+        Box(
             modifier = Modifier
-                .size(19.dp)
-                .graphicsLayer(scaleX = animatedLikeScale, scaleY = animatedLikeScale)
+                .size(40.dp)
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
+                    indication = ripple(bounded = false, radius = 22.dp),
                     onClick = {
                         likeScale = 1.28f
-                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        vistaHaptics.confirm()
                         onLikeClick()
-                    }
+                    },
                 ),
-        )
+            contentAlignment = Alignment.Center,
+        ) {
+            HeartIcon(
+                filled = post.isLiked,
+                inactiveColor = heartTint,
+                modifier = Modifier
+                    .size(19.dp)
+                    .graphicsLayer(scaleX = animatedLikeScale, scaleY = animatedLikeScale),
+            )
+        }
         if (!post.hideLikeCount) {
             Text(
                 text = post.likeCount.toString(),
                 modifier = Modifier
-                    .padding(start = 4.dp)
+                    .padding(end = 6.dp)
                     .testTag(FeedTestTags.likeCount(post.id)),
                 color = actionTint,
                 fontSize = 13.sp,
             )
         }
-        Spacer(Modifier.width(14.dp))
-        Image(
-            painter = painterResource(DesignSystemR.drawable.vista_post_comment),
-            contentDescription = "دیدگاه‌ها",
-            colorFilter = ColorFilter.tint(actionTint),
+        Spacer(Modifier.width(4.dp))
+        Box(
             modifier = Modifier
-                .size(19.dp)
+                .size(40.dp)
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClick = onCommentClick
+                    indication = ripple(bounded = false, radius = 22.dp),
+                    onClick = {
+                        vistaHaptics.tap()
+                        onCommentClick()
+                    },
                 ),
-        )
+            contentAlignment = Alignment.Center,
+        ) {
+            Image(
+                painter = painterResource(DesignSystemR.drawable.vista_post_comment),
+                contentDescription = "دیدگاه‌ها",
+                colorFilter = ColorFilter.tint(actionTint),
+                modifier = Modifier.size(19.dp),
+            )
+        }
         if (!post.hideCommentCount) {
             Text(
                 text = post.commentCount.toString(),
                 modifier = Modifier
-                    .padding(start = 4.dp)
+                    .padding(end = 6.dp)
                     .testTag(FeedTestTags.commentCount(post.id)),
                 color = actionTint,
                 fontSize = 13.sp,
             )
         }
-        Spacer(Modifier.width(14.dp))
-        BookmarkIcon(
-            filled = post.isSaved,
-            inactiveColor = actionTint,
+        Spacer(Modifier.width(4.dp))
+        Box(
             modifier = Modifier
-                .size(19.dp)
-                .graphicsLayer(scaleX = animatedBookmarkScale, scaleY = animatedBookmarkScale)
+                .size(40.dp)
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
+                    indication = ripple(bounded = false, radius = 22.dp),
                     onClick = {
                         bookmarkScale = 1.28f
-                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        vistaHaptics.confirm()
                         onSaveClick()
                     },
                 ),
-        )
-        Spacer(Modifier.width(14.dp))
-        Image(
-            painter = painterResource(DesignSystemR.drawable.vista_post_send),
-            contentDescription = "ارسال",
-            colorFilter = ColorFilter.tint(actionTint),
-            modifier = Modifier.size(19.dp).clickable(onClick = onShareClick),
-        )
+            contentAlignment = Alignment.Center,
+        ) {
+            BookmarkIcon(
+                filled = post.isSaved,
+                inactiveColor = actionTint,
+                modifier = Modifier
+                    .size(19.dp)
+                    .graphicsLayer(scaleX = animatedBookmarkScale, scaleY = animatedBookmarkScale),
+            )
+        }
+        Spacer(Modifier.width(4.dp))
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = ripple(bounded = false, radius = 22.dp),
+                    onClick = {
+                        vistaHaptics.tap()
+                        onShareClick()
+                    },
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Image(
+                painter = painterResource(DesignSystemR.drawable.vista_post_send),
+                contentDescription = "ارسال",
+                colorFilter = ColorFilter.tint(actionTint),
+                modifier = Modifier.size(19.dp),
+            )
+        }
         Spacer(Modifier.weight(1f))
         Box {
-            MoreDots(color = actionTint, vertical = verticalMenu, modifier = Modifier.size(32.dp).clickable { menuExpanded = true }.padding(5.dp))
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = ripple(bounded = false, radius = 22.dp),
+                        onClick = {
+                            vistaHaptics.tap()
+                            menuExpanded = true
+                        },
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                MoreDots(color = actionTint, vertical = verticalMenu, modifier = Modifier.size(22.dp))
+            }
             DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
                 if (!isOwnPost) {
                     DropdownMenuItem(

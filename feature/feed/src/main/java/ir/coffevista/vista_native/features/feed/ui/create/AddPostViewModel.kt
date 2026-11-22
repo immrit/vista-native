@@ -17,9 +17,13 @@ import ir.coffevista.vista_native.core.model.tier.UserTierCapabilities
 import ir.coffevista.vista_native.core.model.tier.UserTierPolicy
 import ir.coffevista.vista_native.features.feed.data.CreatePostRequestDto
 import ir.coffevista.vista_native.features.feed.data.FeedApi
+import ir.coffevista.vista_native.features.feed.data.PostDraft
+import ir.coffevista.vista_native.features.feed.data.PostDraftStorage
 import ir.coffevista.vista_native.features.feed.data.PostMentions
 import ir.coffevista.vista_native.features.feed.data.asEntity
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import ir.coffevista.vista_native.features.feed.data.HashtagSuggestionDto
 import ir.coffevista.vista_native.features.feed.data.PostMediaUploadGateway
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -29,6 +33,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import javax.inject.Inject
 
@@ -76,12 +81,21 @@ data class AddPostUiState(
     val hashtagSuggestions: List<HashtagSuggestionDto> = emptyList(),
     val isLoadingHashtagSuggestions: Boolean = false,
     val mentionedUsernames: List<String> = emptyList(),
+    val isDraftRestored: Boolean = false,
 ) {
     val maxGalleryImages: Int get() = tierCapabilities.maxGalleryImages
     val maxUploadBytes: Long get() = tierCapabilities.maxUploadBytes
     val maxVideoDurationMs: Long get() = tierCapabilities.maxVideoDurationMs
     val canPostMusic: Boolean get() = tierCapabilities.canPostMusic
     val canHideEngagementCounts: Boolean get() = tierCapabilities.canHideEngagementCounts
+    val hasDraftableContent: Boolean
+        get() = content.isNotBlank() ||
+            !selectedLocation.isNullOrBlank() ||
+            selectedImages.isNotEmpty() ||
+            selectedVideo != null ||
+            selectedVideoUri != null ||
+            selectedMusicUri != null ||
+            !selectedMusicUrl.isNullOrBlank()
     val canSubmit: Boolean get() = !isUploading && (
         content.isNotBlank() || selectedImages.isNotEmpty() || selectedVideo != null || selectedVideoUri != null || selectedMusicUri != null || !selectedMusicUrl.isNullOrBlank()
     )
@@ -97,7 +111,7 @@ class AddPostViewModel @Inject constructor(
     private val feedDao: FeedDao? = null,
     @ApplicationContext private val appContext: Context? = null,
     private val postUploadManager: ir.coffevista.vista_native.features.feed.data.PostUploadManager? = null,
-    private val draftStore: ir.coffevista.vista_native.features.feed.data.AddPostDraftStore? = null,
+    private val draftStore: PostDraftStorage? = null,
 ) : ViewModel() {
 
     constructor(
@@ -109,6 +123,8 @@ class AddPostViewModel @Inject constructor(
     ) : this(api, uploader, authStateProvider, ownProfileDao, postMentions, null, null, null, null)
 
     private var hashtagSearchJob: Job? = null
+    private var draftDiscarded = false
+    private var draftSavedForExit = false
 
     /** Video picked in the gallery but not trimmed yet; becomes [AddPostUiState.videoSourceUri] on success. */
     private var pendingVideoSource: Uri? = null
@@ -120,19 +136,7 @@ class AddPostViewModel @Inject constructor(
         get() = (authStateProvider.state.value as? AuthenticationState.SignedIn)?.context?.userId.orEmpty()
 
     init {
-        draftStore?.getDraft()?.let { draft ->
-            _uiState.update { current ->
-                if (current.content.isBlank()) {
-                    current.copy(
-                        content = draft.content,
-                        selectedLocation = draft.location,
-                        hideLikeCount = draft.hideLikeCount,
-                        hideCommentCount = draft.hideCommentCount,
-                        commentsDisabled = draft.commentsDisabled,
-                    )
-                } else current
-            }
-        }
+        restoreDraft()
         viewModelScope.launch {
             val userId = currentUserId
             if (userId.isNotBlank()) {
@@ -157,6 +161,55 @@ class AddPostViewModel @Inject constructor(
         }
     }
 
+    private fun restoreDraft() {
+        val draft = draftStore?.getDraft(currentUserId) ?: return
+        val videoFile = draft.videoPath?.let(::File)?.takeIf { it.exists() && it.length() > 0L }
+        val imageUris = draft.imagePaths
+            .map(::File)
+            .filter { it.exists() && it.length() > 0L }
+            .map(Uri::fromFile)
+        val musicUri = draft.musicPath
+            ?.let(::File)
+            ?.takeIf { it.exists() && it.length() > 0L }
+            ?.let(Uri::fromFile)
+        val aspect = PostAspectRatio.entries.firstOrNull { it.ratioValue == draft.aspectRatio } ?: PostAspectRatio.Square
+        _uiState.update { current ->
+            if (current.hasDraftableContent) return@update current
+            current.copy(
+                content = draft.content,
+                mentionedUsernames = extractMentions(draft.content),
+                selectedLocation = draft.location,
+                aspectRatio = aspect,
+                hideLikeCount = draft.hideLikeCount,
+                hideCommentCount = draft.hideCommentCount,
+                commentsDisabled = draft.commentsDisabled,
+                selectedImages = imageUris,
+                selectedVideo = videoFile,
+                videoSourceUri = draft.videoSourceUri?.takeIf(String::isNotBlank)?.let(Uri::parse),
+                videoDurationMs = draft.videoDurationMs,
+                isVideo = videoFile != null,
+                selectedMusicUri = musicUri,
+                selectedMusicUrl = draft.musicUrl,
+                selectedMusicTitle = draft.musicTitle,
+                musicStartMs = draft.musicStartMs,
+                musicEndMs = draft.musicEndMs,
+                musicDurationMs = draft.musicDurationMs,
+                isMusicBackgroundMode = draft.isMusicBackgroundMode,
+                isDraftRestored = true,
+            )
+        }
+        if (videoFile != null && draft.videoDurationMs <= 0L) {
+            loadVideoDuration(videoFile)
+        }
+    }
+
+    fun wasDraftDiscarded(): Boolean = draftDiscarded
+
+    private fun markEdited() {
+        draftDiscarded = false
+        draftSavedForExit = false
+    }
+
     fun initPreloaded(text: String?, mediaUris: List<Uri> = emptyList()) {
         if (!text.isNullOrBlank() && _uiState.value.content.isBlank()) {
             onContentChanged(text)
@@ -168,6 +221,7 @@ class AddPostViewModel @Inject constructor(
 
     fun onContentChanged(newContent: String) {
         if (newContent.length <= _uiState.value.maxCharLength) {
+            markEdited()
             val mentions = extractMentions(newContent)
             _uiState.update { it.copy(content = newContent, mentionedUsernames = mentions, errorMessage = null) }
             loadHashtagSuggestions(activeHashtagQuery(newContent))
@@ -177,6 +231,7 @@ class AddPostViewModel @Inject constructor(
     fun selectHashtagSuggestion(tag: String) {
         val normalized = tag.removePrefix("#").trim()
         if (normalized.isBlank()) return
+        markEdited()
         _uiState.update { state ->
             val replaced = ACTIVE_HASHTAG.replace(state.content) { match ->
                 "${match.groupValues[1]}#$normalized "
@@ -211,6 +266,7 @@ class AddPostViewModel @Inject constructor(
 
     fun onImagesSelected(uris: List<Uri>) {
         if (uris.isEmpty()) return
+        markEdited()
         val currentMax = _uiState.value.maxGalleryImages
         discardVideoFile()
         _uiState.update { current ->
@@ -230,6 +286,7 @@ class AddPostViewModel @Inject constructor(
     fun onImageCaptured(uri: Uri) {
         val current = _uiState.value.selectedImages
         if (current.size < _uiState.value.maxGalleryImages) {
+            markEdited()
             discardVideoFile()
             _uiState.update {
                 it.copy(
@@ -246,6 +303,7 @@ class AddPostViewModel @Inject constructor(
     }
 
     fun removeImage(uri: Uri) {
+        markEdited()
         _uiState.update {
             val updated = it.selectedImages.filterNot { item -> item == uri }
             it.copy(selectedImages = updated)
@@ -253,6 +311,7 @@ class AddPostViewModel @Inject constructor(
     }
 
     fun onVideoSelected(uri: Uri) {
+        markEdited()
         _uiState.update {
             it.copy(
                 selectedVideoUri = uri,
@@ -303,9 +362,10 @@ class AddPostViewModel @Inject constructor(
     }
 
     fun onVideoTrimmed(trimmedFile: File) {
+        markEdited()
         val oldFile = _uiState.value.selectedVideo
         if (oldFile != null && oldFile.absolutePath != trimmedFile.absolutePath) {
-            runCatching { oldFile.delete() }
+            deleteIfTempVideo(oldFile)
         }
         val source = pendingVideoSource
         pendingVideoSource = null
@@ -323,6 +383,7 @@ class AddPostViewModel @Inject constructor(
     }
 
     fun removeVideo() {
+        markEdited()
         discardVideoFile()
         _uiState.update {
             it.copy(
@@ -336,7 +397,13 @@ class AddPostViewModel @Inject constructor(
     }
 
     private fun discardVideoFile() {
-        runCatching { _uiState.value.selectedVideo?.delete() }
+        deleteIfTempVideo(_uiState.value.selectedVideo)
+    }
+
+    private fun deleteIfTempVideo(file: File?) {
+        if (file != null && draftStore?.isDraftFile(file) != true) {
+            runCatching { file.delete() }
+        }
     }
 
     private fun loadVideoDuration(file: File) {
@@ -363,55 +430,124 @@ class AddPostViewModel @Inject constructor(
 
     override fun onCleared() {
         super.onCleared()
-        // If the post was submitted or is uploading, PostUploadWorker owns the file and will clean it up after upload.
-        if (!_uiState.value.isSuccess && !_uiState.value.isUploading) {
-            runCatching {
-                _uiState.value.selectedVideo?.delete()
-            }
+        // If the post was submitted, is uploading, or saved as a draft, keep the file intact.
+        if (!_uiState.value.isSuccess && !_uiState.value.isUploading && !draftSavedForExit) {
+            deleteIfTempVideo(_uiState.value.selectedVideo)
         }
     }
 
     fun onAspectRatioChanged(ratio: PostAspectRatio) {
+        markEdited()
         _uiState.update { it.copy(aspectRatio = ratio) }
     }
 
     fun toggleHideLikeCount(hide: Boolean) {
+        markEdited()
         _uiState.update { it.copy(hideLikeCount = hide) }
     }
 
     fun toggleHideCommentCount(hide: Boolean) {
+        markEdited()
         _uiState.update { it.copy(hideCommentCount = hide) }
     }
 
     fun toggleCommentsDisabled(disabled: Boolean) {
+        markEdited()
         _uiState.update { it.copy(commentsDisabled = disabled) }
     }
 
     fun onLocationSelected(location: String?) {
+        markEdited()
         _uiState.update { it.copy(selectedLocation = location) }
     }
 
-    fun saveDraft() {
+    suspend fun saveDraftNow(): Boolean {
+        val store = draftStore ?: return false
         val state = _uiState.value
-        if (state.content.isNotBlank() || state.selectedLocation != null) {
-            draftStore?.saveDraft(
-                ir.coffevista.vista_native.features.feed.data.PostDraft(
-                    content = state.content,
-                    location = state.selectedLocation,
-                    aspectRatio = state.aspectRatio.ratioValue,
-                    hideLikeCount = state.hideLikeCount,
-                    hideCommentCount = state.hideCommentCount,
-                    commentsDisabled = state.commentsDisabled,
-                )
+        if (!state.hasDraftableContent) return false
+        val userId = currentUserId
+        return withContext(NonCancellable + Dispatchers.IO) {
+            val persistedImages = store.persistImages(userId, state.selectedImages)
+            val persistedVideo = if (state.isVideo) {
+                store.persistVideo(userId, state.selectedVideo, state.selectedVideoUri)
+            } else {
+                null
+            }
+            val persistedMusic = store.persistMusic(userId, state.selectedMusicUri)
+            val draft = PostDraft(
+                content = state.content,
+                location = state.selectedLocation,
+                aspectRatio = state.aspectRatio.ratioValue,
+                hideLikeCount = state.hideLikeCount,
+                hideCommentCount = state.hideCommentCount,
+                commentsDisabled = state.commentsDisabled,
+                imagePaths = persistedImages,
+                videoPath = persistedVideo,
+                videoSourceUri = state.videoSourceUri?.toString(),
+                videoDurationMs = state.videoDurationMs,
+                musicPath = persistedMusic,
+                musicUrl = state.selectedMusicUrl,
+                musicTitle = state.selectedMusicTitle,
+                musicStartMs = state.musicStartMs,
+                musicEndMs = state.musicEndMs,
+                musicDurationMs = state.musicDurationMs,
+                isMusicBackgroundMode = state.isMusicBackgroundMode,
             )
+            if (!draft.hasContent()) {
+                false
+            } else {
+                store.saveDraft(userId, draft)
+                draftSavedForExit = true
+                draftDiscarded = false
+                true
+            }
         }
     }
 
-    fun discardDraft() {
-        draftStore?.clearDraft()
+    fun saveDraft() {
+        viewModelScope.launch {
+            saveDraftNow()
+        }
+    }
+
+    fun discardDraft(resetComposer: Boolean = false) {
+        draftDiscarded = true
+        draftSavedForExit = false
+        draftStore?.clearDraft(currentUserId)
+        if (resetComposer) {
+            deleteIfTempVideo(_uiState.value.selectedVideo)
+            _uiState.update { current ->
+                current.copy(
+                    content = "",
+                    mentionedUsernames = emptyList(),
+                    hashtagSuggestions = emptyList(),
+                    selectedImages = emptyList(),
+                    selectedVideo = null,
+                    selectedVideoUri = null,
+                    videoSourceUri = null,
+                    videoDurationMs = 0L,
+                    isVideo = false,
+                    aspectRatio = PostAspectRatio.Square,
+                    hideLikeCount = false,
+                    hideCommentCount = false,
+                    commentsDisabled = false,
+                    selectedLocation = null,
+                    selectedMusicTitle = null,
+                    selectedMusicUrl = null,
+                    selectedMusicUri = null,
+                    isMusicBackgroundMode = false,
+                    musicDurationMs = 0,
+                    musicStartMs = 0,
+                    musicEndMs = 0,
+                    isDraftRestored = false,
+                    errorMessage = null,
+                )
+            }
+        }
     }
 
     fun onMusicSelected(title: String?, url: String?) {
+        markEdited()
         _uiState.update {
             if (title == null && url == null) {
                 it.copy(
@@ -429,6 +565,7 @@ class AddPostViewModel @Inject constructor(
     }
 
     fun onMusicFileSelected(uri: Uri) {
+        markEdited()
         viewModelScope.launch {
             val (durationMs, extractedTitle) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                 var dur = 0
@@ -484,6 +621,7 @@ class AddPostViewModel @Inject constructor(
     }
 
     fun onMusicTrimChanged(startMs: Int, endMs: Int) {
+        markEdited()
         val duration = _uiState.value.musicDurationMs.takeIf { it > 0 } ?: 30_000
         val maxClipMs = if (_uiState.value.isPremium) 60_000 else 15_000
         val safeStart = startMs.coerceIn(0, (duration - 1000).coerceAtLeast(0))
@@ -508,20 +646,48 @@ class AddPostViewModel @Inject constructor(
             return
         }
 
-        draftStore?.clearDraft()
+        val uploadImages = state.selectedImages.map { uri ->
+            val path = if (uri.scheme.equals("file", ignoreCase = true)) uri.path else null
+            val file = path?.let(::File)
+            if (file != null && draftStore?.isDraftFile(file) == true) {
+                Uri.fromFile(draftStore.copyDraftFileToCache(file, "upload-img-", ".jpg"))
+            } else {
+                uri
+            }
+        }
+        val uploadVideoFile = state.selectedVideo?.let { file ->
+            if (draftStore?.isDraftFile(file) == true) {
+                draftStore.copyDraftVideoForUpload(file)
+            } else {
+                file
+            }
+        }
+        val uploadMusicUri = state.selectedMusicUri?.let { uri ->
+            val path = if (uri.scheme.equals("file", ignoreCase = true)) uri.path else null
+            val file = path?.let(::File)
+            if (file != null && draftStore?.isDraftFile(file) == true) {
+                val ext = file.extension.ifBlank { "mp3" }
+                Uri.fromFile(draftStore.copyDraftFileToCache(file, "upload-music-", ".$ext"))
+            } else {
+                uri
+            }
+        }
+        draftSavedForExit = false
+        draftDiscarded = true
+        draftStore?.clearDraft(userId)
 
         if (postUploadManager != null) {
             postUploadManager.startUpload(
                 ir.coffevista.vista_native.features.feed.data.PendingPostUpload(
                     userId = userId,
                     content = state.content,
-                    images = state.selectedImages,
-                    videoFile = state.selectedVideo,
+                    images = uploadImages,
+                    videoFile = uploadVideoFile,
                     videoUri = state.selectedVideoUri,
                     isVideo = state.isVideo,
                     aspectRatio = state.aspectRatio.ratioValue,
                     location = state.selectedLocation,
-                    musicUri = state.selectedMusicUri,
+                    musicUri = uploadMusicUri,
                     musicUrl = state.selectedMusicUrl,
                     musicTitle = state.selectedMusicTitle,
                     musicStartMs = state.musicStartMs,
@@ -553,9 +719,9 @@ class AddPostViewModel @Inject constructor(
                 val mentionIds = postMentions.resolve(extractMentions(state.content))
                 var finalThumbUrl: String? = null
                 val finalImageUrls = mutableListOf<String>()
-                var effectiveMusicStartMs = state.musicStartMs.takeIf { state.selectedMusicUri != null || state.selectedMusicUrl != null }
-                var effectiveMusicEndMs = state.musicEndMs.takeIf { state.selectedMusicUri != null || state.selectedMusicUrl != null }
-                val finalMusicUrl = state.selectedMusicUri?.let { audioUri ->
+                var effectiveMusicStartMs = state.musicStartMs.takeIf { uploadMusicUri != null || state.selectedMusicUrl != null }
+                var effectiveMusicEndMs = state.musicEndMs.takeIf { uploadMusicUri != null || state.selectedMusicUrl != null }
+                val finalMusicUrl = uploadMusicUri?.let { audioUri ->
                     _uiState.update { it.copy(uploadStatusMessage = "در حال آپلود موسیقی…") }
                     val audioRes = uploader.uploadAudio(
                         userId = userId,
@@ -574,9 +740,9 @@ class AddPostViewModel @Inject constructor(
                 } ?: state.selectedMusicUrl
 
                 // 1. Upload Video if present
-                if (state.isVideo && (state.selectedVideo != null || state.selectedVideoUri != null)) {
+                if (state.isVideo && (uploadVideoFile != null || state.selectedVideoUri != null)) {
                     _uiState.update { it.copy(uploadStatusMessage = "در حال آپلود ویدیو…") }
-                    val videoFile = state.selectedVideo ?: run {
+                    val videoFile = uploadVideoFile ?: run {
                         val uri = state.selectedVideoUri ?: throw java.io.IOException("فایل ویدیو یافت نشد")
                         val temp = File(appContext?.cacheDir ?: File.createTempFile("post-vid-", ".mp4").parentFile, "post_video_${System.currentTimeMillis()}.mp4")
                         appContext?.contentResolver?.openInputStream(uri)?.use { input ->
@@ -596,9 +762,9 @@ class AddPostViewModel @Inject constructor(
                     finalThumbUrl = result.thumbnailUrl
                 }
                 // 2. Upload Images if present
-                else if (state.selectedImages.isNotEmpty()) {
-                    val totalImages = state.selectedImages.size
-                    state.selectedImages.forEachIndexed { index, imageUri ->
+                else if (uploadImages.isNotEmpty()) {
+                    val totalImages = uploadImages.size
+                    uploadImages.forEachIndexed { index, imageUri ->
                         _uiState.update {
                             it.copy(uploadStatusMessage = "در حال آپلود تصویر (${index + 1} از $totalImages)…")
                         }
@@ -689,6 +855,7 @@ class AddPostViewModel @Inject constructor(
     }
 
     fun toggleMusicBackgroundMode(background: Boolean) {
+        markEdited()
         _uiState.update { it.copy(isMusicBackgroundMode = background) }
     }
 

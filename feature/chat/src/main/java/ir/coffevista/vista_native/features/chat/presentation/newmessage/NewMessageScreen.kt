@@ -53,6 +53,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import ir.coffevista.vista_native.core.designsystem.component.rememberBufferedTextState
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
@@ -156,9 +157,13 @@ fun NewMessageScreen(
                 }
             }
             if (state.isGroupMode) {
-                OutlinedTextField(
-                    value = state.groupName,
+                val (bufferedGroupName, onGroupNameChange) = rememberBufferedTextState(
+                    externalValue = state.groupName,
                     onValueChange = onGroupNameChanged,
+                )
+                OutlinedTextField(
+                    value = bufferedGroupName,
+                    onValueChange = onGroupNameChange,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                     singleLine = true,
                     label = { Text("نام گروه") },
@@ -180,16 +185,20 @@ fun NewMessageScreen(
                         }
                     }
                 }
-            OutlinedTextField(
-                value = state.query,
+            val (bufferedQuery, onSearchQueryChange) = rememberBufferedTextState(
+                externalValue = state.query,
                 onValueChange = onQueryChanged,
+            )
+            OutlinedTextField(
+                value = bufferedQuery,
+                onValueChange = onSearchQueryChange,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                 singleLine = true,
                 placeholder = { Text("جستجو") },
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                trailingIcon = if (state.query.isNotEmpty()) {
+                trailingIcon = if (bufferedQuery.isNotEmpty()) {
                     {
-                        IconButton(onClick = { onQueryChanged("") }) {
+                        IconButton(onClick = { onSearchQueryChange("") }) {
                             Icon(Icons.Default.Close, contentDescription = "پاک کردن جستجو")
                         }
                     }

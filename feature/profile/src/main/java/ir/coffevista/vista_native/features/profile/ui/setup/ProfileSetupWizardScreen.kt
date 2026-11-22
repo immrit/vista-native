@@ -44,6 +44,7 @@ import androidx.lifecycle.viewModelScope
 import coil.compose.AsyncImage
 import dagger.hilt.android.lifecycle.HiltViewModel
 import ir.coffevista.vista_native.core.common.Outcome
+import ir.coffevista.vista_native.core.designsystem.component.rememberBufferedTextState
 import ir.coffevista.vista_native.core.model.session.AuthenticationState
 import ir.coffevista.vista_native.core.model.session.AuthenticationStateProvider
 import ir.coffevista.vista_native.core.security.SessionStore
@@ -207,23 +208,35 @@ fun ProfileSetupWizardScreen(onCompleted: () -> Unit) {
                 Text("مرحله ${page + 1} از ۲", color = MaterialTheme.colorScheme.primary)
                 if (page == 0) {
                     Text("خودتان را معرفی کنید", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                    OutlinedTextField(
-                        value = state.username,
+                    val (bufferedUsername, onUsernameChange) = rememberBufferedTextState(
+                        externalValue = state.username,
                         onValueChange = { value -> viewModel.change { it.copy(username = value) } },
+                    )
+                    OutlinedTextField(
+                        value = bufferedUsername,
+                        onValueChange = onUsernameChange,
                         modifier = Modifier.fillMaxWidth(),
                         label = { Text("نام کاربری") },
                         singleLine = true,
                     )
-                    OutlinedTextField(
-                        value = state.fullName,
+                    val (bufferedFullName, onFullNameChange) = rememberBufferedTextState(
+                        externalValue = state.fullName,
                         onValueChange = { value -> viewModel.change { it.copy(fullName = value) } },
+                    )
+                    OutlinedTextField(
+                        value = bufferedFullName,
+                        onValueChange = onFullNameChange,
                         modifier = Modifier.fillMaxWidth(),
                         label = { Text("نام و نام خانوادگی") },
                         singleLine = true,
                     )
-                    OutlinedTextField(
-                        value = state.bio,
+                    val (bufferedBio, onBioChange) = rememberBufferedTextState(
+                        externalValue = state.bio,
                         onValueChange = { value -> viewModel.change { it.copy(bio = value) } },
+                    )
+                    OutlinedTextField(
+                        value = bufferedBio,
+                        onValueChange = onBioChange,
                         modifier = Modifier.fillMaxWidth(),
                         label = { Text("بیو") },
                         minLines = 3,

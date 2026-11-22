@@ -63,6 +63,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import ir.coffevista.vista_native.core.designsystem.component.rememberVistaHaptics
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -408,16 +409,20 @@ private fun DeleteAccountStepOne(
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
             modifier = Modifier.fillMaxWidth(),
         ) {
+            val haptics = rememberVistaHaptics()
             Column {
                 deletionReasons.forEachIndexed { index, option ->
                     val selected = selectedReason == option.key
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { onSelectReason(option.key) }
                             .background(
                                 if (selected) errorColor.copy(alpha = 0.06f) else Color.Transparent,
                             )
+                            .clickable {
+                                haptics.tap()
+                                onSelectReason(option.key)
+                            }
                             .padding(horizontal = 10.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {

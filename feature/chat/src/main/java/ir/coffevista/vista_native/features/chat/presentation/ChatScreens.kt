@@ -162,6 +162,7 @@ import androidx.compose.material.icons.filled.EmojiEmotions
 import androidx.compose.material.icons.filled.Keyboard
 import ir.coffevista.vista_native.core.designsystem.component.VistaEmojiText
 import ir.coffevista.vista_native.core.designsystem.component.VistaEmoji
+import ir.coffevista.vista_native.core.designsystem.component.rememberVistaHaptics
 import ir.coffevista.vista_native.features.chat.domain.repository.ChatResult
 import ir.coffevista.vista_native.features.chat.presentation.components.EmojiCursorHelper
 import ir.coffevista.vista_native.features.chat.presentation.components.saveChatAttachmentToDevice
@@ -366,6 +367,7 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import java.util.UUID
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @Composable
@@ -985,6 +987,7 @@ private fun ConversationRow(
             )
         }
         // Main row content, translated by swipe offset
+        val rowHaptics = rememberVistaHaptics()
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -994,9 +997,11 @@ private fun ConversationRow(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(76.dp)
+                    .background(MaterialTheme.colorScheme.surface)
                     .combinedClickable(
                         role = Role.Button,
                         onClick = {
+                            rowHaptics.tap()
                             if (kotlin.math.abs(swipeOffset.value) > 4f) {
                                 // Dismiss swipe on tap
                                 coroutineScope.launch { swipeOffset.animateTo(0f, spring(stiffness = Spring.StiffnessMediumLow)) }
@@ -1004,9 +1009,11 @@ private fun ConversationRow(
                                 onClick()
                             }
                         },
-                        onLongClick = onLongClick,
+                        onLongClick = {
+                            rowHaptics.heavy()
+                            onLongClick()
+                        },
                     )
-                    .background(MaterialTheme.colorScheme.surface)
                     .padding(horizontal = 16.dp, vertical = 10.dp)
                     .semantics {
                         contentDescription = buildString {
@@ -1405,17 +1412,45 @@ private fun ConversationActionRow(text: String, icon: ImageVector, onClick: () -
 }
 
 @Composable
+private fun rememberDebouncedConnectionState(
+    state: RealtimeConnectionState,
+): RealtimeConnectionState {
+    var displayed by remember { mutableStateOf(RealtimeConnectionState.CONNECTED) }
+    LaunchedEffect(state) {
+        when (state) {
+            RealtimeConnectionState.CONNECTED,
+            RealtimeConnectionState.PAUSED -> {
+                displayed = RealtimeConnectionState.CONNECTED
+            }
+            RealtimeConnectionState.CONNECTING,
+            RealtimeConnectionState.AUTHENTICATING,
+            RealtimeConnectionState.RECONNECTING -> {
+                delay(2_500L)
+                displayed = state
+            }
+            RealtimeConnectionState.DISCONNECTED,
+            RealtimeConnectionState.FAILED -> {
+                delay(1_200L)
+                displayed = state
+            }
+        }
+    }
+    return displayed
+}
+
+@Composable
 private fun ConnectionStatusIndicator(state: RealtimeConnectionState) {
-    val color = when (state) {
+    val visibleState = rememberDebouncedConnectionState(state)
+    val color = when (visibleState) {
         RealtimeConnectionState.CONNECTED -> Color(0xFF2E7D32)
         RealtimeConnectionState.CONNECTING,
         RealtimeConnectionState.AUTHENTICATING,
         RealtimeConnectionState.RECONNECTING -> Color(0xFFFF9800)
         else -> Color(0xFFD32F2F)
     }
-    val connecting = state == RealtimeConnectionState.CONNECTING ||
-        state == RealtimeConnectionState.AUTHENTICATING ||
-        state == RealtimeConnectionState.RECONNECTING
+    val connecting = visibleState == RealtimeConnectionState.CONNECTING ||
+        visibleState == RealtimeConnectionState.AUTHENTICATING ||
+        visibleState == RealtimeConnectionState.RECONNECTING
     Box(
         modifier = Modifier
             .padding(start = 8.dp)
@@ -3318,10 +3353,11 @@ fun MessageDetailScreen(
                                         fontWeight = FontWeight.SemiBold,
                                     )
                                 } else {
+                                    val visibleConnectionState = rememberDebouncedConnectionState(state.connectionState)
                                     val subtitle = when {
-                                        state.connectionState == RealtimeConnectionState.CONNECTING ||
-                                        state.connectionState == RealtimeConnectionState.RECONNECTING -> "در حال اتصال..."
-                                        state.connectionState == RealtimeConnectionState.DISCONNECTED -> "در انتظار شبکه..."
+                                        visibleConnectionState == RealtimeConnectionState.CONNECTING ||
+                                        visibleConnectionState == RealtimeConnectionState.RECONNECTING -> "در حال اتصال..."
+                                        visibleConnectionState == RealtimeConnectionState.DISCONNECTED -> "در انتظار شبکه..."
                                         state.conversation?.type == ConversationType.GROUP -> when {
                                             state.conversation.typingUserIds.isNotEmpty() -> "در حال نوشتن..."
                                             state.isGroupLoading && state.groupMembers.isEmpty() -> "در حال بررسی اعضا..."
@@ -4128,6 +4164,7 @@ private fun MediaAlbumBubble(
         roundTop = true,
         roundBottom = caption == null,
     ).toAbsoluteShape()
+    val albumHaptics = rememberVistaHaptics()
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -4142,7 +4179,10 @@ private fun MediaAlbumBubble(
                     }
                 },
                 onLongClick = {
-                    if (!selectionMode) onLongPress()
+                    if (!selectionMode) {
+                        albumHaptics.heavy()
+                        onLongPress()
+                    }
                 },
             )
             .absolutePadding(
@@ -4679,6 +4719,7 @@ private fun MessageBubble(
     } else {
         1f
     }
+    val msgHaptics = rememberVistaHaptics()
     Row(
         Modifier
             .fillMaxWidth()
@@ -4703,7 +4744,10 @@ private fun MessageBubble(
                     }
                 },
                 onLongClick = {
-                    if (!selectionMode && message.content != MessageContent.Deleted) onLongPress()
+                    if (!selectionMode && message.content != MessageContent.Deleted) {
+                        msgHaptics.heavy()
+                        onLongPress()
+                    }
                 },
             )
             .absolutePadding(
@@ -4818,7 +4862,10 @@ private fun MessageBubble(
                             else -> onOpenContextMenu(coordinatesHolder.coordinates?.takeIf { it.isAttached }?.boundsInWindow())
                         }
                     },
-                    onLongClick = { onLongPress() },
+                    onLongClick = {
+                        msgHaptics.heavy()
+                        onLongPress()
+                    },
                 )
                 .semantics { contentDescription = description }
             Box(
@@ -7526,12 +7573,17 @@ private fun Composer(
                                     animationSpec = tween(120, easing = FastOutSlowInEasing),
                                 ) + fadeOut(tween(100)),
                             ) {
+                                val sendHaptics = rememberVistaHaptics()
                                 Box(
                                     modifier = Modifier
                                         .size(38.dp)
                                         .clip(CircleShape)
                                         .background(MaterialTheme.colorScheme.primary)
-                                        .clickable {
+                                        .clickable(
+                                            interactionSource = remember { MutableInteractionSource() },
+                                            indication = ripple(bounded = true, color = Color.White),
+                                        ) {
+                                            sendHaptics.confirm()
                                             onSend()
                                             if (!isEmojiPanelOpen) {
                                                 controller.openKeyboard()

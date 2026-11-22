@@ -24,6 +24,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -58,6 +59,11 @@ fun VistaButton(
     containerColor: Color? = null,
     content: @Composable RowScope.() -> Unit,
 ) {
+    val haptics = rememberVistaHaptics()
+    val hapticClick: () -> Unit = {
+        haptics.tap()
+        onClick()
+    }
     val resolvedModifier = modifier
         .defaultMinSize(
             minWidth = VistaComponentSize.TouchTarget,
@@ -83,13 +89,13 @@ fun VistaButton(
     }
     when (variant) {
         VistaButtonVariant.Outline -> OutlinedButton(
-            onClick = onClick,
+            onClick = hapticClick,
             modifier = resolvedModifier,
             enabled = enabled && !loading,
             content = renderedContent,
         )
         VistaButtonVariant.Text -> TextButton(
-            onClick = onClick,
+            onClick = hapticClick,
             modifier = resolvedModifier,
             enabled = enabled && !loading,
             content = renderedContent,
@@ -102,7 +108,7 @@ fun VistaButton(
                 else -> error("Handled above")
             }
             Button(
-                onClick = onClick,
+                onClick = hapticClick,
                 modifier = resolvedModifier,
                 enabled = enabled && !loading,
                 colors = ButtonDefaults.buttonColors(containerColor = containerColor ?: defaultColor),
@@ -137,6 +143,7 @@ fun VistaFloatingActionButton(
     }
     val glassState = LocalVistaGlassState.current
     val isDark = isSystemInDarkTheme()
+    val haptics = rememberVistaHaptics()
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val pressScale by animateFloatAsState(
@@ -182,9 +189,12 @@ fun VistaFloatingActionButton(
             )
             .clickable(
                 interactionSource = interactionSource,
-                indication = null,
+                indication = ripple(bounded = true, color = Color.White),
                 role = Role.Button,
-                onClick = onClick,
+                onClick = {
+                    haptics.tap()
+                    onClick()
+                },
             )
             .semantics {
                 if (contentDescription != null) {

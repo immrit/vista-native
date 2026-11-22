@@ -53,6 +53,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalLayoutDirection
+import ir.coffevista.vista_native.core.designsystem.component.rememberBufferedTextState
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
@@ -149,9 +150,13 @@ fun FollowersFollowingScreen(
                 }
 
                 // Search Bar
-                OutlinedTextField(
-                    value = uiState.searchQuery,
+                val (bufferedSearchQuery, onSearchQueryChange) = rememberBufferedTextState(
+                    externalValue = uiState.searchQuery,
                     onValueChange = viewModel::onSearchQueryChanged,
+                )
+                OutlinedTextField(
+                    value = bufferedSearchQuery,
+                    onValueChange = onSearchQueryChange,
                     placeholder = { Text("جستجو در کاربران…", fontSize = 13.sp, color = Color.Gray) },
                     leadingIcon = {
                         Icon(
@@ -162,8 +167,8 @@ fun FollowersFollowingScreen(
                         )
                     },
                     trailingIcon = {
-                        if (uiState.searchQuery.isNotBlank()) {
-                            IconButton(onClick = { viewModel.onSearchQueryChanged("") }) {
+                        if (bufferedSearchQuery.isNotBlank()) {
+                            IconButton(onClick = { onSearchQueryChange("") }) {
                                 Icon(
                                     imageVector = Icons.Default.Close,
                                     contentDescription = "پاک کردن",

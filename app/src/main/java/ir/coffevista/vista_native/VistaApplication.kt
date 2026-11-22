@@ -1,14 +1,25 @@
 package ir.coffevista.vista_native
 
 import android.app.Application
+import android.content.Context
+import android.graphics.drawable.BitmapDrawable
+import android.net.Uri
 import android.os.Build
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
 import coil.ImageLoader
 import coil.ImageLoaderFactory
+import coil.decode.DataSource
 import coil.decode.GifDecoder
 import coil.decode.ImageDecoderDecoder
+import coil.fetch.DrawableResult
+import coil.fetch.FetchResult
+import coil.fetch.Fetcher
+import coil.request.Options
+import coil.size.pxOrElse
 import dagger.hilt.android.HiltAndroidApp
+import ir.coffevista.vista_native.core.designsystem.component.VistaMediaBrowserHelpers
+import ir.coffevista.vista_native.core.designsystem.component.loadVistaLocalMediaThumbnail
 import ir.coffevista.vista_native.core.network.ExternalMedia
 import javax.inject.Inject
 import okhttp3.OkHttpClient
@@ -109,6 +120,8 @@ class VistaApplication : Application(), Configuration.Provider, ImageLoaderFacto
             }
         ir.coffevista.vista_native.core.designsystem.component.VistaDirectShareRegistry.current =
             directShareGateway
+        ir.coffevista.vista_native.features.feed.ui.components.FeedVideoPlaybackCoordinator
+            .configureHttpClient(externalMediaClient)
         ir.coffevista.vista_native.crash.VistaCrashReporter.install(this)
         ir.coffevista.vista_native.worker.MediaRetentionWorker.schedule(this)
     }
@@ -116,6 +129,7 @@ class VistaApplication : Application(), Configuration.Provider, ImageLoaderFacto
     override fun newImageLoader(): ImageLoader = ImageLoader.Builder(this)
         .okHttpClient(externalMediaClient)
         .components {
+            add(LocalVideoThumbnailFetcher.Factory(this@VistaApplication))
             if (Build.VERSION.SDK_INT >= 28) {
                 add(ImageDecoderDecoder.Factory())
             } else {
@@ -124,4 +138,51 @@ class VistaApplication : Application(), Configuration.Provider, ImageLoaderFacto
         }
         .crossfade(true)
         .build()
+}
+
+private class LocalVideoThumbnailFetcher(
+    private val context: Context,
+    private val uri: Uri,
+    private val options: Options,
+) : Fetcher {
+    override suspend fun fetch(): FetchResult? {
+        val widthPx = options.size.width.pxOrElse { 320 }
+        val heightPx = options.size.height.pxOrElse { 320 }
+        val targetPx = minOf(widthPx, heightPx).coerceIn(128, 720)
+        val bitmap = loadVistaLocalMediaThumbnail(
+            context = context,
+            uri = uri,
+            isVideo = true,
+            targetSizePx = targetPx,
+        ) ?: return null
+        return DrawableResult(
+            drawable = BitmapDrawable(context.resources, bitmap),
+            isSampled = true,
+            dataSource = DataSource.DISK,
+        )
+    }
+
+    class Factory(
+        private val context: Context,
+    ) : Fetcher.Factory<Uri> {
+        override fun create(data: Uri, options: Options, imageLoader: ImageLoader): Fetcher? {
+            if (!isLocalVideoUri(data)) return null
+            return LocalVideoThumbnailFetcher(context, data, options)
+        }
+
+        private fun isLocalVideoUri(uri: Uri): Boolean {
+            val scheme = uri.scheme?.lowercase() ?: return false
+            if (scheme == "content") {
+                val mime = runCatching { context.contentResolver.getType(uri) }.getOrNull().orEmpty()
+                if (mime.startsWith("video/", ignoreCase = true)) return true
+                return uri.toString().contains("/video/", ignoreCase = true)
+            }
+            if (scheme == "file") {
+                val ext = VistaMediaBrowserHelpers.extensionFromFileName(uri.path.orEmpty())
+                return ext in VistaMediaBrowserHelpers.CHAT_ALLOWED_VIDEO_EXTENSIONS ||
+                    ext in setOf("avi", "flv", "wmv", "ts")
+            }
+            return false
+        }
+    }
 }

@@ -11,6 +11,9 @@ import ir.coffevista.vista_native.features.feed.data.CreatePostRequestDto
 import ir.coffevista.vista_native.features.feed.data.CreatePostResponseDto
 import ir.coffevista.vista_native.features.feed.data.FeedApi
 import ir.coffevista.vista_native.features.feed.data.FeedPostDto
+import ir.coffevista.vista_native.features.feed.data.PostDraft
+import ir.coffevista.vista_native.features.feed.data.PostDraftCodec
+import ir.coffevista.vista_native.features.feed.data.PostDraftStorage
 import ir.coffevista.vista_native.features.feed.data.PostMediaUploadGateway
 import ir.coffevista.vista_native.features.feed.data.UploadedMediaResult
 import kotlinx.coroutines.Dispatchers
@@ -276,5 +279,129 @@ class AddPostViewModelTest {
         assertFalse(state.isSuccess)
         assertFalse(state.isUploading)
         assertEquals("سرور در دسترس نیست", state.errorMessage)
+    }
+
+    @Test
+    fun `post draft codec round-trips full draft including media metadata`() {
+        val original = PostDraft(
+            content = "پیش‌نویس تستی",
+            location = "تهران",
+            aspectRatio = "4:5",
+            hideLikeCount = true,
+            hideCommentCount = true,
+            commentsDisabled = true,
+            imagePaths = listOf("/tmp/img_0.jpg", "/tmp/img_1.jpg"),
+            videoPath = "/tmp/draft_video.mp4",
+            videoSourceUri = "content://media/12",
+            videoDurationMs = 15_000L,
+            musicPath = "/tmp/draft_music.mp3",
+            musicUrl = "https://cdn.example.com/song.mp3",
+            musicTitle = "آهنگ نمونه",
+            musicStartMs = 3_000,
+            musicEndMs = 18_000,
+            musicDurationMs = 90_000,
+            isMusicBackgroundMode = true,
+        )
+        assertTrue(original.hasContent())
+        val decoded = PostDraftCodec.decode(PostDraftCodec.encode(original))
+        assertEquals(original, decoded)
+        assertFalse(PostDraft().hasContent())
+    }
+
+    @Test
+    fun `draft save restore discard and submit-copy preserve media safely`() = runTest(testDispatcher) {
+        val tempRoot = createTempDir(prefix = "draft-vm-test-")
+        try {
+            val draftDir = File(tempRoot, "post_drafts/test-user-123").apply { mkdirs() }
+            val cacheDir = File(tempRoot, "cache").apply { mkdirs() }
+            val sourceVideo = File(tempRoot, "trimmed.mp4").apply { writeBytes(byteArrayOf(1, 2, 3, 4)) }
+            val fakeStorage = object : PostDraftStorage {
+                private val saved = mutableMapOf<String, PostDraft>()
+                override fun saveDraft(userId: String, draft: PostDraft) {
+                    saved[userId] = draft
+                }
+                override fun getDraft(userId: String): PostDraft? = saved[userId]
+                override fun clearDraft(userId: String) {
+                    saved.remove(userId)
+                    draftDir.deleteRecursively()
+                }
+                override fun persistImages(userId: String, uris: List<Uri>) = emptyList<String>()
+                override fun persistVideo(userId: String, videoFile: File?, videoUri: Uri?): String? {
+                    if (videoFile == null || !videoFile.exists()) return null
+                    draftDir.mkdirs()
+                    val dest = File(draftDir, "draft_video.mp4")
+                    if (videoFile.canonicalPath != dest.canonicalPath) {
+                        videoFile.copyTo(dest, overwrite = true)
+                    }
+                    return dest.absolutePath
+                }
+                override fun persistMusic(userId: String, musicUri: Uri?): String? = null
+                override fun isDraftFile(file: File): Boolean =
+                    file.canonicalPath.startsWith(draftDir.canonicalPath)
+                override fun copyDraftVideoForUpload(videoFile: File): File =
+                    copyDraftFileToCache(videoFile, "upload-video-", ".mp4")
+                override fun copyDraftFileToCache(file: File, prefix: String, suffix: String): File {
+                    val out = File.createTempFile(prefix, suffix, cacheDir)
+                    file.copyTo(out, overwrite = true)
+                    return out
+                }
+            }
+
+            var uploadedVideoExistsAtUploadTime = false
+            val recordingUploader = object : PostMediaUploadGateway {
+                override suspend fun uploadImage(userId: String, uri: Uri, maxBytes: Long, onProgress: (Float) -> Unit) =
+                    error("unused")
+                override suspend fun uploadVideo(userId: String, videoFile: File, maxBytes: Long, onProgress: (Float) -> Unit): UploadedMediaResult {
+                    uploadedVideoExistsAtUploadTime = videoFile.exists() && videoFile.length() == 4L
+                    return UploadedMediaResult(url = "https://cdn.test/video.mp4", objectKey = "k1", isVideo = true)
+                }
+                override suspend fun uploadAudio(userId: String, uri: Uri, maxBytes: Long, startMs: Int, endMs: Int, onProgress: (Float) -> Unit) =
+                    error("unused")
+                override suspend fun deleteUpload(objectKey: String) = true
+            }
+
+            fun newVm() = AddPostViewModel(
+                api = fakeApi,
+                uploader = recordingUploader,
+                authStateProvider = authStateProvider,
+                ownProfileDao = FakeOwnProfileDao(),
+                postMentions = ir.coffevista.vista_native.features.feed.data.PostMentions(
+                    object : ir.coffevista.vista_native.features.feed.data.PostMentionsApi {
+                        override suspend fun profile(username: String) =
+                            ir.coffevista.vista_native.features.feed.data.PostMentionProfileDto(userId = "id")
+                        override suspend fun add(postId: String, request: ir.coffevista.vista_native.features.feed.data.PostMentionsRequestDto) = Unit
+                    },
+                ),
+                draftStore = fakeStorage,
+            )
+
+            // 1. Compose with video + location + aspect ratio (even with empty caption!) and save draft
+            val vm1 = newVm()
+            vm1.onLocationSelected("شیراز")
+            vm1.onAspectRatioChanged(PostAspectRatio.Portrait)
+            vm1.toggleHideLikeCount(true)
+            vm1.onVideoTrimmed(sourceVideo)
+            assertTrue(vm1.saveDraftNow())
+
+            // 2. Reopen ViewModel and verify full draft restoration
+            val vm2 = newVm()
+            val restored = vm2.uiState.value
+            assertTrue(restored.isDraftRestored)
+            assertEquals("شیراز", restored.selectedLocation)
+            assertEquals(PostAspectRatio.Portrait, restored.aspectRatio)
+            assertTrue(restored.hideLikeCount)
+            assertTrue(restored.isVideo)
+            assertNotNull(restored.selectedVideo)
+            assertTrue(restored.selectedVideo!!.exists())
+
+            // 3. Submit restored draft and ensure video copy stays intact even after draft directory is cleared
+            vm2.submitPost()
+            advanceUntilIdle()
+            assertTrue(vm2.uiState.value.isSuccess)
+            assertTrue(uploadedVideoExistsAtUploadTime)
+            assertEquals(null, fakeStorage.getDraft("test-user-123"))
+        } finally {
+            tempRoot.deleteRecursively()
+        }
     }
 }

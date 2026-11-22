@@ -88,7 +88,7 @@ internal suspend fun loadVideoThumbnails(
         retriever.setDataSource(context, uri)
         for (index in 0 until count) {
             currentCoroutineContext().ensureActive()
-            val timeUs = (durationMs * 1000L) * index / count + 1000L
+            val timeUs = ((durationMs * 1000L) * (index * 2L + 1L) / (count * 2L)).coerceAtLeast(0L)
 
             val frame: Bitmap? = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O_MR1) {
                 try {
@@ -132,13 +132,82 @@ internal suspend fun loadVideoThumbnails(
 }
 
 /**
- * Lossless trim of `[startMs, endMs]` into a new MP4 (MediaExtractor → MediaMuxer, no re-encode).
+ * Preserves true video presentation timestamps (including non-monotonic H.264/HEVC B-frames)
+ * shifted relative to [baseUs]. Open-GOP samples before [baseUs] return `null` and are skipped.
+ */
+internal fun normalizeVideoSamplePtsUs(sampleTimeUs: Long, baseUs: Long): Long? {
+    if (sampleTimeUs < baseUs) return null
+    return sampleTimeUs - baseUs
+}
+
+/**
+ * Ensures strictly monotonic audio timestamps relative to [baseUs] for [MediaMuxer].
+ */
+internal fun normalizeAudioSamplePtsUs(
+    sampleTimeUs: Long,
+    baseUs: Long,
+    lastAudioPtsUs: Long?,
+): Long {
+    val raw = (sampleTimeUs - baseUs).coerceAtLeast(0L)
+    return if (lastAudioPtsUs != null && raw <= lastAudioPtsUs) {
+        lastAudioPtsUs + 1_000L
+    } else {
+        raw
+    }
+}
+
+/**
+ * Decides whether `[startMs, endMs]` is safe to trim via zero-reencode stream copy (`MediaMuxer`)
+ * rather than GPU surface-to-surface H.264 transcoding.
+ */
+internal fun shouldUseLosslessFastPath(
+    videoMime: String,
+    audioMime: String?,
+    isHdr: Boolean,
+    hasNonMonotonicVideoPts: Boolean,
+    startsWithSyncFrame: Boolean,
+    videoSampleCount: Int,
+    seekDriftUs: Long,
+): Boolean =
+    videoMime.equals(MediaFormat.MIMETYPE_VIDEO_AVC, ignoreCase = true) &&
+        (audioMime == null || audioMime.equals(MediaFormat.MIMETYPE_AUDIO_AAC, ignoreCase = true)) &&
+        !isHdr &&
+        !hasNonMonotonicVideoPts &&
+        startsWithSyncFrame &&
+        videoSampleCount >= 2 &&
+        seekDriftUs <= MAX_LOSSLESS_SEEK_DRIFT_US
+
+private data class TrimPreScan(
+    val videoMime: String,
+    val audioMime: String?,
+    val rotation: Int,
+    val isHdr: Boolean,
+    val hasNonMonotonicVideoPts: Boolean,
+    val startsWithSyncFrame: Boolean,
+    val videoSampleCount: Int,
+    val seekDriftUs: Long,
+) {
+    val canUseLossless: Boolean
+        get() = shouldUseLosslessFastPath(
+            videoMime = videoMime,
+            audioMime = audioMime,
+            isHdr = isHdr,
+            hasNonMonotonicVideoPts = hasNonMonotonicVideoPts,
+            startsWithSyncFrame = startsWithSyncFrame,
+            videoSampleCount = videoSampleCount,
+            seekDriftUs = seekDriftUs,
+        )
+}
+
+/**
+ * Hybrid trim of `[startMs, endMs]` into a faststart, universally playable MP4:
  *
- * - Video and audio are written in one interleaved pass.
- * - The clip begins on the keyframe at or before [startMs] (the trimmer snaps the window to a
- *   keyframe, so the result matches what the user saw) and never exceeds [maxDurationMs].
- * - The source rotation is preserved so portrait videos are not exported sideways.
- * - Cancelling the calling coroutine stops the work and deletes the partial file.
+ * - Pre-scans track codecs and timestamps in `[startMs, endMs]`.
+ * - Uses lossless keyframe-aligned copy (`MediaExtractor -> MediaMuxer -> Mp4FastStart`) when the
+ *   slice is standard SDR H.264/AAC with strictly monotonic timestamps and small keyframe drift.
+ * - Automatically uses GPU hardware transcoding (`VideoTranscodeEngine`, 0 B-frames + `Mp4FastStart`)
+ *   when the source contains B-frames, Open-GOP pre-sync frames, HEVC/VP9/AV1, HDR, non-AAC audio,
+ *   large keyframe drift, or if lossless output fails self-verification.
  */
 internal suspend fun trimVideo(
     context: Context,
@@ -149,11 +218,54 @@ internal suspend fun trimVideo(
 ): File = withContext(Dispatchers.IO) {
     if (endMs <= startMs) throw VideoTrimException("لطفاً بازه زمانی معتبری انتخاب کنید")
 
-    val output = File.createTempFile("trimmed-", ".mp4", context.cacheDir)
+    val preScan = inspectTrimRange(context, uri, startMs, endMs, maxDurationMs)
+    if (preScan.canUseLossless) {
+        val losslessFile = try {
+            trimVideoLossless(
+                context = context,
+                uri = uri,
+                startMs = startMs,
+                endMs = endMs,
+                maxDurationMs = maxDurationMs,
+                rotation = preScan.rotation,
+            )
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            null
+        }
+        if (losslessFile != null) {
+            if (validateTrimmedMp4(losslessFile)) {
+                return@withContext losslessFile
+            }
+            losslessFile.delete()
+        }
+    }
+
+    currentCoroutineContext().ensureActive()
+    val transcoded = transcodeTrimVideo(
+        context = context,
+        uri = uri,
+        startMs = startMs,
+        endMs = endMs,
+        maxDurationMs = maxDurationMs,
+        rotation = preScan.rotation,
+    )
+    if (!validateTrimmedMp4(transcoded)) {
+        transcoded.delete()
+        throw VideoTrimException("خطا در ایجاد فایل ویدیو برش‌خورده")
+    }
+    transcoded
+}
+
+private suspend fun inspectTrimRange(
+    context: Context,
+    uri: Uri,
+    startMs: Long,
+    endMs: Long,
+    maxDurationMs: Long,
+): TrimPreScan {
     val extractor = MediaExtractor()
-    var muxer: MediaMuxer? = null
-    var muxerStarted = false
-    var success = false
     try {
         try {
             extractor.setDataSource(context, uri, null)
@@ -162,14 +274,130 @@ internal suspend fun trimVideo(
         }
 
         var videoTrack = -1
-        var audioTrack = -1
-        var bufferSize = DEFAULT_BUFFER_BYTES
+        var videoFormat: MediaFormat? = null
+        var audioMime: String? = null
         for (index in 0 until extractor.trackCount) {
             val format = extractor.getTrackFormat(index)
             val mime = format.getString(MediaFormat.KEY_MIME).orEmpty()
+            if (mime.startsWith("video/") && videoTrack < 0) {
+                videoTrack = index
+                videoFormat = format
+            } else if (mime.startsWith("audio/") && audioMime == null) {
+                audioMime = mime
+            }
+        }
+        val vFormat = videoFormat
+        val vMime = vFormat?.getString(MediaFormat.KEY_MIME)
+        if (videoTrack < 0 || vFormat == null || vMime.isNullOrBlank()) {
+            throw VideoTrimException("ویدیویی در این فایل یافت نشد")
+        }
+
+        val rotation = readRotation(context, uri, vFormat)
+        val colorTransfer = runCatching {
+            if (vFormat.containsKey(MediaFormat.KEY_COLOR_TRANSFER)) {
+                vFormat.getInteger(MediaFormat.KEY_COLOR_TRANSFER)
+            } else {
+                0
+            }
+        }.getOrDefault(0)
+        val isHdr = colorTransfer == MediaFormat.COLOR_TRANSFER_ST2084 ||
+            colorTransfer == MediaFormat.COLOR_TRANSFER_HLG
+        val declaredMaxBFrames = runCatching {
+            if (vFormat.containsKey("max-bframes")) vFormat.getInteger("max-bframes") else 0
+        }.getOrDefault(0)
+
+        extractor.selectTrack(videoTrack)
+        val requestedStartUs = startMs * 1000L
+        extractor.seekTo(requestedStartUs + 999L, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
+        val seekBaseUs = extractor.sampleTime.coerceAtLeast(0L)
+        val seekDriftUs = (requestedStartUs - seekBaseUs).coerceAtLeast(0L)
+        val endUs = minOf(endMs * 1000L, seekBaseUs + maxDurationMs * 1000L)
+        val scanLimitUs = endUs + 600_000L
+
+        var hasNonMonotonic = declaredMaxBFrames > 0
+        var startsWithSync = false
+        var sampleCount = 0
+        var scannedCount = 0
+        var prevPtsUs = Long.MIN_VALUE
+
+        while (true) {
+            val timeUs = extractor.sampleTime
+            if (timeUs < 0L || timeUs > scanLimitUs) break
+            val isSync = (extractor.sampleFlags and MediaExtractor.SAMPLE_FLAG_SYNC) != 0
+            if (scannedCount == 0) {
+                startsWithSync = isSync
+            }
+            if (timeUs < seekBaseUs) {
+                hasNonMonotonic = true
+            }
+            if (prevPtsUs != Long.MIN_VALUE && timeUs <= prevPtsUs) {
+                hasNonMonotonic = true
+            }
+            prevPtsUs = timeUs
+            if (timeUs <= endUs) {
+                sampleCount++
+            }
+            scannedCount++
+            if (!extractor.advance()) break
+            if (scannedCount % CANCEL_CHECK_INTERVAL == 0) {
+                currentCoroutineContext().ensureActive()
+            }
+        }
+
+        return TrimPreScan(
+            videoMime = vMime,
+            audioMime = audioMime,
+            rotation = rotation,
+            isHdr = isHdr,
+            hasNonMonotonicVideoPts = hasNonMonotonic,
+            startsWithSyncFrame = startsWithSync,
+            videoSampleCount = sampleCount,
+            seekDriftUs = seekDriftUs,
+        )
+    } finally {
+        runCatching { extractor.release() }
+    }
+}
+
+private suspend fun trimVideoLossless(
+    context: Context,
+    uri: Uri,
+    startMs: Long,
+    endMs: Long,
+    maxDurationMs: Long,
+    rotation: Int,
+): File {
+    val muxedTemp = File.createTempFile("trimmed-raw-", ".mp4", context.cacheDir)
+    val output = File.createTempFile("trimmed-", ".mp4", context.cacheDir)
+    val videoExtractor = MediaExtractor()
+    var audioExtractor: MediaExtractor? = null
+    var muxer: MediaMuxer? = null
+    var muxerStarted = false
+    var success = false
+    return try {
+        try {
+            videoExtractor.setDataSource(context, uri, null)
+        } catch (e: Exception) {
+            throw VideoTrimException("امکان باز کردن فایل ویدیو وجود ندارد", e)
+        }
+
+        var videoTrack = -1
+        var audioTrack = -1
+        var videoFormat: MediaFormat? = null
+        var audioFormat: MediaFormat? = null
+        var bufferSize = DEFAULT_BUFFER_BYTES
+        for (index in 0 until videoExtractor.trackCount) {
+            val format = videoExtractor.getTrackFormat(index)
+            val mime = format.getString(MediaFormat.KEY_MIME).orEmpty()
             when {
-                mime.startsWith("video/") && videoTrack < 0 -> videoTrack = index
-                mime.startsWith("audio/") && audioTrack < 0 -> audioTrack = index
+                mime.startsWith("video/") && videoTrack < 0 -> {
+                    videoTrack = index
+                    videoFormat = format
+                }
+                mime.startsWith("audio/") && audioTrack < 0 -> {
+                    audioTrack = index
+                    audioFormat = format
+                }
                 else -> continue
             }
             if (format.containsKey(MediaFormat.KEY_MAX_INPUT_SIZE)) {
@@ -177,82 +405,114 @@ internal suspend fun trimVideo(
                 if (declaredSize > 0) bufferSize = maxOf(bufferSize, declaredSize)
             }
         }
-        if (videoTrack < 0) throw VideoTrimException("ویدیویی در این فایل یافت نشد")
+        val resolvedVideoFormat = videoFormat
+        if (videoTrack < 0 || resolvedVideoFormat == null) {
+            throw VideoTrimException("ویدیویی در این فایل یافت نشد")
+        }
 
-        bufferSize = bufferSize.coerceIn(DEFAULT_BUFFER_BYTES, 16 * 1024 * 1024)
-        val rotation = readRotation(context, uri)
-        val newMuxer = MediaMuxer(output.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+        bufferSize = bufferSize.coerceIn(DEFAULT_BUFFER_BYTES, MAX_BUFFER_BYTES)
+        val newMuxer = MediaMuxer(muxedTemp.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
         muxer = newMuxer
         newMuxer.setOrientationHint(rotation)
 
-        val trackMap = HashMap<Int, Int>(2)
+        val muxerVideoTrack: Int
+        val muxerAudioTrack: Int
         try {
-            trackMap[videoTrack] = newMuxer.addTrack(extractor.getTrackFormat(videoTrack))
-            if (audioTrack >= 0) trackMap[audioTrack] = newMuxer.addTrack(extractor.getTrackFormat(audioTrack))
+            muxerVideoTrack = newMuxer.addTrack(resolvedVideoFormat)
+            muxerAudioTrack = if (audioFormat != null) newMuxer.addTrack(audioFormat) else -1
         } catch (e: Exception) {
             throw VideoTrimException("فرمت این ویدیو برای برش پشتیبانی نمی‌شود", e)
         }
 
-        // 1) Find the keyframe the clip will start on, looking at the video track alone.
-        extractor.selectTrack(videoTrack)
-        extractor.seekTo(startMs * 1000L + 999L, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
-        val baseUs = extractor.sampleTime.coerceAtLeast(0L)
+        videoExtractor.selectTrack(videoTrack)
+        videoExtractor.seekTo(startMs * 1000L + 999L, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
+        val baseUs = videoExtractor.sampleTime.coerceAtLeast(0L)
         val endUs = minOf(endMs * 1000L, baseUs + maxDurationMs * 1000L)
 
-        // 2) Bring audio in and cut both tracks from that point.
-        if (audioTrack >= 0) extractor.selectTrack(audioTrack)
-        extractor.seekTo(baseUs, MediaExtractor.SEEK_TO_CLOSEST_SYNC)
+        if (audioTrack >= 0 && muxerAudioTrack >= 0) {
+            audioExtractor = MediaExtractor().apply {
+                try {
+                    setDataSource(context, uri, null)
+                } catch (e: Exception) {
+                    throw VideoTrimException("امکان باز کردن فایل ویدیو وجود ندارد", e)
+                }
+                selectTrack(audioTrack)
+                seekTo(baseUs, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
+            }
+        }
 
         newMuxer.start()
         muxerStarted = true
 
-        var remainingTracks = trackMap.size
+        var videoDone = false
+        var audioDone = audioExtractor == null
         var videoSamples = 0
         var written = 0
-        val lastPtsUs = HashMap<Int, Long>(2)
-        val buffer = ByteBuffer.allocate(bufferSize)
+        var lastVideoPtsUs: Long? = null
+        var lastAudioPtsUs: Long? = null
+        var buffer = ByteBuffer.allocate(bufferSize)
         val info = MediaCodec.BufferInfo()
-        while (remainingTracks > 0) {
-            val track = extractor.sampleTrackIndex
-            if (track < 0) break
-            val muxerTrack = trackMap[track]
-            if (muxerTrack == null) {
-                extractor.advance()
-                continue
-            }
-            val timeUs = extractor.sampleTime
-            if (timeUs > endUs) {
-                extractor.unselectTrack(track)
-                remainingTracks--
-                extractor.advance()
-                continue
-            }
-            if (track == audioTrack && timeUs < baseUs) {
-                extractor.advance()
-                continue
-            }
-            buffer.clear()
-            val size = extractor.readSampleData(buffer, 0)
-            if (size < 0) break
 
-            var ptsUs = (timeUs - baseUs).coerceAtLeast(0L)
-            val previousPts = lastPtsUs[muxerTrack]
-            if (previousPts != null && ptsUs <= previousPts) {
-                // Ensure strictly monotonic timestamps for MediaMuxer to avoid IllegalArgumentException.
-                ptsUs = previousPts + 1_000L
-            }
-            lastPtsUs[muxerTrack] = ptsUs
+        while (!videoDone || !audioDone) {
+            val vTime = if (!videoDone) videoExtractor.sampleTime else Long.MAX_VALUE
+            val aTime = if (!audioDone) audioExtractor!!.sampleTime else Long.MAX_VALUE
 
-            info.set(
-                0,
-                size,
-                ptsUs,
-                if (extractor.sampleFlags and MediaExtractor.SAMPLE_FLAG_SYNC != 0) MediaCodec.BUFFER_FLAG_KEY_FRAME else 0,
-            )
-            newMuxer.writeSampleData(muxerTrack, buffer, info)
-            if (track == videoTrack) videoSamples++
-            extractor.advance()
-            if (++written % CANCEL_CHECK_INTERVAL == 0) currentCoroutineContext().ensureActive()
+            if (vTime < 0L || vTime > endUs) {
+                videoDone = true
+            }
+            if (aTime < 0L || aTime > endUs) {
+                audioDone = true
+            }
+            if (videoDone && audioDone) break
+
+            val resolvedVTime = if (!videoDone) vTime else Long.MAX_VALUE
+            val resolvedATime = if (!audioDone) aTime else Long.MAX_VALUE
+            if (resolvedVTime <= resolvedATime) {
+                val rawPts = normalizeVideoSamplePtsUs(resolvedVTime, baseUs)
+                if (rawPts == null) {
+                    if (!videoExtractor.advance()) videoDone = true
+                    continue
+                }
+                val ptsUs = if (lastVideoPtsUs != null && rawPts <= lastVideoPtsUs) {
+                    lastVideoPtsUs + 1_000L
+                } else {
+                    rawPts
+                }
+                lastVideoPtsUs = ptsUs
+                buffer = ensureBufferCapacity(videoExtractor, buffer)
+                buffer.clear()
+                val size = videoExtractor.readSampleData(buffer, 0)
+                if (size < 0) {
+                    videoDone = true
+                    continue
+                }
+                info.set(0, size, ptsUs, toMuxerFlags(videoExtractor.sampleFlags))
+                newMuxer.writeSampleData(muxerVideoTrack, buffer, info)
+                videoSamples++
+                if (!videoExtractor.advance()) videoDone = true
+            } else {
+                val aExt = audioExtractor!!
+                if (resolvedATime < baseUs) {
+                    if (!aExt.advance()) audioDone = true
+                    continue
+                }
+                buffer = ensureBufferCapacity(aExt, buffer)
+                buffer.clear()
+                val size = aExt.readSampleData(buffer, 0)
+                if (size < 0) {
+                    audioDone = true
+                    continue
+                }
+                val ptsUs = normalizeAudioSamplePtsUs(resolvedATime, baseUs, lastAudioPtsUs)
+                lastAudioPtsUs = ptsUs
+                info.set(0, size, ptsUs, toMuxerFlags(aExt.sampleFlags))
+                newMuxer.writeSampleData(muxerAudioTrack, buffer, info)
+                if (!aExt.advance()) audioDone = true
+            }
+
+            if (++written % CANCEL_CHECK_INTERVAL == 0) {
+                currentCoroutineContext().ensureActive()
+            }
         }
         if (videoSamples == 0) throw VideoTrimException("بازه انتخاب‌شده خالی است")
 
@@ -262,6 +522,13 @@ internal suspend fun trimVideo(
         } catch (e: Exception) {
             throw VideoTrimException("خطا در ایجاد فایل ویدیو برش‌خورده", e)
         }
+        if (!muxedTemp.exists() || muxedTemp.length() == 0L) {
+            throw VideoTrimException("خطا در ایجاد فایل ویدیو برش‌خورده")
+        }
+
+        if (!Mp4FastStart.relocateMoovToFront(muxedTemp, output)) {
+            muxedTemp.copyTo(output, overwrite = true)
+        }
         if (!output.exists() || output.length() == 0L) {
             throw VideoTrimException("خطا در ایجاد فایل ویدیو برش‌خورده")
         }
@@ -270,23 +537,98 @@ internal suspend fun trimVideo(
     } finally {
         if (muxerStarted) runCatching { muxer?.stop() }
         runCatching { muxer?.release() }
-        runCatching { extractor.release() }
-        if (!success) output.delete()
+        runCatching { videoExtractor.release() }
+        runCatching { audioExtractor?.release() }
+        runCatching { muxedTemp.delete() }
+        if (!success) runCatching { output.delete() }
     }
 }
 
-private fun readRotation(context: Context, uri: Uri): Int {
+internal fun validateTrimmedMp4(file: File): Boolean {
+    if (!file.exists() || file.length() <= 0L) return false
     val retriever = MediaMetadataRetriever()
-    return try {
-        retriever.setDataSource(context, uri)
-        val degrees = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
-        if (degrees in listOf(0, 90, 180, 270)) degrees else 0
-    } catch (_: Exception) {
-        0
+    val durationMs = try {
+        retriever.setDataSource(file.absolutePath)
+        retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+    } catch (_: Throwable) {
+        0L
     } finally {
         runCatching { retriever.release() }
     }
+    if (durationMs <= 0L) return false
+
+    val extractor = MediaExtractor()
+    return try {
+        extractor.setDataSource(file.absolutePath)
+        val videoTrack = (0 until extractor.trackCount).firstOrNull { index ->
+            extractor.getTrackFormat(index).getString(MediaFormat.KEY_MIME)?.startsWith("video/") == true
+        } ?: return false
+        extractor.selectTrack(videoTrack)
+
+        var samples = 0
+        var prevPts = Long.MIN_VALUE
+        while (true) {
+            val pts = extractor.sampleTime
+            if (pts < 0L) break
+            if (samples == 0 && (extractor.sampleFlags and MediaExtractor.SAMPLE_FLAG_SYNC) == 0) {
+                return false
+            }
+            if (prevPts != Long.MIN_VALUE && pts <= prevPts) {
+                return false
+            }
+            prevPts = pts
+            samples++
+            if (!extractor.advance()) break
+        }
+        samples >= 1
+    } catch (_: Throwable) {
+        false
+    } finally {
+        runCatching { extractor.release() }
+    }
 }
 
+private fun ensureBufferCapacity(extractor: MediaExtractor, current: ByteBuffer): ByteBuffer {
+    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+        val sampleSize = extractor.sampleSize
+        if (sampleSize > current.capacity() && sampleSize <= MAX_BUFFER_BYTES) {
+            return ByteBuffer.allocate(sampleSize.toInt())
+        }
+    }
+    return current
+}
+
+private fun toMuxerFlags(sampleFlags: Int): Int =
+    if ((sampleFlags and MediaExtractor.SAMPLE_FLAG_SYNC) != 0) {
+        MediaCodec.BUFFER_FLAG_KEY_FRAME
+    } else {
+        0
+    }
+
+private fun readRotation(context: Context, uri: Uri, videoFormat: MediaFormat?): Int {
+    val retriever = MediaMetadataRetriever()
+    val retrieverDegrees = try {
+        retriever.setDataSource(context, uri)
+        retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull()
+    } catch (_: Exception) {
+        null
+    } finally {
+        runCatching { retriever.release() }
+    }
+    if (retrieverDegrees != null && retrieverDegrees in VALID_ROTATIONS) {
+        return retrieverDegrees
+    }
+    if (videoFormat != null && videoFormat.containsKey(MediaFormat.KEY_ROTATION)) {
+        val formatDegrees = runCatching { videoFormat.getInteger(MediaFormat.KEY_ROTATION) }.getOrNull()
+        if (formatDegrees != null && formatDegrees in VALID_ROTATIONS) {
+            return formatDegrees
+        }
+    }
+    return 0
+}
+
+private val VALID_ROTATIONS = listOf(0, 90, 180, 270)
 private const val DEFAULT_BUFFER_BYTES = 2 * 1024 * 1024
+private const val MAX_BUFFER_BYTES = 16 * 1024 * 1024
 private const val CANCEL_CHECK_INTERVAL = 100
+private const val MAX_LOSSLESS_SEEK_DRIFT_US = 2_500_000L

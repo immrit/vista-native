@@ -75,6 +75,7 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
 import ir.coffevista.vista_native.core.designsystem.component.VistaVerificationBadge
+import ir.coffevista.vista_native.core.designsystem.component.rememberBufferedTextState
 
 /** Height shared by every media preview card so mixed media lines up cleanly. */
 private val MediaCardHeight = 220.dp
@@ -189,6 +190,7 @@ internal fun AddPostComposer(
     isVerified: Boolean,
     verificationType: String?,
     content: String,
+    maxCharLength: Int = Int.MAX_VALUE,
     onContentChanged: (String) -> Unit,
     focusRequester: FocusRequester,
     modifier: Modifier = Modifier,
@@ -247,9 +249,15 @@ internal fun AddPostComposer(
                 )
             }
 
-            BasicTextField(
-                value = content,
+            val (bufferedContent, onBufferedContentChange) = rememberBufferedTextState(
+                externalValue = content,
                 onValueChange = onContentChanged,
+                maxLength = maxCharLength,
+            )
+
+            BasicTextField(
+                value = bufferedContent,
+                onValueChange = onBufferedContentChange,
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = 72.dp)
@@ -262,7 +270,7 @@ internal fun AddPostComposer(
                 cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                 decorationBox = { innerTextField ->
                     Box {
-                        if (content.isEmpty()) {
+                        if (bufferedContent.isEmpty()) {
                             Text(
                                 text = "چیزی بنویسید...",
                                 fontSize = 16.sp,

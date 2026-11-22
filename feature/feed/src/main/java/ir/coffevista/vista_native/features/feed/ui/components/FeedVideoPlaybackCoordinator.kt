@@ -6,14 +6,16 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.database.StandaloneDatabaseProvider
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DefaultDataSource
-import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import okhttp3.OkHttpClient
 import java.io.File
+import java.net.Proxy
+import java.util.concurrent.TimeUnit
 
 @OptIn(UnstableApi::class)
 object FeedVideoPlaybackCoordinator {
@@ -22,6 +24,34 @@ object FeedVideoPlaybackCoordinator {
 
     @Volatile
     private var simpleCache: SimpleCache? = null
+
+    @Volatile
+    private var streamingHttpClient: OkHttpClient? = null
+
+    fun configureHttpClient(client: OkHttpClient) {
+        streamingHttpClient = client.newBuilder()
+            .callTimeout(0, TimeUnit.MILLISECONDS)
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(25, TimeUnit.SECONDS)
+            .followRedirects(true)
+            .followSslRedirects(true)
+            .build()
+    }
+
+    private fun resolveHttpClient(): OkHttpClient {
+        return streamingHttpClient ?: synchronized(this) {
+            streamingHttpClient ?: OkHttpClient.Builder()
+                .proxy(Proxy.NO_PROXY)
+                .callTimeout(0, TimeUnit.MILLISECONDS)
+                .connectTimeout(15, TimeUnit.SECONDS)
+                .readTimeout(25, TimeUnit.SECONDS)
+                .followRedirects(true)
+                .followSslRedirects(true)
+                .retryOnConnectionFailure(true)
+                .build()
+                .also { streamingHttpClient = it }
+        }
+    }
 
     fun getCache(context: Context): SimpleCache {
         return simpleCache ?: synchronized(this) {
@@ -36,10 +66,10 @@ object FeedVideoPlaybackCoordinator {
 
     fun buildCacheDataSourceFactory(context: Context): DataSource.Factory {
         val cache = getCache(context)
-        val upstreamFactory = DefaultHttpDataSource.Factory()
-            .setConnectTimeoutMs(8000)
-            .setReadTimeoutMs(8000)
-            .setUserAgent("VistaNativeAndroid")
+        val upstreamFactory = VistaOkHttpDataSource.Factory(
+            callFactory = resolveHttpClient(),
+            userAgent = "VistaNativeAndroid",
+        )
         val defaultDataSourceFactory = DefaultDataSource.Factory(context, upstreamFactory)
         return CacheDataSource.Factory()
             .setCache(cache)

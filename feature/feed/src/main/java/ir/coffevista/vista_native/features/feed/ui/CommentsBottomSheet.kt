@@ -34,9 +34,12 @@ import androidx.compose.material.icons.filled.Person
 import ir.coffevista.vista_native.core.designsystem.component.VistaPremiumBottomSheet
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.LayoutDirection
 import ir.coffevista.vista_native.core.designsystem.component.VistaReportReasonDialog
+import ir.coffevista.vista_native.core.designsystem.component.rememberVistaHaptics
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -105,7 +108,7 @@ fun CommentsBottomSheet(
     onNavigateToPremium: () -> Unit = {},
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val isDark = isSystemInDarkTheme()
+    val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var reportCommentTargetId by remember { mutableStateOf<String?>(null) }
     var showPremiumBottomSheet by remember { mutableStateOf(false) }
@@ -113,18 +116,23 @@ fun CommentsBottomSheet(
     LaunchedEffect(postId) {
         viewModel.loadComments(postId)
     }
-    
+
     ModalBottomSheet(
         onDismissRequest = onDismissRequest,
         sheetState = sheetState,
         dragHandle = null,
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
         containerColor = MaterialTheme.colorScheme.surface,
         contentColor = MaterialTheme.colorScheme.onSurface,
-        modifier = Modifier
-            .fillMaxWidth()
-            .fillMaxHeight(0.85f),
+        contentWindowInsets = { WindowInsets(0) },
+        modifier = Modifier.fillMaxWidth(),
     ) {
-        Column(modifier = Modifier.fillMaxSize()) {
+        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.80f),
+            ) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -266,6 +274,7 @@ fun CommentsBottomSheet(
                 error = uiState.error.takeIf { uiState.comments.isNotEmpty() },
                 currentUserAvatarUrl = uiState.currentUserAvatarUrl,
             )
+            }
         }
     }
 
@@ -579,8 +588,9 @@ private fun CommentItem(
     var editContent by remember(comment.content) { mutableStateOf(comment.content) }
     val clipboardManager = LocalClipboardManager.current
     val context = LocalContext.current
+    val haptics = rememberVistaHaptics()
 
-    val isDark = isSystemInDarkTheme()
+    val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
     val dividerColor = if (isDark) Color(0xFF424242) else Color(0xFFE0E0E0)
     Row(
         modifier = modifier
@@ -800,11 +810,14 @@ private fun CommentItem(
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                         modifier = Modifier
                             .clip(RoundedCornerShape(16.dp))
-                            .clickable { onReply() }
-                            .padding(horizontal = 4.dp, vertical = 2.dp),
+                            .clickable {
+                                haptics.tap()
+                                onReply()
+                            }
+                            .padding(horizontal = 8.dp, vertical = 6.dp),
                     )
                     if (canEdit) {
-                        Spacer(Modifier.width(16.dp))
+                        Spacer(Modifier.width(12.dp))
                         Text(
                             text = if (!isCommentAuthor) "ویرایش ناظر" else "ویرایش",
                             fontSize = 12.sp,
@@ -813,10 +826,11 @@ private fun CommentItem(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(16.dp))
                                 .clickable {
+                                    haptics.tap()
                                     editContent = comment.content
                                     isEditingInline = true
                                 }
-                                .padding(horizontal = 4.dp, vertical = 2.dp),
+                                .padding(horizontal = 8.dp, vertical = 6.dp),
                         )
                     }
                     
@@ -829,8 +843,11 @@ private fun CommentItem(
                             fontSize = 14.sp,
                             modifier = Modifier
                                 .clip(CircleShape)
-                                .clickable { showMenu = true }
-                                .padding(horizontal = 6.dp, vertical = 2.dp),
+                                .clickable {
+                                    haptics.tap()
+                                    showMenu = true
+                                }
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
                         )
                         DropdownMenu(
                             expanded = showMenu,
@@ -1055,10 +1072,9 @@ private fun CustomFlagIcon(modifier: Modifier = Modifier, tint: Color = Material
     }
 }
 
-private fun isRtlText(text: String): Boolean {
-    val rtlRegex = Regex("[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]")
-    return rtlRegex.containsMatchIn(text)
-}
+private val RTL_REGEX = Regex("[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]")
+
+private fun isRtlText(text: String): Boolean = RTL_REGEX.containsMatchIn(text)
 
 private fun commentRelativeTime(raw: String): String = ir.coffevista.vista_native.core.common.persianRelativeTime(raw).ifEmpty { "همین الان" }
 
@@ -1075,10 +1091,11 @@ internal fun CommentComposer(
     currentUserAvatarUrl: String? = null,
     glassState: VistaGlassState? = LocalVistaGlassState.current,
 ) {
-    var text by rememberSaveable(replyingTo?.id, editingComment?.id) { 
-        mutableStateOf(editingComment?.content ?: "") 
+    var text by rememberSaveable(replyingTo?.id, editingComment?.id) {
+        mutableStateOf(editingComment?.content ?: "")
     }
-    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f || isSystemInDarkTheme()
+    val haptics = rememberVistaHaptics()
+    val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
     val canSend = text.trim().isNotEmpty() && text.trim().codePointCount(0, text.trim().length) <= 2200 && !isSubmitting
 
     val mentionMatch = remember(text) {
@@ -1210,15 +1227,20 @@ internal fun CommentComposer(
                             color = if (isDark) Color(0xFFE0E0E0) else Color(0xFF424242),
                             modifier = Modifier.weight(1f),
                         )
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "لغو پاسخ",
-                            tint = if (isDark) Color(0xFFBDBDBD) else Color(0xFF757575),
+                        Box(
                             modifier = Modifier
-                                .size(18.dp)
+                                .size(36.dp)
                                 .clip(CircleShape)
                                 .clickable { onCancelReplyOrEdit() },
-                        )
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "لغو پاسخ",
+                                tint = if (isDark) Color(0xFFBDBDBD) else Color(0xFF757575),
+                                modifier = Modifier.size(18.dp),
+                            )
+                        }
                     }
                 }
                 Spacer(Modifier.height(8.dp))
@@ -1234,15 +1256,20 @@ internal fun CommentComposer(
                         fontWeight = FontWeight.Medium,
                         color = if (isDark) Color(0xFFE0E0E0) else Color(0xFF424242),
                     )
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = "انصراف",
-                        tint = if (isDark) Color(0xFFBDBDBD) else Color(0xFF757575),
+                    Box(
                         modifier = Modifier
-                            .size(18.dp)
+                            .size(36.dp)
                             .clip(CircleShape)
                             .clickable { onCancelReplyOrEdit() },
-                    )
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "انصراف",
+                            tint = if (isDark) Color(0xFFBDBDBD) else Color(0xFF757575),
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
                 }
                 Spacer(Modifier.height(8.dp))
             }
@@ -1322,10 +1349,12 @@ internal fun CommentComposer(
                         value = text,
                         onValueChange = { updated ->
                             text = updated
-                            // A mention is valid only while its visible token remains in the draft.
-                            selectedMentions = selectedMentions.filterValues { username ->
-                                Regex("(?<![\\p{L}\\p{N}_])@${Regex.escape(username)}(?:\\b|\\s|$)")
-                                    .containsMatchIn(updated)
+                            if (selectedMentions.isNotEmpty()) {
+                                // A mention is valid only while its visible token remains in the draft.
+                                selectedMentions = selectedMentions.filterValues { username ->
+                                    Regex("(?<![\\p{L}\\p{N}_])@${Regex.escape(username)}(?:\\b|\\s|$)")
+                                        .containsMatchIn(updated)
+                                }
                             }
                         },
                         modifier = Modifier.fillMaxWidth(),
@@ -1363,6 +1392,7 @@ internal fun CommentComposer(
                         .clickable(enabled = canSend) {
                             val submitText = text.trim()
                             if (submitText.isNotEmpty()) {
+                                haptics.confirm()
                                 onSubmit(
                                     CommentDraft(
                                         content = submitText,

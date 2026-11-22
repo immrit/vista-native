@@ -12,6 +12,7 @@ import android.text.TextWatcher
 import android.widget.EditText
 import android.text.InputType
 import android.util.TypedValue
+import android.view.inputmethod.BaseInputConnection
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.MaterialTheme
@@ -46,6 +47,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.sp
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import ir.coffevista.vista_native.core.designsystem.component.BufferedTextTracker
 import ir.coffevista.vista_native.core.designsystem.component.VistaEmojiSpan
 
 /**
@@ -105,6 +107,7 @@ fun ChatComposerField(
     val latestKeyboardController = rememberUpdatedState(keyboardController)
     val editTextRef = remember { arrayOfNulls<EditText>(1) }
     val isRequestingKeyboard = remember { booleanArrayOf(false) }
+    val textTracker = remember { BufferedTextTracker(value.text) }
 
     fun focusEditTextAndShowIme(et: EditText) {
         if (editTextRef[0] !== et) return
@@ -131,26 +134,58 @@ fun ChatComposerField(
 
     DisposableEffect(controller, actualFocusRequester) {
         controller.onInsertEmoji = { symbol ->
-            val currentValue = latestValue.value
-            val currentText = currentValue.text
-            val start = currentValue.selection.min.coerceIn(0, currentText.length)
-            val end = currentValue.selection.max.coerceIn(start, currentText.length)
-            val newText = currentText.substring(0, start) + symbol + currentText.substring(end)
-            val newCursor = start + symbol.length
-            latestOnValueChange.value(TextFieldValue(newText, TextRange(newCursor)))
+            val et = editTextRef[0]
+            val editable = et?.editableText
+            if (et != null && editable != null) {
+                val selStart = et.selectionStart.takeIf { it >= 0 }
+                    ?: latestValue.value.selection.min.coerceIn(0, editable.length)
+                val selEnd = et.selectionEnd.takeIf { it >= 0 }
+                    ?: latestValue.value.selection.max.coerceIn(0, editable.length)
+                val start = minOf(selStart, selEnd).coerceIn(0, editable.length)
+                val end = maxOf(selStart, selEnd).coerceIn(start, editable.length)
+                editable.replace(start, end, symbol)
+            } else {
+                val currentValue = latestValue.value
+                val currentText = currentValue.text
+                val start = currentValue.selection.min.coerceIn(0, currentText.length)
+                val end = currentValue.selection.max.coerceIn(start, currentText.length)
+                val newText = currentText.substring(0, start) + symbol + currentText.substring(end)
+                val newCursor = start + symbol.length
+                textTracker.onLocalInput(newText)
+                latestOnValueChange.value(TextFieldValue(newText, TextRange(newCursor)))
+            }
         }
         controller.onDispatchBackspace = {
-            val currentValue = latestValue.value
-            val currentText = currentValue.text
-            val start = currentValue.selection.min.coerceIn(0, currentText.length)
-            val end = currentValue.selection.max.coerceIn(start, currentText.length)
-            if (start != end) {
-                val newText = currentText.substring(0, start) + currentText.substring(end)
-                latestOnValueChange.value(TextFieldValue(newText, TextRange(start)))
-            } else if (start > 0) {
-                val deleteStart = previousGraphemeStart(currentText, start)
-                val newText = currentText.substring(0, deleteStart) + currentText.substring(start)
-                latestOnValueChange.value(TextFieldValue(newText, TextRange(deleteStart)))
+            val et = editTextRef[0]
+            val editable = et?.editableText
+            if (et != null && editable != null) {
+                val selStart = et.selectionStart.takeIf { it >= 0 }
+                    ?: latestValue.value.selection.min.coerceIn(0, editable.length)
+                val selEnd = et.selectionEnd.takeIf { it >= 0 }
+                    ?: latestValue.value.selection.max.coerceIn(0, editable.length)
+                val start = minOf(selStart, selEnd).coerceIn(0, editable.length)
+                val end = maxOf(selStart, selEnd).coerceIn(start, editable.length)
+                if (start != end) {
+                    editable.delete(start, end)
+                } else if (start > 0) {
+                    val deleteStart = previousGraphemeStart(editable.toString(), start)
+                    editable.delete(deleteStart, start)
+                }
+            } else {
+                val currentValue = latestValue.value
+                val currentText = currentValue.text
+                val start = currentValue.selection.min.coerceIn(0, currentText.length)
+                val end = currentValue.selection.max.coerceIn(start, currentText.length)
+                if (start != end) {
+                    val newText = currentText.substring(0, start) + currentText.substring(end)
+                    textTracker.onLocalInput(newText)
+                    latestOnValueChange.value(TextFieldValue(newText, TextRange(start)))
+                } else if (start > 0) {
+                    val deleteStart = previousGraphemeStart(currentText, start)
+                    val newText = currentText.substring(0, deleteStart) + currentText.substring(start)
+                    textTracker.onLocalInput(newText)
+                    latestOnValueChange.value(TextFieldValue(newText, TextRange(deleteStart)))
+                }
             }
         }
         controller.onRequestKeyboard = {
@@ -243,10 +278,14 @@ fun ChatComposerField(
                         override fun afterTextChanged(editable: Editable?) {
                             if (editable == null || this@apply.tag == true) return
                             VistaEmojiSpan.applySpans(context, editable)
+                            val currentText = editable.toString()
+                            textTracker.onLocalInput(currentText)
+                            val selStart = selectionStart.coerceIn(0, editable.length)
+                            val selEnd = selectionEnd.coerceIn(0, editable.length)
                             latestOnValueChange.value(
                                 TextFieldValue(
-                                    editable.toString(),
-                                    TextRange(selectionStart.coerceIn(0, editable.length)),
+                                    currentText,
+                                    TextRange(selStart, selEnd),
                                 ),
                             )
                         }
@@ -264,25 +303,49 @@ fun ChatComposerField(
                     contentDescription = hint
                 },
             update = { editText ->
-                editText.hint = hint
-                editText.setTextSize(TypedValue.COMPLEX_UNIT_SP, 17.5f)
-                editText.textDirection = if (isRtlParagraph) android.view.View.TEXT_DIRECTION_RTL else android.view.View.TEXT_DIRECTION_LTR
-                editText.setTextColor(textColor)
-                editText.setHintTextColor(hintColor)
-                if (editText.text.toString() != value.text) {
-                    val hadFocus = editText.hasFocus()
+                if (editText.hint?.toString() != hint) {
+                    editText.hint = hint
+                }
+                val desiredDirection = if (isRtlParagraph) {
+                    android.view.View.TEXT_DIRECTION_RTL
+                } else {
+                    android.view.View.TEXT_DIRECTION_LTR
+                }
+                if (editText.textDirection != desiredDirection) {
+                    editText.textDirection = desiredDirection
+                }
+                if (editText.currentTextColor != textColor) {
+                    editText.setTextColor(textColor)
+                }
+                if (editText.currentHintTextColor != hintColor) {
+                    editText.setHintTextColor(hintColor)
+                }
+                val reconciledText = textTracker.reconcileExternal(value.text)
+                val currentEditText = editText.text.toString()
+                if (currentEditText != reconciledText) {
+                    val selMin = value.selection.min.coerceIn(0, reconciledText.length)
+                    val selMax = value.selection.max.coerceIn(selMin, reconciledText.length)
                     editText.tag = true
-                    editText.setText(value.text)
-                    editText.setSelection(value.selection.min.coerceIn(0, editText.text.length))
-                    VistaEmojiSpan.applySpans(editText.context, editText.text)
-                    editText.tag = false
-                    if (hadFocus && !isEmojiPanelOpen) {
-                        editText.requestFocus()
-                        val imm = editText.context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
-                        imm?.showSoftInput(editText, 0)
+                    try {
+                        editText.setText(reconciledText)
+                        editText.setSelection(selMin, selMax)
+                        VistaEmojiSpan.applySpans(editText.context, editText.text)
+                    } finally {
+                        editText.tag = false
                     }
-                } else if (editText.selectionStart != value.selection.min) {
-                    editText.setSelection(value.selection.min.coerceIn(0, editText.text.length))
+                } else if (currentEditText == value.text) {
+                    val composingStart = BaseInputConnection.getComposingSpanStart(editText.text)
+                    if (composingStart < 0) {
+                        val targetMin = value.selection.min.coerceIn(0, currentEditText.length)
+                        val targetMax = value.selection.max.coerceIn(targetMin, currentEditText.length)
+                        val actualStart = editText.selectionStart
+                        val actualEnd = editText.selectionEnd
+                        val actualMin = minOf(actualStart, actualEnd)
+                        val actualMax = maxOf(actualStart, actualEnd)
+                        if (actualStart >= 0 && (actualMin != targetMin || actualMax != targetMax)) {
+                            editText.setSelection(targetMin, targetMax)
+                        }
+                    }
                 }
             },
         )

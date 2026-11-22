@@ -29,9 +29,13 @@ fun VistaTextField(
     leadingIcon: (@Composable () -> Unit)? = null,
     trailingIcon: (@Composable () -> Unit)? = null,
 ) {
-    OutlinedTextField(
-        value = value,
+    val (bufferedValue, onBufferedChange) = rememberBufferedTextState(
+        externalValue = value,
         onValueChange = onValueChange,
+    )
+    OutlinedTextField(
+        value = bufferedValue,
+        onValueChange = onBufferedChange,
         modifier = modifier.semantics {
             errorMessage?.let { error(it) }
         },

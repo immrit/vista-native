@@ -58,15 +58,15 @@ check(configuredSigningValues == 0 || configuredSigningValues == signingValues.s
 }
 val vistaVersionCode = injectedValue("vista.versionCode", "VISTA_VERSION_CODE")
     ?.toIntOrNull()
-    ?: 8055
-val vistaVersionName = injectedValue("vista.versionName", "VISTA_VERSION_NAME") ?: "2.6.8"
+    ?: 4051
+val vistaVersionName = injectedValue("vista.versionName", "VISTA_VERSION_NAME") ?: "3.0.1"
 val flutterReferenceApplicationId = "ir.coffevista.vista"
 val nativeBetaApplicationId = injectedValue("vista.applicationId.beta", "VISTA_BETA_APPLICATION_ID")
     ?: "ir.coffevista.vista_native.beta"
 val nativeProductionApplicationId = injectedValue("vista.applicationId.production", "VISTA_PRODUCTION_APPLICATION_ID")
     ?: "ir.coffevista.vista"
-check(vistaVersionCode > 8049) {
-    "Native versionCode must remain above the published Flutter split-ABI baseline (8049)."
+check(vistaVersionCode > 4049) {
+    "Native versionCode must remain above the published Cafe Bazaar baseline (4049)."
 }
 
 android {

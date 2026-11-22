@@ -26,6 +26,51 @@ enum class VistaGalleryFilter {
     GIFS,
 }
 
+enum class VistaGalleryAccessState {
+    FULL,
+    PARTIAL_VISUAL_ONLY,
+    MISSING_VIDEO_ONLY,
+    DENIED,
+}
+
+internal fun resolveGalleryAccessState(
+    sdkInt: Int,
+    filter: VistaGalleryFilter,
+    hasImages: Boolean,
+    hasVideos: Boolean,
+    hasSelectedVisual: Boolean,
+    hasLegacyStorage: Boolean,
+): VistaGalleryAccessState {
+    if (sdkInt < Build.VERSION_CODES.TIRAMISU) {
+        return if (hasLegacyStorage) VistaGalleryAccessState.FULL else VistaGalleryAccessState.DENIED
+    }
+    return when (filter) {
+        VistaGalleryFilter.IMAGES, VistaGalleryFilter.GIFS -> when {
+            hasImages -> VistaGalleryAccessState.FULL
+            hasSelectedVisual -> VistaGalleryAccessState.PARTIAL_VISUAL_ONLY
+            else -> VistaGalleryAccessState.DENIED
+        }
+        VistaGalleryFilter.VIDEOS -> when {
+            hasVideos -> VistaGalleryAccessState.FULL
+            hasSelectedVisual -> VistaGalleryAccessState.PARTIAL_VISUAL_ONLY
+            else -> VistaGalleryAccessState.DENIED
+        }
+        VistaGalleryFilter.ALL -> when {
+            hasImages && hasVideos -> VistaGalleryAccessState.FULL
+            hasImages -> VistaGalleryAccessState.MISSING_VIDEO_ONLY
+            hasVideos -> VistaGalleryAccessState.FULL
+            hasSelectedVisual -> VistaGalleryAccessState.PARTIAL_VISUAL_ONLY
+            else -> VistaGalleryAccessState.DENIED
+        }
+    }
+}
+
+internal fun resolveMediaTimestampSec(dateAdded: Long, dateModified: Long): Long {
+    val normAdded = if (dateAdded > 10_000_000_000L) dateAdded / 1000L else dateAdded.coerceAtLeast(0L)
+    val normModified = if (dateModified > 10_000_000_000L) dateModified / 1000L else dateModified.coerceAtLeast(0L)
+    return maxOf(normAdded, normModified)
+}
+
 enum class VistaFileCategoryFilter {
     ALL,
     PDF_ONLY,
@@ -238,54 +283,69 @@ object VistaMediaBrowserHelpers {
     }
 }
 
-fun hasVistaGalleryPermission(
+fun getVistaGalleryAccessState(
     context: Context,
     filter: VistaGalleryFilter = VistaGalleryFilter.ALL,
-): Boolean {
-    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-        val hasImages = ContextCompat.checkSelfPermission(
+): VistaGalleryAccessState {
+    val hasLegacy = ContextCompat.checkSelfPermission(
+        context,
+        Manifest.permission.READ_EXTERNAL_STORAGE,
+    ) == PackageManager.PERMISSION_GRANTED
+    val hasImages = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        ContextCompat.checkSelfPermission(
             context,
             Manifest.permission.READ_MEDIA_IMAGES,
         ) == PackageManager.PERMISSION_GRANTED
-        val hasVideos = ContextCompat.checkSelfPermission(
+    } else {
+        hasLegacy
+    }
+    val hasVideos = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        ContextCompat.checkSelfPermission(
             context,
             Manifest.permission.READ_MEDIA_VIDEO,
         ) == PackageManager.PERMISSION_GRANTED
-        val hasSelectedPhotos = if (Build.VERSION.SDK_INT >= 34) {
-            ContextCompat.checkSelfPermission(
-                context,
-                "android.permission.READ_MEDIA_VISUAL_USER_SELECTED",
-            ) == PackageManager.PERMISSION_GRANTED
-        } else {
-            false
-        }
-        when (filter) {
-            VistaGalleryFilter.IMAGES, VistaGalleryFilter.GIFS -> hasImages || hasSelectedPhotos
-            VistaGalleryFilter.VIDEOS -> hasVideos || hasSelectedPhotos
-            VistaGalleryFilter.ALL -> hasImages || hasVideos || hasSelectedPhotos
-        }
     } else {
+        hasLegacy
+    }
+    val hasSelectedVisual = if (Build.VERSION.SDK_INT >= 34) {
         ContextCompat.checkSelfPermission(
             context,
-            Manifest.permission.READ_EXTERNAL_STORAGE,
+            "android.permission.READ_MEDIA_VISUAL_USER_SELECTED",
         ) == PackageManager.PERMISSION_GRANTED
+    } else {
+        false
     }
+    return resolveGalleryAccessState(
+        sdkInt = Build.VERSION.SDK_INT,
+        filter = filter,
+        hasImages = hasImages,
+        hasVideos = hasVideos,
+        hasSelectedVisual = hasSelectedVisual,
+        hasLegacyStorage = hasLegacy,
+    )
 }
+
+fun hasVistaGalleryPermission(
+    context: Context,
+    filter: VistaGalleryFilter = VistaGalleryFilter.ALL,
+): Boolean = getVistaGalleryAccessState(context, filter) != VistaGalleryAccessState.DENIED
 
 fun requiredVistaGalleryPermissions(
     filter: VistaGalleryFilter = VistaGalleryFilter.ALL,
 ): Array<String> {
-    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-        when (filter) {
-            VistaGalleryFilter.IMAGES, VistaGalleryFilter.GIFS -> arrayOf(Manifest.permission.READ_MEDIA_IMAGES)
-            VistaGalleryFilter.VIDEOS -> arrayOf(Manifest.permission.READ_MEDIA_VIDEO)
-            VistaGalleryFilter.ALL -> arrayOf(
-                Manifest.permission.READ_MEDIA_IMAGES,
-                Manifest.permission.READ_MEDIA_VIDEO,
-            )
-        }
-    } else {
-        arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+    @Suppress("UNUSED_PARAMETER")
+    val ignored = filter
+    return when {
+        Build.VERSION.SDK_INT >= 34 -> arrayOf(
+            Manifest.permission.READ_MEDIA_IMAGES,
+            Manifest.permission.READ_MEDIA_VIDEO,
+            "android.permission.READ_MEDIA_VISUAL_USER_SELECTED",
+        )
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> arrayOf(
+            Manifest.permission.READ_MEDIA_IMAGES,
+            Manifest.permission.READ_MEDIA_VIDEO,
+        )
+        else -> arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
     }
 }
 
@@ -392,17 +452,23 @@ suspend fun queryVistaGalleryMedia(
     filter: VistaGalleryFilter = VistaGalleryFilter.ALL,
     limit: Int = 240,
 ): List<VistaGalleryMediaItem> = withContext(Dispatchers.IO) {
-    runCatching {
-        val items = ArrayList<VistaGalleryMediaItem>(limit)
-        val resolver = context.contentResolver
+    val items = ArrayList<VistaGalleryMediaItem>(limit)
+    val resolver = context.contentResolver
 
-        if (filter != VistaGalleryFilter.VIDEOS) {
+    if (filter != VistaGalleryFilter.VIDEOS) {
+        runCatching {
+            val imageContentUri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)
+            } else {
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+            }
             val imageProjection = arrayOf(
                 MediaStore.Images.Media._ID,
                 MediaStore.Images.Media.DISPLAY_NAME,
                 MediaStore.Images.Media.MIME_TYPE,
                 MediaStore.Images.Media.SIZE,
                 MediaStore.Images.Media.DATE_ADDED,
+                MediaStore.Images.Media.DATE_MODIFIED,
                 MediaStore.Images.Media.BUCKET_DISPLAY_NAME,
             )
             val selection = if (filter == VistaGalleryFilter.GIFS) {
@@ -416,7 +482,7 @@ suspend fun queryVistaGalleryMedia(
                 null
             }
             resolver.query(
-                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                imageContentUri,
                 imageProjection,
                 selection,
                 selectionArgs,
@@ -428,6 +494,7 @@ suspend fun queryVistaGalleryMedia(
                     val mimeCol = cursor.getColumnIndex(MediaStore.Images.Media.MIME_TYPE)
                     val sizeCol = cursor.getColumnIndex(MediaStore.Images.Media.SIZE)
                     val dateCol = cursor.getColumnIndex(MediaStore.Images.Media.DATE_ADDED)
+                    val modCol = cursor.getColumnIndex(MediaStore.Images.Media.DATE_MODIFIED)
                     val bucketCol = cursor.getColumnIndex(MediaStore.Images.Media.BUCKET_DISPLAY_NAME)
                     var count = 0
                     while (cursor.moveToNext() && count < limit) {
@@ -436,7 +503,7 @@ suspend fun queryVistaGalleryMedia(
                         val mime = cursor.safeString(mimeCol)
                         val isGif = mime.equals("image/gif", ignoreCase = true) ||
                             VistaMediaBrowserHelpers.extensionFromFileName(name) == "gif"
-                        val uri = ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id)
+                        val uri = ContentUris.withAppendedId(imageContentUri, id)
                         items += VistaGalleryMediaItem(
                             id = id,
                             uriString = uri.toString(),
@@ -445,16 +512,26 @@ suspend fun queryVistaGalleryMedia(
                             mimeType = mime,
                             displayName = name,
                             bucketName = cursor.safeString(bucketCol),
-                            sizeBytes = cursor.safeLong(sizeCol),
-                            dateAddedSec = cursor.safeLong(dateCol),
+                            sizeBytes = cursor.safeLong(sizeCol).coerceAtLeast(0L),
+                            dateAddedSec = resolveMediaTimestampSec(
+                                cursor.safeLong(dateCol),
+                                cursor.safeLong(modCol),
+                            ),
                         )
                         count++
                     }
                 }
             }
         }
+    }
 
-        if (filter == VistaGalleryFilter.ALL || filter == VistaGalleryFilter.VIDEOS) {
+    if (filter == VistaGalleryFilter.ALL || filter == VistaGalleryFilter.VIDEOS) {
+        runCatching {
+            val videoContentUri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)
+            } else {
+                MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+            }
             val videoProjection = arrayOf(
                 MediaStore.Video.Media._ID,
                 MediaStore.Video.Media.DISPLAY_NAME,
@@ -462,10 +539,11 @@ suspend fun queryVistaGalleryMedia(
                 MediaStore.Video.Media.SIZE,
                 MediaStore.Video.Media.DURATION,
                 MediaStore.Video.Media.DATE_ADDED,
+                MediaStore.Video.Media.DATE_MODIFIED,
                 MediaStore.Video.Media.BUCKET_DISPLAY_NAME,
             )
             resolver.query(
-                MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+                videoContentUri,
                 videoProjection,
                 null,
                 null,
@@ -478,31 +556,43 @@ suspend fun queryVistaGalleryMedia(
                     val sizeCol = cursor.getColumnIndex(MediaStore.Video.Media.SIZE)
                     val durCol = cursor.getColumnIndex(MediaStore.Video.Media.DURATION)
                     val dateCol = cursor.getColumnIndex(MediaStore.Video.Media.DATE_ADDED)
+                    val modCol = cursor.getColumnIndex(MediaStore.Video.Media.DATE_MODIFIED)
                     val bucketCol = cursor.getColumnIndex(MediaStore.Video.Media.BUCKET_DISPLAY_NAME)
                     var count = 0
                     while (cursor.moveToNext() && count < limit) {
                         val id = cursor.getLong(idCol)
-                        val uri = ContentUris.withAppendedId(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, id)
+                        val name = cursor.safeString(nameCol)
+                        val rawMime = cursor.safeString(mimeCol)
+                        val resolvedMime = if (rawMime.isNotBlank()) {
+                            rawMime
+                        } else {
+                            val ext = VistaMediaBrowserHelpers.extensionFromFileName(name)
+                            if (ext.isNotEmpty()) guessMimeForExtension(ext) else "video/mp4"
+                        }
+                        val uri = ContentUris.withAppendedId(videoContentUri, id)
                         items += VistaGalleryMediaItem(
                             id = -id - 1_000_000L, // تمایز کلید با تصاویر
                             uriString = uri.toString(),
                             isVideo = true,
                             isGif = false,
-                            mimeType = cursor.safeString(mimeCol),
-                            displayName = cursor.safeString(nameCol),
+                            mimeType = resolvedMime,
+                            displayName = name,
                             bucketName = cursor.safeString(bucketCol),
                             durationMs = cursor.safeLong(durCol).coerceAtLeast(0L),
                             sizeBytes = cursor.safeLong(sizeCol).coerceAtLeast(0L),
-                            dateAddedSec = cursor.safeLong(dateCol),
+                            dateAddedSec = resolveMediaTimestampSec(
+                                cursor.safeLong(dateCol),
+                                cursor.safeLong(modCol),
+                            ),
                         )
                         count++
                     }
                 }
             }
         }
+    }
 
-        items.sortedByDescending { it.dateAddedSec }.take(limit)
-    }.getOrDefault(emptyList())
+    items.sortedByDescending { it.dateAddedSec }.take(limit)
 }
 
 suspend fun queryVistaAudioTracks(

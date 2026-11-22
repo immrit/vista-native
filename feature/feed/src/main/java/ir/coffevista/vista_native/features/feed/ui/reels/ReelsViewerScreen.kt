@@ -1,6 +1,8 @@
 package ir.coffevista.vista_native.features.feed.ui.reels
 
 import android.net.Uri
+import android.util.Log
+import android.view.LayoutInflater
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import androidx.annotation.OptIn
@@ -15,8 +17,6 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -33,8 +33,10 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -67,6 +69,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -79,6 +82,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
@@ -94,18 +98,26 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
 import dagger.hilt.android.lifecycle.HiltViewModel
 import ir.coffevista.vista_native.core.model.session.AuthenticationState
 import ir.coffevista.vista_native.core.model.session.AuthenticationStateProvider
+import ir.coffevista.vista_native.features.feed.R
 import ir.coffevista.vista_native.features.feed.data.FeedPost
 import ir.coffevista.vista_native.features.feed.data.FeedRepository
+import ir.coffevista.vista_native.features.feed.ui.components.FeedVideoPlaybackCoordinator
 import ir.coffevista.vista_native.core.common.toPersianDigits
+import ir.coffevista.vista_native.core.designsystem.component.LocalNavigateToPremium
+import ir.coffevista.vista_native.core.designsystem.component.VistaEmojiText
+import ir.coffevista.vista_native.core.designsystem.component.VistaVerificationBadge
+import ir.coffevista.vista_native.core.designsystem.component.rememberVistaHaptics
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -347,15 +359,20 @@ fun ReelsViewerScreen(
                 }
 
                 // Top Header Overlay
+                val headerHaptics = rememberVistaHaptics()
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 40.dp, start = 16.dp, end = 16.dp)
+                        .statusBarsPadding()
+                        .padding(top = 8.dp, start = 16.dp, end = 16.dp)
                         .align(Alignment.TopCenter),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = {
+                        headerHaptics.tap()
+                        onBack()
+                    }) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "بازگشت",
@@ -369,7 +386,10 @@ fun ReelsViewerScreen(
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
                     )
-                    IconButton(onClick = viewModel::toggleMute) {
+                    IconButton(onClick = {
+                        headerHaptics.tap()
+                        viewModel.toggleMute()
+                    }) {
                         Icon(
                             imageVector = if (uiState.isMuted) Icons.Default.VolumeMute else Icons.Default.VolumeUp,
                             contentDescription = "صدا",
@@ -382,6 +402,7 @@ fun ReelsViewerScreen(
 
             if (showCommentsForPostId != null) {
                 val postOwnerId = uiState.reels.firstOrNull { it.id == showCommentsForPostId }?.userId
+                val navigateToPremium = LocalNavigateToPremium.current
                 ir.coffevista.vista_native.features.feed.ui.CommentsBottomSheet(
                     postId = showCommentsForPostId!!,
                     onDismissRequest = { showCommentsForPostId = null },
@@ -391,6 +412,7 @@ fun ReelsViewerScreen(
                         showCommentsForPostId = null
                         onAuthorClick(username)
                     },
+                    onNavigateToPremium = { navigateToPremium?.invoke() },
                 )
             }
 
@@ -425,39 +447,79 @@ private fun ReelsVideoItem(
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
-    var isPlaying by remember { mutableStateOf(true) }
-    var isBuffering by remember { mutableStateOf(true) }
+    val videoUrl = post.videoUrl.orEmpty()
+    var isPlaying by remember(videoUrl) { mutableStateOf(true) }
+    var isBuffering by remember(videoUrl) { mutableStateOf(true) }
+    var hasRenderedFirstFrame by remember(videoUrl) { mutableStateOf(false) }
+    var hasPlaybackError by remember(videoUrl) { mutableStateOf(false) }
+    var retryCount by remember(videoUrl) { mutableIntStateOf(0) }
     var heartBurstKey by remember { mutableIntStateOf(0) }
     var showHeartBurst by remember { mutableStateOf(false) }
     var enterTimeMs by remember { mutableStateOf(0L) }
     var engagedOnPage by remember(post.id) { mutableStateOf(post.isLiked || post.isSaved) }
     var showMenu by remember { mutableStateOf(false) }
 
-    val videoUrl = post.videoUrl.orEmpty()
     val player = remember(videoUrl) {
-        ExoPlayer.Builder(context).build().apply {
-            videoScalingMode = C.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING
-            repeatMode = Player.REPEAT_MODE_ONE
-            if (videoUrl.isNotBlank()) {
-                setMediaItem(MediaItem.fromUri(Uri.parse(videoUrl)))
-                prepare()
+        val mediaSourceFactory = DefaultMediaSourceFactory(
+            FeedVideoPlaybackCoordinator.buildCacheDataSourceFactory(context),
+        )
+        ExoPlayer.Builder(context)
+            .setMediaSourceFactory(mediaSourceFactory)
+            .build()
+            .apply {
+                videoScalingMode = C.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING
+                repeatMode = Player.REPEAT_MODE_ONE
+                if (videoUrl.isNotBlank()) {
+                    setMediaItem(MediaItem.fromUri(Uri.parse(videoUrl)))
+                    prepare()
+                }
             }
-        }
     }
 
     DisposableEffect(player) {
         val listener = object : Player.Listener {
             override fun onPlaybackStateChanged(state: Int) {
                 isBuffering = state == Player.STATE_BUFFERING
+                if (state == Player.STATE_READY) {
+                    hasPlaybackError = false
+                }
             }
+
             override fun onIsPlayingChanged(playing: Boolean) {
                 isPlaying = playing
+                if (playing) {
+                    FeedVideoPlaybackCoordinator.requestPlay("reels:${post.id}")
+                }
+            }
+
+            override fun onRenderedFirstFrame() {
+                hasRenderedFirstFrame = true
+                isBuffering = false
+            }
+
+            override fun onPlayerError(error: PlaybackException) {
+                Log.w("ReelsViewerScreen", "Reel playback failed for ${post.id}: ${error.errorCodeName}", error)
+                isPlaying = false
+                isBuffering = false
+                hasPlaybackError = true
             }
         }
         player.addListener(listener)
         onDispose {
             player.removeListener(listener)
             player.release()
+        }
+    }
+
+    LaunchedEffect(hasPlaybackError, isCurrentPage, player) {
+        if (hasPlaybackError && retryCount < 1 && isCurrentPage && videoUrl.isNotBlank()) {
+            delay(450L)
+            retryCount += 1
+            hasPlaybackError = false
+            isBuffering = true
+            player.prepare()
+            player.playWhenReady = true
+            player.play()
         }
     }
 
@@ -485,25 +547,31 @@ private fun ReelsVideoItem(
         }
     }
 
-    LaunchedEffect(isCurrentPage) {
+    LaunchedEffect(isCurrentPage, player) {
         if (isCurrentPage) {
             enterTimeMs = System.currentTimeMillis()
+            if (videoUrl.isNotBlank() && (player.playerError != null || player.playbackState == Player.STATE_IDLE)) {
+                hasPlaybackError = false
+                isBuffering = true
+                player.prepare()
+            }
             player.playWhenReady = true
             player.play()
             delay(500L)
             onTrackReelEvent("view", null, null)
         } else {
             flushReelWatchTelemetry()
+            player.playWhenReady = false
             player.pause()
             player.seekTo(0)
         }
     }
 
-    LaunchedEffect(isMuted) {
+    LaunchedEffect(isMuted, player) {
         player.volume = if (isMuted) 0f else 1f
     }
 
-    DisposableEffect(lifecycleOwner) {
+    DisposableEffect(lifecycleOwner, player) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_PAUSE -> player.pause()
@@ -534,25 +602,47 @@ private fun ReelsVideoItem(
         label = "rotation",
     )
 
+    val haptics = rememberVistaHaptics()
+    val latestPost by rememberUpdatedState(post)
+    val latestOnLikeClick by rememberUpdatedState(onLikeClick)
+
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .pointerInput(post.id) {
+            .pointerInput(post.id, player) {
                 detectTapGestures(
                     onDoubleTap = {
                         heartBurstKey += 1
-                        if (!post.isLiked) onLikeClick()
+                        engagedOnPage = true
+                        haptics.confirm()
+                        if (!latestPost.isLiked) latestOnLikeClick()
                     },
                     onTap = {
-                        if (player.isPlaying) player.pause() else player.play()
+                        if (player.playerError != null || player.playbackState == Player.STATE_IDLE) {
+                            hasPlaybackError = false
+                            isBuffering = true
+                            player.prepare()
+                            player.playWhenReady = true
+                            player.play()
+                        } else if (player.isPlaying) {
+                            player.playWhenReady = false
+                            player.pause()
+                        } else {
+                            player.playWhenReady = true
+                            player.play()
+                        }
                     },
                 )
             },
     ) {
-        // ExoPlayer AndroidView
+        // ExoPlayer AndroidView backed by TextureView so VerticalPager transitions never clip/black-out SurfaceView layers
         AndroidView(
             factory = { ctx ->
-                PlayerView(ctx).apply {
+                (LayoutInflater.from(ctx).inflate(
+                    R.layout.vista_feed_texture_player_view,
+                    null,
+                    false,
+                ) as PlayerView).apply {
                     this.player = player
                     useController = false
                     resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
@@ -562,8 +652,25 @@ private fun ReelsVideoItem(
                     )
                 }
             },
+            update = { view ->
+                if (view.player !== player) {
+                    view.player = player
+                }
+            },
+            onRelease = { view ->
+                view.player = null
+            },
             modifier = Modifier.fillMaxSize(),
         )
+
+        if (!hasRenderedFirstFrame && !post.imageUrl.isNullOrBlank()) {
+            AsyncImage(
+                model = post.imageUrl,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
 
         // Gradient shadow overlay on bottom and top
         Box(
@@ -633,6 +740,7 @@ private fun ReelsVideoItem(
             modifier = Modifier
                 .align(Alignment.BottomStart)
                 .fillMaxWidth(0.82f)
+                .navigationBarsPadding()
                 .padding(start = 16.dp, bottom = 24.dp),
         ) {
             // Author Row
@@ -653,13 +761,36 @@ private fun ReelsVideoItem(
                 )
                 Spacer(Modifier.width(10.dp))
                 Column {
-                    Text(
-                        text = post.authorFullName,
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp,
-                    )
-                    post.authorUsername?.let { username ->
+                    val primaryName = post.authorFullName.trim().ifBlank {
+                        post.authorUsername?.trim().orEmpty()
+                    }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp),
+                    ) {
+                        VistaEmojiText(
+                            text = primaryName,
+                            modifier = Modifier.weight(1f, fill = false),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            style = TextStyle(
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp,
+                            ),
+                        )
+                        if (post.authorIsVerified) {
+                            VistaVerificationBadge(
+                                isVerified = true,
+                                verificationType = post.authorVerificationType,
+                                size = 15.dp,
+                                isDarkSurface = true,
+                            )
+                        }
+                    }
+                    post.authorUsername?.takeIf {
+                        it.isNotBlank() && post.authorFullName.isNotBlank()
+                    }?.let { username ->
                         Text(
                             text = "@$username",
                             color = Color.White.copy(alpha = 0.8f),
@@ -711,7 +842,6 @@ private fun ReelsVideoItem(
             }
         }
 
-        val haptics = LocalHapticFeedback.current
         var reelsLikeScale by remember { mutableStateOf(1f) }
         val animatedReelsLikeScale by animateFloatAsState(
             targetValue = reelsLikeScale,
@@ -727,6 +857,7 @@ private fun ReelsVideoItem(
         Column(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
+                .navigationBarsPadding()
                 .padding(end = 12.dp, bottom = 28.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(18.dp),
@@ -737,7 +868,7 @@ private fun ReelsVideoItem(
                     onClick = {
                         engagedOnPage = true
                         reelsLikeScale = 1.35f
-                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        haptics.confirm()
                         onLikeClick()
                     },
                     modifier = Modifier
@@ -764,6 +895,7 @@ private fun ReelsVideoItem(
                 IconButton(
                     onClick = {
                         engagedOnPage = true
+                        haptics.tap()
                         onCommentsClick()
                     },
                     modifier = Modifier.size(44.dp),
@@ -788,6 +920,7 @@ private fun ReelsVideoItem(
                 IconButton(
                     onClick = {
                         engagedOnPage = true
+                        haptics.tap()
                         onShareClick()
                     },
                     modifier = Modifier.size(44.dp),

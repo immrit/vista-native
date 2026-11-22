@@ -2,6 +2,8 @@ package ir.coffevista.vista_native.features.feed.ui.create
 
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -83,5 +85,148 @@ class TrimMathTest {
     fun clipLengthOptions_areSortedAndDistinct() {
         val options = TrimMath.clipLengthOptions(100_000, 3_000)
         assertArrayEquals(options.sorted().distinct().toLongArray(), options.toLongArray())
+    }
+
+    @Test
+    fun clampRange_respectsAnchorsMinAndMaxDuration() {
+        // Initial range longer than maxLenMs with start anchored
+        assertEquals(
+            0L to 60_000L,
+            TrimMath.clampRange(0L, 120_000L, durationMs = 120_000L, maxLenMs = 60_000L, anchorStart = true),
+        )
+        // Dragging start handle past (end - minLenMs) stops at (end - minLenMs) without moving end
+        assertEquals(
+            9_000L to 10_000L,
+            TrimMath.clampRange(9_600L, 10_000L, durationMs = 30_000L, minLenMs = 1_000L, maxLenMs = 60_000L, anchorStart = false),
+        )
+        // Dragging end handle before (start + minLenMs) stops at (start + minLenMs) without moving start
+        assertEquals(
+            5_000L to 6_000L,
+            TrimMath.clampRange(5_000L, 5_300L, durationMs = 30_000L, minLenMs = 1_000L, maxLenMs = 60_000L, anchorStart = true),
+        )
+        // Source shorter than minLenMs still returns full source
+        assertEquals(
+            0L to 600L,
+            TrimMath.clampRange(0L, 600L, durationMs = 600L, minLenMs = 1_000L, maxLenMs = 60_000L, anchorStart = true),
+        )
+    }
+
+    @Test
+    fun slideRange_preservesWindowLengthInsideBounds() {
+        assertEquals(15_000L to 25_000L, TrimMath.slideRange(10_000L, 20_000L, deltaMs = 5_000L, durationMs = 60_000L))
+        assertEquals(0L to 10_000L, TrimMath.slideRange(3_000L, 13_000L, deltaMs = -10_000L, durationMs = 60_000L))
+        assertEquals(50_000L to 60_000L, TrimMath.slideRange(45_000L, 55_000L, deltaMs = 20_000L, durationMs = 60_000L))
+    }
+
+    @Test
+    fun normalizeVideoSamplePtsUs_preservesBFrameOrderAndSkipsOpenGop() {
+        val baseUs = 1_000_000L
+        assertNull(normalizeVideoSamplePtsUs(966_667L, baseUs))
+        val decodeOrderPts = listOf(1_000_000L, 1_100_000L, 1_033_333L, 1_066_666L)
+        val normalized = decodeOrderPts.mapNotNull { normalizeVideoSamplePtsUs(it, baseUs) }
+        assertEquals(listOf(0L, 100_000L, 33_333L, 66_666L), normalized)
+    }
+
+    @Test
+    fun normalizeAudioSamplePtsUs_enforcesMonotonicAudioTimestamps() {
+        val baseUs = 1_000_000L
+        val first = normalizeAudioSamplePtsUs(1_000_000L, baseUs, lastAudioPtsUs = null)
+        assertEquals(0L, first)
+        val duplicate = normalizeAudioSamplePtsUs(1_000_000L, baseUs, lastAudioPtsUs = first)
+        assertEquals(1_000L, duplicate)
+        val normal = normalizeAudioSamplePtsUs(1_021_333L, baseUs, lastAudioPtsUs = duplicate)
+        assertEquals(21_333L, normal)
+    }
+
+    @Test
+    fun shouldUseLosslessFastPath_allowsOnlyStandardSdrAvcAacWithMonotonicPts() {
+        assertTrue(
+            shouldUseLosslessFastPath(
+                videoMime = "video/avc",
+                audioMime = "audio/mp4a-latm",
+                isHdr = false,
+                hasNonMonotonicVideoPts = false,
+                startsWithSyncFrame = true,
+                videoSampleCount = 60,
+                seekDriftUs = 500_000L,
+            ),
+        )
+        assertTrue(
+            shouldUseLosslessFastPath(
+                videoMime = "video/avc",
+                audioMime = null,
+                isHdr = false,
+                hasNonMonotonicVideoPts = false,
+                startsWithSyncFrame = true,
+                videoSampleCount = 30,
+                seekDriftUs = 0L,
+            ),
+        )
+        assertFalse(
+            shouldUseLosslessFastPath(
+                videoMime = "video/avc",
+                audioMime = "audio/mp4a-latm",
+                isHdr = false,
+                hasNonMonotonicVideoPts = true,
+                startsWithSyncFrame = true,
+                videoSampleCount = 60,
+                seekDriftUs = 500_000L,
+            ),
+        )
+        assertFalse(
+            shouldUseLosslessFastPath(
+                videoMime = "video/hevc",
+                audioMime = "audio/mp4a-latm",
+                isHdr = false,
+                hasNonMonotonicVideoPts = false,
+                startsWithSyncFrame = true,
+                videoSampleCount = 60,
+                seekDriftUs = 500_000L,
+            ),
+        )
+        assertFalse(
+            shouldUseLosslessFastPath(
+                videoMime = "video/avc",
+                audioMime = "audio/mp4a-latm",
+                isHdr = true,
+                hasNonMonotonicVideoPts = false,
+                startsWithSyncFrame = true,
+                videoSampleCount = 60,
+                seekDriftUs = 500_000L,
+            ),
+        )
+        assertFalse(
+            shouldUseLosslessFastPath(
+                videoMime = "video/avc",
+                audioMime = "audio/opus",
+                isHdr = false,
+                hasNonMonotonicVideoPts = false,
+                startsWithSyncFrame = true,
+                videoSampleCount = 60,
+                seekDriftUs = 500_000L,
+            ),
+        )
+        assertFalse(
+            shouldUseLosslessFastPath(
+                videoMime = "video/avc",
+                audioMime = "audio/mp4a-latm",
+                isHdr = false,
+                hasNonMonotonicVideoPts = false,
+                startsWithSyncFrame = false,
+                videoSampleCount = 60,
+                seekDriftUs = 500_000L,
+            ),
+        )
+        assertFalse(
+            shouldUseLosslessFastPath(
+                videoMime = "video/avc",
+                audioMime = "audio/mp4a-latm",
+                isHdr = false,
+                hasNonMonotonicVideoPts = false,
+                startsWithSyncFrame = true,
+                videoSampleCount = 60,
+                seekDriftUs = 3_000_000L,
+            ),
+        )
     }
 }

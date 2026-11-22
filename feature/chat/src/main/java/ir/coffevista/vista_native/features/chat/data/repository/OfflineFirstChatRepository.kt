@@ -179,7 +179,7 @@ class OfflineFirstChatRepository(
                 syncPreKeysBestEffort(accId)
             }
         }
-        realtime.setSyncHandler {
+        realtime.setSyncCheckHandler {
             syncFromNetwork()
         }
         realtime.setPresenceHandler { online ->
@@ -197,16 +197,20 @@ class OfflineFirstChatRepository(
         }
     }
 
-    private suspend fun syncFromNetwork() {
-        val account = sessionProvider.account.value ?: return
-        try {
-            refreshConversations(reset = true)
+    private suspend fun syncFromNetwork(): Boolean {
+        val account = sessionProvider.account.value ?: return false
+        return try {
+            val convResult = refreshConversations(reset = true)
             val currentActive = activeConversationId
-            if (currentActive != null) {
+            val msgResult = if (currentActive != null) {
                 refreshMessages(currentActive)
+            } else {
+                null
             }
+            convResult is ChatResult.Success || msgResult is ChatResult.Success
         } catch (t: Throwable) {
             if (t is CancellationException) throw t
+            false
         }
     }
 
@@ -1181,6 +1185,7 @@ class OfflineFirstChatRepository(
                     messageType = messageType,
                 ),
             )
+            realtime.notifyRestReachable()
             mergeAndPersist(
                 decryptAndMapMessageDto(dto, accountId, isSecretConversationHint = true).copy(isMine = true),
                 MergeSource.REST,
@@ -3701,7 +3706,9 @@ class OfflineFirstChatRepository(
         onFailure: suspend () -> Unit = {},
         block: suspend () -> T,
     ): ChatResult<T> = try {
-        ChatResult.Success(withContext(Dispatchers.IO) { block() })
+        val result = withContext(Dispatchers.IO) { block() }
+        realtime.notifyRestReachable()
+        ChatResult.Success(result)
     } catch (cancelled: CancellationException) {
         throw cancelled
     } catch (error: Throwable) {
