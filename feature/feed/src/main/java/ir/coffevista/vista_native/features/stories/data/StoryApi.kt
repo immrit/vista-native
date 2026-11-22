@@ -33,6 +33,11 @@ interface StoryApi {
     @GET("v1/stories/active")
     suspend fun getActiveStories(): ActiveStoriesResponseDto
 
+    @GET("v1/stories/location")
+    suspend fun getStoriesByLocation(
+        @Query("location") location: String,
+    ): ActiveStoriesResponseDto
+
     @GET("v1/stories/users/{userId}")
     suspend fun getUserStories(
         @Path("userId") userId: String,

@@ -444,6 +444,47 @@ class VistaFoundationDatabaseTest {
     }
 
     @Test
+    fun migrationFromV11ToV12AddsLocationColumnToFeedPost() {
+        migrationHelper.createDatabase(TEST_DATABASE, 11).apply {
+            execSQL(
+                """
+                INSERT INTO feed_post (
+                    account_id, id, user_id, content, image_url, image_urls, video_url,
+                    music_url, aspect_ratio, music_title, tags, like_count, comment_count,
+                    is_liked, is_saved, hide_like_count, hide_comment_count, author_id,
+                    author_username, author_full_name, author_avatar_url, author_is_verified,
+                    author_verification_type, author_follow_status, feed_source, edited_by_vista,
+                    moderation_reason, comments_disabled, created_at, updated_at, sort_order
+                ) VALUES (
+                    'acc-1', 'post-1', 'user-1', 'hello', NULL, '[]', NULL,
+                    NULL, NULL, NULL, '[]', 0, 0,
+                    0, 0, 0, 0, 'user-1',
+                    'vista', 'Vista', NULL, 0,
+                    NULL, NULL, NULL, 0,
+                    NULL, 0, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', 0
+                )
+                """.trimIndent(),
+            )
+            close()
+        }
+
+        migrationHelper.runMigrationsAndValidate(
+            TEST_DATABASE,
+            12,
+            true,
+            VistaFoundationDatabase.MIGRATION_11_12,
+        ).use { database ->
+            database.query(
+                "SELECT id, location FROM feed_post WHERE id = 'post-1'",
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("post-1", cursor.getString(0))
+                assertNull(cursor.getString(1))
+            }
+        }
+    }
+
+    @Test
     fun migrationFromV5ToV7BuildsCombinedFeatureSchemaWithSafeDefaults() {
         migrationHelper.createDatabase(TEST_DATABASE, 5).apply {
             execSQL(

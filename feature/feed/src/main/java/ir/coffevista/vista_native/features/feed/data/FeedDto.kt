@@ -158,6 +158,7 @@ internal fun FeedPostDto.asEntity(
     editedByVista = editedByVista,
     moderationReason = moderationReason,
     commentsDisabled = commentsDisabled,
+    location = location?.trim()?.takeIf { it.isNotBlank() },
     createdAt = createdAt,
     updatedAt = updatedAt,
     sortOrder = sortOrder,

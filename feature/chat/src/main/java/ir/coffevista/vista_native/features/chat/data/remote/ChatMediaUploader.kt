@@ -8,6 +8,7 @@ import android.net.Uri
 import ir.coffevista.vista_native.core.datastore.MediaDataPolicy
 import ir.coffevista.vista_native.core.datastore.SettingsPreferenceStore
 import ir.coffevista.vista_native.core.datastore.UploadCompressionPreset
+import ir.coffevista.vista_native.core.network.forLargeMediaUpload
 import ir.coffevista.vista_native.features.chat.data.mapper.epochMillisOrNull
 import ir.coffevista.vista_native.features.chat.domain.model.AttachmentKind
 import ir.coffevista.vista_native.features.chat.domain.model.ChatAttachmentDraft
@@ -46,6 +47,7 @@ class ChatMediaUploader(
     private val cacheDir: File = File(context.cacheDir, "chat_upload_compressed").apply { mkdirs() }
     private val activeCalls = ConcurrentHashMap<String, ActiveUpload>()
     private val policy = ChatUploadPolicy()
+    private val uploadClient: OkHttpClient = externalClient.forLargeMediaUpload()
 
     /** Validate before creating an optimistic message; privilege lookup fails closed above 15MB. */
     suspend fun prepare(
@@ -108,7 +110,7 @@ class ChatMediaUploader(
         presign.headers.forEach { (name, value) ->
             if (!name.equals("host", ignoreCase = true)) builder.header(name, value)
         }
-        val call = externalClient.newCall(builder.build())
+        val call = uploadClient.newCall(builder.build())
         val activeUpload = ActiveUpload(accountId, call)
         check(activeCalls.putIfAbsent(clientId, activeUpload) == null) { "انتقال فایل از قبل فعال است" }
         try {

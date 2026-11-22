@@ -5,6 +5,7 @@ data class DeviceMetadata(
     val deviceModel: String,
     val osVersion: String,
     val appVersion: String,
+    val appVersionCode: Long = 0L,
     val userAgent: String,
 )
 

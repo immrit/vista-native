@@ -75,6 +75,7 @@ fun StoryElementsOverlay(
     onLinkClick: (url: String) -> Unit = {},
     onMentionClick: (userId: String) -> Unit = {},
     onHashtagClick: (tag: String) -> Unit = {},
+    onLocationClick: ((StoryLocation) -> Unit)? = null,
     onReactionClick: (emoji: String) -> Unit = {},
     onDialogVisibilityChanged: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
@@ -111,6 +112,7 @@ fun StoryElementsOverlay(
         onViewQuestionAnswers,
         onMentionClick,
         onHashtagClick,
+        onLocationClick,
         onReactionClick,
         internalNavigator,
     ) {
@@ -135,7 +137,13 @@ fun StoryElementsOverlay(
             },
             onMentionClick = onMentionClick,
             onHashtagClick = onHashtagClick,
-            onLocationClick = { loc -> activeLocation = loc },
+            onLocationClick = { loc ->
+                if (onLocationClick != null) {
+                    onLocationClick(loc)
+                } else {
+                    activeLocation = loc
+                }
+            },
             onReactionClick = { el ->
                 val emoji = el.content?.ifBlank { null } ?: "❤️"
                 activeReactionBurst = emoji

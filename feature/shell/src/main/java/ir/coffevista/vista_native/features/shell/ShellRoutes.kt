@@ -18,6 +18,15 @@ object ShellRoutes {
     const val AppealRoute = "appeal/{postId}"
     fun hashtag(tag: String) = "hashtag/" + java.net.URLEncoder.encode(tag.removePrefix("#"), "UTF-8")
     const val HashtagRoute = "hashtag/{tag}"
+    fun location(name: String, lat: Double? = null, lon: Double? = null): String {
+        val encoded = java.net.URLEncoder.encode(name.trim(), "UTF-8")
+        return if (lat != null && lon != null && (lat != 0.0 || lon != 0.0)) {
+            "location/$encoded?lat=$lat&lon=$lon"
+        } else {
+            "location/$encoded"
+        }
+    }
+    const val LocationRoute = "location/{name}?lat={lat}&lon={lon}"
     fun reels(postId: String? = null) = if (postId != null) "reels?postId=$postId" else "reels"
     const val ReelsRoute = "reels?postId={postId}"
 

@@ -2,9 +2,12 @@ package ir.coffevista.vista_native.features.feed.data
 
 import ir.coffevista.vista_native.core.database.feed.FeedDao
 import ir.coffevista.vista_native.core.database.feed.FeedPageStateEntity
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
@@ -184,6 +187,79 @@ class OfflineFirstFeedRepository @Inject constructor(
             },
             hasMore = response.hasMore,
             nextOffset = safeOffset + response.posts.size,
+        )
+    }
+
+    override suspend fun getLocationPosts(
+        accountId: String,
+        location: String,
+        offset: Int,
+    ): FeedSnapshot {
+        val normalized = location.trim()
+        require(normalized.isNotBlank()) { "موقعیت مکانی نامعتبر است" }
+        val safeOffset = offset.coerceAtLeast(0)
+        val storageKey = "$accountId${NAMESPACE_SEPARATOR}location$NAMESPACE_SEPARATOR${LocationMatcher.normalize(normalized)}"
+
+        val remoteResponse = try {
+            feedApi.getLocationPosts(normalized, hashtagLimit, safeOffset)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            null
+        }
+
+        if (remoteResponse != null) {
+            return FeedSnapshot(
+                posts = remoteResponse.posts.mapIndexed { index, post ->
+                    post.asEntity(storageKey, index.toLong()).asExternalModel()
+                },
+                hasMore = remoteResponse.hasMore,
+                nextOffset = safeOffset + remoteResponse.posts.size,
+            )
+        }
+
+        if (safeOffset > 0) {
+            return FeedSnapshot(emptyList(), hasMore = false, nextOffset = safeOffset)
+        }
+
+        val fallbackPosts = coroutineScope {
+            val cachedDeferred = async {
+                feedDao.getPostsWithLocation(accountId, "$accountId$NAMESPACE_SEPARATOR")
+                    .map { it.asExternalModel() }
+            }
+            val exploreDeferred = async {
+                try {
+                    feedApi.getExploreFeed(50, 0).posts.mapIndexed { idx, dto ->
+                        dto.asEntity(storageKey, idx.toLong()).asExternalModel()
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    emptyList()
+                }
+            }
+            val followingDeferred = async {
+                try {
+                    feedApi.getFollowingFeed(50, 0).posts.mapIndexed { idx, dto ->
+                        dto.asEntity(storageKey, idx.toLong()).asExternalModel()
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    emptyList()
+                }
+            }
+
+            (exploreDeferred.await() + followingDeferred.await() + cachedDeferred.await())
+                .distinctBy(FeedPost::id)
+                .filter { post -> LocationMatcher.matches(post.location, normalized) }
+                .sortedByDescending(FeedPost::createdAt)
+        }
+
+        return FeedSnapshot(
+            posts = fallbackPosts,
+            hasMore = false,
+            nextOffset = fallbackPosts.size,
         )
     }
 

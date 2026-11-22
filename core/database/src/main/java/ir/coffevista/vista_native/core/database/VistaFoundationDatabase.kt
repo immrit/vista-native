@@ -26,7 +26,7 @@ import ir.coffevista.vista_native.core.database.search.SearchHistoryEntity
         SearchHistoryEntity::class,
         ir.coffevista.vista_native.core.database.chat.ConversationEntity::class,
     ],
-    version = 11,
+    version = 12,
     exportSchema = true,
 )
 @TypeConverters(
@@ -323,6 +323,12 @@ abstract class VistaFoundationDatabase : RoomDatabase() {
             override fun migrate(database: SupportSQLiteDatabase) {
                 database.addColumnIfMissing("own_profile", "created_at", "TEXT")
                 database.addColumnIfMissing("public_profile", "created_at", "TEXT")
+            }
+        }
+
+        val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.addColumnIfMissing("feed_post", "location", "TEXT")
             }
         }
 

@@ -82,6 +82,7 @@ import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.WorkspacePremium
 import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
 import ir.coffevista.vista_native.features.profile.data.ProfileHighlightDto
@@ -182,6 +183,7 @@ internal fun ProfileParityList(
     onPremiumPrompt: (String) -> Unit = {},
     onHashtagClick: (String) -> Unit = {},
     onMentionClick: (String) -> Unit = {},
+    onLocationClick: (String) -> Unit = {},
     onLoadMore: () -> Unit,
     onRefresh: () -> Unit = {},
     activeNote: ProfileNoteDto? = null,
@@ -405,6 +407,7 @@ internal fun ProfileParityList(
                                 onPremiumPrompt = onPremiumPrompt,
                                 onHashtagClick = onHashtagClick,
                                 onMentionClick = onMentionClick,
+                                onLocationClick = onLocationClick,
                             )
                             HorizontalDivider(
                                 thickness = .5.dp,
@@ -1074,6 +1077,7 @@ internal fun ProfilePostCard(
     onPremiumPrompt: (String) -> Unit = {},
     onHashtagClick: (String) -> Unit = {},
     onMentionClick: (String) -> Unit = {},
+    onLocationClick: (String) -> Unit = {},
 ) {
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
@@ -1157,6 +1161,32 @@ internal fun ProfilePostCard(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 13.sp,
                             maxLines = 1,
+                        )
+                    }
+                }
+                post.location?.trim()?.takeIf { it.isNotBlank() }?.let { location ->
+                    Row(
+                        modifier = Modifier
+                            .padding(top = 2.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .clickable { onLocationClick(location) }
+                            .padding(end = 4.dp, top = 1.dp, bottom = 1.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.LocationOn,
+                            contentDescription = "موقعیت مکانی",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
+                            modifier = Modifier.size(13.dp),
+                        )
+                        Spacer(Modifier.width(3.dp))
+                        Text(
+                            text = location,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }

@@ -5,19 +5,35 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Shape
 import ir.coffevista.vista_native.core.designsystem.glass.VistaGlassState
 
+data class ShellFeedRootActions(
+    val onPostClick: (String) -> Unit,
+    val onAuthorClick: (String) -> Unit,
+    val onCreatePost: () -> Unit,
+    val onOpenStoryPlayer: (Int) -> Unit,
+    val onCreateStory: (android.net.Uri?) -> Unit,
+    val onNotifications: () -> Unit,
+    val onAppeal: (String) -> Unit,
+    val onHashtag: (String) -> Unit,
+    val onVideoClick: (String) -> Unit,
+    val onLocation: (String) -> Unit,
+)
+
+data class ShellLocationPostsRequest(
+    val locationName: String,
+    val latitude: Double?,
+    val longitude: Double?,
+    val onBack: () -> Unit,
+    val onPostClick: (String) -> Unit,
+    val onAuthorClick: (String) -> Unit,
+    val onHashtagClick: (String) -> Unit,
+    val onLocationClick: (name: String, lat: Double?, lon: Double?) -> Unit,
+    val onNavigateToStoryEditor: ((android.net.Uri) -> Unit)?,
+    val onOpenLink: (String) -> Unit,
+)
+
 /** Feature UI supplied by the app composition root; Shell owns navigation only. */
 data class ShellFeatureContent(
-    val feedRoot: @Composable (
-        onPostClick: (String) -> Unit,
-        onAuthorClick: (String) -> Unit,
-        onCreatePost: () -> Unit,
-        onOpenStoryPlayer: (Int) -> Unit,
-        onCreateStory: (android.net.Uri?) -> Unit,
-        onNotifications: () -> Unit,
-        onAppeal: (String) -> Unit,
-        onHashtag: (String) -> Unit,
-        onVideoClick: (String) -> Unit,
-    ) -> Unit,
+    val feedRoot: @Composable (ShellFeedRootActions) -> Unit,
     val appeal: (@Composable (postId: String, onBack: () -> Unit) -> Unit),
     val hashtagPosts: (@Composable (
         hashtag: String,
@@ -25,7 +41,9 @@ data class ShellFeatureContent(
         onPostClick: (String) -> Unit,
         onAuthorClick: (String) -> Unit,
         onNavigateToStoryEditor: ((android.net.Uri) -> Unit)?,
+        onLocation: (String) -> Unit,
     ) -> Unit),
+    val locationPosts: @Composable (ShellLocationPostsRequest) -> Unit,
     val notifications: @Composable (
         onBack: () -> Unit,
         onPostClick: (String) -> Unit,
@@ -34,7 +52,14 @@ data class ShellFeatureContent(
         onSuggestionsClick: () -> Unit,
         onAppealClick: (String) -> Unit,
     ) -> Unit,
-    val storyPlayer: (@Composable (initialUserIndex: Int, onClose: () -> Unit, onOpenProfile: (String) -> Unit, onOpenLink: (String) -> Unit, onOpenHashtag: (String) -> Unit) -> Unit),
+    val storyPlayer: (@Composable (
+        initialUserIndex: Int,
+        onClose: () -> Unit,
+        onOpenProfile: (String) -> Unit,
+        onOpenLink: (String) -> Unit,
+        onOpenHashtag: (String) -> Unit,
+        onOpenLocation: (String, Double?, Double?) -> Unit,
+    ) -> Unit),
     val storyCreate: (@Composable (initialUri: android.net.Uri?, onClose: () -> Unit, onStoryPublished: () -> Unit) -> Unit),
     val addPost: (@Composable (
         onBack: () -> Unit,
@@ -78,6 +103,7 @@ data class ShellFeatureContent(
         onOpenUserProfile: (String) -> Unit,
         onOpenHashtag: (String) -> Unit,
         onOpenLink: (String) -> Unit,
+        onOpenLocation: (String, Double?, Double?) -> Unit,
     ) -> Unit,
     val postDetail: @Composable (
         onBack: () -> Unit,
@@ -85,6 +111,7 @@ data class ShellFeatureContent(
         onHashtagClick: (String) -> Unit,
         onAppealClick: (String) -> Unit,
         onNavigateToStoryEditor: (android.net.Uri) -> Unit,
+        onLocationClick: (String) -> Unit,
     ) -> Unit,
     val userProfile: @Composable (
         userId: String,
@@ -99,6 +126,7 @@ data class ShellFeatureContent(
         onOpenUserProfile: (String) -> Unit,
         onOpenHashtag: (String) -> Unit,
         onOpenLink: (String) -> Unit,
+        onOpenLocation: (String, Double?, Double?) -> Unit,
     ) -> Unit,
     val followersFollowing: (@Composable (userId: String, initialTab: Int, onBack: () -> Unit, onOpenProfile: (String) -> Unit) -> Unit),
     val qrScanner: (@Composable (onBack: () -> Unit, onUserFound: (String) -> Unit) -> Unit),

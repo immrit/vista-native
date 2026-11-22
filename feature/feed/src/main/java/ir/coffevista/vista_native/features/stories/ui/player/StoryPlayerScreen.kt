@@ -45,6 +45,7 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -127,6 +128,7 @@ fun StoryPlayerScreen(
     onOpenProfile: (userId: String) -> Unit,
     onOpenLink: (url: String) -> Unit,
     onOpenHashtag: (String) -> Unit = {},
+    onOpenLocation: (name: String, lat: Double?, lon: Double?) -> Unit = { _, _, _ -> },
     modifier: Modifier = Modifier,
     viewModel: StoryPlayerViewModel = androidx.hilt.navigation.compose.hiltViewModel(),
 ) {
@@ -546,6 +548,9 @@ fun StoryPlayerScreen(
                         onLinkClick = onOpenLink,
                         onMentionClick = onOpenProfile,
                         onHashtagClick = onOpenHashtag,
+                        onLocationClick = { loc ->
+                            onOpenLocation(loc.name, loc.latitude, loc.longitude)
+                        },
                         onReactionClick = { emoji ->
                             viewModel.reactToStory(activeStory.id, emoji)
                         },
@@ -645,6 +650,44 @@ fun StoryPlayerScreen(
                                             color = Color.White.copy(alpha = 0.7f),
                                             fontSize = 12.sp,
                                         )
+                                        val storyLocation = activeStory.location
+                                            ?: activeStory.interactiveElements.firstOrNull { it.type == "location" }?.location
+                                        if (storyLocation != null && storyLocation.name.isNotBlank()) {
+                                            Text(
+                                                text = " • ",
+                                                color = Color.White.copy(alpha = 0.65f),
+                                                fontSize = 12.sp,
+                                            )
+                                            Row(
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(8.dp))
+                                                    .clickable {
+                                                        onOpenLocation(
+                                                            storyLocation.name,
+                                                            storyLocation.latitude,
+                                                            storyLocation.longitude,
+                                                        )
+                                                    }
+                                                    .padding(horizontal = 4.dp, vertical = 1.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Rounded.LocationOn,
+                                                    contentDescription = "موقعیت مکانی",
+                                                    tint = Color.White.copy(alpha = 0.9f),
+                                                    modifier = Modifier.size(12.dp),
+                                                )
+                                                Spacer(modifier = Modifier.width(2.dp))
+                                                Text(
+                                                    text = storyLocation.name,
+                                                    color = Color.White.copy(alpha = 0.9f),
+                                                    fontSize = 11.5.sp,
+                                                    fontWeight = FontWeight.Medium,
+                                                    maxLines = 1,
+                                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                                )
+                                            }
+                                        }
                                         if (activeStory.privacyType == StoryPrivacyType.CloseFriends) {
                                             Spacer(modifier = Modifier.width(6.dp))
                                             Row(

@@ -142,6 +142,7 @@ fun OwnProfileScreen(
     onNavigateToPricing: (() -> Unit)? = null,
     onHighlightClick: ((ProfileHighlightDto) -> Unit)? = null,
     onNavigateToStoryEditor: ((Uri) -> Unit)? = null,
+    onLocationClick: (String) -> Unit = {},
     onSendDirectMessage: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
@@ -361,6 +362,7 @@ fun OwnProfileScreen(
                                 onReportPost = { post -> reportPostTarget = post },
                                 onVisibilityChange = onVisibilityChange,
                                 onPremiumPrompt = { feature -> premiumPromptFeature = feature },
+                                onLocationClick = onLocationClick,
                                 onLoadMore = onPostsLoadMore,
                                 onRefresh = onPostsRefresh,
                                 activeNote = activeNote,

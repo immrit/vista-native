@@ -109,4 +109,14 @@ interface FeedDao {
 
     @Query("DELETE FROM feed_post WHERE id = :postId")
     suspend fun deletePostEverywhere(postId: String)
+
+    @Query(
+        "SELECT * FROM feed_post WHERE (account_id = :accountId OR substr(account_id, 1, length(:namespacePrefix)) = :namespacePrefix) " +
+            "AND location IS NOT NULL AND TRIM(location) != '' ORDER BY created_at DESC LIMIT :limit",
+    )
+    suspend fun getPostsWithLocation(
+        accountId: String,
+        namespacePrefix: String,
+        limit: Int = 200,
+    ): List<FeedPostEntity>
 }

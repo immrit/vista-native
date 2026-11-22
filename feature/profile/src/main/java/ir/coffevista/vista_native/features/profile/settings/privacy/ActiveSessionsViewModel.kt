@@ -256,7 +256,9 @@ class ActiveSessionsViewModel @Inject constructor(
         val rawPlatform = session.platform?.lowercase()?.trim().orEmpty()
         val osVersion = session.deviceInfo["os_version"]?.jsonPrimitive?.content?.trim().orEmpty()
         val appVer = session.appVersion?.trim().orEmpty()
-        val subtitle = buildClientSubtitle(rawPlatform, appVer, osVersion)
+        val appCode = session.appVersionCode?.takeIf { it > 0 }
+        val subtitle = buildClientSubtitle(rawPlatform, appVer, appCode, osVersion)
+        val appVersionDisplay = buildAppVersionDisplay(rawPlatform, appVer, appCode)
         val primaryPlace = session.locationCity?.cleanPlaceToken()
             ?: session.locationRegion?.cleanPlaceToken()
         val country = session.locationCountry?.cleanPlaceToken()
@@ -269,6 +271,7 @@ class ActiveSessionsViewModel @Inject constructor(
             id = session.id,
             deviceName = resolveDisplayDeviceName(session, rawPlatform),
             clientSubtitle = subtitle,
+            appVersionDisplay = appVersionDisplay,
             platform = rawPlatform,
             ip = session.ipAddress.orEmpty(),
             location = location,
@@ -322,7 +325,19 @@ class ActiveSessionsViewModel @Inject constructor(
             normalized == "web"
     }
 
-    private fun buildClientSubtitle(platform: String, appVersion: String, osVersion: String): String {
+    private fun buildAppVersionDisplay(platform: String, appVersion: String, appVersionCode: Int?): String {
+        if (platform == "web" && (appVersion.isBlank() || appVersion.equals("web", ignoreCase = true))) {
+            return "نسخه وب"
+        }
+        return when {
+            appVersion.isNotBlank() && appVersionCode != null -> "v$appVersion (کد $appVersionCode)"
+            appVersion.isNotBlank() -> "v$appVersion"
+            appVersionCode != null -> "کد $appVersionCode"
+            else -> "نامشخص"
+        }
+    }
+
+    private fun buildClientSubtitle(platform: String, appVersion: String, appVersionCode: Int?, osVersion: String): String {
         val base = when (platform) {
             "android" -> "Vista Android"
             "ios" -> "Vista iOS"
@@ -330,9 +345,15 @@ class ActiveSessionsViewModel @Inject constructor(
             "web" -> "Vista Web"
             else -> "Vista App"
         }
+        val cleanAppVersion = appVersion.takeUnless { it.equals("web", ignoreCase = true) }.orEmpty()
+        val verText = when {
+            cleanAppVersion.isNotBlank() && appVersionCode != null -> "$cleanAppVersion ($appVersionCode)"
+            cleanAppVersion.isNotBlank() -> cleanAppVersion
+            else -> ""
+        }
         return when {
-            appVersion.isNotBlank() && osVersion.isNotBlank() -> "$base $appVersion • OS $osVersion"
-            appVersion.isNotBlank() -> "$base $appVersion"
+            verText.isNotBlank() && osVersion.isNotBlank() -> "$base $verText • OS $osVersion"
+            verText.isNotBlank() -> "$base $verText"
             osVersion.isNotBlank() -> "$base • $osVersion"
             else -> base
         }

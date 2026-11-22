@@ -282,6 +282,7 @@ data class CreateStoryRequestDto(
     @SerialName("allowed_user_ids") val allowedUserIds: List<String> = emptyList(),
     @SerialName("excluded_user_ids") val excludedUserIds: List<String> = emptyList(),
     @SerialName("interactive_elements") val interactiveElements: List<StoryElement> = emptyList(),
+    @SerialName("location") val location: StoryLocation? = null,
     @SerialName("music_url") val musicUrl: String? = null,
     @SerialName("music_title") val musicTitle: String? = null,
 )

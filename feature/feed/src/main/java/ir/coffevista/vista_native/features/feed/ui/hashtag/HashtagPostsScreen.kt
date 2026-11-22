@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.Tag
+import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -209,6 +210,7 @@ fun HashtagPostsScreen(
     onPostClick: (String) -> Unit,
     onAuthorClick: (String) -> Unit,
     onHashtagClick: (String) -> Unit = {},
+    onLocationClick: (String) -> Unit = {},
     onNavigateToStoryEditor: ((android.net.Uri) -> Unit)? = null,
 ) {
     val viewModel: HashtagPostsViewModel = hiltViewModel()
@@ -277,6 +279,7 @@ fun HashtagPostsScreen(
                                 onPostClick = onPostClick,
                                 onAuthorClick = onAuthorClick,
                                 onHashtagClick = effectiveOnHashtagClick,
+                                onLocationClick = onLocationClick,
                                 onMediaClick = { imgs, idx -> fullscreenMedia = imgs to idx },
                                 onLikeClick = { viewModel.toggleLike(post) },
                                 onSaveClick = { viewModel.toggleSave(post) },
@@ -328,6 +331,7 @@ private fun HashtagPostCard(
     onPostClick: (String) -> Unit,
     onAuthorClick: (String) -> Unit,
     onHashtagClick: (String) -> Unit = {},
+    onLocationClick: (String) -> Unit = {},
     onMediaClick: ((List<String>, Int) -> Unit)? = null,
     onLikeClick: () -> Unit,
     onSaveClick: () -> Unit,
@@ -343,9 +347,7 @@ private fun HashtagPostCard(
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             // Author Row
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onAuthorClick(post.userId) },
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 AsyncImage(
@@ -353,12 +355,14 @@ private fun HashtagPostCard(
                     contentDescription = null,
                     modifier = Modifier
                         .size(40.dp)
-                        .clip(CircleShape),
+                        .clip(CircleShape)
+                        .clickable { onAuthorClick(post.userId) },
                     contentScale = ContentScale.Crop,
                 )
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
                     Row(
+                        modifier = Modifier.clickable { onAuthorClick(post.userId) },
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
@@ -376,11 +380,43 @@ private fun HashtagPostCard(
                             size = 15.dp,
                         )
                     }
-                    Text(
-                        text = persianRelativeTime(post.createdAt),
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = persianRelativeTime(post.createdAt),
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        post.location?.trim()?.takeIf { it.isNotBlank() }?.let { loc ->
+                            Text(
+                                text = " • ",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
+                            )
+                            Row(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .clickable { onLocationClick(loc) }
+                                    .padding(horizontal = 3.dp, vertical = 1.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.LocationOn,
+                                    contentDescription = "موقعیت مکانی",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(12.dp),
+                                )
+                                Spacer(Modifier.width(2.dp))
+                                Text(
+                                    text = loc,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                    }
                 }
             }
 

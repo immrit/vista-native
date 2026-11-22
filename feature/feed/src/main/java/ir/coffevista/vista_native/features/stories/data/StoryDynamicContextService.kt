@@ -16,6 +16,7 @@ import androidx.core.content.ContextCompat
 import dagger.hilt.android.qualifiers.ApplicationContext
 import ir.coffevista.vista_native.core.common.toPersianDigits
 import ir.coffevista.vista_native.core.network.BootstrapApi
+import ir.coffevista.vista_native.features.feed.data.LocationMatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -47,8 +48,20 @@ data class StoryPlaceSuggestion(
     val subtitle: String = "",
     val latitude: Double? = null,
     val longitude: Double? = null,
-    val category: String = "place", // "gps", "neighbourhood", "poi", "city"
-)
+    val category: String = "place", // "gps", "neighbourhood", "poi", "city", "custom"
+    val distanceMeters: Double? = null,
+    val address: String = "",
+) {
+    fun formattedSubtitle(): String {
+        val dist = LocationMatcher.formatDistanceFa(distanceMeters)
+        val detail = address.ifBlank { subtitle }.trim()
+        return when {
+            !dist.isNullOrBlank() && detail.isNotBlank() -> "$dist • $detail"
+            !dist.isNullOrBlank() -> dist
+            else -> detail
+        }
+    }
+}
 
 data class StoryLiveWeather(
     val city: String,
@@ -117,7 +130,10 @@ class StoryDynamicContextService @Inject constructor(
     }
 
     @SuppressLint("MissingPermission")
-    suspend fun obtainDeviceCoordinates(timeoutMs: Long = 5_500L): Pair<Double, Double>? {
+    suspend fun obtainDeviceCoordinates(
+        timeoutMs: Long = 5_500L,
+        forceFresh: Boolean = false,
+    ): Pair<Double, Double>? {
         if (!hasLocationPermission()) return null
         val lm = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return null
 
@@ -135,8 +151,8 @@ class StoryDynamicContextService @Inject constructor(
             .filter { loc -> loc.latitude != 0.0 || loc.longitude != 0.0 }
             .maxByOrNull { it.time }
 
-        // If we have a recent fix (< 15 minutes), return immediately for zero latency
-        if (bestLastKnown != null && (nowMs - bestLastKnown.time) <= 15 * 60_000L) {
+        // If we have a recent fix (< 15 minutes) and forceFresh isn't requested, return immediately for zero latency
+        if (!forceFresh && bestLastKnown != null && (nowMs - bestLastKnown.time) <= 15 * 60_000L) {
             return bestLastKnown.latitude to bestLastKnown.longitude
         }
 
@@ -203,39 +219,80 @@ class StoryDynamicContextService @Inject constructor(
 
     /**
      * Resolves multi-granularity real-world place suggestions (neighborhood, street, POI, city)
-     * around the user's current coordinates.
+     * around the user's current coordinates with accurate Haversine distances.
      */
-    suspend fun resolveCurrentPlaces(lat: Double, lon: Double): List<StoryPlaceSuggestion> =
+    suspend fun resolveCurrentPlaces(
+        lat: Double,
+        lon: Double,
+        forceRefresh: Boolean = false,
+    ): List<StoryPlaceSuggestion> =
         withContext(Dispatchers.IO) {
             val cacheKey = "rev:${"%.3f".format(Locale.US, lat)}:${"%.3f".format(Locale.US, lon)}"
-            placeCache[cacheKey]?.let { (ts, items) ->
-                if (System.currentTimeMillis() - ts < 10 * 60_000L && items.isNotEmpty()) return@withContext items
+            if (!forceRefresh) {
+                placeCache[cacheKey]?.let { (ts, items) ->
+                    if (System.currentTimeMillis() - ts < 10 * 60_000L && items.isNotEmpty()) return@withContext items
+                }
             }
 
             val merged = coroutineScope {
                 val androidGeoDeferred = async { reverseGeocodeAndroid(lat, lon) }
                 val bigDataDeferred = async { reverseGeocodeBigDataCloud(lat, lon) }
                 val nominatimDeferred = async { reverseGeocodeNominatim(lat, lon) }
+                val photonDeferred = async { fetchNearbyPhoton(lat, lon) }
+                val overpassDeferred = async { fetchNearbyOverpass(lat, lon) }
                 val backendDeferred = async {
                     runCatching {
-                        storyApi.getStoryPlacesContext(lat = lat, lon = lon).places.map {
+                        storyApi.getStoryPlacesContext(lat = lat, lon = lon).places.map { dto ->
+                            val hasValidCoords = dto.latitude != 0.0 || dto.longitude != 0.0
+                            val pLat = dto.latitude.takeIf { hasValidCoords }
+                            val pLon = dto.longitude.takeIf { hasValidCoords }
+                            val dist = if (pLat != null && pLon != null) {
+                                LocationMatcher.haversineMeters(lat, lon, pLat, pLon)
+                            } else {
+                                null
+                            }
                             StoryPlaceSuggestion(
-                                name = it.name,
-                                subtitle = it.subtitle.orEmpty(),
-                                latitude = it.latitude,
-                                longitude = it.longitude,
-                                category = it.category ?: "place",
+                                name = dto.name,
+                                subtitle = dto.subtitle.orEmpty(),
+                                latitude = pLat,
+                                longitude = pLon,
+                                category = dto.category ?: "place",
+                                distanceMeters = dist,
+                                address = dto.subtitle.orEmpty(),
                             )
                         }
                     }.getOrDefault(emptyList())
                 }
 
-                deduplicatePlaces(
+                val immediatePlaces = deduplicatePlaces(
                     nominatimDeferred.await() +
                         bigDataDeferred.await() +
-                        androidGeoDeferred.await() +
-                        backendDeferred.await(),
+                        androidGeoDeferred.await(),
                 )
+                val immediateKeys = immediatePlaces.map { LocationMatcher.normalize(it.name) }.toSet()
+
+                val allNearby = deduplicatePlaces(
+                    immediatePlaces +
+                        photonDeferred.await() +
+                        overpassDeferred.await() +
+                        backendDeferred.await(),
+                ).map { item ->
+                    if (item.distanceMeters == null && item.latitude != null && item.longitude != null &&
+                        (item.latitude != 0.0 || item.longitude != 0.0)
+                    ) {
+                        item.copy(
+                            distanceMeters = LocationMatcher.haversineMeters(lat, lon, item.latitude, item.longitude),
+                        )
+                    } else {
+                        item
+                    }
+                }
+
+                val topImmediate = allNearby.filter { LocationMatcher.normalize(it.name) in immediateKeys }
+                val nearbyPois = allNearby
+                    .filterNot { LocationMatcher.normalize(it.name) in immediateKeys }
+                    .sortedBy { it.distanceMeters ?: Double.MAX_VALUE }
+                topImmediate + nearbyPois
             }
 
             if (merged.isNotEmpty()) {
@@ -249,41 +306,72 @@ class StoryDynamicContextService @Inject constructor(
                         latitude = lat,
                         longitude = lon,
                         category = "gps",
+                        distanceMeters = 0.0,
                     ),
                 )
             }
         }
 
     /**
-     * Live dynamic place/city/POI search in Persian & English.
+     * Live dynamic place/city/POI search in Persian & English, optionally biased toward user's coordinates.
      */
-    suspend fun searchPlaces(query: String): List<StoryPlaceSuggestion> = withContext(Dispatchers.IO) {
+    suspend fun searchPlaces(
+        query: String,
+        biasLat: Double? = null,
+        biasLon: Double? = null,
+    ): List<StoryPlaceSuggestion> = withContext(Dispatchers.IO) {
         val q = query.trim()
         if (q.isBlank()) return@withContext emptyList()
-        val cacheKey = "q:${q.lowercase()}"
+        val hasBias = biasLat != null && biasLon != null && (biasLat != 0.0 || biasLon != 0.0)
+        val cacheKey = if (hasBias) {
+            "q:${q.lowercase()}:${"%.2f".format(Locale.US, biasLat!!)}:${"%.2f".format(Locale.US, biasLon!!)}"
+        } else {
+            "q:${q.lowercase()}"
+        }
         placeCache[cacheKey]?.let { (ts, items) ->
             if (System.currentTimeMillis() - ts < 10 * 60_000L && items.isNotEmpty()) return@withContext items
         }
 
         val combined = coroutineScope {
-            val nominatimDeferred = async { searchNominatim(q, limit = 8) }
+            val photonDeferred = async { searchPhoton(q, limit = 12, biasLat = biasLat, biasLon = biasLon) }
+            val nominatimDeferred = async { searchNominatim(q, limit = 8, biasLat = biasLat, biasLon = biasLon) }
             val openMeteoDeferred = async { searchOpenMeteoCities(q, count = 6) }
             val backendDeferred = async {
                 runCatching {
-                    storyApi.getStoryPlacesContext(query = q).places.map {
+                    storyApi.getStoryPlacesContext(query = q).places.map { dto ->
+                        val hasValidCoords = dto.latitude != 0.0 || dto.longitude != 0.0
                         StoryPlaceSuggestion(
-                            name = it.name,
-                            subtitle = it.subtitle.orEmpty(),
-                            latitude = it.latitude.takeIf { v -> v != 0.0 },
-                            longitude = it.longitude.takeIf { v -> v != 0.0 },
-                            category = it.category ?: "place",
+                            name = dto.name,
+                            subtitle = dto.subtitle.orEmpty(),
+                            latitude = dto.latitude.takeIf { hasValidCoords },
+                            longitude = dto.longitude.takeIf { hasValidCoords },
+                            category = dto.category ?: "place",
+                            address = dto.subtitle.orEmpty(),
                         )
                     }
                 }.getOrDefault(emptyList())
             }
             deduplicatePlaces(
-                nominatimDeferred.await() + openMeteoDeferred.await() + backendDeferred.await(),
-            )
+                photonDeferred.await() +
+                    nominatimDeferred.await() +
+                    openMeteoDeferred.await() +
+                    backendDeferred.await(),
+            ).map { item ->
+                if (hasBias && item.distanceMeters == null && item.latitude != null && item.longitude != null &&
+                    (item.latitude != 0.0 || item.longitude != 0.0)
+                ) {
+                    item.copy(
+                        distanceMeters = LocationMatcher.haversineMeters(
+                            biasLat!!,
+                            biasLon!!,
+                            item.latitude,
+                            item.longitude,
+                        ),
+                    )
+                } else {
+                    item
+                }
+            }
         }
 
         if (combined.isNotEmpty()) {
@@ -520,11 +608,169 @@ class StoryDynamicContextService @Inject constructor(
         out
     }.getOrDefault(emptyList())
 
-    private fun searchNominatim(query: String, limit: Int): List<StoryPlaceSuggestion> = runCatching {
+    private fun fetchNearbyPhoton(lat: Double, lon: Double): List<StoryPlaceSuggestion> = runCatching {
+        val url = String.format(
+            Locale.US,
+            "https://photon.komoot.io/reverse?lat=%.5f&lon=%.5f&limit=15&radius=5",
+            lat,
+            lon,
+        )
+        val body = httpGetString(url) ?: return@runCatching emptyList()
+        parsePhotonFeatures(body, refLat = lat, refLon = lon)
+    }.getOrDefault(emptyList())
+
+    private fun searchPhoton(
+        query: String,
+        limit: Int,
+        biasLat: Double? = null,
+        biasLon: Double? = null,
+    ): List<StoryPlaceSuggestion> = runCatching {
         val encoded = URLEncoder.encode(query, "UTF-8")
-        val url = "https://nominatim.openstreetmap.org/search?format=jsonv2&q=$encoded&accept-language=fa&limit=$limit&addressdetails=1"
+        val biasParams = if (biasLat != null && biasLon != null && (biasLat != 0.0 || biasLon != 0.0)) {
+            String.format(Locale.US, "&lat=%.5f&lon=%.5f", biasLat, biasLon)
+        } else {
+            ""
+        }
+        val url = "https://photon.komoot.io/api/?q=$encoded&limit=$limit$biasParams"
+        val body = httpGetString(url) ?: return@runCatching emptyList()
+        parsePhotonFeatures(body, refLat = biasLat, refLon = biasLon)
+    }.getOrDefault(emptyList())
+
+    private fun parsePhotonFeatures(
+        body: String,
+        refLat: Double?,
+        refLon: Double?,
+    ): List<StoryPlaceSuggestion> {
+        val root = json.parseToJsonElement(body).jsonObject
+        val features = root["features"] as? JsonArray ?: return emptyList()
+        val hasRef = refLat != null && refLon != null && (refLat != 0.0 || refLon != 0.0)
+        return features.mapNotNull { el ->
+            val feat = el as? JsonObject ?: return@mapNotNull null
+            val props = feat["properties"] as? JsonObject ?: return@mapNotNull null
+            val name = firstJsonString(props, "name", "street", "district", "locality")
+            if (name.isBlank()) return@mapNotNull null
+
+            val coords = (feat["geometry"] as? JsonObject)?.get("coordinates") as? JsonArray
+            val pLon = coords?.getOrNull(0)?.jsonPrimitive?.doubleOrNull
+            val pLat = coords?.getOrNull(1)?.jsonPrimitive?.doubleOrNull
+
+            val osmKey = firstJsonString(props, "osm_key")
+            val osmValue = firstJsonString(props, "osm_value")
+            val category = when {
+                osmKey == "place" && osmValue in setOf("city", "town", "village") -> "city"
+                osmKey == "place" && osmValue in setOf("suburb", "neighbourhood", "quarter", "district", "locality") -> "neighbourhood"
+                else -> "poi"
+            }
+
+            val street = firstJsonString(props, "street")
+            val district = firstJsonString(props, "district", "locality")
+            val city = firstJsonString(props, "city", "county", "state")
+            val country = firstJsonString(props, "country")
+            val addressParts = listOf(street, district, city, country)
+                .filter { it.isNotBlank() && !it.equals(name, ignoreCase = true) }
+                .distinct()
+            val detail = addressParts.take(2).joinToString("، ")
+            val dist = if (hasRef && pLat != null && pLon != null) {
+                LocationMatcher.haversineMeters(refLat!!, refLon!!, pLat, pLon)
+            } else {
+                null
+            }
+
+            StoryPlaceSuggestion(
+                name = name,
+                subtitle = detail,
+                latitude = pLat,
+                longitude = pLon,
+                category = category,
+                distanceMeters = dist,
+                address = detail,
+            )
+        }
+    }
+
+    private fun fetchNearbyOverpass(lat: Double, lon: Double): List<StoryPlaceSuggestion> = runCatching {
+        val query = String.format(
+            Locale.US,
+            "[out:json][timeout:6];(" +
+                "node[\"place\"~\"suburb|neighbourhood|quarter|square|town|city\"][\"name\"](around:4500,%.5f,%.5f);" +
+                "nwr[\"tourism\"~\"attraction|museum|viewpoint|hotel\"][\"name\"](around:3500,%.5f,%.5f);" +
+                "nwr[\"leisure\"~\"park|garden|stadium\"][\"name\"](around:3500,%.5f,%.5f);" +
+                "nwr[\"shop\"~\"mall|department_store\"][\"name\"](around:3500,%.5f,%.5f);" +
+                "nwr[\"amenity\"~\"marketplace|university|cinema|arts_centre|cafe|restaurant|hospital|library\"][\"name\"](around:2500,%.5f,%.5f);" +
+                ");out center 25;",
+            lat, lon, lat, lon, lat, lon, lat, lon, lat, lon,
+        )
+        val encoded = URLEncoder.encode(query, "UTF-8")
+        val body = httpGetString("https://overpass-api.de/api/interpreter?data=$encoded")
+            ?: httpGetString("https://overpass.kumi.systems/api/interpreter?data=$encoded")
+            ?: return@runCatching emptyList()
+        val root = json.parseToJsonElement(body).jsonObject
+        val elements = root["elements"] as? JsonArray ?: return@runCatching emptyList()
+        elements.mapNotNull { el ->
+            val obj = el as? JsonObject ?: return@mapNotNull null
+            val tags = obj["tags"] as? JsonObject ?: return@mapNotNull null
+            val name = firstJsonString(tags, "name:fa", "name")
+            if (name.isBlank()) return@mapNotNull null
+
+            val center = obj["center"] as? JsonObject
+            val pLat = obj["lat"]?.jsonPrimitive?.doubleOrNull
+                ?: center?.get("lat")?.jsonPrimitive?.doubleOrNull
+                ?: return@mapNotNull null
+            val pLon = obj["lon"]?.jsonPrimitive?.doubleOrNull
+                ?: center?.get("lon")?.jsonPrimitive?.doubleOrNull
+                ?: return@mapNotNull null
+
+            val placeTag = firstJsonString(tags, "place")
+            val category = when (placeTag) {
+                "city", "town" -> "city"
+                "suburb", "neighbourhood", "quarter", "square" -> "neighbourhood"
+                else -> "poi"
+            }
+
+            val street = firstJsonString(tags, "addr:street")
+            val district = firstJsonString(tags, "addr:district", "addr:suburb")
+            val city = firstJsonString(tags, "addr:city")
+            val detail = listOf(street, district, city)
+                .filter { it.isNotBlank() && !it.equals(name, ignoreCase = true) }
+                .distinct()
+                .joinToString("، ")
+
+            StoryPlaceSuggestion(
+                name = name,
+                subtitle = detail,
+                latitude = pLat,
+                longitude = pLon,
+                category = category,
+                distanceMeters = LocationMatcher.haversineMeters(lat, lon, pLat, pLon),
+                address = detail,
+            )
+        }
+    }.getOrDefault(emptyList())
+
+    private fun searchNominatim(
+        query: String,
+        limit: Int,
+        biasLat: Double? = null,
+        biasLon: Double? = null,
+    ): List<StoryPlaceSuggestion> = runCatching {
+        val encoded = URLEncoder.encode(query, "UTF-8")
+        val viewbox = if (biasLat != null && biasLon != null && (biasLat != 0.0 || biasLon != 0.0)) {
+            val delta = 0.65
+            String.format(
+                Locale.US,
+                "&viewbox=%.4f,%.4f,%.4f,%.4f",
+                biasLon - delta,
+                biasLat + delta,
+                biasLon + delta,
+                biasLat - delta,
+            )
+        } else {
+            ""
+        }
+        val url = "https://nominatim.openstreetmap.org/search?format=jsonv2&q=$encoded&accept-language=fa&limit=$limit&addressdetails=1$viewbox"
         val body = httpGetString(url) ?: return@runCatching emptyList()
         val arr = json.parseToJsonElement(body) as? JsonArray ?: return@runCatching emptyList()
+        val hasBias = biasLat != null && biasLon != null && (biasLat != 0.0 || biasLon != 0.0)
         arr.mapNotNull { el ->
             val obj = el as? JsonObject ?: return@mapNotNull null
             val lat = obj["lat"]?.jsonPrimitive?.contentOrNull?.toDoubleOrNull()
@@ -541,12 +787,19 @@ class StoryDynamicContextService @Inject constructor(
                 city.isNotBlank() && city != primary -> city
                 else -> country
             }
+            val dist = if (hasBias && lat != null && lon != null) {
+                LocationMatcher.haversineMeters(biasLat!!, biasLon!!, lat, lon)
+            } else {
+                null
+            }
             StoryPlaceSuggestion(
                 name = primary,
                 subtitle = sub,
                 latitude = lat,
                 longitude = lon,
                 category = obj["category"]?.jsonPrimitive?.contentOrNull ?: "poi",
+                distanceMeters = dist,
+                address = sub,
             )
         }
     }.getOrDefault(emptyList())
@@ -575,6 +828,7 @@ class StoryDynamicContextService @Inject constructor(
                 latitude = lat,
                 longitude = lon,
                 category = "city",
+                address = sub,
             )
         }
     }.getOrDefault(emptyList())
@@ -600,17 +854,26 @@ class StoryDynamicContextService @Inject constructor(
     }
 
     private fun deduplicatePlaces(items: List<StoryPlaceSuggestion>): List<StoryPlaceSuggestion> {
-        val seen = LinkedHashSet<String>()
-        val out = ArrayList<StoryPlaceSuggestion>(items.size)
+        val byKey = LinkedHashMap<String, StoryPlaceSuggestion>(items.size)
         for (item in items) {
             val clean = item.name.trim()
             if (clean.isBlank()) continue
-            val normKey = clean.lowercase()
-            if (seen.add(normKey)) {
-                out += item.copy(name = clean)
+            val normKey = LocationMatcher.normalize(clean).ifBlank { clean.lowercase(Locale.ROOT) }
+            val normalizedItem = item.copy(name = clean)
+            val existing = byKey[normKey]
+            if (existing == null) {
+                byKey[normKey] = normalizedItem
+            } else {
+                byKey[normKey] = existing.copy(
+                    latitude = existing.latitude ?: normalizedItem.latitude,
+                    longitude = existing.longitude ?: normalizedItem.longitude,
+                    distanceMeters = existing.distanceMeters ?: normalizedItem.distanceMeters,
+                    subtitle = existing.subtitle.ifBlank { normalizedItem.subtitle },
+                    address = existing.address.ifBlank { normalizedItem.address },
+                )
             }
         }
-        return out
+        return byKey.values.toList()
     }
 
     companion object {

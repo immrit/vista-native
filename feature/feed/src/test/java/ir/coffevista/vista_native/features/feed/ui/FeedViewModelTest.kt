@@ -43,6 +43,7 @@ class FeedViewModelTest {
         storyRepository = ir.coffevista.vista_native.features.stories.data.StoryRepository(
             object : ir.coffevista.vista_native.features.stories.data.StoryApi {
                 override suspend fun getActiveStories() = ir.coffevista.vista_native.features.stories.domain.ActiveStoriesResponseDto()
+                override suspend fun getStoriesByLocation(location: String) = ir.coffevista.vista_native.features.stories.domain.ActiveStoriesResponseDto()
                 override suspend fun getUserStories(userId: String) = ir.coffevista.vista_native.features.stories.domain.UserStoriesResponseDto()
                 override suspend fun getFollowingUsers(userId: String, limit: Int, offset: Int) = ir.coffevista.vista_native.features.stories.domain.FollowingStoryUsersResponseDto()
                 override suspend fun getCloseFriends(): List<String> = emptyList()
@@ -342,6 +343,9 @@ private class FakeFeedRepository : FeedRepository {
     ): FeedAppendResult = onAppend(accountId)
 
     override suspend fun getHashtagPosts(accountId: String, hashtag: String, offset: Int): FeedSnapshot =
+        FeedSnapshot(emptyList(), hasMore = false, nextOffset = offset)
+
+    override suspend fun getLocationPosts(accountId: String, location: String, offset: Int): FeedSnapshot =
         FeedSnapshot(emptyList(), hasMore = false, nextOffset = offset)
 
     override suspend fun clearAccount(accountId: String) {

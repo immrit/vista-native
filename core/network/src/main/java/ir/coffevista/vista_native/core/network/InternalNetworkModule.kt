@@ -79,3 +79,16 @@ object InternalNetworkModule {
     private fun String.ensureTrailingSlash(): String =
         if (endsWith('/')) this else "$this/"
 }
+
+/**
+ * Derives an OkHttpClient configured for large media uploads (e.g. long video clips)
+ * while sharing the parent client's connection pool, dispatcher, and proxy settings.
+ * Disables the 45s total callTimeout so multi-minute uploads succeed as long as data flows,
+ * and widens socket write/read timeouts for congested mobile networks and storage finalization.
+ */
+fun OkHttpClient.forLargeMediaUpload(): OkHttpClient = newBuilder()
+    .connectTimeout(30, TimeUnit.SECONDS)
+    .writeTimeout(90, TimeUnit.SECONDS)
+    .readTimeout(120, TimeUnit.SECONDS)
+    .callTimeout(0, TimeUnit.MILLISECONDS)
+    .build()

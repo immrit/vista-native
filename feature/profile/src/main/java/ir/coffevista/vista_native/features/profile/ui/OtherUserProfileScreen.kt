@@ -81,6 +81,7 @@ fun OtherUserProfileScreen(
     onNavigateToPricing: (() -> Unit)? = null,
     onHighlightClick: ((ir.coffevista.vista_native.features.profile.data.ProfileHighlightDto) -> Unit)? = null,
     onNavigateToStoryEditor: ((android.net.Uri) -> Unit)? = null,
+    onLocationClick: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -121,6 +122,7 @@ fun OtherUserProfileScreen(
         onNavigateToPricing = onNavigateToPricing,
         onHighlightClick = onHighlightClick,
         onNavigateToStoryEditor = onNavigateToStoryEditor,
+        onLocationClick = onLocationClick,
         onAction = viewModel::onAction,
         modifier = modifier,
     )
@@ -151,6 +153,7 @@ internal fun OtherUserProfileContent(
     onNavigateToPricing: (() -> Unit)? = null,
     onHighlightClick: ((ir.coffevista.vista_native.features.profile.data.ProfileHighlightDto) -> Unit)? = null,
     onNavigateToStoryEditor: ((android.net.Uri) -> Unit)? = null,
+    onLocationClick: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -250,6 +253,7 @@ internal fun OtherUserProfileContent(
                                 onReportPost = { post -> reportPostTarget = post },
                                 onVisibilityChange = onVisibilityChange,
                                 onPremiumPrompt = { feature -> premiumPromptFeature = feature },
+                                onLocationClick = onLocationClick,
                                 onLoadMore = onPostsLoadMore,
                                 onRefresh = onPostsRefresh,
                                 activeNote = activeNote,

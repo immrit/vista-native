@@ -82,6 +82,8 @@ import ir.coffevista.vista_native.features.search.ui.SearchWorkspaceScreen
 import ir.coffevista.vista_native.features.shell.ShellDeepLinkRequest
 import ir.coffevista.vista_native.features.shell.ShellDeferredKind
 import ir.coffevista.vista_native.features.shell.ShellFeatureContent
+import ir.coffevista.vista_native.features.shell.ShellFeedRootActions
+import ir.coffevista.vista_native.features.shell.ShellLocationPostsRequest
 import ir.coffevista.vista_native.features.shell.ShellNavigationSlotOverride
 import ir.coffevista.vista_native.features.shell.VistaShell
 import ir.coffevista.vista_native.features.shell.ShellRoutes
@@ -135,6 +137,8 @@ fun VistaApp(
     routedSharedContent: ir.coffevista.vista_native.share.RoutedSharedContent? = null,
     onSharedContentConsumed: (String) -> Unit = {},
     onCheckForUpdate: (() -> Unit)? = null,
+    updateBarState: ir.coffevista.vista_native.features.shell.ShellUpdateBarState? = null,
+    onUpdateBarClick: () -> Unit = {},
     onBeforeClearSession: suspend () -> Unit = {},
     onExitRequested: () -> Unit,
 ) {
@@ -517,6 +521,8 @@ fun VistaApp(
                     context = signedIn.context,
                     deepLinkRequest = shellDeepLinkRequest,
                     navigationSlots = shellNavSlots,
+                    updateBarState = updateBarState,
+                    onUpdateBarClick = onUpdateBarClick,
                     onDeepLinkConsumed = { id ->
                         deepLinkCoordinator.consume(id)
                         shellDeepLinkRequest = null
@@ -547,23 +553,24 @@ fun VistaApp(
                     },
                     onExitRequested = onExitRequested,
                     content = ShellFeatureContent(
-                        feedRoot = { onPostClick, onAuthorClick, onCreatePost, onOpenStoryPlayer, onCreateStory, onNotifications, onAppeal, onHashtag, onVideoClick ->
+                        feedRoot = { actions ->
                             var directSharePost by remember { mutableStateOf<FeedPost?>(null) }
                             val feedViewModel: FeedViewModel = hiltViewModel()
                             FeedScreen(
                                 viewModel = feedViewModel,
                                 commentsViewModel = hiltViewModel<CommentsViewModel>(),
-                                onPostClick = onPostClick,
-                                onVideoClick = onVideoClick,
-                                onAuthorClick = onAuthorClick,
-                                onCreatePostClick = onCreatePost,
-                                onOpenStoryPlayer = onOpenStoryPlayer,
-                                onCreateStory = { onCreateStory(null) },
-                                onNotificationClick = onNotifications,
-                                onAppealClick = onAppeal,
-                                onHashtagClick = onHashtag,
+                                onPostClick = actions.onPostClick,
+                                onVideoClick = actions.onVideoClick,
+                                onAuthorClick = actions.onAuthorClick,
+                                onCreatePostClick = actions.onCreatePost,
+                                onOpenStoryPlayer = actions.onOpenStoryPlayer,
+                                onCreateStory = { actions.onCreateStory(null) },
+                                onNotificationClick = actions.onNotifications,
+                                onAppealClick = actions.onAppeal,
+                                onHashtagClick = actions.onHashtag,
+                                onLocationClick = actions.onLocation,
                                 onSendDirectMessage = { directSharePost = it },
-                                onNavigateToStoryEditor = { uri -> onCreateStory(uri) },
+                                onNavigateToStoryEditor = { uri -> actions.onCreateStory(uri) },
                             )
                             directSharePost?.let { post ->
                                 PostDirectShareSheet(
@@ -580,14 +587,41 @@ fun VistaApp(
                                 onBack = onBack,
                             )
                         },
-                        hashtagPosts = { hashtag, onBack, onPostClick, onAuthorClick, onNavigateToStoryEditor ->
+                        hashtagPosts = { hashtag, onBack, onPostClick, onAuthorClick, onNavigateToStoryEditor, onLocation ->
                             ir.coffevista.vista_native.features.feed.ui.hashtag.HashtagPostsScreen(
                                 hashtag = hashtag,
                                 onBack = onBack,
                                 onPostClick = onPostClick,
                                 onAuthorClick = onAuthorClick,
+                                onLocationClick = onLocation,
                                 onNavigateToStoryEditor = onNavigateToStoryEditor,
                             )
+                        },
+                        locationPosts = { req ->
+                            var directSharePost by remember { mutableStateOf<FeedPost?>(null) }
+                            val locationViewModel: ir.coffevista.vista_native.features.feed.ui.location.LocationFeedViewModel = hiltViewModel()
+                            ir.coffevista.vista_native.features.feed.ui.location.LocationFeedScreen(
+                                locationName = req.locationName,
+                                latitude = req.latitude,
+                                longitude = req.longitude,
+                                onBack = req.onBack,
+                                onPostClick = req.onPostClick,
+                                onAuthorClick = req.onAuthorClick,
+                                onHashtagClick = req.onHashtagClick,
+                                onLocationClick = req.onLocationClick,
+                                onSendDirectMessage = { directSharePost = it },
+                                onNavigateToStoryEditor = req.onNavigateToStoryEditor,
+                                onOpenLink = req.onOpenLink,
+                                viewModel = locationViewModel,
+                            )
+                            directSharePost?.let { post ->
+                                PostDirectShareSheet(
+                                    post = post,
+                                    chatRepository = chatRepository,
+                                    onDismiss = { directSharePost = null },
+                                    onDelivered = { locationViewModel.trackShare(post.id) },
+                                )
+                            }
                         },
                         notifications = { onBack, onPostClick, onUserClick, onChatClick, onSuggestionsClick, onAppealClick ->
                             NotificationsScreen(
@@ -599,7 +633,7 @@ fun VistaApp(
                                 onAppealClick = onAppealClick,
                             )
                         },
-                        storyPlayer = { initialUserIndex, onClose, onOpenProfile, onOpenLink, onOpenHashtag ->
+                        storyPlayer = { initialUserIndex, onClose, onOpenProfile, onOpenLink, onOpenHashtag, onOpenLocation ->
                             ir.coffevista.vista_native.features.stories.ui.player.StoryPlayerScreen(
                                 initialUserIndex = initialUserIndex,
                                 onClose = onClose,
@@ -624,6 +658,10 @@ fun VistaApp(
                                 onOpenHashtag = { tag ->
                                     onClose()
                                     onOpenHashtag(tag)
+                                },
+                                onOpenLocation = { name, lat, lon ->
+                                    onClose()
+                                    onOpenLocation(name, lat, lon)
                                 },
                             )
                         },
@@ -702,7 +740,7 @@ fun VistaApp(
                                 onOpenQrScanner = onOpenQrScanner,
                             )
                         },
-                        ownProfile = { onPostClick, onSettingsClick, logout, onOpenFollowers, onOpenQrScanner, onEditProfile, onAddStory, onReelClick, onAddPost, onNavigateToStoryEditor, onOpenPricing, onOpenUserProfile, onOpenHashtag, onOpenLink ->
+                        ownProfile = { onPostClick, onSettingsClick, logout, onOpenFollowers, onOpenQrScanner, onEditProfile, onAddStory, onReelClick, onAddPost, onNavigateToStoryEditor, onOpenPricing, onOpenUserProfile, onOpenHashtag, onOpenLink, onOpenLocation ->
                             val postsViewModel = hiltViewModel<ProfilePostsViewModel>()
                             val postsState by postsViewModel.uiState.collectAsStateWithLifecycle()
                             val storyPlayerViewModel = hiltViewModel<StoryPlayerViewModel>()
@@ -742,6 +780,7 @@ fun VistaApp(
                                 },
                                 onNavigateToPricing = onOpenPricing,
                                 onNavigateToStoryEditor = onNavigateToStoryEditor,
+                                onLocationClick = { loc -> onOpenLocation(loc, null, null) },
                                 onHighlightClick = { highlight ->
                                     coroutineScope.launch {
                                         val hlResult = storyRepo.getUserHighlights(signedIn.context.userId)
@@ -790,6 +829,10 @@ fun VistaApp(
                                         onOpenHashtag = { tag ->
                                             activeHighlightUser = null
                                             onOpenHashtag(tag)
+                                        },
+                                        onOpenLocation = { name, lat, lon ->
+                                            activeHighlightUser = null
+                                            onOpenLocation(name, lat, lon)
                                         },
                                     )
                                 }
@@ -925,13 +968,14 @@ fun VistaApp(
                         faqPage = { onBack ->
                             FAQScreen(onBack = onBack)
                         },
-                        postDetail = { onBack, onAuthorClick, onHashtagClick, onAppealClick, onNavigateToStoryEditor ->
+                        postDetail = { onBack, onAuthorClick, onHashtagClick, onAppealClick, onNavigateToStoryEditor, onLocationClick ->
                             var directSharePost by remember { mutableStateOf<FeedPost?>(null) }
                             val postDetailViewModel: PostDetailViewModel = hiltViewModel()
                             PostDetailScreen(
                                 onBack = onBack,
                                 onAuthorClick = onAuthorClick,
                                 onHashtagClick = onHashtagClick,
+                                onLocationClick = onLocationClick,
                                 onAppealClick = onAppealClick,
                                 viewModel = postDetailViewModel,
                                 commentsViewModel = hiltViewModel<CommentsViewModel>(),
@@ -947,7 +991,7 @@ fun VistaApp(
                                 )
                             }
                         },
-                        userProfile = { userId, onBack, onSelfProfile, onPostClick, onOpenFollowers, onOpenChat, onReelClick, onNavigateToStoryEditor, onOpenPricing, onOpenUserProfile, onOpenHashtag, onOpenLink ->
+                        userProfile = { userId, onBack, onSelfProfile, onPostClick, onOpenFollowers, onOpenChat, onReelClick, onNavigateToStoryEditor, onOpenPricing, onOpenUserProfile, onOpenHashtag, onOpenLink, onOpenLocation ->
                             val postsViewModel = hiltViewModel<ProfilePostsViewModel>()
                             val postsState by postsViewModel.uiState.collectAsStateWithLifecycle()
                             val storyPlayerViewModel = hiltViewModel<StoryPlayerViewModel>()
@@ -983,6 +1027,7 @@ fun VistaApp(
                                 },
                                 onNavigateToPricing = onOpenPricing,
                                 onNavigateToStoryEditor = onNavigateToStoryEditor,
+                                onLocationClick = { loc -> onOpenLocation(loc, null, null) },
                                 onHighlightClick = { highlight ->
                                     coroutineScope.launch {
                                         val hlResult = storyRepo.getUserHighlights(userId)
@@ -1051,6 +1096,10 @@ fun VistaApp(
                                         onOpenHashtag = { tag ->
                                             activeHighlightUser = null
                                             onOpenHashtag(tag)
+                                        },
+                                        onOpenLocation = { name, lat, lon ->
+                                            activeHighlightUser = null
+                                            onOpenLocation(name, lat, lon)
                                         },
                                     )
                                 }
@@ -1283,6 +1332,7 @@ private fun FeedPost.toProfilePostUiModel() = ProfilePostUiModel(
     hideCommentCount = hideCommentCount,
     isLiked = isLiked,
     isSaved = isSaved,
+    location = location,
     createdAt = createdAt,
 )
 

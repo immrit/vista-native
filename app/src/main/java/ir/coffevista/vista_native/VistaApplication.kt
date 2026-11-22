@@ -57,9 +57,13 @@ class VistaApplication : Application(), Configuration.Provider, ImageLoaderFacto
         }
         ir.coffevista.vista_native.core.common.DeviceIdProvider.current =
             ir.coffevista.vista_native.core.common.DeviceIdProvider { deviceId }
-        val appVerName = runCatching {
-            packageManager.getPackageInfo(packageName, 0).versionName
-        }.getOrNull()?.takeIf(String::isNotBlank) ?: "1.0.0"
+        val packageInfo = runCatching {
+            packageManager.getPackageInfo(packageName, 0)
+        }.getOrNull()
+        val appVerName = packageInfo?.versionName?.takeIf(String::isNotBlank) ?: "1.0.0"
+        val appVerCode = packageInfo?.let {
+            androidx.core.content.pm.PackageInfoCompat.getLongVersionCode(it)
+        } ?: 0L
         val deviceDisplayName = ir.coffevista.vista_native.core.common.DeviceMetadataProvider.formatAndroidDeviceName(
             manufacturer = Build.MANUFACTURER,
             model = Build.MODEL,
@@ -73,6 +77,7 @@ class VistaApplication : Application(), Configuration.Provider, ImageLoaderFacto
             deviceModel = deviceModelName,
             osVersion = "Android $osRelease",
             appVersion = appVerName,
+            appVersionCode = appVerCode,
             userAgent = vistaUa,
         )
         ir.coffevista.vista_native.core.common.DeviceMetadataProvider.current =

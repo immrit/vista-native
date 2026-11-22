@@ -49,3 +49,24 @@ fun shellBackAction(
 }
 
 enum class ShellBackAction { PopNested, SelectFeed, RequestExit }
+
+enum class ShellUpdateStage {
+    Available,
+    Downloading,
+    Verifying,
+    ReadyToInstall,
+    Error,
+}
+
+data class ShellUpdateBarState(
+    val versionCode: Int,
+    val versionName: String,
+    val fileSizeBytes: Long = 0L,
+    val releaseNotes: String = "",
+    val isMandatory: Boolean = false,
+    val stage: ShellUpdateStage = ShellUpdateStage.Available,
+    val progress: Float = 0f,
+    val downloadedBytes: Long = 0L,
+    val totalBytes: Long = 0L,
+    val errorMessage: String? = null,
+)

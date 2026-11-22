@@ -113,6 +113,9 @@ object FeedApiModule {
             override suspend fun getHashtagPosts(tag: String, limit: Int, offset: Int): FeedResponseDto =
                 remote.getHashtagPosts(tag, limit, offset)
 
+            override suspend fun getLocationPosts(location: String, limit: Int, offset: Int): FeedResponseDto =
+                remote.getLocationPosts(location, limit, offset)
+
             override suspend fun getTrendingHashtags(limit: Int, days: Int): HashtagSuggestionsResponseDto =
                 remote.getTrendingHashtags(limit, days)
 

@@ -82,6 +82,7 @@ class AddPostViewModelTest {
         override suspend fun getPost(postId: String) = throw NotImplementedError()
         override suspend fun getUserPosts(userId: String, limit: Int, offset: Int) = throw NotImplementedError()
         override suspend fun getHashtagPosts(tag: String, limit: Int, offset: Int) = throw NotImplementedError()
+        override suspend fun getLocationPosts(location: String, limit: Int, offset: Int) = throw NotImplementedError()
         override suspend fun getTrendingHashtags(limit: Int, days: Int) =
             ir.coffevista.vista_native.features.feed.data.HashtagSuggestionsResponseDto()
         override suspend fun searchHashtags(query: String, limit: Int) =

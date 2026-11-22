@@ -67,6 +67,7 @@ class InternalAuthorizationInterceptor @Inject constructor(
             }.getOrNull().orEmpty(),
         )
         val appVersion = sanitizeHeaderValue(meta?.appVersion.orEmpty())
+        val appVersionCode = meta?.appVersionCode?.takeIf { it > 0L }?.toString().orEmpty()
         val userAgent = sanitizeHeaderValue(
             meta?.userAgent ?: if (deviceName.isNotBlank()) {
                 "VistaAndroid (${osVersion.ifBlank { "Android" }}; $deviceName)"
@@ -92,6 +93,9 @@ class InternalAuthorizationInterceptor @Inject constructor(
         }
         if (appVersion.isNotBlank() && request.header(HEADER_APP_VERSION) == null) {
             builder.header(HEADER_APP_VERSION, appVersion)
+        }
+        if (appVersionCode.isNotBlank() && request.header(HEADER_APP_VERSION_CODE) == null) {
+            builder.header(HEADER_APP_VERSION_CODE, appVersionCode)
         }
         if (userAgent.isNotBlank() && request.header(HEADER_USER_AGENT) == null) {
             builder.header(HEADER_USER_AGENT, userAgent)
@@ -127,6 +131,7 @@ class InternalAuthorizationInterceptor @Inject constructor(
         const val HEADER_DEVICE_MODEL = "X-Device-Model"
         const val HEADER_OS_VERSION = "X-OS-Version"
         const val HEADER_APP_VERSION = "X-App-Version"
+        const val HEADER_APP_VERSION_CODE = "X-App-Version-Code"
         const val HEADER_USER_AGENT = "User-Agent"
 
         @Volatile

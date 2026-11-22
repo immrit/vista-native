@@ -39,6 +39,8 @@ import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.rounded.LocationOn
+import ir.coffevista.vista_native.features.feed.ui.location.VistaLocationPickerSheet
 import ir.coffevista.vista_native.core.designsystem.component.VistaPremiumBottomSheet
 import ir.coffevista.vista_native.features.feed.ui.components.SoundCloudMusicBubble
 import androidx.compose.material3.AlertDialog
@@ -636,7 +638,16 @@ fun AddPostScreen(
                                 InputChip(
                                     selected = true,
                                     onClick = { showLocationDialog = true },
-                                    label = { Text(location, fontSize = 12.sp) },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = Icons.Rounded.LocationOn,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(16.dp),
+                                            tint = MaterialTheme.colorScheme.primary,
+                                        )
+                                    },
+                                    label = { Text(location, fontSize = 12.sp, fontWeight = FontWeight.Medium) },
+                                    shape = RoundedCornerShape(18.dp),
                                     trailingIcon = {
                                         Box(
                                             modifier = Modifier
@@ -1011,54 +1022,21 @@ fun AddPostScreen(
         }
 
         if (showLocationDialog) {
-            var customCity by remember { mutableStateOf(uiState.selectedLocation.orEmpty()) }
-            val quickCities = listOf("تهران، ایران", "شیراز، فارس", "اصفهان", "مشهد، خراسان", "تبریز، آذربایجان", "کیش، هرمزگان")
-            AlertDialog(
-                onDismissRequest = { showLocationDialog = false },
-                title = { Text("انتخاب موقعیت مکانی", fontWeight = FontWeight.Bold) },
-                text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        OutlinedTextField(
-                            value = customCity,
-                            onValueChange = { customCity = it },
-                            label = { Text("نام شهر یا مکان") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                        Text("مکان‌های پیشنهادی:", fontSize = 12.sp, color = Color.Gray)
-                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            quickCities.forEach { city ->
-                                Text(
-                                    text = "📍 $city",
-                                    fontSize = 13.sp,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable {
-                                            viewModel.onLocationSelected(city)
-                                            showLocationDialog = false
-                                        }
-                                        .padding(vertical = 4.dp),
-                                )
-                            }
-                        }
-                    }
+            VistaLocationPickerSheet(
+                contextService = viewModel.locationContextService,
+                initialLocationName = uiState.selectedLocation,
+                forceDarkTheme = false,
+                showStickerPreview = false,
+                confirmButtonMode = false,
+                onSelect = { place, _ ->
+                    viewModel.onLocationSelected(place.name)
+                    showLocationDialog = false
                 },
-                confirmButton = {
-                    TextButton(onClick = {
-                        viewModel.onLocationSelected(customCity.trim().ifBlank { null })
-                        showLocationDialog = false
-                    }) { Text("تایید") }
+                onRemoveLocation = {
+                    viewModel.onLocationSelected(null)
+                    showLocationDialog = false
                 },
-                dismissButton = {
-                    if (uiState.selectedLocation != null) {
-                        TextButton(onClick = {
-                            viewModel.onLocationSelected(null)
-                            showLocationDialog = false
-                        }) { Text("حذف مکان") }
-                    } else {
-                        TextButton(onClick = { showLocationDialog = false }) { Text("انصراف") }
-                    }
-                },
+                onDismiss = { showLocationDialog = false },
             )
         }
 

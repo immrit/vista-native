@@ -10,18 +10,33 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import ir.coffevista.vista_native.core.datastore.MediaDataPolicy
 import ir.coffevista.vista_native.core.datastore.SettingsPreferenceStore
 import ir.coffevista.vista_native.core.network.ExternalMedia
+import ir.coffevista.vista_native.core.network.forLargeMediaUpload
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.job
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody
+import okhttp3.internal.http2.StreamResetException
 import okio.BufferedSink
+import java.io.EOFException
 import java.io.File
 import java.io.IOException
+import java.io.InterruptedIOException
+import java.net.ConnectException
+import java.net.ProtocolException
+import java.net.SocketException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 import javax.inject.Inject
 import javax.inject.Singleton
+import javax.net.ssl.SSLException
 
 data class UploadedMediaResult(
     val url: String,
@@ -82,6 +97,7 @@ class PostMediaUploader @Inject constructor(
 ) : PostMediaUploadGateway {
     private val resolver: ContentResolver = context.contentResolver
     private val cacheDir = context.cacheDir
+    private val uploadClient: OkHttpClient = externalClient.forLargeMediaUpload()
 
     override suspend fun uploadImage(
         userId: String,
@@ -100,26 +116,22 @@ class PostMediaUploader @Inject constructor(
         )
         try {
             val objectKey = "posts/${userId.safeSegment()}/${System.currentTimeMillis()}_image.jpg"
-            val presign = api.presignUpload(
-                PostPresignRequestDto(
-                    objectKey = objectKey,
-                    contentType = JPEG_MIME,
-                    fileSize = temporaryJpeg.length(),
-                ),
+            val presign = MediaUploadExecutor.uploadWithRetry(
+                client = uploadClient,
+                file = temporaryJpeg,
+                contentType = JPEG_MIME,
+                errorLabel = "آپلود تصویر",
+                presignProvider = {
+                    api.presignUpload(
+                        PostPresignRequestDto(
+                            objectKey = objectKey,
+                            contentType = JPEG_MIME,
+                            fileSize = temporaryJpeg.length(),
+                        ),
+                    )
+                },
+                onProgress = onProgress,
             )
-            val request = Request.Builder()
-                .url(presign.url)
-                .put(ProgressRequestBody(temporaryJpeg, JPEG_MIME, onProgress))
-
-            presign.headers.forEach { (name, value) ->
-                if (!name.equals("host", ignoreCase = true) && !name.equals("content-length", ignoreCase = true)) {
-                    request.header(name, value)
-                }
-            }
-
-            externalClient.newCall(request.build()).execute().use { response ->
-                if (!response.isSuccessful) throw IOException("آپلود تصویر با خطای ${response.code} متوقف شد")
-            }
             onProgress(1f)
             UploadedMediaResult(
                 url = presign.objectUrl,
@@ -141,30 +153,31 @@ class PostMediaUploader @Inject constructor(
         val temporaryPng = copyOrCompressPng(uri, maxBytes)
         try {
             val objectKey = "posts/${userId.safeSegment()}/${System.currentTimeMillis()}_sticker.png"
-            val presign = api.presignUpload(
-                PostPresignRequestDto(
-                    objectKey = objectKey,
-                    contentType = "image/png",
-                    fileSize = temporaryPng.length(),
-                ),
+            val presign = MediaUploadExecutor.uploadWithRetry(
+                client = uploadClient,
+                file = temporaryPng,
+                contentType = "image/png",
+                errorLabel = "آپلود استیکر",
+                maxRetries = 1,
+                presignProvider = {
+                    api.presignUpload(
+                        PostPresignRequestDto(
+                            objectKey = objectKey,
+                            contentType = "image/png",
+                            fileSize = temporaryPng.length(),
+                        ),
+                    )
+                },
+                onProgress = onProgress,
             )
-            val request = Request.Builder()
-                .url(presign.url)
-                .put(ProgressRequestBody(temporaryPng, "image/png", onProgress))
-            presign.headers.forEach { (name, value) ->
-                if (!name.equals("host", ignoreCase = true) && !name.equals("content-length", ignoreCase = true)) {
-                    request.header(name, value)
-                }
-            }
-            externalClient.newCall(request.build()).execute().use { response ->
-                if (!response.isSuccessful) throw IOException("آپلود استیکر با خطای ${response.code} متوقف شد")
-            }
             onProgress(1f)
             UploadedMediaResult(
                 url = presign.objectUrl,
                 objectKey = presign.objectKey,
                 isVideo = false,
             )
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (_: Throwable) {
             uploadImage(userId, uri, maxBytes, onProgress)
         } finally {
@@ -263,26 +276,22 @@ class PostMediaUploader @Inject constructor(
 
         // 2. Upload video file
         val videoKey = "posts/${userId.safeSegment()}/${System.currentTimeMillis()}_video.mp4"
-        val presign = api.presignUpload(
-            PostPresignRequestDto(
-                objectKey = videoKey,
-                contentType = MP4_MIME,
-                fileSize = videoFile.length(),
-            ),
+        val presign = MediaUploadExecutor.uploadWithRetry(
+            client = uploadClient,
+            file = videoFile,
+            contentType = MP4_MIME,
+            errorLabel = "آپلود ویدیو",
+            presignProvider = {
+                api.presignUpload(
+                    PostPresignRequestDto(
+                        objectKey = videoKey,
+                        contentType = MP4_MIME,
+                        fileSize = videoFile.length(),
+                    ),
+                )
+            },
+            onProgress = onProgress,
         )
-        val request = Request.Builder()
-            .url(presign.url)
-            .put(ProgressRequestBody(videoFile, MP4_MIME, onProgress))
-
-        presign.headers.forEach { (name, value) ->
-            if (!name.equals("host", ignoreCase = true) && !name.equals("content-length", ignoreCase = true)) {
-                request.header(name, value)
-            }
-        }
-
-        externalClient.newCall(request.build()).execute().use { response ->
-            if (!response.isSuccessful) throw IOException("آپلود ویدیو با خطای ${response.code} متوقف شد")
-        }
         onProgress(1f)
         UploadedMediaResult(
             url = presign.objectUrl,
@@ -348,15 +357,16 @@ class PostMediaUploader @Inject constructor(
                 "حجم فایل صوتی بیش از حد مجاز است"
             }
             val objectKey = "music/${userId.safeSegment()}/${System.currentTimeMillis()}_audio.$extension"
-            val presign = api.presignUpload(PostPresignRequestDto(objectKey, mimeType, audioFile.length()))
-            val request = Request.Builder().url(presign.url)
-                .put(ProgressRequestBody(audioFile, mimeType, onProgress))
-            presign.headers.forEach { (name, value) ->
-                if (!name.equals("host", true) && !name.equals("content-length", true)) request.header(name, value)
-            }
-            externalClient.newCall(request.build()).execute().use { response ->
-                if (!response.isSuccessful) throw IOException("آپلود موسیقی با خطای ${response.code} متوقف شد")
-            }
+            val presign = MediaUploadExecutor.uploadWithRetry(
+                client = uploadClient,
+                file = audioFile,
+                contentType = mimeType,
+                errorLabel = "آپلود موسیقی",
+                presignProvider = {
+                    api.presignUpload(PostPresignRequestDto(objectKey, mimeType, audioFile.length()))
+                },
+                onProgress = onProgress,
+            )
             onProgress(1f)
             UploadedMediaResult(
                 url = presign.objectUrl,
@@ -514,6 +524,130 @@ class PostMediaUploader @Inject constructor(
     }
 }
 
+internal object MediaUploadExecutor {
+    const val DEFAULT_MAX_RETRIES = 2
+    val DEFAULT_RETRY_BACKOFF_MS = longArrayOf(2_000L, 5_000L)
+
+    private class RetryableUploadHttpException(
+        val code: Int,
+        message: String,
+    ) : IOException(message)
+
+    suspend fun uploadWithRetry(
+        client: OkHttpClient,
+        file: File,
+        contentType: String,
+        errorLabel: String,
+        maxRetries: Int = DEFAULT_MAX_RETRIES,
+        backoffMs: LongArray = DEFAULT_RETRY_BACKOFF_MS,
+        presignProvider: suspend () -> PostPresignResponseDto,
+        onProgress: (Float) -> Unit,
+    ): PostPresignResponseDto {
+        require(maxRetries >= 0) { "maxRetries must be non-negative" }
+        for (attempt in 0..maxRetries) {
+            currentCoroutineContext().ensureActive()
+            if (attempt > 0) {
+                onProgress(0f)
+            }
+            try {
+                val presign = presignProvider()
+                val request = Request.Builder()
+                    .url(presign.url)
+                    .put(ProgressRequestBody(file, contentType, onProgress))
+
+                presign.headers.forEach { (name, value) ->
+                    if (!name.equals("host", ignoreCase = true) &&
+                        !name.equals("content-length", ignoreCase = true)
+                    ) {
+                        request.header(name, value)
+                    }
+                }
+
+                val call = client.newCall(request.build())
+                val cancelHandle = currentCoroutineContext().job.invokeOnCompletion { cause ->
+                    if (cause != null) {
+                        call.cancel()
+                    }
+                }
+                try {
+                    call.execute().use { response ->
+                        if (response.isSuccessful) {
+                            return presign
+                        }
+                        val message = "$errorLabel با خطای ${response.code} متوقف شد"
+                        if (isRetryableHttpCode(response.code)) {
+                            throw RetryableUploadHttpException(response.code, message)
+                        } else {
+                            throw IOException(message)
+                        }
+                    }
+                } finally {
+                    cancelHandle.dispose()
+                }
+            } catch (e: Throwable) {
+                if (e is CancellationException) throw e
+                if (attempt < maxRetries && isRetryableFailure(e)) {
+                    val waitMs = backoffMs.getOrElse(attempt) { backoffMs.lastOrNull() ?: 2_000L }
+                    if (waitMs > 0L) {
+                        delay(waitMs)
+                    }
+                } else if (e is RetryableUploadHttpException) {
+                    throw IOException(e.message, e)
+                } else {
+                    throw e
+                }
+            }
+        }
+        throw IOException("$errorLabel متوقف شد")
+    }
+
+    internal fun isRetryableHttpCode(code: Int): Boolean =
+        code == 408 || code == 429 || code in 500..599
+
+    internal fun isRetryableFailure(error: Throwable): Boolean {
+        val causes = generateSequence(error) { it.cause }.take(16).toList()
+        if (causes.any { it is SSLException }) return false
+        return causes.any {
+            it is RetryableUploadHttpException ||
+                it is SocketTimeoutException ||
+                it is InterruptedIOException ||
+                it is ConnectException ||
+                it is UnknownHostException ||
+                it is EOFException ||
+                it is ProtocolException ||
+                it is SocketException ||
+                it is StreamResetException
+        }
+    }
+}
+
+internal fun Throwable.toUserFriendlyUploadError(defaultMessage: String): String {
+    val causes = generateSequence(this) { it.cause }.take(16).toList()
+    if (causes.any {
+            it is SocketTimeoutException ||
+                it is InterruptedIOException ||
+                it.message?.contains("timeout", ignoreCase = true) == true ||
+                it.message?.contains("timed out", ignoreCase = true) == true
+        }
+    ) {
+        return "زمان آپلود به پایان رسید؛ لطفاً اتصال اینترنت را بررسی کرده و دوباره تلاش کنید"
+    }
+    if (causes.any { it is UnknownHostException || it is ConnectException }) {
+        return "اتصال اینترنت برقرار نیست؛ لطفاً شبکه را بررسی کرده و دوباره تلاش کنید"
+    }
+    if (causes.any { it is EOFException || it is SocketException || it is StreamResetException }) {
+        return "ارتباط هنگام آپلود قطع شد؛ لطفاً دوباره تلاش کنید"
+    }
+    val rawMessage = message?.trim().orEmpty()
+    return if (rawMessage.isNotEmpty() && rawMessage.any { it in '\u0600'..'\u06FF' }) {
+        rawMessage
+    } else {
+        defaultMessage
+    }
+}
+
+private const val UPLOAD_BUFFER_BYTES = 64 * 1024
+
 private class ProgressRequestBody(
     private val file: File,
     private val contentType: String,
@@ -524,7 +658,7 @@ private class ProgressRequestBody(
 
     override fun writeTo(sink: BufferedSink) {
         val total = contentLength()
-        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+        val buffer = ByteArray(UPLOAD_BUFFER_BYTES)
         var sent = 0L
         file.inputStream().use { input ->
             while (true) {

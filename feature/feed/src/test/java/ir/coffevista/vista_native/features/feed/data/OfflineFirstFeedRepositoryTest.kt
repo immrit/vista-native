@@ -402,6 +402,8 @@ private class FakeFeedApi : FeedApi {
 
     override suspend fun getHashtagPosts(tag: String, limit: Int, offset: Int): FeedResponseDto = response
 
+    override suspend fun getLocationPosts(location: String, limit: Int, offset: Int): FeedResponseDto = response
+
     override suspend fun getTrendingHashtags(limit: Int, days: Int): HashtagSuggestionsResponseDto =
         HashtagSuggestionsResponseDto()
 
@@ -555,6 +557,18 @@ private class FakeFeedDao : FeedDao {
         postsByAccount.values.forEach { it.remove(postId) }
         postsByAccount.keys.forEach(::emitPosts)
     }
+
+    override suspend fun getPostsWithLocation(
+        accountId: String,
+        namespacePrefix: String,
+        limit: Int,
+    ): List<FeedPostEntity> = postsByAccount
+        .filterKeys { it == accountId || it.startsWith(namespacePrefix) }
+        .values
+        .flatMap { it.values }
+        .filter { !it.location.isNullOrBlank() }
+        .sortedByDescending(FeedPostEntity::createdAt)
+        .take(limit)
 
     fun posts(accountId: String): List<FeedPostEntity> = postsByAccount[accountId]
         .orEmpty()

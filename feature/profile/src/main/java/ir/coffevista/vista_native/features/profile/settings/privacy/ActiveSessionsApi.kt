@@ -71,6 +71,7 @@ data class ActiveSessionDto(
     @SerialName("device_info") val deviceInfo: Map<String, JsonElement> = emptyMap(),
     val platform: String? = null,
     @SerialName("app_version") val appVersion: String? = null,
+    @SerialName("app_version_code") val appVersionCode: Int? = null,
     @SerialName("ip_address") val ipAddress: String? = null,
     @SerialName("location_city") val locationCity: String? = null,
     @SerialName("location_country") val locationCountry: String? = null,
@@ -88,6 +89,7 @@ data class RegisterSessionRequestDto(
     @SerialName("session_token") val sessionToken: String,
     @SerialName("device_info") val deviceInfo: Map<String, String> = emptyMap(),
     @SerialName("app_version") val appVersion: String = "1.0.0",
+    @SerialName("app_version_code") val appVersionCode: Int? = null,
     val platform: String = "android",
     @SerialName("fcm_token") val fcmToken: String? = null,
 )
@@ -111,6 +113,8 @@ data class TouchSessionRequestDto(
     @SerialName("session_token") val sessionToken: String,
     @SerialName("fcm_token") val fcmToken: String? = null,
     @SerialName("fcm_sync_epoch") val fcmSyncEpoch: Long = 0L,
+    @SerialName("app_version") val appVersion: String? = null,
+    @SerialName("app_version_code") val appVersionCode: Int? = null,
 )
 
 @Serializable

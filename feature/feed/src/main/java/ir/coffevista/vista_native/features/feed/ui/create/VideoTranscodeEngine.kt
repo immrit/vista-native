@@ -795,7 +795,7 @@ private class CodecOutputSurface(
     }
 
     private companion object {
-        const val FRAME_WAIT_TIMEOUT_MS = 2_500L
+        const val FRAME_WAIT_TIMEOUT_MS = 6_000L
     }
 }
 
@@ -928,7 +928,7 @@ private class TextureRender {
 
 private const val CODEC_TIMEOUT_US = 5_000L
 private const val REORDER_WINDOW_US = 600_000L
-private const val EOS_DRAIN_TIMEOUT_MS = 12_000L
+private const val EOS_DRAIN_TIMEOUT_MS = 20_000L
 private const val MAX_EMPTY_EOS_DRAIN = 2_400
 private const val MUX_BUFFER_BYTES = 2 * 1024 * 1024
 private const val MAX_MUX_BUFFER_BYTES = 16 * 1024 * 1024

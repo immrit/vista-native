@@ -42,6 +42,13 @@ interface FeedApi {
         @Query("offset") offset: Int,
     ): FeedResponseDto
 
+    @GET("v1/posts/location")
+    suspend fun getLocationPosts(
+        @Query("location") location: String,
+        @Query("limit") limit: Int,
+        @Query("offset") offset: Int,
+    ): FeedResponseDto
+
     @GET("v1/hashtags/trending")
     suspend fun getTrendingHashtags(
         @Query("limit") limit: Int = 20,

@@ -23,6 +23,7 @@ data class ProfilePostUiModel(
     val hideCommentCount: Boolean,
     val isLiked: Boolean,
     val isSaved: Boolean,
+    val location: String? = null,
     val createdAt: String,
 )
 
@@ -63,5 +64,6 @@ fun ProfilePostUiModel.toFeedPost(): ir.coffevista.vista_native.features.feed.da
         authorAvatarUrl = authorAvatarUrl,
         authorIsVerified = authorIsVerified,
         authorVerificationType = authorVerificationType,
+        location = location,
         createdAt = createdAt,
     )

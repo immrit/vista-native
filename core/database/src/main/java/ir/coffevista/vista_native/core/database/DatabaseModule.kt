@@ -32,6 +32,7 @@ object DatabaseModule {
             VistaFoundationDatabase.MIGRATION_8_9,
             VistaFoundationDatabase.MIGRATION_9_10,
             VistaFoundationDatabase.MIGRATION_10_11,
+            VistaFoundationDatabase.MIGRATION_11_12,
         )
         .fallbackToDestructiveMigration()
         .fallbackToDestructiveMigrationOnDowngrade()

@@ -112,6 +112,7 @@ class AddPostViewModel @Inject constructor(
     @ApplicationContext private val appContext: Context? = null,
     private val postUploadManager: ir.coffevista.vista_native.features.feed.data.PostUploadManager? = null,
     private val draftStore: PostDraftStorage? = null,
+    val locationContextService: ir.coffevista.vista_native.features.stories.data.StoryDynamicContextService? = null,
 ) : ViewModel() {
 
     constructor(
@@ -120,7 +121,7 @@ class AddPostViewModel @Inject constructor(
         authStateProvider: AuthenticationStateProvider,
         ownProfileDao: OwnProfileDao,
         postMentions: PostMentions,
-    ) : this(api, uploader, authStateProvider, ownProfileDao, postMentions, null, null, null, null)
+    ) : this(api, uploader, authStateProvider, ownProfileDao, postMentions, null, null, null, null, null)
 
     private var hashtagSearchJob: Job? = null
     private var draftDiscarded = false

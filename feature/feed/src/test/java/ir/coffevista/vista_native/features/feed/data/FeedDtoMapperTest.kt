@@ -81,6 +81,19 @@ class FeedDtoMapperTest {
     }
 
     @Test
+    fun locationPreservedThroughEntityAndBlankLocationNormalizesToNull() {
+        val withLoc = postDto(location = "  آبادان، خوزستان  ")
+            .asEntity(accountId = "account-a", sortOrder = 0)
+            .asExternalModel()
+        assertEquals("آبادان، خوزستان", withLoc.location)
+
+        val blankLoc = postDto(location = "   ")
+            .asEntity(accountId = "account-a", sortOrder = 1)
+            .asExternalModel()
+        assertNull(blankLoc.location)
+    }
+
+    @Test
     fun emptyFeedEnvelopeDecodesPredictably() {
         val response = json.decodeFromString<FeedResponseDto>(
             """{"posts":[],"has_more":false}""",
@@ -116,6 +129,7 @@ class FeedDtoMapperTest {
         imageUrl: String? = null,
         imageUrls: List<String> = emptyList(),
         videoUrl: String? = null,
+        location: String? = null,
         author: AuthorInfoDto = author(),
     ) = FeedPostDto(
         id = id,
@@ -134,6 +148,7 @@ class FeedDtoMapperTest {
         isSaved = false,
         hideLikeCount = false,
         hideCommentCount = false,
+        location = location,
         author = author,
         createdAt = "2026-07-27T17:21:49.123456789Z",
         updatedAt = "2026-07-27T17:22:00Z",

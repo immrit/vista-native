@@ -16,6 +16,8 @@ import ir.coffevista.vista_native.features.stories.domain.StoryUser
 import ir.coffevista.vista_native.features.stories.domain.StoryView
 import ir.coffevista.vista_native.features.stories.domain.StoryVoteRequestDto
 import ir.coffevista.vista_native.features.stories.domain.UpdateHighlightRequestDto
+import ir.coffevista.vista_native.features.feed.data.LocationMatcher
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -50,6 +52,39 @@ class StoryRepository internal constructor(
         } catch (e: Exception) {
             Result.failure(e)
         }
+    }
+
+    suspend fun getStoriesByLocation(
+        location: String,
+        currentUserId: String = "",
+    ): Result<List<StoryUser>> = withContext(ioDispatcher) {
+        val trimmed = location.trim()
+        if (trimmed.isBlank()) return@withContext Result.success(emptyList())
+
+        val remote = try {
+            api.getStoriesByLocation(trimmed).users
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            null
+        }
+        if (!remote.isNullOrEmpty()) {
+            return@withContext Result.success(normalizeAndSortStoryUsers(remote, currentUserId))
+        }
+
+        val activeUsers = _activeStoryUsers.value.ifEmpty {
+            refreshActiveStories(currentUserId).getOrDefault(emptyList())
+        }
+        val filtered = activeUsers.mapNotNull { user ->
+            val matchingStories = user.stories.filter { story ->
+                LocationMatcher.matches(story.location?.name, trimmed) ||
+                    story.interactiveElements.any { el ->
+                        el.type == "location" && LocationMatcher.matches(el.location?.name, trimmed)
+                    }
+            }
+            if (matchingStories.isEmpty()) null else user.copy(stories = matchingStories)
+        }
+        Result.success(normalizeAndSortStoryUsers(filtered, currentUserId))
     }
 
     suspend fun getUserStories(userId: String): Result<List<Story>> = withContext(ioDispatcher) {

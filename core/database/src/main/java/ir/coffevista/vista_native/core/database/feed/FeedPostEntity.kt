@@ -92,6 +92,9 @@ data class FeedPostEntity(
     @ColumnInfo(name = "comments_disabled", defaultValue = "0")
     val commentsDisabled: Boolean = false,
 
+    @ColumnInfo(name = "location")
+    val location: String? = null,
+
     @ColumnInfo(name = "created_at")
     val createdAt: String,
 

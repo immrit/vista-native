@@ -149,8 +149,10 @@ fun VistaShell(
     content: ShellFeatureContent,
     modifier: Modifier = Modifier,
     navigationSlots: List<ShellNavigationSlotOverride> = emptyList(),
+    updateBarState: ShellUpdateBarState? = null,
+    onUpdateBarClick: () -> Unit = {},
 ) {
-    VistaShellSystemBars()
+    VistaShellSystemBars(forceDarkNavBar = updateBarState != null)
     val navController = rememberNavController()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -482,31 +484,34 @@ fun VistaShell(
             navigation(route = ShellRoutes.FeedGraph, startDestination = ShellRoutes.FeedRoot) {
                 composable(ShellRoutes.FeedRoot) {
                     content.feedRoot(
-                        { postId ->
-                            navController.navigate(ShellRoutes.postDetail(postId))
-                        },
-                        { userId ->
-                            if (userId == context.userId) {
-                                selectTab(ShellTab.Profile)
-                            } else {
-                                navController.navigate(ShellRoutes.userProfile(userId))
-                            }
-                        },
-                        {
-                            navController.navigate(ShellRoutes.AddPost)
-                        },
-                        { userIndex ->
-                            navController.navigate(ShellRoutes.storyPlayer(userIndex))
-                        },
-                        { uri ->
-                            navController.navigate(ShellRoutes.storyCreate(uri?.toString()))
-                        },
-                        {
-                            navController.navigate(ShellRoutes.Notifications)
-                        },
-                        { postId -> navController.navigate(ShellRoutes.appeal(postId)) },
-                        { tag -> navController.navigate(ShellRoutes.hashtag(tag)) },
-                        { postId -> navController.navigate(ShellRoutes.reels(postId)) },
+                        ShellFeedRootActions(
+                            onPostClick = { postId ->
+                                navController.navigate(ShellRoutes.postDetail(postId))
+                            },
+                            onAuthorClick = { userId ->
+                                if (userId == context.userId) {
+                                    selectTab(ShellTab.Profile)
+                                } else {
+                                    navController.navigate(ShellRoutes.userProfile(userId))
+                                }
+                            },
+                            onCreatePost = {
+                                navController.navigate(ShellRoutes.AddPost)
+                            },
+                            onOpenStoryPlayer = { userIndex ->
+                                navController.navigate(ShellRoutes.storyPlayer(userIndex))
+                            },
+                            onCreateStory = { uri ->
+                                navController.navigate(ShellRoutes.storyCreate(uri?.toString()))
+                            },
+                            onNotifications = {
+                                navController.navigate(ShellRoutes.Notifications)
+                            },
+                            onAppeal = { postId -> navController.navigate(ShellRoutes.appeal(postId)) },
+                            onHashtag = { tag -> navController.navigate(ShellRoutes.hashtag(tag)) },
+                            onVideoClick = { postId -> navController.navigate(ShellRoutes.reels(postId)) },
+                            onLocation = { loc -> navController.navigate(ShellRoutes.location(loc)) },
+                        ),
                     )
                 }
                 composable(ShellRoutes.Notifications) {
@@ -549,6 +554,7 @@ fun VistaShell(
                         { postId -> navController.navigate(ShellRoutes.postDetail(postId)) },
                         { userId -> navController.navigate(ShellRoutes.userProfile(userId)) },
                         { uri -> navController.navigate(ShellRoutes.storyCreate(uri.toString())) },
+                        { loc -> navController.navigate(ShellRoutes.location(loc)) },
                     )
                 }
                 composable(
@@ -570,6 +576,7 @@ fun VistaShell(
                                 }
                             },
                             { tag -> navController.navigate(ShellRoutes.hashtag(tag)) },
+                            { name, lat, lon -> navController.navigate(ShellRoutes.location(name, lat, lon)) },
                         )
                     }
                 }
@@ -887,6 +894,9 @@ fun VistaShell(
                         { url ->
                             navController.navigate(ShellRoutes.servicesWeb(url, "پیوند"))
                         },
+                        { name, lat, lon ->
+                            navController.navigate(ShellRoutes.location(name, lat, lon))
+                        },
                     )
                 }
                 composable(ShellRoutes.SettingsRoot) {
@@ -1045,6 +1055,7 @@ fun VistaShell(
                     { tag -> navController.navigate(ShellRoutes.hashtag(tag)) },
                     { postId -> navController.navigate(ShellRoutes.appeal(postId)) },
                     { uri -> navController.navigate(ShellRoutes.storyCreate(uri.toString())) },
+                    { loc -> navController.navigate(ShellRoutes.location(loc)) },
                 )
             }
             composable(
@@ -1057,6 +1068,58 @@ fun VistaShell(
                     { postId -> navController.navigate(ShellRoutes.postDetail(postId)) },
                     { userId -> navController.navigate(ShellRoutes.userProfile(userId)) },
                     { uri -> navController.navigate(ShellRoutes.storyCreate(uri.toString())) },
+                    { loc -> navController.navigate(ShellRoutes.location(loc)) },
+                )
+            }
+            composable(
+                route = ShellRoutes.LocationRoute,
+                arguments = listOf(
+                    navArgument("name") { type = NavType.StringType },
+                    navArgument("lat") {
+                        type = NavType.StringType
+                        nullable = true
+                        defaultValue = null
+                    },
+                    navArgument("lon") {
+                        type = NavType.StringType
+                        nullable = true
+                        defaultValue = null
+                    },
+                ),
+            ) { backStackEntry ->
+                val rawName = backStackEntry.arguments?.getString("name").orEmpty()
+                val decodedName = runCatching {
+                    java.net.URLDecoder.decode(rawName, "UTF-8")
+                }.getOrDefault(rawName)
+                val lat = backStackEntry.arguments?.getString("lat")?.toDoubleOrNull()
+                val lon = backStackEntry.arguments?.getString("lon")?.toDoubleOrNull()
+                content.locationPosts(
+                    ShellLocationPostsRequest(
+                        locationName = decodedName,
+                        latitude = lat,
+                        longitude = lon,
+                        onBack = { navController.popBackStack() },
+                        onPostClick = { postId -> navController.navigate(ShellRoutes.postDetail(postId)) },
+                        onAuthorClick = { userId ->
+                            navController.navigate(
+                                if (userId == context.userId) {
+                                    ShellRoutes.OwnProfileOverlay
+                                } else {
+                                    ShellRoutes.userProfile(userId)
+                                },
+                            )
+                        },
+                        onHashtagClick = { tag -> navController.navigate(ShellRoutes.hashtag(tag)) },
+                        onLocationClick = { name, targetLat, targetLon ->
+                            navController.navigate(ShellRoutes.location(name, targetLat, targetLon))
+                        },
+                        onNavigateToStoryEditor = { uri -> navController.navigate(ShellRoutes.storyCreate(uri.toString())) },
+                        onOpenLink = { url ->
+                            if (!internalLinkNavigator.openUrl(url)) {
+                                runCatching { uriHandler.openUri(url) }
+                            }
+                        },
+                    ),
                 )
             }
             composable(
@@ -1098,6 +1161,9 @@ fun VistaShell(
                     },
                     { url ->
                         navController.navigate(ShellRoutes.servicesWeb(url, "پیوند"))
+                    },
+                    { name, lat, lon ->
+                        navController.navigate(ShellRoutes.location(name, lat, lon))
                     },
                 )
             }
@@ -1145,6 +1211,9 @@ fun VistaShell(
                     { url ->
                         navController.navigate(ShellRoutes.servicesWeb(url, "پیوند"))
                     },
+                    { name, lat, lon ->
+                        navController.navigate(ShellRoutes.location(name, lat, lon))
+                    },
                 )
             }
             composable(
@@ -1184,8 +1253,14 @@ fun VistaShell(
         }
         }
         val islandVisible = showBottomIsland && isBottomIslandVisible
+        val hasUpdateBar = updateBarState != null
         val snackbarBottomPadding by animateDpAsState(
-            targetValue = if (islandVisible) 126.dp else 20.dp,
+            targetValue = when {
+                islandVisible && hasUpdateBar -> 174.dp
+                islandVisible -> 126.dp
+                hasUpdateBar -> 68.dp
+                else -> 20.dp
+            },
             animationSpec = spring(
                 dampingRatio = Spring.DampingRatioLowBouncy,
                 stiffness = Spring.StiffnessMediumLow,
@@ -1198,46 +1273,70 @@ fun VistaShell(
                 .align(Alignment.BottomCenter)
                 .padding(bottom = snackbarBottomPadding),
         )
-        AnimatedVisibility(
-            visible = islandVisible,
-            enter = slideInVertically(
-                initialOffsetY = { fullHeight -> fullHeight },
-                animationSpec = spring(
-                    dampingRatio = Spring.DampingRatioLowBouncy,
-                    stiffness = Spring.StiffnessMediumLow,
-                ),
-            ) + fadeIn(animationSpec = tween(200)),
-            exit = slideOutVertically(
-                targetOffsetY = { fullHeight -> fullHeight },
-                animationSpec = tween(durationMillis = 250),
-            ) + fadeOut(animationSpec = tween(150)),
-            modifier = Modifier.align(Alignment.BottomCenter),
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth(),
         ) {
-            VistaBottomIsland(
-                selectedTab = selectedTab,
-                glassState = glassState,
-                chatBadgeCount = content.chatBadgeCount,
-                navigationSlots = navigationSlots,
-                onSelect = { tab ->
-                    if (tab == ShellTab.Feed) {
-                        isBottomIslandVisible = true
-                        if (selectedTab == ShellTab.Feed && atRoot) {
-                            homeTabClickFlow.tryEmit(Unit)
+            AnimatedVisibility(
+                visible = islandVisible,
+                enter = slideInVertically(
+                    initialOffsetY = { fullHeight -> fullHeight },
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioLowBouncy,
+                        stiffness = Spring.StiffnessMediumLow,
+                    ),
+                ) + fadeIn(animationSpec = tween(200)),
+                exit = slideOutVertically(
+                    targetOffsetY = { fullHeight -> fullHeight },
+                    animationSpec = tween(durationMillis = 250),
+                ) + fadeOut(animationSpec = tween(150)),
+            ) {
+                VistaBottomIsland(
+                    selectedTab = selectedTab,
+                    glassState = glassState,
+                    chatBadgeCount = content.chatBadgeCount,
+                    navigationSlots = navigationSlots,
+                    hasBottomBarBelow = hasUpdateBar,
+                    onSelect = { tab ->
+                        if (tab == ShellTab.Feed) {
+                            isBottomIslandVisible = true
+                            if (selectedTab == ShellTab.Feed && atRoot) {
+                                homeTabClickFlow.tryEmit(Unit)
+                            } else {
+                                selectTab(tab)
+                            }
                         } else {
                             selectTab(tab)
                         }
-                    } else {
-                        selectTab(tab)
-                    }
-                },
-            )
+                    },
+                )
+            }
+            AnimatedVisibility(
+                visible = updateBarState != null,
+                enter = slideInVertically(
+                    initialOffsetY = { fullHeight -> fullHeight },
+                    animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing),
+                ) + fadeIn(animationSpec = tween(180)),
+                exit = slideOutVertically(
+                    targetOffsetY = { fullHeight -> fullHeight },
+                    animationSpec = tween(durationMillis = 220),
+                ) + fadeOut(animationSpec = tween(140)),
+            ) {
+                updateBarState?.let { barState ->
+                    VistaUpdateBar(
+                        state = barState,
+                        onClick = onUpdateBarClick,
+                    )
+                }
+            }
         }
     }
 }
 }
 
 @Composable
-private fun VistaShellSystemBars() {
+private fun VistaShellSystemBars(forceDarkNavBar: Boolean = false) {
     val view = LocalView.current
     val shellBackground = MaterialTheme.colorScheme.background
     val lightBars = MaterialTheme.colorScheme.background.luminance() > 0.5f
@@ -1256,7 +1355,7 @@ private fun VistaShellSystemBars() {
             }
             WindowCompat.getInsetsController(window, view).apply {
                 isAppearanceLightStatusBars = lightBars
-                isAppearanceLightNavigationBars = lightBars
+                isAppearanceLightNavigationBars = if (forceDarkNavBar) false else lightBars
             }
         }
     }
@@ -1270,20 +1369,26 @@ private fun VistaBottomIsland(
     onSelect: (ShellTab) -> Unit,
     modifier: Modifier = Modifier,
     navigationSlots: List<ShellNavigationSlotOverride> = emptyList(),
+    hasBottomBarBelow: Boolean = false,
 ) {
     val density = LocalDensity.current
-    val bottomInset = with(density) {
-        maxOf(
-            WindowInsets.navigationBars.getBottom(density),
-            WindowInsets.ime.getBottom(density),
-        ).toDp()
+    val bottomInset = if (hasBottomBarBelow) {
+        0.dp
+    } else {
+        with(density) {
+            maxOf(
+                WindowInsets.navigationBars.getBottom(density),
+                WindowInsets.ime.getBottom(density),
+            ).toDp()
+        }
     }
+    val bottomMargin = if (hasBottomBarBelow) 10.dp else 12.dp + bottomInset
     val isLight = MaterialTheme.colorScheme.background.luminance() > 0.5f
     val isDark = !isLight
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(72.dp + bottomInset)
+            .height((if (hasBottomBarBelow) 68.dp else 72.dp) + bottomInset)
             .vistaGlassHalo(
                 state = glassState,
                 isDark = isDark,
@@ -1295,7 +1400,7 @@ private fun VistaBottomIsland(
     ) {
         Surface(
             modifier = Modifier
-                .padding(start = 18.dp, end = 18.dp, bottom = 12.dp + bottomInset)
+                .padding(start = 18.dp, end = 18.dp, bottom = bottomMargin)
                 .fillMaxWidth()
                 .height(58.dp)
                 .vistaGlass(

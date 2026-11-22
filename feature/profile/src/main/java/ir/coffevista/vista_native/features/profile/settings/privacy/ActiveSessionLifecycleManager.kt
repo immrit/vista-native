@@ -94,6 +94,7 @@ class ActiveSessionLifecycleManager @Inject constructor(
         val brand = runCatching { Build.BRAND }.getOrNull().orEmpty().trim()
         val deviceName = DeviceMetadataProvider.formatAndroidDeviceName(manufacturer, model, brand)
         val appVersion = resolveAppVersion()
+        val appVersionCode = resolveAppVersionCode()
 
         val registered = runCatching {
             api.register(
@@ -109,6 +110,7 @@ class ActiveSessionLifecycleManager @Inject constructor(
                         put("platform", "android")
                     },
                     appVersion = appVersion,
+                    appVersionCode = appVersionCode.takeIf { it > 0 },
                     platform = "android",
                     fcmToken = cachedFcmToken,
                 ),
@@ -154,6 +156,8 @@ class ActiveSessionLifecycleManager @Inject constructor(
                     sessionToken = sessionToken,
                     fcmToken = cachedFcmToken,
                     fcmSyncEpoch = fcmSyncEpoch,
+                    appVersion = resolveAppVersion(),
+                    appVersionCode = resolveAppVersionCode().takeIf { it > 0 },
                 ),
             )
         }.getOrNull()
@@ -211,4 +215,9 @@ class ActiveSessionLifecycleManager @Inject constructor(
     private fun resolveAppVersion(): String = runCatching {
         context.packageManager.getPackageInfo(context.packageName, 0).versionName
     }.getOrNull()?.takeIf(String::isNotBlank) ?: "1.0.0"
+
+    private fun resolveAppVersionCode(): Int = runCatching {
+        val info = context.packageManager.getPackageInfo(context.packageName, 0)
+        androidx.core.content.pm.PackageInfoCompat.getLongVersionCode(info).toInt()
+    }.getOrDefault(0)
 }

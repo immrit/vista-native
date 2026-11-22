@@ -41,6 +41,10 @@ class StoryRepositoryTest {
             return ActiveStoriesResponseDto(users = listOf(sampleUser))
         }
 
+        override suspend fun getStoriesByLocation(location: String): ActiveStoriesResponseDto {
+            return ActiveStoriesResponseDto()
+        }
+
         override suspend fun getUserStories(userId: String): UserStoriesResponseDto {
             return UserStoriesResponseDto(stories = listOf(sampleStory))
         }

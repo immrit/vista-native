@@ -32,6 +32,7 @@ class PostUploadWorker @AssistedInject constructor(
 
     override suspend fun doWork(): Result {
         val uploadedObjectKeys = mutableListOf<String>()
+        var temporaryVideoFile: File? = null
 
         return try {
             val userId = inputData.getString(KEY_USER_ID)
@@ -59,7 +60,6 @@ class PostUploadWorker @AssistedInject constructor(
 
             var finalVideoUrl: String? = null
             var finalThumbUrl: String? = null
-            var temporaryVideoFile: File? = null
             val finalImageUrls = mutableListOf<String>()
 
             // 1. Audio / Music upload
@@ -188,7 +188,6 @@ class PostUploadWorker @AssistedInject constructor(
                 }
             }
 
-            runCatching { temporaryVideoFile?.delete() }
             updateProgressState(1f, "پست با موفقیت منتشر شد")
             Result.success(workDataOf(KEY_POST_ID to postDto.id, KEY_USER_ID to userId))
         } catch (cancelled: CancellationException) {
@@ -198,7 +197,14 @@ class PostUploadWorker @AssistedInject constructor(
         } catch (e: Throwable) {
             cleanupOrphanFiles(uploadedObjectKeys)
             val userId = inputData.getString(KEY_USER_ID)
-            Result.failure(workDataOf(KEY_ERROR to (e.message ?: "خطا در ارسال پست"), KEY_USER_ID to userId))
+            Result.failure(
+                workDataOf(
+                    KEY_ERROR to e.toUserFriendlyUploadError("خطا در ارسال پست"),
+                    KEY_USER_ID to userId,
+                )
+            )
+        } finally {
+            runCatching { temporaryVideoFile?.delete() }
         }
     }
 
@@ -208,8 +214,15 @@ class PostUploadWorker @AssistedInject constructor(
 
     private var lastProgressUpdateTime = 0L
     private var lastProgressValue = 0f
+    private var lastForegroundUpdateTime = 0L
+    private var lastForegroundMessage: String? = null
 
     private suspend fun updateProgressState(progress: Float, message: String) {
+        val now = System.currentTimeMillis()
+        lastProgressUpdateTime = now
+        lastProgressValue = progress
+        lastForegroundUpdateTime = now
+        lastForegroundMessage = message
         runCatching {
             setProgress(
                 workDataOf(
@@ -225,13 +238,29 @@ class PostUploadWorker @AssistedInject constructor(
 
     private fun throttleProgress(progress: Float, message: String) {
         val now = System.currentTimeMillis()
-        if (progress >= 1f || kotlin.math.abs(progress - lastProgressValue) >= 0.04f || (now - lastProgressUpdateTime) >= 300L) {
+        if (progress >= 1f ||
+            kotlin.math.abs(progress - lastProgressValue) >= 0.02f ||
+            (now - lastProgressUpdateTime) >= 400L
+        ) {
             lastProgressUpdateTime = now
             lastProgressValue = progress
             runCatching {
-                kotlinx.coroutines.runBlocking {
-                    updateProgressState(progress, message)
-                }
+                setProgressAsync(
+                    workDataOf(
+                        KEY_PROGRESS to progress,
+                        KEY_STATUS to message,
+                    )
+                )
+            }
+        }
+        if (progress >= 1f ||
+            message != lastForegroundMessage ||
+            (now - lastForegroundUpdateTime) >= 1_000L
+        ) {
+            lastForegroundUpdateTime = now
+            lastForegroundMessage = message
+            runCatching {
+                setForegroundAsync(createForegroundInfo(progress, message))
             }
         }
     }

@@ -101,6 +101,7 @@ data class SessionItemUiModel(
     val id: String,
     val deviceName: String,
     val clientSubtitle: String,
+    val appVersionDisplay: String,
     val platform: String,
     val ip: String,
     val location: String,
@@ -952,7 +953,8 @@ private fun SessionDetailSheet(
                         modifier = Modifier.padding(14.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
-                        DetailRow("نسخه برنامه", session.clientSubtitle, palette)
+                        DetailRow("کلاینت", session.clientSubtitle, palette)
+                        DetailRow("نسخه دقیق برنامه", session.appVersionDisplay, palette)
                         if (session.ip.isNotBlank()) {
                             DetailRow("آدرس IP", session.ip, palette)
                         }
