@@ -112,5 +112,20 @@ class PushNotificationTest {
             "📷 تصویر: عکس من",
             ChatNotificationContentFormatter.format(rawBody = "📷 تصویر: عکس من", messageType = "image"),
         )
+        // Truncated story JSON & preformatted prefix followed by JSON must never leak JSON.
+        assertEquals(
+            "📖 پاسخ به استوری",
+            ChatNotificationContentFormatter.format(
+                rawBody = """{"story_id":"3bb19d76-32d6-4044-a6ff-f3ecd4d08125","story_owner_id":"57fffc28-744...""",
+                messageType = "text",
+            ),
+        )
+        assertEquals(
+            "📖 پاسخ به استوری",
+            ChatNotificationContentFormatter.format(
+                rawBody = """📖 پاسخ به استوری: {"story_id":"3bb19d76-32d6-4044-a6ff-f3ecd4d08125"}""",
+                messageType = "story_reply",
+            ),
+        )
     }
 }

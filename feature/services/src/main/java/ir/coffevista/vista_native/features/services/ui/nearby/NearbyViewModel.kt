@@ -3,6 +3,7 @@ package ir.coffevista.vista_native.features.services.ui.nearby
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import ir.coffevista.vista_native.core.common.DeviceLocationSnapshotCache
 import ir.coffevista.vista_native.core.network.RemoteFailure
 import ir.coffevista.vista_native.features.services.data.nearby.NearbyBazaarPendingVerification
 import ir.coffevista.vista_native.features.services.data.nearby.NearbyCandidate
@@ -85,6 +86,7 @@ data class NearbyUiState(
 @HiltViewModel
 class NearbyViewModel @Inject constructor(
     private val repository: NearbyRepository,
+    val locationSnapshotCache: DeviceLocationSnapshotCache? = null,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(NearbyUiState())
@@ -138,6 +140,7 @@ class NearbyViewModel @Inject constructor(
         cityName: String? = null,
         provinceName: String? = null,
     ) {
+        locationSnapshotCache?.updateAddress(lat, lng, cityName, provinceName)
         viewModelScope.launch {
             _uiState.update {
                 it.copy(

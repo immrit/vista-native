@@ -13,6 +13,7 @@ import ir.coffevista.vista_native.features.chat.domain.model.AttachmentKind
 import ir.coffevista.vista_native.features.chat.domain.model.Message
 import ir.coffevista.vista_native.features.chat.domain.model.MessageContent
 import ir.coffevista.vista_native.features.chat.domain.model.MessageStatus
+import ir.coffevista.vista_native.features.chat.domain.model.StructuredMessageFormatter
 import ir.coffevista.vista_native.features.chat.domain.model.TransferState
 import ir.coffevista.vista_native.features.chat.domain.model.chatMessageTypePreview
 import ir.coffevista.vista_native.features.chat.domain.repository.ChatContentCipher
@@ -268,17 +269,11 @@ private val ConversationDto.isSecretConversation: Boolean
 
 private fun ConversationDto.conversationPreview(): String? {
     val raw = (lastMessageText ?: lastMessage)?.takeIf(String::isNotBlank)
-    if (isSecretConversation) {
-        raw ?: return null
-        return chatMessageTypePreview(lastMessageType, secret = true) ?: "🔒 پیام محرمانه"
-    }
-    if (raw != null && raw.looksLikeCiphertextPreview()) {
-        return "پیام جدید"
-    }
-    if (raw != null && raw.startsWith("wf:")) {
-        return "🎤 پیام صوتی"
-    }
-    return chatMessageTypePreview(lastMessageType, secret = false) ?: raw
+    return StructuredMessageFormatter.formatConversationPreview(
+        raw = raw,
+        messageType = lastMessageType,
+        isSecret = isSecretConversation,
+    )
 }
 
 private val ConversationDto.resolvedConversationType: ConversationType
@@ -312,12 +307,14 @@ internal suspend fun ConversationEntity.toDomain(cipher: ChatContentCipher): Con
     peerId = peerId,
     lastMessage = lastMessageCiphertext?.let {
         val decrypted = runCatching { cipher.decrypt(accountId, id, "conversation-preview", it) }.getOrNull()
-        if (decrypted != null && decrypted.looksLikeCiphertextPreview()) {
-            "پیام جدید"
-        } else if (decrypted != null && decrypted.startsWith("wf:")) {
-            "🎤 پیام صوتی"
-        } else {
-            decrypted
+        when {
+            decrypted == null -> null
+            decrypted.looksLikeCiphertextPreview() -> "پیام جدید"
+            else -> StructuredMessageFormatter.formatStructuredOrJsonPreview(
+                raw = decrypted,
+                transportType = lastMessageType,
+                sharedPostWithColon = false,
+            ) ?: decrypted
         }
     },
     lastMessageAtEpochMillis = lastMessageAtEpochMillis,
@@ -348,10 +345,7 @@ internal fun MessageDto.toDomain(accountId: String): Message {
         deleted -> MessageContent.Deleted
         isSecret && (content.looksLikeCiphertextPreview() || content.startsWith("VE2E") || content.startsWith("e2ee:")) ->
             MessageContent.EncryptedUnavailable
-        messageType.equals("sharedPost", true) ||
-            messageType.equals("storyReply", true) ||
-            messageType.equals("gameInvite", true) ||
-            messageType.equals("game_invite", true) ->
+        StructuredMessageFormatter.isStructuredMessageType(messageType) ->
             MessageContent.Structured(messageType, content)
         content.startsWith("wf:") -> MessageContent.Text("")
         else -> MessageContent.Text(content)

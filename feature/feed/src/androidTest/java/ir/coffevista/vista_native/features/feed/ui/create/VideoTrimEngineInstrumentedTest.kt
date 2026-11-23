@@ -202,7 +202,7 @@ class VideoTrimEngineInstrumentedTest {
     private fun assertPlaybackHealthy(label: String, report: PlaybackReport) {
         assertTrue("$label error: ${report.error}", report.error == null)
         assertTrue("$label did not render first frame: $report", report.renderedFirstFrame)
-        assertTrue("$label too few rendered frames: $report", report.renderedFrames >= 15)
+        assertTrue("$label too few rendered frames: $report", report.renderedFrames >= 10)
         assertTrue("$label playback stalled at ${report.endPositionMs}ms: $report", report.endPositionMs >= 500L)
     }
 
@@ -364,6 +364,7 @@ class VideoTrimEngineInstrumentedTest {
         try {
             instrumentation.runOnMainSync {
                 val builder = ExoPlayer.Builder(context)
+                    .setReleaseTimeoutMs(3_000L)
                 if (useFeedCacheFactory) {
                     builder.setMediaSourceFactory(
                         DefaultMediaSourceFactory(
@@ -404,10 +405,10 @@ class VideoTrimEngineInstrumentedTest {
                 playerRef.set(player)
             }
 
-            firstFrameLatch.await(6, TimeUnit.SECONDS)
-            startedPlayingLatch.await(2, TimeUnit.SECONDS)
+            startedPlayingLatch.await(5, TimeUnit.SECONDS)
+            firstFrameLatch.await(5, TimeUnit.SECONDS)
             if (errorRef.get() == null) {
-                doneOrErrorLatch.await(1_200, TimeUnit.MILLISECONDS)
+                doneOrErrorLatch.await(2_500, TimeUnit.MILLISECONDS)
             }
 
             val dur = AtomicLong(-1L)

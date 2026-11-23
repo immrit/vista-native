@@ -493,8 +493,32 @@ private fun readFrameRate(format: MediaFormat): Int {
 private fun copyFormatWithZeroRotation(source: MediaFormat): MediaFormat {
     // Setting rotation to 0 stops Surface decoders from pre-rotating away from coded dimensions;
     // the original orientation hint is preserved on the final MediaMuxer container.
-    return MediaFormat(source).apply {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        return MediaFormat(source).apply {
+            setInteger(MediaFormat.KEY_ROTATION, 0)
+        }
+    }
+    val mime = source.getString(MediaFormat.KEY_MIME) ?: MediaFormat.MIMETYPE_VIDEO_AVC
+    val width = runCatching { source.getInteger(MediaFormat.KEY_WIDTH) }.getOrDefault(0)
+    val height = runCatching { source.getInteger(MediaFormat.KEY_HEIGHT) }.getOrDefault(0)
+    return MediaFormat.createVideoFormat(mime, width, height).apply {
         setInteger(MediaFormat.KEY_ROTATION, 0)
+        for (csdKey in listOf("csd-0", "csd-1", "csd-2")) {
+            runCatching {
+                if (source.containsKey(csdKey)) {
+                    source.getByteBuffer(csdKey)?.let { buf ->
+                        val dup = buf.duplicate()
+                        val copy = ByteBuffer.allocateDirect(dup.remaining())
+                        copy.put(dup)
+                        copy.flip()
+                        setByteBuffer(csdKey, copy)
+                    }
+                }
+            }
+        }
+        if (source.containsKey(MediaFormat.KEY_MAX_INPUT_SIZE)) {
+            runCatching { setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, source.getInteger(MediaFormat.KEY_MAX_INPUT_SIZE)) }
+        }
     }
 }
 

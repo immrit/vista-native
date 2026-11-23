@@ -65,6 +65,10 @@ internal object Mp4FastStart {
                 val moovBytes = ByteArray(moovBox.size.toInt())
                 raf.seek(moovBox.offset)
                 raf.readFully(moovBytes)
+                if (readUInt32(moovBytes, 0) == 0L) {
+                    if (moovBox.size > 0xFFFFFFFFL) return false
+                    writeUInt32(moovBytes, 0, moovBox.size)
+                }
 
                 val shiftRange = firstMdat.offset until moovBox.offset
                 if (!patchChunkOffsets(moovBytes, shiftRange, moovBox.size)) {

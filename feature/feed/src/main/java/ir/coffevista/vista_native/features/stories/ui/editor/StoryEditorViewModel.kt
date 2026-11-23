@@ -6,6 +6,7 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import ir.coffevista.vista_native.core.common.toSafeUserError
 import dagger.hilt.android.qualifiers.ApplicationContext
 import ir.coffevista.vista_native.core.database.profile.OwnProfileDao
 import ir.coffevista.vista_native.core.database.profile.tierCapabilities
@@ -123,6 +124,9 @@ class StoryEditorViewModel @Inject constructor(
     val uiState: StateFlow<StoryEditorUiState> = _uiState.asStateFlow()
 
     init {
+        viewModelScope.launch {
+            contextService.prewarmLocationInBackground()
+        }
         val userId = currentUserId
         if (userId.isNotBlank() && ownProfileDao != null) {
             viewModelScope.launch {
@@ -907,7 +911,7 @@ class StoryEditorViewModel @Inject constructor(
                         _uiState.update {
                             it.copy(
                                 isUploading = false,
-                                errorMessage = e.message ?: "خطا در آماده‌سازی استوری",
+                                errorMessage = e.toSafeUserError("خطا در آماده‌سازی استوری"),
                             )
                         }
                     }
@@ -1137,7 +1141,7 @@ class StoryEditorViewModel @Inject constructor(
                     _uiState.update {
                         it.copy(
                             isUploading = false,
-                            errorMessage = result.exceptionOrNull()?.message ?: "خطا در ایجاد استوری",
+                            errorMessage = result.exceptionOrNull()?.toSafeUserError("خطا در ایجاد استوری") ?: "خطا در ایجاد استوری",
                         )
                     }
                 }
@@ -1147,7 +1151,7 @@ class StoryEditorViewModel @Inject constructor(
                 _uiState.update {
                     it.copy(
                         isUploading = false,
-                        errorMessage = e.message ?: "خطا در آپلود استوری",
+                        errorMessage = e.toSafeUserError("خطا در آپلود استوری"),
                     )
                 }
             }

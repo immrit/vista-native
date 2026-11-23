@@ -87,6 +87,7 @@ fun VistaFeedVideoPlayer(
     var isBuffering by remember(videoUrl, shouldAutoPlay) { mutableStateOf(shouldAutoPlay) }
     var hasRenderedFirstFrame by remember(videoUrl) { mutableStateOf(false) }
     var hasPlaybackError by remember(videoUrl) { mutableStateOf(false) }
+    var lastErrorCode by remember(videoUrl) { mutableStateOf<String?>(null) }
     var retryCount by remember(videoUrl) { mutableIntStateOf(0) }
 
     val activePlayingUrl by FeedVideoPlaybackCoordinator.activePlayingVideoUrl.collectAsStateWithLifecycle()
@@ -141,8 +142,10 @@ fun VistaFeedVideoPlayer(
         if (hasPlaybackError && retryCount < 1) {
             kotlinx.coroutines.delay(450L)
             retryCount += 1
+            FeedVideoPlaybackCoordinator.evictVideoCache(context, videoUrl)
             hasPlaybackError = false
             isBuffering = true
+            exoPlayer.seekTo(0L)
             exoPlayer.prepare()
             exoPlayer.playWhenReady = shouldAutoPlay
             if (shouldAutoPlay) {
@@ -167,6 +170,7 @@ fun VistaFeedVideoPlayer(
                 isBuffering = playbackState == Player.STATE_BUFFERING
                 if (playbackState == Player.STATE_READY) {
                     hasPlaybackError = false
+                    lastErrorCode = null
                 }
             }
 
@@ -183,10 +187,13 @@ fun VistaFeedVideoPlayer(
             }
 
             override fun onPlayerError(error: PlaybackException) {
-                Log.w("VistaFeedVideoPlayer", "Playback failed for $videoUrl: ${error.errorCodeName}", error)
+                val diagnostic = FeedVideoPlaybackCoordinator.formatPlaybackErrorDiagnostic(error)
+                Log.w("VistaFeedVideoPlayer", "Playback failed for $videoUrl: $diagnostic", error)
+                FeedVideoPlaybackCoordinator.evictVideoCache(context, videoUrl)
                 isPlaying = false
                 isBuffering = false
                 hasPlaybackError = true
+                lastErrorCode = diagnostic
             }
         }
         exoPlayer.addListener(listener)
@@ -309,29 +316,51 @@ fun VistaFeedVideoPlayer(
             enter = fadeIn(),
             exit = fadeOut(),
         ) {
-            Box(
-                modifier = Modifier
-                    .size(52.dp)
-                    .clip(CircleShape)
-                    .background(Color.Black.copy(alpha = 0.58f))
-                    .clickable {
-                        if (!hasInitiatedPlayback || hasPlaybackError || exoPlayer.playerError != null || exoPlayer.playbackState == Player.STATE_IDLE) {
-                            hasInitiatedPlayback = true
-                            hasPlaybackError = false
-                            isBuffering = true
-                            exoPlayer.prepare()
-                        }
-                        exoPlayer.playWhenReady = true
-                        exoPlayer.play()
-                    },
-                contentAlignment = Alignment.Center,
+            androidx.compose.foundation.layout.Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Icon(
-                    imageVector = Icons.Default.PlayArrow,
-                    contentDescription = "پخش ویدیو",
-                    tint = Color.White,
-                    modifier = Modifier.size(34.dp),
-                )
+                Box(
+                    modifier = Modifier
+                        .size(52.dp)
+                        .clip(CircleShape)
+                        .background(Color.Black.copy(alpha = 0.58f))
+                        .clickable {
+                            if (!hasInitiatedPlayback || hasPlaybackError || exoPlayer.playerError != null || exoPlayer.playbackState == Player.STATE_IDLE) {
+                                hasInitiatedPlayback = true
+                                if (hasPlaybackError || exoPlayer.playerError != null) {
+                                    FeedVideoPlaybackCoordinator.evictVideoCache(context, videoUrl)
+                                    exoPlayer.seekTo(0L)
+                                }
+                                hasPlaybackError = false
+                                lastErrorCode = null
+                                isBuffering = true
+                                exoPlayer.prepare()
+                            }
+                            exoPlayer.playWhenReady = true
+                            exoPlayer.play()
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PlayArrow,
+                        contentDescription = "پخش ویدیو",
+                        tint = Color.White,
+                        modifier = Modifier.size(34.dp),
+                    )
+                }
+                if (hasPlaybackError && retryCount >= 1) {
+                    androidx.compose.material3.Text(
+                        text = lastErrorCode?.let { "خطا در پخش ($it) · لمس برای تلاش مجدد" }
+                            ?: "خطا در پخش ویدیو · لمس برای تلاش مجدد",
+                        color = Color.White,
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier
+                            .padding(top = 8.dp, start = 12.dp, end = 12.dp)
+                            .clip(androidx.compose.foundation.shape.RoundedCornerShape(10.dp))
+                            .background(Color.Black.copy(alpha = 0.68f))
+                            .padding(horizontal = 10.dp, vertical = 4.dp),
+                    )
+                }
             }
         }
 

@@ -9,6 +9,9 @@ import ir.coffevista.vista_native.features.profile.ui.components.SoundCloudMusic
 import ir.coffevista.vista_native.core.designsystem.component.isBackgroundMusicPost
 import ir.coffevista.vista_native.core.designsystem.audio.VistaAudioPlayer
 import ir.coffevista.vista_native.core.designsystem.component.LocalMusicPlaylist
+import ir.coffevista.vista_native.core.designsystem.component.VistaViuStateIllustration
+import ir.coffevista.vista_native.core.designsystem.component.VistaViuStateKind
+import ir.coffevista.vista_native.core.designsystem.component.inferVistaViuStateKind
 import ir.coffevista.vista_native.core.designsystem.component.vistaPostMusicTrack
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
@@ -2141,39 +2144,25 @@ private fun ProfileEmptyView(
     iconText: String? = null,
     action: (@Composable () -> Unit)? = null,
 ) {
+    val stateKind = when (tag) {
+        ProfileParityTestTags.Private -> VistaViuStateKind.Locked
+        ProfileParityTestTags.Error -> inferVistaViuStateKind(subtitle, isError = true)
+        else -> VistaViuStateKind.Empty
+    }
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 24.dp, vertical = 60.dp)
+            .padding(horizontal = 24.dp, vertical = 48.dp)
             .testTag(tag),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Surface(
-            modifier = Modifier.size(80.dp),
-            shape = CircleShape,
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                when {
-                    iconVector != null -> Icon(
-                        imageVector = iconVector,
-                        contentDescription = null,
-                        modifier = Modifier.size(36.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    iconRes != null -> Image(
-                        painter = painterResource(iconRes),
-                        contentDescription = null,
-                        modifier = Modifier.size(36.dp),
-                        colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.onSurfaceVariant),
-                    )
-                    iconText != null -> Text(iconText, fontSize = 36.sp)
-                }
-            }
-        }
+        VistaViuStateIllustration(
+            kind = stateKind,
+            size = 136.dp,
+        )
         Text(
             text = title,
-            modifier = Modifier.padding(top = 16.dp),
+            modifier = Modifier.padding(top = 12.dp),
             fontSize = 17.sp,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onBackground,

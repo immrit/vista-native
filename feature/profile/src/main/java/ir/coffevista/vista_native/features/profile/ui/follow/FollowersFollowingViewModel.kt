@@ -3,6 +3,7 @@ package ir.coffevista.vista_native.features.profile.ui.follow
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import ir.coffevista.vista_native.core.common.toSafeUserError
 import ir.coffevista.vista_native.features.profile.data.FollowActionRequestDto
 import ir.coffevista.vista_native.features.profile.data.FollowUserDto
 import ir.coffevista.vista_native.features.profile.data.PublicProfileApi
@@ -82,7 +83,7 @@ class FollowersFollowingViewModel @Inject constructor(
                 _uiState.update {
                     it.copy(
                         isLoading = false,
-                        errorMessage = e.message ?: "خطا در دریافت لیست",
+                        errorMessage = e.toSafeUserError("خطا در دریافت لیست"),
                     )
                 }
             }

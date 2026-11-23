@@ -7,6 +7,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import ir.coffevista.vista_native.core.common.toSafeUserError
 import ir.coffevista.vista_native.core.database.feed.FeedDao
 import ir.coffevista.vista_native.core.database.profile.OwnProfileDao
 import ir.coffevista.vista_native.core.database.profile.tierCapabilities
@@ -113,6 +114,7 @@ class AddPostViewModel @Inject constructor(
     private val postUploadManager: ir.coffevista.vista_native.features.feed.data.PostUploadManager? = null,
     private val draftStore: PostDraftStorage? = null,
     val locationContextService: ir.coffevista.vista_native.features.stories.data.StoryDynamicContextService? = null,
+    private val postLocationRegistry: ir.coffevista.vista_native.features.feed.data.PostLocationRegistry? = null,
 ) : ViewModel() {
 
     constructor(
@@ -121,7 +123,7 @@ class AddPostViewModel @Inject constructor(
         authStateProvider: AuthenticationStateProvider,
         ownProfileDao: OwnProfileDao,
         postMentions: PostMentions,
-    ) : this(api, uploader, authStateProvider, ownProfileDao, postMentions, null, null, null, null, null)
+    ) : this(api, uploader, authStateProvider, ownProfileDao, postMentions, null, null, null, null, null, null)
 
     private var hashtagSearchJob: Job? = null
     private var draftDiscarded = false
@@ -138,6 +140,9 @@ class AddPostViewModel @Inject constructor(
 
     init {
         restoreDraft()
+        viewModelScope.launch {
+            locationContextService?.prewarmLocationInBackground()
+        }
         viewModelScope.launch {
             val userId = currentUserId
             if (userId.isNotBlank()) {
@@ -823,15 +828,29 @@ class AddPostViewModel @Inject constructor(
                     videoDurationMs = state.videoDurationMs.toInt().takeIf { it > 0 && finalVideoUrl != null },
                 )
 
+                val normalizedSentLocation = state.selectedLocation?.trim()?.takeIf { it.isNotBlank() }
                 val postDto = api.createPost(createReq)
-                postMentions.attach(postDto.id, mentionIds)
+                val resolvedLocation = postDto.location?.trim()?.takeIf { it.isNotBlank() } ?: normalizedSentLocation
+                if (resolvedLocation != null) {
+                    postLocationRegistry?.record(postDto.id, resolvedLocation)
+                }
+                val effectivePostDto = if (postDto.location.isNullOrBlank() && resolvedLocation != null) {
+                    postDto.copy(location = resolvedLocation)
+                } else {
+                    postDto
+                }
+                postMentions.attach(effectivePostDto.id, mentionIds)
 
                 val userId = currentUserId
                 if (userId.isNotBlank() && feedDao != null) {
                     runCatching {
-                        val exploreEntity = postDto.asEntity(accountId = userId, sortOrder = -1L)
-                        val followingEntity = postDto.asEntity(accountId = "$userId\u001Ffollowing", sortOrder = -1L)
-                        feedDao.insertPosts(listOf(exploreEntity, followingEntity))
+                        val exploreEntity = effectivePostDto.asEntity(accountId = userId, sortOrder = -1L)
+                        val followingEntity = effectivePostDto.asEntity(accountId = "$userId\u001Ffollowing", sortOrder = -1L)
+                        val ownProfileEntity = effectivePostDto.asEntity(
+                            accountId = "$userId\u001Fprofile-posts\u001F$userId",
+                            sortOrder = -1L,
+                        )
+                        feedDao.insertPosts(listOf(exploreEntity, followingEntity, ownProfileEntity))
                     }
                 }
 
@@ -848,7 +867,7 @@ class AddPostViewModel @Inject constructor(
                 _uiState.update {
                     it.copy(
                         isUploading = false,
-                        errorMessage = e.message ?: "خطا در آپلود یا ثبت پست",
+                        errorMessage = e.toSafeUserError("خطا در آپلود یا ثبت پست"),
                     )
                 }
             }

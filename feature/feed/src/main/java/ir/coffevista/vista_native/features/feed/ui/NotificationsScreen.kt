@@ -49,6 +49,8 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import ir.coffevista.vista_native.core.designsystem.component.VistaMiniPlayerHost
+import ir.coffevista.vista_native.core.designsystem.component.VistaViuStateIllustration
+import ir.coffevista.vista_native.core.designsystem.component.VistaViuStateKind
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -656,13 +658,11 @@ private fun NotificationEmptyState(onRetry: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.padding(horizontal = 24.dp),
         ) {
-            Icon(
-                Icons.Default.NotificationsOff,
-                contentDescription = null,
-                modifier = Modifier.size(64.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            VistaViuStateIllustration(
+                kind = VistaViuStateKind.EmptyChat,
+                size = 148.dp,
             )
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(12.dp))
             Text(
                 text = "اعلانی برای این بخش وجود ندارد",
                 textAlign = TextAlign.Center,

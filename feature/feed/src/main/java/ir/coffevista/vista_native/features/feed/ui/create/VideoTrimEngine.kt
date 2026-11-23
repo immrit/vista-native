@@ -8,11 +8,26 @@ import android.media.MediaFormat
 import android.media.MediaMetadataRetriever
 import android.media.MediaMuxer
 import android.net.Uri
+import androidx.annotation.OptIn
+import androidx.media3.common.C
+import androidx.media3.common.DataReader
+import androidx.media3.common.Format
+import androidx.media3.common.util.ParsableByteArray
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.extractor.DefaultExtractorInput
+import androidx.media3.extractor.Extractor
+import androidx.media3.extractor.ExtractorOutput
+import androidx.media3.extractor.PositionHolder
+import androidx.media3.extractor.SeekMap
+import androidx.media3.extractor.TrackOutput
+import androidx.media3.extractor.mp4.Mp4Extractor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
+import java.io.EOFException
 import java.io.File
+import java.io.RandomAccessFile
 import java.nio.ByteBuffer
 
 /** Raised with a message that is safe to show to the user. */
@@ -547,18 +562,30 @@ private suspend fun trimVideoLossless(
 internal fun validateTrimmedMp4(file: File): Boolean {
     if (!file.exists() || file.length() <= 0L) return false
     val retriever = MediaMetadataRetriever()
-    val durationMs = try {
+    val hasValidMetadataAndFrame = try {
         retriever.setDataSource(file.absolutePath)
-        retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+        val durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+        if (durationMs <= 0L) {
+            false
+        } else {
+            val frame = retriever.getFrameAtTime(0L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                ?: retriever.frameAtTime
+            if (frame != null) {
+                frame.recycle()
+                true
+            } else {
+                false
+            }
+        }
     } catch (_: Throwable) {
-        0L
+        false
     } finally {
         runCatching { retriever.release() }
     }
-    if (durationMs <= 0L) return false
+    if (!hasValidMetadataAndFrame) return false
 
     val extractor = MediaExtractor()
-    return try {
+    val extractorOk = try {
         extractor.setDataSource(file.absolutePath)
         val videoTrack = (0 until extractor.trackCount).firstOrNull { index ->
             extractor.getTrackFormat(index).getString(MediaFormat.KEY_MIME)?.startsWith("video/") == true
@@ -580,11 +607,161 @@ internal fun validateTrimmedMp4(file: File): Boolean {
             samples++
             if (!extractor.advance()) break
         }
-        samples >= 1
+        if (samples < 1) return false
+
+        val audioTrack = (0 until extractor.trackCount).firstOrNull { index ->
+            extractor.getTrackFormat(index).getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true
+        }
+        if (audioTrack != null) {
+            extractor.unselectTrack(videoTrack)
+            extractor.selectTrack(audioTrack)
+            if (extractor.sampleTime < 0L) return false
+        }
+        true
     } catch (_: Throwable) {
         false
     } finally {
         runCatching { extractor.release() }
+    }
+    if (!extractorOk) return false
+
+    return verifyMp4WithMedia3Extractor(file)
+}
+
+/**
+ * Parses [file] through Media3's own [Mp4Extractor] end-to-end (sniff + moov/stbl parsing +
+ * reading every sample) so any container or NAL-length error ExoPlayer would hit is caught before
+ * accepting a trimmed or faststart-relocated file.
+ */
+@OptIn(UnstableApi::class)
+internal fun verifyMp4WithMedia3Extractor(file: File): Boolean {
+    if (!file.exists() || file.length() < 16L) return false
+    val mp4Extractor = Mp4Extractor()
+    return try {
+        RandomAccessFile(file, "r").use { raf ->
+            val fileLength = raf.length()
+            val reader = DataReader { target, offset, length ->
+                raf.read(target, offset, length)
+            }
+            val drainBuffer = ByteArray(16 * 1024)
+            var videoTrackId = -1
+            var audioTrackId = -1
+            var videoFormatSeen = false
+            var hasAudioTrack = false
+            var audioFormatSeen = false
+            var videoSamples = 0
+            var audioSamples = 0
+            var tracksEnded = false
+            var seekMap: SeekMap? = null
+
+            val output = object : ExtractorOutput {
+                override fun track(id: Int, type: Int): TrackOutput {
+                    if (type == C.TRACK_TYPE_VIDEO && videoTrackId < 0) {
+                        videoTrackId = id
+                    } else if (type == C.TRACK_TYPE_AUDIO && audioTrackId < 0) {
+                        audioTrackId = id
+                        hasAudioTrack = true
+                    }
+                    return object : TrackOutput {
+                        override fun format(format: Format) {
+                            if (id == videoTrackId && format.sampleMimeType?.startsWith("video/") == true) {
+                                videoFormatSeen = true
+                            } else if (id == audioTrackId && format.sampleMimeType?.startsWith("audio/") == true) {
+                                audioFormatSeen = true
+                            }
+                        }
+
+                        override fun sampleData(
+                            input: DataReader,
+                            length: Int,
+                            allowEndOfInput: Boolean,
+                            sampleDataPart: Int,
+                        ): Int {
+                            var remaining = length
+                            var totalRead = 0
+                            while (remaining > 0) {
+                                val chunk = minOf(remaining, drainBuffer.size)
+                                val read = input.read(drainBuffer, 0, chunk)
+                                if (read == C.RESULT_END_OF_INPUT || read < 0) {
+                                    if (totalRead == 0) {
+                                        if (allowEndOfInput) return C.RESULT_END_OF_INPUT
+                                        throw EOFException("Unexpected EOF inside Media3 sampleData")
+                                    }
+                                    return totalRead
+                                }
+                                totalRead += read
+                                remaining -= read
+                            }
+                            return totalRead
+                        }
+
+                        override fun sampleData(data: ParsableByteArray, length: Int, sampleDataPart: Int) {
+                            data.skipBytes(length)
+                        }
+
+                        override fun sampleMetadata(
+                            timeUs: Long,
+                            flags: Int,
+                            size: Int,
+                            offset: Int,
+                            cryptoData: TrackOutput.CryptoData?,
+                        ) {
+                            if (id == videoTrackId) {
+                                videoSamples++
+                            } else if (id == audioTrackId) {
+                                audioSamples++
+                            }
+                        }
+                    }
+                }
+
+                override fun endTracks() {
+                    tracksEnded = true
+                }
+
+                override fun seekMap(seekMapArg: SeekMap) {
+                    seekMap = seekMapArg
+                }
+            }
+
+            raf.seek(0L)
+            var extractorInput = DefaultExtractorInput(reader, 0L, fileLength)
+            if (!mp4Extractor.sniff(extractorInput)) {
+                return false
+            }
+
+            raf.seek(0L)
+            extractorInput = DefaultExtractorInput(reader, 0L, fileLength)
+            mp4Extractor.init(output)
+
+            val positionHolder = PositionHolder()
+            var iterations = 0
+            while (iterations++ < 500_000) {
+                when (mp4Extractor.read(extractorInput, positionHolder)) {
+                    Extractor.RESULT_CONTINUE -> Unit
+                    Extractor.RESULT_SEEK -> {
+                        val nextPos = positionHolder.position
+                        if (nextPos < 0L || nextPos > fileLength) return false
+                        raf.seek(nextPos)
+                        extractorInput = DefaultExtractorInput(reader, nextPos, fileLength)
+                    }
+                    Extractor.RESULT_END_OF_INPUT -> break
+                }
+            }
+
+            val resolvedSeekMap = seekMap
+            tracksEnded &&
+                resolvedSeekMap != null &&
+                resolvedSeekMap.isSeekable &&
+                resolvedSeekMap.durationUs > 0L &&
+                videoFormatSeen &&
+                videoSamples >= 1 &&
+                (!hasAudioTrack || (audioFormatSeen && audioSamples >= 1))
+        }
+    } catch (_: Throwable) {
+        false
+    } finally {
+        runCatching { mp4Extractor.release() }
     }
 }
 

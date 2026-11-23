@@ -156,7 +156,13 @@ fun VistaEmptyState(
     title: String,
     message: String,
     modifier: Modifier = Modifier,
-) = VistaStateLayout(title, message, modifier) { }
+    kind: VistaViuStateKind? = null,
+) = VistaStateLayout(
+    title = title,
+    message = message,
+    modifier = modifier,
+    kind = kind ?: inferVistaViuStateKind("$title $message", isError = false),
+) { }
 
 @Composable
 fun VistaErrorState(
@@ -164,7 +170,13 @@ fun VistaErrorState(
     message: String,
     onRetry: () -> Unit,
     modifier: Modifier = Modifier,
-) = VistaStateLayout(title, message, modifier) {
+    kind: VistaViuStateKind? = null,
+) = VistaStateLayout(
+    title = title,
+    message = message,
+    modifier = modifier,
+    kind = kind ?: inferVistaViuStateKind("$title $message", isError = true),
+) {
     VistaButton(onClick = onRetry) { Text("تلاش دوباره") }
 }
 
@@ -195,6 +207,7 @@ private fun VistaStateLayout(
     title: String,
     message: String,
     modifier: Modifier,
+    kind: VistaViuStateKind,
     action: @Composable () -> Unit,
 ) {
     Column(
@@ -204,6 +217,11 @@ private fun VistaStateLayout(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
+        VistaViuStateIllustration(
+            kind = kind,
+            size = 148.dp,
+            modifier = Modifier.padding(bottom = VistaSpacing.Medium),
+        )
         Text(title, style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center)
         Text(
             message,

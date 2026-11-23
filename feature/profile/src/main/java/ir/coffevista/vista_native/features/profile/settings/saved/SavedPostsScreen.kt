@@ -60,6 +60,9 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import ir.coffevista.vista_native.core.designsystem.component.VistaViuStateIllustration
+import ir.coffevista.vista_native.core.designsystem.component.VistaViuStateKind
+import ir.coffevista.vista_native.core.designsystem.component.inferVistaViuStateKind
 
 data class SavedPostUiModel(
     val id: String,
@@ -175,6 +178,11 @@ fun SavedPostsScreen(
                             modifier = Modifier.fillMaxWidth().padding(32.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
+                            VistaViuStateIllustration(
+                                kind = inferVistaViuStateKind(uiState.errorMessage, isError = true),
+                                size = 136.dp,
+                            )
+                            Spacer(modifier = Modifier.height(10.dp))
                             Text(uiState.errorMessage!!, textAlign = TextAlign.Center)
                             Spacer(modifier = Modifier.height(12.dp))
                             TextButton(onClick = viewModel::refresh) { Text("تلاش مجدد") }
@@ -189,13 +197,11 @@ fun SavedPostsScreen(
                             contentAlignment = Alignment.Center,
                         ) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Icon(
-                                    imageVector = Icons.Filled.Bookmark,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
-                                    modifier = Modifier.size(56.dp),
+                                VistaViuStateIllustration(
+                                    kind = VistaViuStateKind.Empty,
+                                    size = 148.dp,
                                 )
-                                Spacer(modifier = Modifier.height(16.dp))
+                                Spacer(modifier = Modifier.height(12.dp))
                                 Text(
                                     text = "هنوز پست ذخیره‌شده‌ای ندارید",
                                     style = MaterialTheme.typography.bodyLarge,

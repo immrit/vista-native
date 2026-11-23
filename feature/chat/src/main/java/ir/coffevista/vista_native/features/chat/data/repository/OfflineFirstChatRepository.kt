@@ -6,6 +6,8 @@ import android.util.Base64
 import android.util.Log
 import ir.coffevista.vista_native.core.model.note.ProfileNoteBridge
 import ir.coffevista.vista_native.core.model.note.SharedProfileNote
+import ir.coffevista.vista_native.core.common.looksLikeJsonPayload
+import ir.coffevista.vista_native.core.common.toSafeUserError
 import ir.coffevista.vista_native.core.network.BackendErrorParser
 import ir.coffevista.vista_native.core.network.RemoteFailure
 import ir.coffevista.vista_native.core.common.NotificationRuntimeCoordinator
@@ -85,6 +87,7 @@ import ir.coffevista.vista_native.features.chat.domain.model.SharedPostParser
 import ir.coffevista.vista_native.features.chat.domain.model.PresenceState
 import ir.coffevista.vista_native.features.chat.domain.model.PaginationCursor
 import ir.coffevista.vista_native.features.chat.domain.model.RealtimeConnectionState
+import ir.coffevista.vista_native.features.chat.domain.model.StructuredMessageFormatter
 import ir.coffevista.vista_native.features.chat.domain.model.TransferState
 import ir.coffevista.vista_native.features.chat.domain.model.inboxPreviewText
 import ir.coffevista.vista_native.features.chat.domain.repository.ChatContentCipher
@@ -1562,10 +1565,7 @@ class OfflineFirstChatRepository(
                 dto.deletedAt != null -> MessageContent.Deleted
                 isSecretConversation && e2eeService.isEncryptedPayload(contentText) ->
                     MessageContent.EncryptedUnavailable
-                dto.messageType.equals("sharedPost", true) ||
-                    dto.messageType.equals("storyReply", true) ||
-                    dto.messageType.equals("gameInvite", true) ||
-                    dto.messageType.equals("game_invite", true) ->
+                StructuredMessageFormatter.isStructuredMessageType(dto.messageType) ->
                     MessageContent.Structured(dto.messageType, contentText)
                 dto.messageType == "exchange_key" || dto.messageType == "exchange_key_reply" ->
                     // The protocol payload must survive Room persistence so a
@@ -1899,12 +1899,11 @@ class OfflineFirstChatRepository(
                     retryable = false,
                 )
             }
-            val formattedReplyContent = DuelInviteParser.formatPreviewIfDuel(rawReplyContent, source.transportType)
-                ?: ir.coffevista.vista_native.features.chat.domain.model.SessionAlertParser.formatPreview(rawReplyContent, source.transportType)
-                ?: SharedPostParser.tryParse(rawReplyContent)?.let { post ->
-                    "پست ${post.authorName}: ${post.content.ifBlank { "رسانه پیوست" }}"
-                }
-                ?: rawReplyContent
+            val formattedReplyContent = StructuredMessageFormatter.formatStructuredOrJsonPreview(
+                raw = rawReplyContent,
+                transportType = source.transportType,
+                sharedPostWithColon = true,
+            ) ?: rawReplyContent
             val replyContent = formattedReplyContent.take(MAX_REPLY_PREVIEW_LENGTH)
             PendingReplyPayload(
                 messageId = source.serverId ?: source.clientId,
@@ -3718,17 +3717,18 @@ class OfflineFirstChatRepository(
         when (error) {
             is HttpException -> {
                 val failure = RemoteFailure.fromHttpException(error)
-                val serverMsg = failure.message?.takeIf { it.isNotBlank() }
+                val serverMsg = failure.message?.takeIf {
+                    it.isNotBlank() && !looksLikeJsonPayload(it) && it.any { ch -> ch in '\u0600'..'\u06FF' }
+                }
                 val code = failure.code?.lowercase()
                 failureMessage = when {
-                    serverMsg != null && (serverMsg.any { ch -> ch in '\u0600'..'\u06FF' } || serverMsg.contains(' ')) -> serverMsg
+                    serverMsg != null -> serverMsg
                     code == "maintenance_mode" -> "ویستا موقتاً در حال بروزرسانی است"
                     code in setOf("banned", "account_banned", "account_suspended") -> "حساب کاربری شما مسدود شده است"
                     code == "feature_disabled" -> "این قابلیت موقتاً غیرفعال است"
                     code == "conversation_not_found" -> "گفتگو یافت نشد"
                     code == "message_not_found" -> "پیام یافت نشد"
                     code == "not_a_member" -> "شما عضو این گفتگو نیستید"
-                    serverMsg != null -> serverMsg
                     error.code() == 401 -> "لطفاً دوباره وارد شوید"
                     error.code() == 403 -> "اجازه انجام این عملیات را ندارید"
                     error.code() == 404 -> "گفتگو یا پیام یافت نشد"
@@ -3739,21 +3739,21 @@ class OfflineFirstChatRepository(
                 isRetryable = error.code() >= 500 || error.code() == 429
             }
             is RemoteFailure -> {
-                val serverMsg = error.message?.takeIf { it.isNotBlank() }
+                val serverMsg = error.message?.takeIf {
+                    it.isNotBlank() && !looksLikeJsonPayload(it) && it.any { ch -> ch in '\u0600'..'\u06FF' }
+                }
                 val code = error.code?.lowercase()
                 failureMessage = when {
-                    serverMsg != null && (serverMsg.any { ch -> ch in '\u0600'..'\u06FF' } || serverMsg.contains(' ')) -> serverMsg
+                    serverMsg != null -> serverMsg
                     code == "maintenance_mode" -> "ویستا موقتاً در حال بروزرسانی است"
                     code in setOf("banned", "account_banned", "account_suspended") -> "حساب کاربری شما مسدود شده است"
                     code == "feature_disabled" -> "این قابلیت موقتاً غیرفعال است"
-                    serverMsg != null -> serverMsg
                     else -> "ارتباط با سرویس گفتگو ناموفق بود"
                 }
                 isRetryable = (error.statusCode ?: 0) >= 500 || error.statusCode == 429
             }
             else -> {
-                failureMessage = error.message?.takeIf { it.isNotBlank() && it.any { ch -> ch in '\u0600'..'\u06FF' } }
-                    ?: "اتصال برقرار نشد؛ دوباره تلاش کنید"
+                failureMessage = error.toSafeUserError("اتصال برقرار نشد؛ دوباره تلاش کنید")
                 isRetryable = true
             }
         }

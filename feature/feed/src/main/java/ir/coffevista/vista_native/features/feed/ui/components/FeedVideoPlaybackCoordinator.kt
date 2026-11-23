@@ -2,13 +2,17 @@ package ir.coffevista.vista_native.features.feed.ui.components
 
 import android.content.Context
 import androidx.annotation.OptIn
+import androidx.media3.common.ParserException
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.database.StandaloneDatabaseProvider
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.HttpDataSource
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
+import androidx.media3.exoplayer.source.UnrecognizedInputFormatException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -75,6 +79,45 @@ object FeedVideoPlaybackCoordinator {
             .setCache(cache)
             .setUpstreamDataSourceFactory(defaultDataSourceFactory)
             .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+    }
+
+    fun evictVideoCache(context: Context, videoUrl: String) {
+        if (videoUrl.isBlank()) return
+        runCatching { getCache(context).removeResource(videoUrl) }
+    }
+
+    /**
+     * Produces a compact diagnostic code that exposes the true underlying cause (e.g.
+     * `InvalidContentTypeException`, `UnrecognizedInputFormatException` sniff failure, or
+     * `Mp4Extractor` `ParserException` message) when playback fails.
+     */
+    fun formatPlaybackErrorDiagnostic(error: PlaybackException): String {
+        val cause = generateSequence<Throwable>(error.cause) { it.cause }
+            .take(8)
+            .firstOrNull {
+                it is HttpDataSource.InvalidContentTypeException ||
+                    it is HttpDataSource.InvalidResponseCodeException ||
+                    it is UnrecognizedInputFormatException ||
+                    it is ParserException
+            }
+        return when (cause) {
+            is HttpDataSource.InvalidContentTypeException ->
+                "${error.errorCodeName}:${cause.contentType.ifBlank { "unknown" }}"
+            is HttpDataSource.InvalidResponseCodeException ->
+                "${error.errorCodeName}:HTTP_${cause.responseCode}"
+            is UnrecognizedInputFormatException -> {
+                val sniffTag = cause.sniffFailures.firstOrNull()?.javaClass?.simpleName
+                    ?.removeSuffix("SniffFailure")
+                    ?.takeIf { it.isNotBlank() }
+                    ?: "NO_MATCH"
+                "${error.errorCodeName}:UNRECOGNIZED_$sniffTag"
+            }
+            is ParserException -> {
+                val msg = cause.message?.replace('\n', ' ')?.trim()?.take(40)
+                if (!msg.isNullOrBlank()) "${error.errorCodeName}:$msg" else error.errorCodeName
+            }
+            else -> error.errorCodeName
+        }
     }
 
     fun requestPlay(videoUrl: String) {

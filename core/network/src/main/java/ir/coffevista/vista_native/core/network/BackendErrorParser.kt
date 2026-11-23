@@ -1,5 +1,6 @@
 package ir.coffevista.vista_native.core.network
 
+import ir.coffevista.vista_native.core.common.looksLikeJsonPayload
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -48,8 +49,13 @@ object BackendErrorParser {
         }
 
         val resolvedMessage = explicitMessage
+            ?.takeUnless { candidate ->
+                looksLikeJsonPayload(candidate) ||
+                    candidate.lowercase().let { it.startsWith("<!doctype") || it.startsWith("<html") }
+            }
             ?: flatError?.takeIf { candidate ->
-                candidate.any { ch -> ch in '\u0600'..'\u06FF' } || candidate.contains(' ')
+                !looksLikeJsonPayload(candidate) &&
+                    (candidate.any { ch -> ch in '\u0600'..'\u06FF' } || candidate.contains(' '))
             }
 
         val feature = root?.optionalString("feature")

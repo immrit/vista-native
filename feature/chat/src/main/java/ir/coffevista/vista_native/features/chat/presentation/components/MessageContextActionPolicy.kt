@@ -1,6 +1,8 @@
 package ir.coffevista.vista_native.features.chat.presentation.components
 
+import ir.coffevista.vista_native.core.common.looksLikeJsonPayload
 import ir.coffevista.vista_native.features.chat.domain.model.AttachmentKind
+import ir.coffevista.vista_native.features.chat.domain.model.StructuredMessageFormatter
 import ir.coffevista.vista_native.features.chat.domain.model.Message
 import ir.coffevista.vista_native.features.chat.domain.model.MessageContent
 import ir.coffevista.vista_native.features.chat.domain.model.MessageStatus
@@ -58,6 +60,9 @@ internal fun Message.contextActionPolicy(
 ): MessageContextActionPolicy {
     val isDeleted = content is MessageContent.Deleted || deletedAtEpochMillis != null
     val isTextOnly = content is MessageContent.Text && attachment == null
+    val isStructuredPayload = content is MessageContent.Structured ||
+        (content is MessageContent.Text && StructuredMessageFormatter.isStructuredOrJsonPayload(content.value, transportType)) ||
+        (content is MessageContent.Text && looksLikeJsonPayload(content.value))
     val hasText = when (val c = content) {
         is MessageContent.Text -> c.value.isNotBlank()
         is MessageContent.Structured -> c.payload.isNotBlank()
@@ -105,7 +110,7 @@ internal fun Message.contextActionPolicy(
         canTogglePinned = canInteractRemotely &&
             capabilities.allowsPinning &&
             capabilities.conversationType != ConversationType.SECRET,
-        canEdit = canInteractRemotely && isMine && (isTextOnly || (attachment != null && hasText)),
+        canEdit = canInteractRemotely && isMine && !isStructuredPayload && (isTextOnly || (attachment != null && hasText)),
         canSelect = !isDeleted,
         canViewInfo = isServerConfirmed,
         canDelete = !isDeleted,

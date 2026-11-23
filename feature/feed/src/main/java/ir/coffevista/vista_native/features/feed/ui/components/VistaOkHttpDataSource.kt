@@ -35,6 +35,7 @@ internal class VistaOkHttpDataSource(
     private val requestProperties = HttpDataSource.RequestProperties()
 
     private var dataSpec: DataSpec? = null
+    private var activeCall: Call? = null
     private var response: Response? = null
     private var responseStream: InputStream? = null
     private var opened = false
@@ -89,9 +90,12 @@ internal class VistaOkHttpDataSource(
         transferInitializing(dataSpec)
 
         val request = buildRequest(dataSpec)
+        val call = callFactory.newCall(request)
+        activeCall = call
         val executedResponse: Response = try {
-            callFactory.newCall(request).execute()
+            call.execute()
         } catch (e: IOException) {
+            activeCall = null
             throw HttpDataSource.HttpDataSourceException.createForIOException(
                 e,
                 dataSpec,
@@ -107,6 +111,7 @@ internal class VistaOkHttpDataSource(
             if (responseCode == 416) {
                 val documentSize = HttpUtil.getDocumentSize(executedResponse.header("Content-Range"))
                 if (dataSpec.position == documentSize) {
+                    closeConnectionQuietly()
                     opened = true
                     transferStarted(dataSpec)
                     return 0L
@@ -132,12 +137,39 @@ internal class VistaOkHttpDataSource(
             )
         }
 
+        val contentType = executedResponse.header("Content-Type")
+            ?: body?.contentType()?.let { "${it.type}/${it.subtype}" }
+        if (isRejectedNonMediaContentType(contentType)) {
+            closeConnectionQuietly()
+            throw HttpDataSource.InvalidContentTypeException(contentType.orEmpty(), dataSpec)
+        }
+
+        if (body == null) {
+            closeConnectionQuietly()
+            throw HttpDataSource.HttpDataSourceException(
+                "Empty HTTP response body",
+                dataSpec,
+                PlaybackException.ERROR_CODE_IO_UNSPECIFIED,
+                HttpDataSource.HttpDataSourceException.TYPE_OPEN,
+            )
+        }
+
         val bytesToSkip = if (responseCode == 200 && dataSpec.position != 0L) dataSpec.position else 0L
+        val contentLength = body.contentLength()
+        if (responseCode == 200 && dataSpec.position == 0L && contentLength == 0L) {
+            closeConnectionQuietly()
+            throw HttpDataSource.HttpDataSourceException(
+                "Zero-byte HTTP 200 media response",
+                dataSpec,
+                PlaybackException.ERROR_CODE_IO_UNSPECIFIED,
+                HttpDataSource.HttpDataSourceException.TYPE_OPEN,
+            )
+        }
+        val availableBytes = if (contentLength >= 0L) (contentLength - bytesToSkip).coerceAtLeast(0L) else -1L
         bytesToRead = if (dataSpec.length != C.LENGTH_UNSET.toLong()) {
-            dataSpec.length
+            if (availableBytes >= 0L) minOf(dataSpec.length, availableBytes) else dataSpec.length
         } else {
-            val contentLength = body?.contentLength() ?: -1L
-            if (contentLength >= 0L) contentLength - bytesToSkip else C.LENGTH_UNSET.toLong()
+            if (availableBytes >= 0L) availableBytes else C.LENGTH_UNSET.toLong()
         }
 
         opened = true
@@ -266,13 +298,33 @@ internal class VistaOkHttpDataSource(
     }
 
     private fun closeConnectionQuietly() {
+        runCatching { activeCall?.cancel() }
         runCatching { responseStream?.close() }
         runCatching { response?.close() }
+        activeCall = null
         responseStream = null
         response = null
     }
 
     private companion object {
         const val SKIP_BUFFER_SIZE = 4096
+
+        val REJECTED_TEXT_MIME_PREFIXES = listOf(
+            "text/html",
+            "application/xhtml+xml",
+            "application/xml",
+            "text/xml",
+            "application/json",
+            "text/plain",
+            "application/vnd.apple.mpegurl",
+            "application/x-mpegurl",
+            "audio/mpegurl",
+            "audio/x-mpegurl",
+        )
+
+        fun isRejectedNonMediaContentType(rawContentType: String?): Boolean {
+            val normalized = rawContentType?.substringBefore(';')?.trim()?.lowercase() ?: return false
+            return REJECTED_TEXT_MIME_PREFIXES.any { normalized == it || normalized.startsWith("$it+") }
+        }
     }
 }

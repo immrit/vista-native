@@ -3,6 +3,7 @@ package ir.coffevista.vista_native.features.services.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import ir.coffevista.vista_native.core.common.toSafeUserError
 import ir.coffevista.vista_native.features.services.data.ContactVistaUser
 import ir.coffevista.vista_native.features.services.data.ServicesHubData
 import ir.coffevista.vista_native.features.services.data.ServicesRepository
@@ -67,7 +68,7 @@ class ServicesViewModel @Inject constructor(
             }.onFailure { error ->
                 _uiState.update {
                     it.copy(
-                        hubState = ServicesHubUiState.Error(error.message ?: "خطا در بارگذاری اطلاعات"),
+                        hubState = ServicesHubUiState.Error(error.toSafeUserError("خطا در بارگذاری اطلاعات")),
                         isRefreshing = false,
                     )
                 }
@@ -97,7 +98,7 @@ class ServicesViewModel @Inject constructor(
             }.onFailure { error ->
                 _uiState.update {
                     it.copy(
-                        contactsState = ContactsRailUiState.Error(error.message ?: "خطا در همگام‌سازی مخاطبین"),
+                        contactsState = ContactsRailUiState.Error(error.toSafeUserError("خطا در همگام‌سازی مخاطبین")),
                     )
                 }
             }

@@ -28,6 +28,7 @@ class PostUploadWorker @AssistedInject constructor(
     private val uploader: PostMediaUploadGateway,
     private val feedDao: FeedDao,
     private val postMentions: PostMentions,
+    private val postLocationRegistry: PostLocationRegistry,
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
@@ -176,15 +177,29 @@ class PostUploadWorker @AssistedInject constructor(
                 videoDurationMs = videoDurationMs.toInt().takeIf { it > 0 && finalVideoUrl != null },
             )
 
+            val normalizedSentLocation = location?.trim()?.takeIf { it.isNotBlank() }
             val postDto = api.createPost(createReq)
-            postMentions.attach(postDto.id, mentionIds)
+            val resolvedLocation = postDto.location?.trim()?.takeIf { it.isNotBlank() } ?: normalizedSentLocation
+            if (resolvedLocation != null) {
+                postLocationRegistry.record(postDto.id, resolvedLocation)
+            }
+            val effectivePostDto = if (postDto.location.isNullOrBlank() && resolvedLocation != null) {
+                postDto.copy(location = resolvedLocation)
+            } else {
+                postDto
+            }
+            postMentions.attach(effectivePostDto.id, mentionIds)
 
-            // Cache locally for instant appearance
+            // Cache locally for instant appearance across feed & own profile
             if (userId.isNotBlank()) {
                 runCatching {
-                    val exploreEntity = postDto.asEntity(accountId = userId, sortOrder = -1L)
-                    val followingEntity = postDto.asEntity(accountId = "$userId\u001Ffollowing", sortOrder = -1L)
-                    feedDao.insertPosts(listOf(exploreEntity, followingEntity))
+                    val exploreEntity = effectivePostDto.asEntity(accountId = userId, sortOrder = -1L)
+                    val followingEntity = effectivePostDto.asEntity(accountId = "$userId\u001Ffollowing", sortOrder = -1L)
+                    val ownProfileEntity = effectivePostDto.asEntity(
+                        accountId = "$userId\u001Fprofile-posts\u001F$userId",
+                        sortOrder = -1L,
+                    )
+                    feedDao.insertPosts(listOf(exploreEntity, followingEntity, ownProfileEntity))
                 }
             }
 

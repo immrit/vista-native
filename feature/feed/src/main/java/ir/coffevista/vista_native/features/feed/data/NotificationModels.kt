@@ -1,11 +1,15 @@
 package ir.coffevista.vista_native.features.feed.data
 
+import ir.coffevista.vista_native.core.common.looksLikeJsonPayload
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 enum class NotificationFilter(val type: String) {
@@ -204,21 +208,28 @@ fun notificationTypeMatchesFilter(notificationType: String, filterType: String?)
     }
 }
 
+private val notificationLenientJson = Json {
+    ignoreUnknownKeys = true
+    isLenient = true
+}
+
 internal fun normalizeNotificationContent(raw: String, type: String, username: String = "کاربر"): String {
     val trimmed = raw.trim()
+    val canonicalType = canonicalNotificationType(type)
     if (trimmed.isNotEmpty()) {
-        if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
-            val contentMatch = Regex(""""(?:content|post_content)"\s*:\s*"([^"]+)"""").find(trimmed)
-            if (contentMatch != null) return contentMatch.groupValues[1]
-            val authorMatch = Regex(""""(?:authorName|post_author_name)"\s*:\s*"([^"]+)"""").find(trimmed)
-            if (authorMatch != null) return "پست اشتراک‌گذاری‌شده از ${authorMatch.groupValues[1]}"
-            return "یک پست به اشتراک گذاشته شد"
+        if (looksLikeJsonPayload(trimmed)) {
+            extractNotificationTextFromJson(trimmed, canonicalType)?.let { return it }
+            return defaultNotificationFallback(canonicalType)
         }
         val cleanName = username.trim()
         val stripped = if (cleanName.isNotBlank() && trimmed.startsWith(cleanName)) {
             trimmed.removePrefix(cleanName).trimStart()
         } else trimmed
         if (stripped.isNotEmpty()) {
+            if (looksLikeJsonPayload(stripped)) {
+                extractNotificationTextFromJson(stripped, canonicalType)?.let { return it }
+                return defaultNotificationFallback(canonicalType)
+            }
             if (stripped.contains("mentioned you in a comment", ignoreCase = true)) return "شما را در یک نظر تگ کرد"
             if (stripped.contains("mentioned you in a post", ignoreCase = true)) return "شما را در یک پست تگ کرد"
             if (stripped.contains("liked your post", ignoreCase = true)) return "پست شما را لایک کرد"
@@ -228,24 +239,83 @@ internal fun normalizeNotificationContent(raw: String, type: String, username: S
             return stripped
         }
     }
-    return when (canonicalNotificationType(type)) {
-        "message" -> "پیام جدید"
-        "follow" -> "شما را دنبال کرد"
-        "follow_request" -> "درخواست دنبال‌کردن شما را ارسال کرد"
-        "follow_request_accepted" -> "درخواست دنبال‌کردن شما را پذیرفت"
-        "like" -> "پست شما را لایک کرد"
-        "comment" -> "روی پست شما نظر داد"
-        "comment_reply" -> "به نظر شما پاسخ داد"
-        "mention" -> "شما را در یک نظر تگ کرد"
-        "reaction" -> "به پیام شما واکنش نشان داد"
-        "suggest_follow" -> "پیشنهاد دنبال کردن"
-        "suggest_post" -> "پیشنهاد پست جدید"
-        "daily_suggestion_digest" -> "خلاصه پیشنهادهای امروز"
-        "post_admin_removed", "post_removed" -> "پست شما به دلیل نقض قوانین حذف شد"
-        "post_admin_edit", "post_edited" -> "پست شما توسط مدیر ویرایش شد"
-        "moderation" -> "پیام نظارت و بررسی محتوا"
-        else -> "اعلان جدید"
+    return defaultNotificationFallback(canonicalType)
+}
+
+private fun extractNotificationTextFromJson(rawJson: String, canonicalType: String): String? {
+    val root = runCatching { notificationLenientJson.parseToJsonElement(rawJson).jsonObject }.getOrNull()
+    if (root != null) {
+        val target = listOf(
+            "shared_post_data", "sharedPostData",
+            "story_reply_data", "storyReplyData",
+            "gameInviteData", "game_invite_data",
+            "post", "story", "data",
+        ).firstNotNullOfOrNull { key -> root[key] as? JsonObject } ?: root
+
+        fun str(vararg keys: String): String? = keys.firstNotNullOfOrNull { key ->
+            (target[key] as? JsonPrimitive)?.contentOrNull?.trim()?.takeIf {
+                it.isNotEmpty() && !looksLikeJsonPayload(it) && !it.startsWith("wf:")
+            }
+        } ?: keys.firstNotNullOfOrNull { key ->
+            (root[key] as? JsonPrimitive)?.contentOrNull?.trim()?.takeIf {
+                it.isNotEmpty() && !looksLikeJsonPayload(it) && !it.startsWith("wf:")
+            }
+        }
+
+        val declaredType = str("type", "messageType", "message_type")?.lowercase() ?: canonicalType
+        val text = str("replyText", "reply_text", "reply", "content", "post_content", "postContent", "caption", "text", "message", "body")
+        if (declaredType in setOf("story_reply", "storyreply") || target["story_id"] != null || target["storyId"] != null) {
+            return if (!text.isNullOrBlank()) "به استوری شما پاسخ داد: $text" else "به استوری شما پاسخ داد"
+        }
+        if (declaredType in setOf("gameinvite", "game_invite", "duel", "duel_invite") || target["matchId"] != null || target["match_id"] != null) {
+            val inviter = str("inviterName", "inviter_name", "senderName", "sender_name")
+            return if (!inviter.isNullOrBlank()) "دعوت به دوئل ویستا کوییز از طرف $inviter" else "دعوت به دوئل ویستا کوییز"
+        }
+        if (!text.isNullOrBlank()) return text
+        val author = str("authorName", "post_author_name", "postAuthorName", "author_name")
+        if (!author.isNullOrBlank()) return "پست اشتراک‌گذاری‌شده از $author"
+        if (target["postId"] != null || target["post_id"] != null || declaredType in setOf("post", "shared_post", "sharedpost")) {
+            return "یک پست به اشتراک گذاشته شد"
+        }
+        return null
     }
+    // Truncated JSON fallback
+    val partialText = Regex(""""(?:reply_text|replyText|reply|content|post_content|caption|text|message)"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"""")
+        .find(rawJson)
+        ?.groupValues
+        ?.getOrNull(1)
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() && !looksLikeJsonPayload(it) }
+    if (!partialText.isNullOrBlank()) return partialText
+    val partialAuthor = Regex(""""(?:authorName|post_author_name)"\s*:\s*"([^"]+)"""")
+        .find(rawJson)
+        ?.groupValues
+        ?.getOrNull(1)
+        ?.trim()
+    if (!partialAuthor.isNullOrBlank()) return "پست اشتراک‌گذاری‌شده از $partialAuthor"
+    return null
+}
+
+private fun defaultNotificationFallback(canonicalType: String): String = when (canonicalType) {
+    "message" -> "پیام جدید"
+    "follow" -> "شما را دنبال کرد"
+    "follow_request" -> "درخواست دنبال‌کردن شما را ارسال کرد"
+    "follow_request_accepted" -> "درخواست دنبال‌کردن شما را پذیرفت"
+    "like" -> "پست شما را لایک کرد"
+    "comment" -> "روی پست شما نظر داد"
+    "comment_reply" -> "به نظر شما پاسخ داد"
+    "mention" -> "شما را در یک نظر تگ کرد"
+    "reaction" -> "به پیام شما واکنش نشان داد"
+    "story_reply" -> "به استوری شما پاسخ داد"
+    "story_reaction" -> "به استوری شما واکنش نشان داد"
+    "story" -> "استوری جدید"
+    "suggest_follow" -> "پیشنهاد دنبال کردن"
+    "suggest_post" -> "پیشنهاد پست جدید"
+    "daily_suggestion_digest" -> "خلاصه پیشنهادهای امروز"
+    "post_admin_removed", "post_removed" -> "پست شما به دلیل نقض قوانین حذف شد"
+    "post_admin_edit", "post_edited" -> "پست شما توسط مدیر ویرایش شد"
+    "moderation" -> "پیام نظارت و بررسی محتوا"
+    else -> "اعلان جدید"
 }
 
 private fun JsonElement.asLooseString(): String {

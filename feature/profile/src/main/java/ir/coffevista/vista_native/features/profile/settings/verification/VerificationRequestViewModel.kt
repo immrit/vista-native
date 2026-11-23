@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import ir.coffevista.vista_native.core.common.Outcome
+import ir.coffevista.vista_native.core.common.toSafeUserError
 import ir.coffevista.vista_native.core.model.session.AuthenticationState
 import ir.coffevista.vista_native.core.model.session.AuthenticationStateProvider
 import ir.coffevista.vista_native.features.profile.data.OwnProfileRepository
@@ -142,7 +143,7 @@ class VerificationRequestViewModel @Inject constructor(
                     it.copy(
                         isSubmitting = false,
                         isUploading = false,
-                        errorMessage = throwable.message ?: "خطا در بارگذاری مدرک هویتی",
+                        errorMessage = throwable.toSafeUserError("خطا در بارگذاری مدرک هویتی"),
                     )
                 }
                 return@launch

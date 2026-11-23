@@ -10,6 +10,7 @@ import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
 import android.net.Uri
+import android.os.Build
 import android.os.Looper
 import android.provider.Settings
 import androidx.activity.ComponentActivity
@@ -18,6 +19,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.compose.ui.platform.LocalContext
+import ir.coffevista.vista_native.core.designsystem.component.VistaViuStateIllustration
+import ir.coffevista.vista_native.core.designsystem.component.VistaViuStateKind
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
@@ -1236,9 +1239,17 @@ private fun LocationErrorView(
 
 private fun isAnyLocationProviderEnabled(locationManager: LocationManager?): Boolean {
     if (locationManager == null) return false
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+        if (runCatching { locationManager.isLocationEnabled }.getOrDefault(false)) return true
+    }
+    val fused = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        runCatching { locationManager.isProviderEnabled(LocationManager.FUSED_PROVIDER) }.getOrDefault(false)
+    } else {
+        false
+    }
     val gps = runCatching { locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER) }.getOrDefault(false)
     val network = runCatching { locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER) }.getOrDefault(false)
-    return gps || network
+    return fused || gps || network
 }
 
 private suspend fun resolveCityAndProvinceOffMain(
@@ -1290,7 +1301,32 @@ private fun checkAndAcquireLocation(
         return
     }
     try {
+        val prewarmed = viewModel.locationSnapshotCache?.latest(15 * 60_000L)
+        if (prewarmed != null) {
+            if (!prewarmed.city.isNullOrBlank()) {
+                viewModel.onLocationAcquired(
+                    lat = prewarmed.latitude,
+                    lng = prewarmed.longitude,
+                    cityName = prewarmed.city,
+                    provinceName = prewarmed.province,
+                )
+            } else {
+                scope.launch {
+                    val (city, province) = resolveCityAndProvinceOffMain(
+                        context,
+                        prewarmed.latitude,
+                        prewarmed.longitude,
+                    )
+                    viewModel.onLocationAcquired(prewarmed.latitude, prewarmed.longitude, city, province)
+                }
+            }
+            return
+        }
+
         val candidates = listOfNotNull(
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                runCatching { locationManager?.getLastKnownLocation(LocationManager.FUSED_PROVIDER) }.getOrNull()
+            } else null,
             if (fineGranted) runCatching { locationManager?.getLastKnownLocation(LocationManager.GPS_PROVIDER) }.getOrNull() else null,
             runCatching { locationManager?.getLastKnownLocation(LocationManager.NETWORK_PROVIDER) }.getOrNull(),
             if (fineGranted) runCatching { locationManager?.getLastKnownLocation(LocationManager.PASSIVE_PROVIDER) }.getOrNull() else null,
@@ -1311,14 +1347,17 @@ private fun checkAndAcquireLocation(
                 }
             }
             val activeProvider = when {
-                fineGranted && runCatching {
-                    locationManager?.isProviderEnabled(LocationManager.GPS_PROVIDER) == true
-                }.getOrDefault(false) ->
-                    LocationManager.GPS_PROVIDER
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                    runCatching { locationManager?.isProviderEnabled(LocationManager.FUSED_PROVIDER) == true }.getOrDefault(false) ->
+                    LocationManager.FUSED_PROVIDER
                 runCatching {
                     locationManager?.isProviderEnabled(LocationManager.NETWORK_PROVIDER) == true
                 }.getOrDefault(false) ->
                     LocationManager.NETWORK_PROVIDER
+                fineGranted && runCatching {
+                    locationManager?.isProviderEnabled(LocationManager.GPS_PROVIDER) == true
+                }.getOrDefault(false) ->
+                    LocationManager.GPS_PROVIDER
                 else -> null
             }
             if (activeProvider != null && locationManager != null) {
@@ -1513,21 +1552,12 @@ private fun NearbyEmptyRadarView(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Box(
-            modifier = Modifier
-                .size(100.dp)
-                .background(VistaBrandColors.Indigo.copy(alpha = 0.1f), CircleShape),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = Icons.Rounded.Radar,
-                contentDescription = null,
-                tint = VistaBrandColors.Indigo,
-                modifier = Modifier.size(48.dp),
-            )
-        }
+        VistaViuStateIllustration(
+            kind = VistaViuStateKind.SearchEmpty,
+            size = 152.dp,
+        )
 
-        Spacer(modifier = Modifier.height(20.dp))
+        Spacer(modifier = Modifier.height(16.dp))
 
         Text(
             text = "کاربری در این محدوده پیدا نشد",

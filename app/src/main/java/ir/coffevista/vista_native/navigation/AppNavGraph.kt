@@ -158,6 +158,23 @@ fun VistaApp(
                 .activeSessionLifecycleManager()
         }.getOrNull()
     }
+    val locationPrewarmService = remember(appContext) {
+        runCatching {
+            EntryPointAccessors.fromApplication(appContext, ActiveSessionEntryPoint::class.java)
+                .storyDynamicContextService()
+        }.getOrNull()
+    }
+
+    LaunchedEffect(authState, locationPrewarmService) {
+        val service = locationPrewarmService ?: return@LaunchedEffect
+        if (authState is AuthenticationState.SignedIn) {
+            delay(2_500L)
+            while (isActive) {
+                runCatching { service.prewarmLocationInBackground() }
+                delay(10 * 60_000L)
+            }
+        }
+    }
 
     LaunchedEffect(authState, sessionLifecycleManager) {
         val manager = sessionLifecycleManager ?: return@LaunchedEffect
@@ -1340,4 +1357,5 @@ private fun FeedPost.toProfilePostUiModel() = ProfilePostUiModel(
 @InstallIn(SingletonComponent::class)
 interface ActiveSessionEntryPoint {
     fun activeSessionLifecycleManager(): ActiveSessionLifecycleManager
+    fun storyDynamicContextService(): ir.coffevista.vista_native.features.stories.data.StoryDynamicContextService
 }

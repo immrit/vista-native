@@ -61,6 +61,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import ir.coffevista.vista_native.core.designsystem.component.VistaViuStateIllustration
+import ir.coffevista.vista_native.core.designsystem.component.VistaViuStateKind
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -297,9 +299,14 @@ fun ReelsViewerScreen(
                 )
             } else if (reels.isEmpty()) {
                 Column(
-                    modifier = Modifier.align(Alignment.Center),
+                    modifier = Modifier.align(Alignment.Center).padding(24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
+                    VistaViuStateIllustration(
+                        kind = VistaViuStateKind.Empty,
+                        size = 148.dp,
+                    )
+                    Spacer(Modifier.height(12.dp))
                     Text("ویدیویی برای نمایش وجود ندارد", color = Color.White, fontSize = 16.sp)
                     Spacer(Modifier.height(12.dp))
                     IconButton(onClick = onBack) {
@@ -452,6 +459,7 @@ private fun ReelsVideoItem(
     var isBuffering by remember(videoUrl) { mutableStateOf(true) }
     var hasRenderedFirstFrame by remember(videoUrl) { mutableStateOf(false) }
     var hasPlaybackError by remember(videoUrl) { mutableStateOf(false) }
+    var lastErrorCode by remember(videoUrl) { mutableStateOf<String?>(null) }
     var retryCount by remember(videoUrl) { mutableIntStateOf(0) }
     var heartBurstKey by remember { mutableIntStateOf(0) }
     var showHeartBurst by remember { mutableStateOf(false) }
@@ -482,6 +490,7 @@ private fun ReelsVideoItem(
                 isBuffering = state == Player.STATE_BUFFERING
                 if (state == Player.STATE_READY) {
                     hasPlaybackError = false
+                    lastErrorCode = null
                 }
             }
 
@@ -498,10 +507,13 @@ private fun ReelsVideoItem(
             }
 
             override fun onPlayerError(error: PlaybackException) {
-                Log.w("ReelsViewerScreen", "Reel playback failed for ${post.id}: ${error.errorCodeName}", error)
+                val diagnostic = FeedVideoPlaybackCoordinator.formatPlaybackErrorDiagnostic(error)
+                Log.w("ReelsViewerScreen", "Reel playback failed for ${post.id}: $diagnostic", error)
+                FeedVideoPlaybackCoordinator.evictVideoCache(context, videoUrl)
                 isPlaying = false
                 isBuffering = false
                 hasPlaybackError = true
+                lastErrorCode = diagnostic
             }
         }
         player.addListener(listener)
@@ -515,8 +527,10 @@ private fun ReelsVideoItem(
         if (hasPlaybackError && retryCount < 1 && isCurrentPage && videoUrl.isNotBlank()) {
             delay(450L)
             retryCount += 1
+            FeedVideoPlaybackCoordinator.evictVideoCache(context, videoUrl)
             hasPlaybackError = false
             isBuffering = true
+            player.seekTo(0L)
             player.prepare()
             player.playWhenReady = true
             player.play()
@@ -618,8 +632,13 @@ private fun ReelsVideoItem(
                         if (!latestPost.isLiked) latestOnLikeClick()
                     },
                     onTap = {
-                        if (player.playerError != null || player.playbackState == Player.STATE_IDLE) {
+                        if (hasPlaybackError || player.playerError != null || player.playbackState == Player.STATE_IDLE) {
+                            if (hasPlaybackError || player.playerError != null) {
+                                FeedVideoPlaybackCoordinator.evictVideoCache(context, videoUrl)
+                                player.seekTo(0L)
+                            }
                             hasPlaybackError = false
+                            lastErrorCode = null
                             isBuffering = true
                             player.prepare()
                             player.playWhenReady = true
@@ -699,22 +718,39 @@ private fun ReelsVideoItem(
             )
         }
 
-        // Pause/Play flash icon
+        // Pause/Play flash icon + error retry pill when recovery fails
         if (!isPlaying && !isBuffering) {
-            Box(
-                modifier = Modifier
-                    .size(64.dp)
-                    .clip(CircleShape)
-                    .background(Color.Black.copy(alpha = 0.5f))
-                    .align(Alignment.Center),
-                contentAlignment = Alignment.Center,
+            Column(
+                modifier = Modifier.align(Alignment.Center),
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Icon(
-                    imageVector = Icons.Default.PlayArrow,
-                    contentDescription = "مکث",
-                    tint = Color.White,
-                    modifier = Modifier.size(36.dp),
-                )
+                Box(
+                    modifier = Modifier
+                        .size(64.dp)
+                        .clip(CircleShape)
+                        .background(Color.Black.copy(alpha = 0.5f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PlayArrow,
+                        contentDescription = "مکث",
+                        tint = Color.White,
+                        modifier = Modifier.size(36.dp),
+                    )
+                }
+                if (hasPlaybackError && retryCount >= 1) {
+                    Text(
+                        text = lastErrorCode?.let { "خطا در پخش ($it) · لمس برای تلاش مجدد" }
+                            ?: "خطا در پخش ویدیو · لمس برای تلاش مجدد",
+                        color = Color.White,
+                        fontSize = 12.sp,
+                        modifier = Modifier
+                            .padding(top = 10.dp, start = 16.dp, end = 16.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(Color.Black.copy(alpha = 0.7f))
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                    )
+                }
             }
         }
 

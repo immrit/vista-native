@@ -30,6 +30,9 @@ import ir.coffevista.vista_native.features.chat.presentation.audio.MusicPlayerBu
 import ir.coffevista.vista_native.core.designsystem.component.resolveMusicTitle
 import ir.coffevista.vista_native.core.designsystem.component.VistaBadgeDefaults
 import ir.coffevista.vista_native.core.designsystem.component.VistaMiniPlayerHost
+import ir.coffevista.vista_native.core.designsystem.component.VistaViuStateIllustration
+import ir.coffevista.vista_native.core.designsystem.component.VistaViuStateKind
+import ir.coffevista.vista_native.core.designsystem.component.inferVistaViuStateKind
 import ir.coffevista.vista_native.core.designsystem.glass.vistaGlassSource
 import ir.coffevista.vista_native.core.designsystem.glass.vistaGlass
 import ir.coffevista.vista_native.core.designsystem.glass.vistaGlassHalo
@@ -51,12 +54,16 @@ import ir.coffevista.vista_native.features.chat.presentation.components.SingleEm
 import ir.coffevista.vista_native.features.chat.presentation.components.dragSelectMessages
 import ir.coffevista.vista_native.features.chat.presentation.components.VistaAnimatedEmojiBubble
 import ir.coffevista.vista_native.features.chat.presentation.components.PinnedMessagesBar
+import ir.coffevista.vista_native.core.common.looksLikeJsonPayload
+import ir.coffevista.vista_native.core.common.toSafeUserError
 import ir.coffevista.vista_native.core.designsystem.navigation.LocalVistaInternalLinkNavigator
 import ir.coffevista.vista_native.features.chat.domain.model.DuelInviteParser
 import ir.coffevista.vista_native.features.chat.presentation.components.DuelInviteCard
 import ir.coffevista.vista_native.features.chat.presentation.components.DuelPreviewLoadStatus
 import ir.coffevista.vista_native.features.chat.presentation.components.SharedPostCard
 import ir.coffevista.vista_native.features.chat.domain.model.SharedPostParser
+import ir.coffevista.vista_native.features.chat.domain.model.StoryReplyParser
+import ir.coffevista.vista_native.features.chat.domain.model.StructuredMessageFormatter
 import ir.coffevista.vista_native.features.chat.presentation.messages.DuelPreviewUiState
 import ir.coffevista.vista_native.features.chat.presentation.components.UnreadMessagesDivider
 import ir.coffevista.vista_native.features.chat.presentation.components.extractFirstUrl
@@ -456,7 +463,7 @@ fun ConversationListScreen(
     } else {
         state.conversations.filter { conversation ->
             conversation.title.contains(searchQuery, ignoreCase = true) ||
-                conversation.lastMessage.orEmpty().contains(searchQuery, ignoreCase = true)
+                conversation.inboxPreviewText().orEmpty().contains(searchQuery, ignoreCase = true)
         }
     }
     val requestConversations = if (state.includeArchived) {
@@ -1493,22 +1500,15 @@ private fun EmptyConversationState(searchActive: Boolean, archived: Boolean = fa
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Box(
-            Modifier.size(96.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)),
-            contentAlignment = Alignment.Center,
-        ) {
-            if (archived && !searchActive) {
-                Icon(
-                    Icons.Default.Archive,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
-                    modifier = Modifier.size(48.dp),
-                )
-            } else {
-                EmptyChatGlyph(MaterialTheme.colorScheme.primary.copy(alpha = 0.7f))
-            }
-        }
-        Spacer(Modifier.height(24.dp))
+        VistaViuStateIllustration(
+            kind = when {
+                searchActive -> VistaViuStateKind.SearchEmpty
+                archived -> VistaViuStateKind.Empty
+                else -> VistaViuStateKind.EmptyChat
+            },
+            size = 156.dp,
+        )
+        Spacer(Modifier.height(20.dp))
         Text(
             when {
                 searchActive -> "نتیجه‌ای یافت نشد"
@@ -2393,7 +2393,17 @@ fun MessageDetailScreen(
                                 modifier = Modifier.align(Alignment.Center),
                             )
                         } else {
-                            Text("هنوز پیامی نیست", Modifier.align(Alignment.Center))
+                            Column(
+                                modifier = Modifier.align(Alignment.Center).padding(24.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                            ) {
+                                VistaViuStateIllustration(
+                                    kind = VistaViuStateKind.EmptyChat,
+                                    size = 136.dp,
+                                )
+                                Spacer(Modifier.height(8.dp))
+                                Text("هنوز پیامی نیست")
+                            }
                         }
                     }
                     else -> LazyColumn(
@@ -2479,7 +2489,12 @@ fun MessageDetailScreen(
                                     UnreadMessagesDivider(text = "پیام‌های جدید")
                                 }
                                 if (message.isSystemNotice) {
-                                    val noticeText = (message.content as? MessageContent.Text)?.value.orEmpty()
+                                    val rawNotice = (message.content as? MessageContent.Text)?.value.orEmpty()
+                                    val noticeText = StructuredMessageFormatter.formatStructuredOrJsonPreview(
+                                        raw = rawNotice,
+                                        transportType = message.transportType,
+                                        sharedPostWithColon = true,
+                                    ) ?: rawNotice
                                     if (noticeText.isNotBlank()) {
                                         SecuritySystemDivider(
                                             text = noticeText,
@@ -3868,9 +3883,7 @@ fun MessageDetailScreen(
                     val rawText = (msg.content as? MessageContent.Text)?.value?.trim().orEmpty()
                     val cleanCaption = rawText.takeIf {
                         it.isNotEmpty() &&
-                            !it.startsWith("wf:") &&
-                            SharedPostParser.tryParse(it) == null &&
-                            DuelInviteParser.tryParse(it, msg.transportType) == null
+                            !StructuredMessageFormatter.isStructuredOrJsonPayload(it, msg.transportType)
                     }
                     val senderLabel = when {
                         msg.isMine -> "شما"
@@ -4676,11 +4689,10 @@ private fun MessageBubble(
             else -> null
         }
     }
-    val text = when (val content = message.content) {
-        is MessageContent.Text -> if (duelInvite != null || sessionAlert != null || sharedPost != null || content.value.trimStart().startsWith("wf:")) "" else content.value
-        is MessageContent.Structured -> if (duelInvite != null || sessionAlert != null || sharedPost != null || content.payload.trimStart().startsWith("wf:")) "" else content.payload
-        MessageContent.Deleted -> "این پیام حذف شده است"
-        MessageContent.EncryptedUnavailable -> "🔒 پیام رمزگذاری‌شده"
+    val text = if (duelInvite != null || sessionAlert != null || sharedPost != null) {
+        ""
+    } else {
+        StructuredMessageFormatter.formatBubbleText(message)
     }
     val singleEmoji = remember(text, message.attachment, message.isForwarded, message.replyToContent, sharedPost, duelInvite, sessionAlert, isDeleted) {
         SingleEmojiDetector.extractSingleEmoji(
@@ -4994,8 +5006,15 @@ private fun MessageBubble(
                 if (!isDeleted && !message.replyToContent.isNullOrBlank()) {
                     val rawReplyTarget = message.replyToMessageId?.trim().orEmpty()
                     val replySender = message.replyToSenderName?.trim().orEmpty()
-                    val isNoteReply = rawReplyTarget.startsWith("note:") || replySender.startsWith("یادداشت")
-                    val isStoryReply = rawReplyTarget.startsWith("story:") || replySender.startsWith("استوری")
+                    val replyKind = message.replyToKind?.trim().orEmpty()
+                    val isNoteReply = rawReplyTarget.startsWith("note:") ||
+                        replySender.startsWith("یادداشت") ||
+                        replyKind.equals("note", ignoreCase = true)
+                    val isStoryReply = rawReplyTarget.startsWith("story:") ||
+                        replySender.startsWith("استوری") ||
+                        replyKind.equals("storyReply", ignoreCase = true) ||
+                        replyKind.equals("story_reply", ignoreCase = true) ||
+                        StoryReplyParser.tryParse(message.replyToContent, replyKind) != null
 
                     Row(
                         modifier = Modifier
@@ -5059,13 +5078,13 @@ private fun MessageBubble(
                                 fontSize = 10.5.sp,
                                 fontWeight = FontWeight.Bold,
                             )
-                            val replyDisplayContent = remember(message.replyToContent) {
-                                DuelInviteParser.formatPreviewIfDuel(message.replyToContent)
-                                    ?: ir.coffevista.vista_native.features.chat.domain.model.SessionAlertParser.formatPreview(message.replyToContent)
-                                    ?: SharedPostParser.tryParse(message.replyToContent)?.let { parsedPost ->
-                                        "پست از ${parsedPost.authorName}: ${parsedPost.content.ifBlank { "رسانه" }}"
-                                    }
-                                    ?: message.replyToContent
+                            val replyDisplayContent = remember(message.replyToContent, message.replyToKind, isStoryReply, isNoteReply) {
+                                StructuredMessageFormatter.formatReplyQuotePreview(
+                                    rawReplyContent = message.replyToContent,
+                                    replyToKind = message.replyToKind,
+                                    isStoryReply = isStoryReply,
+                                    isNoteReply = isNoteReply,
+                                )
                             }
                             Text(
                                 replyDisplayContent,
@@ -6048,7 +6067,13 @@ private fun MessageActionsSheet(
         if (message.serverId != null) {
             MessageActionRow(Icons.Default.PushPin, if (message.isPinned) "برداشتن سنجاق" else "سنجاق کردن", onTogglePinned)
         }
-        if (message.isMine && message.content is MessageContent.Text && message.attachment == null && message.deletedAtEpochMillis == null) {
+        if (message.isMine &&
+            message.content is MessageContent.Text &&
+            !looksLikeJsonPayload(message.content.value) &&
+            !StructuredMessageFormatter.isStructuredOrJsonPayload(message.content.value, message.transportType) &&
+            message.attachment == null &&
+            message.deletedAtEpochMillis == null
+        ) {
             MessageActionRow(Icons.Default.Edit, "ویرایش", onEdit)
         }
         HorizontalDivider(Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
@@ -6206,28 +6231,8 @@ private fun MessageInfoDialog(message: Message, onDismiss: () -> Unit) {
     )
 }
 
-internal fun Message.previewText(): String = when (val value = content) {
-    is MessageContent.Text -> {
-        DuelInviteParser.formatPreviewIfDuel(value.value, transportType)
-            ?: ir.coffevista.vista_native.features.chat.domain.model.SessionAlertParser.formatPreview(value.value, transportType)
-            ?: SharedPostParser.tryParse(value.value)?.let { parsed ->
-                "پست از ${parsed.authorName}: ${parsed.content.ifBlank { "رسانه" }}"
-            }
-            ?: if (value.value.startsWith("wf:") || attachment?.kind == AttachmentKind.VOICE) "🎤 پیام صوتی"
-            else value.value.ifBlank { attachment?.fileName ?: "پیوست" }
-    }
-    is MessageContent.Structured -> {
-        DuelInviteParser.formatPreviewIfDuel(value.payload, transportType)
-            ?: ir.coffevista.vista_native.features.chat.domain.model.SessionAlertParser.formatPreview(value.payload, transportType)
-            ?: SharedPostParser.tryParse(value.payload)?.let { parsed ->
-                "پست از ${parsed.authorName}: ${parsed.content.ifBlank { "رسانه" }}"
-            }
-            ?: if (value.payload.startsWith("wf:") || attachment?.kind == AttachmentKind.VOICE) "🎤 پیام صوتی"
-            else value.payload
-    }
-    MessageContent.Deleted -> "این پیام حذف شده است"
-    MessageContent.EncryptedUnavailable -> "پیام رمزگذاری‌شده"
-}
+internal fun Message.previewText(): String =
+    StructuredMessageFormatter.formatMessagePreview(this, sharedPostWithColon = true)
 
 private fun Message.replyDisplayName(conversationTitle: String): String =
     if (isMine) "خودتان" else conversationTitle
@@ -7078,7 +7083,7 @@ private fun DocumentAttachmentViewer(
                             result.onSuccess { msg ->
                                 android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
                             }.onFailure { err ->
-                                error = err.message ?: "ذخیره فایل انجام نشد"
+                                error = err.toSafeUserError("ذخیره فایل انجام نشد")
                             }
                         }
                     },
@@ -7263,8 +7268,18 @@ private fun ChatComposerBar(
             replyingTo?.let { message ->
                 val rawReplyTarget = message.replyToMessageId?.trim().orEmpty()
                 val replySender = message.replyDisplayName(title)
-                val isNoteReply = rawReplyTarget.startsWith("note:") || replySender.startsWith("یادداشت")
-                val isStoryReply = rawReplyTarget.startsWith("story:") || replySender.startsWith("استوری")
+                val existingReplySender = message.replyToSenderName?.trim().orEmpty()
+                val rawBody = when (val c = message.content) {
+                    is MessageContent.Text -> c.value
+                    is MessageContent.Structured -> c.payload
+                    else -> null
+                }
+                val isNoteReply = rawReplyTarget.startsWith("note:") || existingReplySender.startsWith("یادداشت")
+                val isStoryReply = rawReplyTarget.startsWith("story:") ||
+                    existingReplySender.startsWith("استوری") ||
+                    message.transportType.equals("storyReply", ignoreCase = true) ||
+                    message.transportType.equals("story_reply", ignoreCase = true) ||
+                    StoryReplyParser.tryParse(rawBody, message.transportType) != null
 
                 ComposerContextBanner(
                     label = if (isStoryReply) "پاسخ به استوری" else if (isNoteReply) "پاسخ به یادداشت" else "پاسخ به $replySender",
@@ -7770,8 +7785,17 @@ private fun ConnectionBanner(
 
 @Composable
 private fun ErrorState(message: String, onRetry: () -> Unit) {
-    Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-        Text(message, color = MaterialTheme.colorScheme.error)
+    Column(
+        Modifier.fillMaxSize().padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        VistaViuStateIllustration(
+            kind = inferVistaViuStateKind(message, isError = true),
+            size = 144.dp,
+        )
+        Spacer(Modifier.height(10.dp))
+        Text(message, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center)
         IconButton(onClick = onRetry) { Icon(Icons.Default.Refresh, contentDescription = "تلاش مجدد") }
     }
 }
@@ -8670,13 +8694,11 @@ private fun PartnerDetailsScreen(
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Icon(
-                                        imageVector = icon,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(48.dp),
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f),
+                                    VistaViuStateIllustration(
+                                        kind = VistaViuStateKind.Empty,
+                                        size = 120.dp,
                                     )
-                                    Spacer(Modifier.height(12.dp))
+                                    Spacer(Modifier.height(8.dp))
                                     Text(
                                         text = emptyText,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),

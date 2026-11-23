@@ -27,6 +27,9 @@ import ir.coffevista.vista_native.core.designsystem.component.PostHeaderTimeOrMu
 import ir.coffevista.vista_native.core.designsystem.component.LocalBottomBarVisibility
 import ir.coffevista.vista_native.core.designsystem.component.LocalMiniPlayerSlot
 import ir.coffevista.vista_native.core.designsystem.component.VistaMiniPlayerHost
+import ir.coffevista.vista_native.core.designsystem.component.VistaViuStateIllustration
+import ir.coffevista.vista_native.core.designsystem.component.VistaViuStateKind
+import ir.coffevista.vista_native.core.designsystem.component.inferVistaViuStateKind
 import ir.coffevista.vista_native.core.designsystem.audio.VistaAudioPlayer
 import ir.coffevista.vista_native.core.designsystem.component.LocalMusicPlaylist
 import ir.coffevista.vista_native.core.designsystem.component.vistaPostMusicTrack
@@ -2337,6 +2340,11 @@ private fun FeedInitialError(message: String, onRetry: () -> Unit) {
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
+        VistaViuStateIllustration(
+            kind = inferVistaViuStateKind(message, isError = true),
+            size = 152.dp,
+        )
+        Spacer(Modifier.height(12.dp))
         Text("دریافت فید ناموفق بود", fontSize = 18.sp, fontWeight = FontWeight.Bold)
         Text(
             text = message,
@@ -2360,26 +2368,17 @@ private fun FeedEmptyState() {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 24.dp, vertical = 72.dp)
+            .padding(horizontal = 24.dp, vertical = 56.dp)
             .testTag(FeedTestTags.Empty),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Surface(
-            modifier = Modifier.size(80.dp),
-            shape = CircleShape,
-            color = MaterialTheme.colorScheme.surfaceVariant,
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Image(
-                    painter = painterResource(DesignSystemR.drawable.vista_default_avatar),
-                    contentDescription = null,
-                    modifier = Modifier.size(44.dp).clip(CircleShape),
-                )
-            }
-        }
+        VistaViuStateIllustration(
+            kind = VistaViuStateKind.Empty,
+            size = 156.dp,
+        )
         Text(
             text = "هنوز پستی برای نمایش نیست",
-            modifier = Modifier.padding(top = 16.dp),
+            modifier = Modifier.padding(top = 12.dp),
             fontSize = 18.sp,
             fontWeight = FontWeight.Bold,
         )

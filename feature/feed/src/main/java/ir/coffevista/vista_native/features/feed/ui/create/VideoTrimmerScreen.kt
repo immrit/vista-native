@@ -4,6 +4,7 @@ import android.net.Uri
 import android.os.SystemClock
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import ir.coffevista.vista_native.core.common.toSafeUserError
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -246,7 +247,7 @@ fun VideoTrimmerScreen(
                 if (!isPlayerReleased) {
                     runCatching { exoPlayer.prepare() }
                 }
-                snackbarHostState.showSnackbar(e.message ?: "خطا در برش ویدیو")
+                snackbarHostState.showSnackbar(e.toSafeUserError("خطا در برش ویدیو"))
             }
         }
     }

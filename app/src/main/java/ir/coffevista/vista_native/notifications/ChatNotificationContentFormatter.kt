@@ -1,5 +1,6 @@
 package ir.coffevista.vista_native.notifications
 
+import ir.coffevista.vista_native.core.common.looksLikeJsonPayload
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -50,7 +51,16 @@ object ChatNotificationContentFormatter {
 
         val trimmed = rawBody?.trim().orEmpty()
         if (trimmed == "پیام جدید") return "پیام جدید"
-        if (PREFORMATTED_PREFIXES.any { trimmed.startsWith(it) }) {
+        val matchedPrefix = PREFORMATTED_PREFIXES.firstOrNull { trimmed.startsWith(it) }
+        if (matchedPrefix != null) {
+            val remainder = trimmed.removePrefix(matchedPrefix).trimStart(':', '：', ' ')
+            if (looksLikeJson(remainder)) {
+                val parsed = parseStructuredJson(remainder, messageType?.trim()?.lowercase().orEmpty())
+                return clampText(parsed ?: matchedPrefix.trimEnd(), 180)
+            }
+            if (isOpaqueCiphertext(remainder)) {
+                return matchedPrefix.trimEnd()
+            }
             return clampText(collapseWhitespace(trimmed), 180)
         }
         if (isOpaqueCiphertext(trimmed)) {
@@ -98,6 +108,8 @@ object ChatNotificationContentFormatter {
     fun sanitizeSocialBody(rawBody: String?): String {
         val trimmed = rawBody?.trim().orEmpty()
         if (trimmed.isEmpty()) return "اعلان جدید"
+        if (isOpaqueCiphertext(trimmed)) return "🔒 پیام محرمانه"
+        if (trimmed.startsWith("wf:")) return "🎤 پیام صوتی"
         if (looksLikeJson(trimmed)) {
             return parseStructuredJson(trimmed, "") ?: "اعلان جدید"
         }
@@ -106,7 +118,31 @@ object ChatNotificationContentFormatter {
 
     private fun parseStructuredJson(raw: String, hintType: String): String? {
         if (!looksLikeJson(raw)) return null
-        val root = runCatching { lenientJson.parseToJsonElement(raw).jsonObject }.getOrNull() ?: return null
+        val root = runCatching { lenientJson.parseToJsonElement(raw).jsonObject }.getOrNull()
+        if (root == null) {
+            // Truncated JSON fallback for story/post/duel payloads cut off by server/FCM limits
+            if (hintType in setOf("storyreply", "story_reply") ||
+                Regex(""""(?:story_id|storyId|story_owner_id|storyOwnerId)"\s*:""").containsMatchIn(raw)
+            ) {
+                val partialReply = extractPartialJsonValue(raw, "replyText", "reply_text", "reply", "text", "message", "content")
+                return appendDetail("📖 پاسخ به استوری", sanitizeMediaCaption(partialReply.orEmpty()))
+            }
+            if (hintType in setOf("storyshare", "story_share", "story")) {
+                return "📖 استوری اشتراک‌گذاری شده"
+            }
+            if (hintType in setOf("sharedpost", "shared_post", "post", "share_post") ||
+                Regex(""""(?:post_id|postId)"\s*:""").containsMatchIn(raw)
+            ) {
+                val author = extractPartialJsonValue(raw, "authorName", "author_name", "post_author_name")
+                val snippet = sanitizeMediaCaption(extractPartialJsonValue(raw, "content", "post_content", "caption", "text").orEmpty())
+                return if (!author.isNullOrBlank()) {
+                    appendDetail("📮 پست از ${clampText(author, 32)}", snippet)
+                } else {
+                    appendDetail("📮 پست اشتراک‌گذاری شده", snippet)
+                }
+            }
+            return null
+        }
         if (root.isEmpty()) return null
 
         val target = unwrapNested(
@@ -219,8 +255,20 @@ object ChatNotificationContentFormatter {
     }
 
     private fun looksLikeJson(raw: String): Boolean {
+        if (looksLikeJsonPayload(raw)) return true
         val t = raw.trim()
         return (t.startsWith("{") && t.endsWith("}")) || (t.startsWith("[") && t.endsWith("]"))
+    }
+
+    private fun extractPartialJsonValue(raw: String, vararg keys: String): String? {
+        for (key in keys) {
+            val match = Regex(""""${Regex.escape(key)}"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"""")
+                .find(raw)
+                ?: continue
+            val value = collapseWhitespace(match.groupValues[1])
+            if (value.isNotEmpty()) return value
+        }
+        return null
     }
 
     private fun isOpaqueCiphertext(raw: String): Boolean =

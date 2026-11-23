@@ -48,10 +48,9 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import ir.coffevista.vista_native.core.designsystem.glass.VistaGlassState
 import ir.coffevista.vista_native.core.designsystem.glass.VistaGlassTokens
 import ir.coffevista.vista_native.core.designsystem.glass.vistaGlass
-import ir.coffevista.vista_native.features.chat.domain.model.DuelInviteParser
 import ir.coffevista.vista_native.features.chat.domain.model.Message
 import ir.coffevista.vista_native.features.chat.domain.model.MessageContent
-import ir.coffevista.vista_native.features.chat.domain.model.SharedPostParser
+import ir.coffevista.vista_native.features.chat.domain.model.StructuredMessageFormatter
 
 /**
  * نوار شناور شیشه‌ای پیام‌های سنجاق‌شده با قابلیت جابجایی بین چندین پیام.
@@ -76,26 +75,10 @@ fun PinnedMessagesBar(
         "پیام سنجاق شده"
     }
 
-    val previewText = when (val content = currentMessage.content) {
-        is MessageContent.Text -> {
-            DuelInviteParser.formatPreviewIfDuel(content.value, currentMessage.transportType)
-                ?: ir.coffevista.vista_native.features.chat.domain.model.SessionAlertParser.formatPreview(content.value, currentMessage.transportType)
-                ?: SharedPostParser.tryParse(content.value)?.let { post ->
-                    "پست ${post.authorName}: ${post.content.ifBlank { "رسانه پیوست" }}"
-                }
-                ?: if (content.value.startsWith("wf:") || currentMessage.attachment?.kind == AttachmentKind.VOICE) "🎤 پیام صوتی" else content.value
-        }
-        is MessageContent.Structured -> {
-            DuelInviteParser.formatPreviewIfDuel(content.payload, currentMessage.transportType)
-                ?: ir.coffevista.vista_native.features.chat.domain.model.SessionAlertParser.formatPreview(content.payload, currentMessage.transportType)
-                ?: SharedPostParser.tryParse(content.payload)?.let { post ->
-                    "پست ${post.authorName}: ${post.content.ifBlank { "رسانه پیوست" }}"
-                }
-                ?: if (content.payload.startsWith("wf:") || currentMessage.attachment?.kind == AttachmentKind.VOICE) "🎤 پیام صوتی" else content.payload
-        }
-        MessageContent.Deleted -> "پیام حذف شده"
-        MessageContent.EncryptedUnavailable -> "پیام رمزگذاری‌شده"
-    }.ifBlank {
+    val previewText = StructuredMessageFormatter.formatMessagePreview(
+        message = currentMessage,
+        sharedPostWithColon = true,
+    ).ifBlank {
         if (currentMessage.attachment?.kind == AttachmentKind.VOICE) "🎤 پیام صوتی"
         else currentMessage.attachment?.fileName ?: "رسانه پیوست"
     }

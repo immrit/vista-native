@@ -152,11 +152,15 @@ fun VistaShell(
     updateBarState: ShellUpdateBarState? = null,
     onUpdateBarClick: () -> Unit = {},
 ) {
-    VistaShellSystemBars(forceDarkNavBar = updateBarState != null)
     val navController = rememberNavController()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val backStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = backStackEntry?.destination?.route
+    val isInChatScreen = currentRoute == ShellRoutes.ChatDetailRoute ||
+        currentRoute == ShellRoutes.ChatNewMessage
+    val showUpdateBar = updateBarState != null && !isInChatScreen
+    VistaShellSystemBars(forceDarkNavBar = showUpdateBar)
     val selectedTab = backStackEntry?.destination?.toShellTab() ?: ShellTab.Feed
     val atRoot = backStackEntry?.destination?.isTabRoot() != false
     val showBottomIsland = atRoot ||
@@ -1253,12 +1257,12 @@ fun VistaShell(
         }
         }
         val islandVisible = showBottomIsland && isBottomIslandVisible
-        val hasUpdateBar = updateBarState != null
+        val hasUpdateBar = showUpdateBar
         val snackbarBottomPadding by animateDpAsState(
             targetValue = when {
-                islandVisible && hasUpdateBar -> 174.dp
+                islandVisible && hasUpdateBar -> 152.dp
                 islandVisible -> 126.dp
-                hasUpdateBar -> 68.dp
+                hasUpdateBar -> 54.dp
                 else -> 20.dp
             },
             animationSpec = spring(
@@ -1313,7 +1317,7 @@ fun VistaShell(
                 )
             }
             AnimatedVisibility(
-                visible = updateBarState != null,
+                visible = showUpdateBar,
                 enter = slideInVertically(
                     initialOffsetY = { fullHeight -> fullHeight },
                     animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing),
@@ -1382,13 +1386,13 @@ private fun VistaBottomIsland(
             ).toDp()
         }
     }
-    val bottomMargin = if (hasBottomBarBelow) 10.dp else 12.dp + bottomInset
+    val bottomMargin = if (hasBottomBarBelow) 6.dp else 12.dp + bottomInset
     val isLight = MaterialTheme.colorScheme.background.luminance() > 0.5f
     val isDark = !isLight
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height((if (hasBottomBarBelow) 68.dp else 72.dp) + bottomInset)
+            .height((if (hasBottomBarBelow) 62.dp else 72.dp) + bottomInset)
             .vistaGlassHalo(
                 state = glassState,
                 isDark = isDark,

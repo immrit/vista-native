@@ -20,13 +20,15 @@ import org.junit.Test
 class OfflineFirstFeedRepositoryTest {
     private lateinit var dao: FakeFeedDao
     private lateinit var api: FakeFeedApi
+    private lateinit var locationRegistry: PostLocationRegistry
     private lateinit var repository: OfflineFirstFeedRepository
 
     @Before
     fun setUp() {
         dao = FakeFeedDao()
         api = FakeFeedApi()
-        repository = OfflineFirstFeedRepository(dao, api)
+        locationRegistry = PostLocationRegistry()
+        repository = OfflineFirstFeedRepository(dao, api, locationRegistry)
     }
 
     @Test
@@ -298,6 +300,53 @@ class OfflineFirstFeedRepositoryTest {
             listOf("keep"),
             repository.observeFeed("account-a", FeedKind.Explore).first().posts.map(FeedPost::id),
         )
+    }
+
+    @Test
+    fun refreshFeedPreservesRecordedPostLocationWhenServerOmitsIt() = runTest {
+        locationRegistry.record("p-loc", "شیراز، ایران")
+        api.response = response("p-loc", "p-plain", hasMore = false)
+
+        repository.refreshFeed("account-a", FeedKind.Explore)
+
+        val posts = repository.observeFeed("account-a", FeedKind.Explore).first().posts
+        assertEquals("شیراز، ایران", posts.first { it.id == "p-loc" }.location)
+        assertEquals(null, posts.first { it.id == "p-plain" }.location)
+    }
+
+    @Test
+    fun refreshPostPreservesExistingCachedLocationWhenDetailResponseOmitsIt() = runTest {
+        dao.insertPosts(
+            listOf(
+                dto("p-detail").copy(location = "تهران، ایران").asEntity(
+                    accountId = "account-a",
+                    sortOrder = 0,
+                ),
+            ),
+        )
+        api.response = response("p-detail", hasMore = false)
+
+        val refreshed = repository.refreshPost("account-a", "p-detail")
+
+        assertEquals("تهران، ایران", refreshed.location)
+    }
+
+    @Test
+    fun getLocationPostsMergesLocallyCachedPostWhenRemoteOmitsNewPost() = runTest {
+        dao.insertPosts(
+            listOf(
+                dto("local-new").copy(location = "آبادان، خوزستان").asEntity(
+                    accountId = "account-a",
+                    sortOrder = -1,
+                ),
+            ),
+        )
+        api.response = response(hasMore = false)
+
+        val snapshot = repository.getLocationPosts("account-a", "آبادان", offset = 0)
+
+        assertEquals(listOf("local-new"), snapshot.posts.map(FeedPost::id))
+        assertEquals("آبادان، خوزستان", snapshot.posts.single().location)
     }
 
     private fun response(

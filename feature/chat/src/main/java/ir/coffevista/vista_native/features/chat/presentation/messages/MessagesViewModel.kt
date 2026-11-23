@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import ir.coffevista.vista_native.core.common.ConnectionTransport
+import ir.coffevista.vista_native.core.common.toSafeUserError
 import ir.coffevista.vista_native.core.datastore.MediaDataPolicy
 import ir.coffevista.vista_native.core.datastore.SettingsPreferenceStore
 import ir.coffevista.vista_native.core.datastore.SettingsPreferences
@@ -31,6 +32,7 @@ import ir.coffevista.vista_native.features.chat.domain.model.DuelInviteParser
 import ir.coffevista.vista_native.features.chat.domain.model.DuelPreview
 import ir.coffevista.vista_native.features.chat.domain.model.ModerationReason
 import ir.coffevista.vista_native.features.chat.domain.model.RealtimeConnectionState
+import ir.coffevista.vista_native.features.chat.domain.model.StructuredMessageFormatter
 import ir.coffevista.vista_native.features.chat.domain.model.SharedPostParser
 import ir.coffevista.vista_native.features.chat.domain.repository.ChatRepository
 import ir.coffevista.vista_native.features.chat.domain.repository.ChatResult
@@ -575,12 +577,11 @@ class MessagesViewModel @Inject constructor(
             MessageContent.Deleted -> "این پیام حذف شده است"
             MessageContent.EncryptedUnavailable -> "پیام محرمانه"
         }
-        val replyContent = DuelInviteParser.formatPreviewIfDuel(rawReplyContent, replyTo.transportType)
-            ?: ir.coffevista.vista_native.features.chat.domain.model.SessionAlertParser.formatPreview(rawReplyContent, replyTo.transportType)
-            ?: SharedPostParser.tryParse(rawReplyContent)?.let { post ->
-                "پست ${post.authorName}: ${post.content.ifBlank { "رسانه پیوست" }}"
-            }
-            ?: rawReplyContent
+        val replyContent = (StructuredMessageFormatter.formatStructuredOrJsonPreview(
+            raw = rawReplyContent,
+            transportType = replyTo.transportType,
+            sharedPostWithColon = true,
+        ) ?: rawReplyContent).take(500)
         val optimistic = Message(
             accountId = myUserId,
             conversationId = conversationId,
@@ -593,7 +594,9 @@ class MessagesViewModel @Inject constructor(
             replyToMessageId = replyTo.serverId ?: replyTo.clientId,
             replyToContent = replyContent,
             replyToSenderName = if (replyTo.isMine) "شما" else mutableState.value.conversation?.title.orEmpty().ifBlank { "کاربر" },
-            replyToKind = replyTo.attachment?.kind?.name?.lowercase() ?: "text",
+            replyToKind = replyTo.attachment?.kind?.name?.lowercase()
+                ?: (replyTo.content as? MessageContent.Structured)?.kind
+                ?: "text",
             isMine = true,
         )
         optimisticPendingMessages[clientId] = optimistic
@@ -690,7 +693,7 @@ class MessagesViewModel @Inject constructor(
                 val item = store.importFromDevice(uri, resolver)
                 sendGif(item.url)
             }.onFailure { err ->
-                mutableState.update { it.copy(error = err.message ?: "خطا در بارگذاری گیف") }
+                mutableState.update { it.copy(error = err.toSafeUserError("خطا در بارگذاری گیف")) }
             }
         }
     }

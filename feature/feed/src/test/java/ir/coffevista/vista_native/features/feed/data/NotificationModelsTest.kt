@@ -22,4 +22,29 @@ class NotificationModelsTest {
         assertEquals("پست شما به دلیل نقض قوانین حذف شد", normalizeNotificationContent("", "post_admin_removed"))
         assertEquals("پست شما توسط مدیر ویرایش شد", normalizeNotificationContent("", "post_admin_edit"))
     }
+
+    @Test
+    fun normalizeNotificationContent_blocksRawAndTruncatedJson() {
+        assertEquals(
+            "به استوری شما پاسخ داد",
+            normalizeNotificationContent(
+                """{"story_id":"3bb19d76-32d6-4044-a6ff-f3ecd4d08125","story_owner_id":"57fffc28-744...""",
+                "story_reply",
+            ),
+        )
+        assertEquals(
+            "به استوری شما پاسخ داد: خیلی عالی بود",
+            normalizeNotificationContent(
+                """{"story_id":"1","reply_text":"خیلی عالی بود"}""",
+                "story_reply",
+            ),
+        )
+        assertEquals(
+            "اعلان جدید",
+            normalizeNotificationContent(
+                """{"unknown_payload":true,"nested":{"x":1}}""",
+                "unknown_type",
+            ),
+        )
+    }
 }

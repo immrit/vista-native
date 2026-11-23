@@ -127,8 +127,12 @@ fun VistaLocationPickerSheet(
     var isSearching by remember { mutableStateOf(false) }
     var statusHint by remember { mutableStateOf<String?>(null) }
 
-    var currentCoords by remember { mutableStateOf<Pair<Double, Double>?>(null) }
-    var nearbyPlaces by remember { mutableStateOf<List<StoryPlaceSuggestion>>(emptyList()) }
+    var currentCoords by remember(contextService) {
+        mutableStateOf(contextService?.cachedCoordinates())
+    }
+    var nearbyPlaces by remember(contextService) {
+        mutableStateOf(contextService?.cachedSnapshotPlaces().orEmpty())
+    }
     var searchResults by remember { mutableStateOf<List<StoryPlaceSuggestion>>(emptyList()) }
     var selectedPlace by remember(initialLocationName) {
         mutableStateOf(
@@ -141,22 +145,30 @@ fun VistaLocationPickerSheet(
     fun triggerGpsLookup(forceFresh: Boolean = false) {
         val service = contextService ?: return
         coroutineScope.launch {
-            isLocatingGps = true
+            if (forceFresh || nearbyPlaces.isEmpty()) {
+                isLocatingGps = true
+            }
             statusHint = null
             val coords = service.obtainDeviceCoordinates(forceFresh = forceFresh)
             if (coords != null) {
                 currentCoords = coords
-                val resolved = service.resolveCurrentPlaces(
+                var firstEmission = true
+                service.resolveCurrentPlacesFlow(
                     lat = coords.first,
                     lon = coords.second,
                     forceRefresh = forceFresh,
-                )
-                nearbyPlaces = resolved
-                if (selectedPlace == null && searchQuery.isBlank()) {
-                    selectedPlace = resolved.firstOrNull()
+                ).collect { resolved ->
+                    nearbyPlaces = resolved
+                    if (selectedPlace == null && searchQuery.isBlank()) {
+                        selectedPlace = resolved.firstOrNull()
+                    }
+                    if (firstEmission) {
+                        firstEmission = false
+                        isLocatingGps = false
+                    }
                 }
                 statusHint = null
-            } else {
+            } else if (nearbyPlaces.isEmpty()) {
                 statusHint = if (!service.isLocationServicesEnabled()) {
                     "مکان‌یاب (GPS) دستگاه خاموش است"
                 } else {

@@ -3,6 +3,7 @@ package ir.coffevista.vista_native.features.feed.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import ir.coffevista.vista_native.core.common.toSafeUserError
 import ir.coffevista.vista_native.features.feed.data.Comment
 import ir.coffevista.vista_native.features.feed.data.CommentMention
 import ir.coffevista.vista_native.features.feed.data.CommentRepository
@@ -183,7 +184,7 @@ class CommentsViewModel @Inject constructor(
                 _uiState.update {
                     it.copy(
                         isLoading = false,
-                        error = e.message ?: "مشکلی در بارگذاری کامنت‌ها پیش آمد. لطفا دوباره تلاش کنید.",
+                        error = e.toSafeUserError("مشکلی در بارگذاری کامنت‌ها پیش آمد. لطفا دوباره تلاش کنید."),
                     )
                 }
             }
@@ -214,7 +215,7 @@ class CommentsViewModel @Inject constructor(
                 _uiState.update {
                     it.copy(
                         isAppending = false,
-                        error = e.message ?: "مشکلی در بارگذاری پاسخ‌ها پیش آمد. لطفا دوباره تلاش کنید.",
+                        error = e.toSafeUserError("مشکلی در بارگذاری پاسخ‌ها پیش آمد. لطفا دوباره تلاش کنید."),
                     )
                 }
             }
@@ -297,7 +298,7 @@ class CommentsViewModel @Inject constructor(
                 _uiState.update {
                     it.copy(
                         isSubmitting = false,
-                        error = e.message ?: "مشکلی در ویرایش کامنت پیش آمد. لطفا دوباره تلاش کنید.",
+                        error = e.toSafeUserError("مشکلی در ویرایش کامنت پیش آمد. لطفا دوباره تلاش کنید."),
                     )
                 }
             }
@@ -342,7 +343,7 @@ class CommentsViewModel @Inject constructor(
                     _uiState.update {
                         it.copy(
                             isSubmitting = false,
-                            error = e.message ?: "مشکلی در ویرایش کامنت پیش آمد. لطفا دوباره تلاش کنید.",
+                            error = e.toSafeUserError("مشکلی در ویرایش کامنت پیش آمد. لطفا دوباره تلاش کنید."),
                         )
                     }
                 }
@@ -394,7 +395,7 @@ class CommentsViewModel @Inject constructor(
                         it.copy(
                             comments = buildCommentTree(flatLoaded),
                             isSubmitting = false,
-                            error = e.message ?: "مشکلی در ارسال کامنت پیش آمد. لطفا دوباره تلاش کنید.",
+                            error = e.toSafeUserError("مشکلی در ارسال کامنت پیش آمد. لطفا دوباره تلاش کنید."),
                         )
                     }
                 }
@@ -429,7 +430,7 @@ class CommentsViewModel @Inject constructor(
                     it.copy(
                         comments = buildCommentTree(flatLoaded),
                         pendingDeleteIds = it.pendingDeleteIds - commentId,
-                        error = e.message ?: "مشکلی در حذف کامنت پیش آمد. لطفا دوباره تلاش کنید.",
+                        error = e.toSafeUserError("مشکلی در حذف کامنت پیش آمد. لطفا دوباره تلاش کنید."),
                     )
                 }
             }
@@ -442,7 +443,7 @@ class CommentsViewModel @Inject constructor(
                 repository.reportComment(commentId, reason, additionalDetails)
                 _uiState.update { it.copy(notice = "گزارش دیدگاه ثبت شد", error = null) }
             } catch (e: Exception) {
-                _uiState.update { it.copy(error = e.message ?: "ثبت گزارش ناموفق بود") }
+                _uiState.update { it.copy(error = e.toSafeUserError("ثبت گزارش ناموفق بود")) }
             }
         }
     }

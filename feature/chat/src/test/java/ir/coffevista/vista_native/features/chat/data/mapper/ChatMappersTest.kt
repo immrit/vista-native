@@ -319,6 +319,28 @@ class ChatMappersTest {
         assertEquals(ir.coffevista.vista_native.features.chat.domain.model.AttachmentKind.AUDIO, music.attachment?.kind)
     }
 
+    @Test
+    fun `conversation preview never exposes raw JSON even when lastMessageType is text`() = runTest {
+        val entity = ConversationDto(
+            id = "conversation-story-json",
+            name = "yasaman",
+            lastMessageText = """{"story_id":"3bb19d76-32d6-4044-a6ff-f3ecd4d08125","story_owner_id":"57fffc28-7440"}""",
+            lastMessageType = "text",
+        ).toEntity("account", cipher, 10)
+
+        assertEquals("📖 پاسخ به استوری", entity.toDomain(cipher).lastMessage)
+    }
+
+    @Test
+    fun `story_reply underscore alias maps to Structured content`() {
+        val message = dto().copy(
+            messageType = "story_reply",
+            content = """{"story_id":"st-1","story_owner_id":"u-1"}""",
+        ).toDomain("account")
+
+        assertTrue(message.content is MessageContent.Structured)
+    }
+
     private fun dto() = MessageDto(
         id = "message-1",
         conversationId = "conversation-1",

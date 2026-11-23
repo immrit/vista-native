@@ -34,6 +34,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import ir.coffevista.vista_native.core.common.toSafeUserError
+import ir.coffevista.vista_native.core.designsystem.component.VistaViuStateIllustration
+import ir.coffevista.vista_native.core.designsystem.component.VistaViuStateKind
+import ir.coffevista.vista_native.core.designsystem.component.inferVistaViuStateKind
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -104,7 +108,7 @@ fun TopGroupsScreen(
         }.onSuccess { groups ->
             state = if (groups.isEmpty()) TopGroupsUiState.Empty else TopGroupsUiState.Success(groups)
         }.onFailure { error ->
-            state = TopGroupsUiState.Error(error.message ?: "خطا در دریافت لیست گروه‌ها")
+            state = TopGroupsUiState.Error(error.toSafeUserError("خطا در دریافت لیست گروه‌ها"))
         }
     }
 
@@ -613,13 +617,11 @@ private fun EmptyTopGroupsState(modifier: Modifier = Modifier) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Icon(
-            imageVector = Icons.Rounded.SearchOff,
-            contentDescription = null,
-            tint = MaterialTheme.vistaColors.contentSecondary,
-            modifier = Modifier.size(64.dp),
+        VistaViuStateIllustration(
+            kind = VistaViuStateKind.SearchEmpty,
+            size = 148.dp,
         )
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(12.dp))
         Text(
             text = "گروه عمومی‌ای یافت نشد",
             style = MaterialTheme.typography.titleMedium.copy(
@@ -644,13 +646,11 @@ private fun ErrorTopGroupsState(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Icon(
-            imageVector = Icons.Rounded.ErrorOutline,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.error,
-            modifier = Modifier.size(48.dp),
+        VistaViuStateIllustration(
+            kind = inferVistaViuStateKind(message, isError = true),
+            size = 148.dp,
         )
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(12.dp))
         Text(
             text = "خطا در دریافت لیست گروه‌ها",
             style = MaterialTheme.typography.bodyLarge.copy(

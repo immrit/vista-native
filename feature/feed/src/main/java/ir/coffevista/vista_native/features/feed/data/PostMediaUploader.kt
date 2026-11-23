@@ -246,27 +246,24 @@ class PostMediaUploader @Inject constructor(
         if (thumbnailFile != null && thumbnailFile.exists()) {
             try {
                 val thumbKey = "posts/${userId.safeSegment()}/${System.currentTimeMillis()}_thumb.jpg"
-                val thumbPresign = api.presignUpload(
-                    PostPresignRequestDto(
-                        objectKey = thumbKey,
-                        contentType = JPEG_MIME,
-                        fileSize = thumbnailFile.length(),
-                    ),
+                val thumbPresign = MediaUploadExecutor.uploadWithRetry(
+                    client = uploadClient,
+                    file = thumbnailFile,
+                    contentType = JPEG_MIME,
+                    errorLabel = "آپلود تصویر پیش‌نمایش",
+                    maxRetries = 1,
+                    presignProvider = {
+                        api.presignUpload(
+                            PostPresignRequestDto(
+                                objectKey = thumbKey,
+                                contentType = JPEG_MIME,
+                                fileSize = thumbnailFile.length(),
+                            ),
+                        )
+                    },
+                    onProgress = {},
                 )
-                val thumbReq = Request.Builder()
-                    .url(thumbPresign.url)
-                    .put(ProgressRequestBody(thumbnailFile, JPEG_MIME) {})
-
-                thumbPresign.headers.forEach { (name, value) ->
-                    if (!name.equals("host", ignoreCase = true) && !name.equals("content-length", ignoreCase = true)) {
-                        thumbReq.header(name, value)
-                    }
-                }
-                externalClient.newCall(thumbReq.build()).execute().use { response ->
-                    if (response.isSuccessful) {
-                        uploadedThumbnailUrl = thumbPresign.objectUrl
-                    }
-                }
+                uploadedThumbnailUrl = thumbPresign.objectUrl
             } catch (_: Exception) {
                 // Non-fatal if thumbnail upload fails
             } finally {
@@ -493,7 +490,8 @@ class PostMediaUploader @Inject constructor(
         val retriever = MediaMetadataRetriever()
         return try {
             retriever.setDataSource(videoFile.absolutePath)
-            val bitmap = retriever.getFrameAtTime(1_000_000, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+            val bitmap = retriever.getFrameAtTime(0L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                ?: retriever.getFrameAtTime(1_000_000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
                 ?: retriever.frameAtTime
             if (bitmap != null) {
                 val file = File.createTempFile("video-thumb-", ".jpg", cacheDir)

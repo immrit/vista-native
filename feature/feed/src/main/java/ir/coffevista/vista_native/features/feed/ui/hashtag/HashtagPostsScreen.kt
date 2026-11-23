@@ -40,6 +40,9 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import ir.coffevista.vista_native.features.feed.ui.HashtagMentionCaption
+import ir.coffevista.vista_native.core.designsystem.component.VistaViuStateIllustration
+import ir.coffevista.vista_native.core.designsystem.component.VistaViuStateKind
+import ir.coffevista.vista_native.core.designsystem.component.inferVistaViuStateKind
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -555,6 +558,11 @@ private fun EmptyHashtagState(errorMessage: String?, onRetry: () -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
+        VistaViuStateIllustration(
+            kind = if (errorMessage != null) inferVistaViuStateKind(errorMessage, isError = true) else VistaViuStateKind.SearchEmpty,
+            size = 148.dp,
+        )
+        Spacer(Modifier.height(12.dp))
         Text(errorMessage ?: "پستی برای این هشتگ پیدا نشد", textAlign = TextAlign.Center)
         Spacer(Modifier.height(16.dp))
         OutlinedButton(onClick = onRetry) { Text("تلاش مجدد") }

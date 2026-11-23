@@ -14,13 +14,23 @@ import android.os.CancellationSignal
 import android.os.Looper
 import androidx.core.content.ContextCompat
 import dagger.hilt.android.qualifiers.ApplicationContext
+import ir.coffevista.vista_native.core.common.DeviceLocationSnapshotCache
 import ir.coffevista.vista_native.core.common.toPersianDigits
 import ir.coffevista.vista_native.core.network.BootstrapApi
 import ir.coffevista.vista_native.features.feed.data.LocationMatcher
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.flow.last
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
@@ -40,7 +50,6 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
-import kotlin.coroutines.resume
 import kotlin.math.roundToInt
 
 data class StoryPlaceSuggestion(
@@ -90,11 +99,12 @@ class StoryDynamicContextService @Inject constructor(
     @ApplicationContext private val context: Context,
     @BootstrapApi baseHttpClient: OkHttpClient,
     private val storyApi: StoryApi,
+    private val snapshotCache: DeviceLocationSnapshotCache? = null,
 ) {
     private val fastHttp: OkHttpClient = baseHttpClient.newBuilder()
-        .connectTimeout(7, TimeUnit.SECONDS)
-        .readTimeout(8, TimeUnit.SECONDS)
-        .callTimeout(10, TimeUnit.SECONDS)
+        .connectTimeout(3, TimeUnit.SECONDS)
+        .readTimeout(4, TimeUnit.SECONDS)
+        .callTimeout(5, TimeUnit.SECONDS)
         .build()
 
     private val json = Json {
@@ -104,6 +114,71 @@ class StoryDynamicContextService @Inject constructor(
 
     private val weatherCache = ConcurrentHashMap<String, Pair<Long, StoryLiveWeather>>()
     private val placeCache = ConcurrentHashMap<String, Pair<Long, List<StoryPlaceSuggestion>>>()
+
+    private val _prewarmedCoordinates = MutableStateFlow<Pair<Double, Double>?>(null)
+    val prewarmedCoordinates: StateFlow<Pair<Double, Double>?> = _prewarmedCoordinates.asStateFlow()
+
+    private val _prewarmedPlaces = MutableStateFlow<List<StoryPlaceSuggestion>>(emptyList())
+    val prewarmedPlaces: StateFlow<List<StoryPlaceSuggestion>> = _prewarmedPlaces.asStateFlow()
+
+    private val prewarmMutex = Mutex()
+    @Volatile
+    private var lastPrewarmAtMs: Long = 0L
+
+    fun cachedCoordinates(maxAgeMs: Long = 30 * 60_000L): Pair<Double, Double>? {
+        _prewarmedCoordinates.value?.let { return it }
+        snapshotCache?.latest(maxAgeMs)?.let { snap ->
+            return snap.latitude to snap.longitude
+        }
+        if (!hasLocationPermission()) return null
+        val lm = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return null
+        val best = bestLastKnownLocation(lm)
+        if (best != null && System.currentTimeMillis() - best.time <= maxAgeMs) {
+            val coords = best.latitude to best.longitude
+            _prewarmedCoordinates.value = coords
+            snapshotCache?.updateCoordinates(best.latitude, best.longitude, best.time)
+            return coords
+        }
+        return snapshotCache?.latestAny()?.let { it.latitude to it.longitude }
+    }
+
+    fun cachedSnapshotPlaces(): List<StoryPlaceSuggestion> {
+        val direct = _prewarmedPlaces.value
+        if (direct.isNotEmpty()) return direct
+        val coords = cachedCoordinates() ?: return emptyList()
+        val key = placeCacheKey(coords.first, coords.second)
+        return placeCache[key]?.second.orEmpty()
+    }
+
+    /**
+     * Silently acquires GPS/network coordinates and nearby places in the background ONLY when
+     * location permission is already granted and location services are enabled.
+     * Rate-limited so repeated screen openings do not drain battery or hit rate limits.
+     */
+    suspend fun prewarmLocationInBackground(
+        minRefreshIntervalMs: Long = 8 * 60_000L,
+        force: Boolean = false,
+    ) {
+        if (!hasLocationPermission() || !isLocationServicesEnabled()) return
+        prewarmMutex.withLock {
+            val now = System.currentTimeMillis()
+            val hasWarmData = _prewarmedCoordinates.value != null && _prewarmedPlaces.value.isNotEmpty()
+            if (!force && hasWarmData && (now - lastPrewarmAtMs) < minRefreshIntervalMs) {
+                return
+            }
+            lastPrewarmAtMs = now
+            val coords = obtainDeviceCoordinates(timeoutMs = 3_000L, forceFresh = false) ?: return
+            resolveCurrentPlacesFlow(
+                lat = coords.first,
+                lon = coords.second,
+                forceRefresh = force,
+            ).collect { places ->
+                if (places.isNotEmpty()) {
+                    _prewarmedPlaces.value = places
+                }
+            }
+        }
+    }
 
     fun hasLocationPermission(): Boolean {
         val fine = ContextCompat.checkSelfPermission(
@@ -130,117 +205,223 @@ class StoryDynamicContextService @Inject constructor(
     }
 
     @SuppressLint("MissingPermission")
+    private fun bestLastKnownLocation(lm: LocationManager): Location? {
+        val providerNames = buildList {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                add(LocationManager.FUSED_PROVIDER)
+            }
+            add(LocationManager.GPS_PROVIDER)
+            add(LocationManager.NETWORK_PROVIDER)
+            add(LocationManager.PASSIVE_PROVIDER)
+        }
+        return providerNames
+            .mapNotNull { provider -> runCatching { lm.getLastKnownLocation(provider) }.getOrNull() }
+            .filter { loc -> loc.latitude != 0.0 || loc.longitude != 0.0 }
+            .maxByOrNull { it.time }
+    }
+
+    private fun recordCoordinates(lat: Double, lon: Double, timestampMs: Long = System.currentTimeMillis()): Pair<Double, Double> {
+        val pair = lat to lon
+        _prewarmedCoordinates.value = pair
+        snapshotCache?.updateCoordinates(lat, lon, timestampMs)
+        return pair
+    }
+
+    @SuppressLint("MissingPermission")
     suspend fun obtainDeviceCoordinates(
-        timeoutMs: Long = 5_500L,
+        timeoutMs: Long = 3_200L,
         forceFresh: Boolean = false,
     ): Pair<Double, Double>? {
         if (!hasLocationPermission()) return null
-        val lm = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return null
 
-        val providers = listOf(
-            LocationManager.GPS_PROVIDER,
-            LocationManager.NETWORK_PROVIDER,
-            LocationManager.PASSIVE_PROVIDER,
-        )
-
-        val nowMs = System.currentTimeMillis()
-        val bestLastKnown: Location? = providers
-            .mapNotNull { provider ->
-                runCatching { lm.getLastKnownLocation(provider) }.getOrNull()
+        if (!forceFresh) {
+            snapshotCache?.latest(15 * 60_000L)?.let { snap ->
+                val pair = snap.latitude to snap.longitude
+                _prewarmedCoordinates.value = pair
+                return pair
             }
-            .filter { loc -> loc.latitude != 0.0 || loc.longitude != 0.0 }
-            .maxByOrNull { it.time }
-
-        // If we have a recent fix (< 15 minutes) and forceFresh isn't requested, return immediately for zero latency
-        if (!forceFresh && bestLastKnown != null && (nowMs - bestLastKnown.time) <= 15 * 60_000L) {
-            return bestLastKnown.latitude to bestLastKnown.longitude
         }
 
-        val activeProvider = when {
-            runCatching { lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER) }.getOrDefault(false) ->
-                LocationManager.NETWORK_PROVIDER
-            runCatching { lm.isProviderEnabled(LocationManager.GPS_PROVIDER) }.getOrDefault(false) ->
-                LocationManager.GPS_PROVIDER
-            else -> null
+        val lm = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return null
+        val nowMs = System.currentTimeMillis()
+        val bestLastKnown = bestLastKnownLocation(lm)
+
+        // If we have a recent fix (< 20 minutes) and forceFresh isn't requested, return immediately for zero latency
+        if (!forceFresh && bestLastKnown != null && (nowMs - bestLastKnown.time) <= 20 * 60_000L) {
+            return recordCoordinates(bestLastKnown.latitude, bestLastKnown.longitude, bestLastKnown.time)
         }
 
-        if (activeProvider == null) {
-            return bestLastKnown?.let { it.latitude to it.longitude }
+        val enabledProviders = buildList {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                runCatching { lm.isProviderEnabled(LocationManager.FUSED_PROVIDER) }.getOrDefault(false)
+            ) {
+                add(LocationManager.FUSED_PROVIDER)
+            }
+            if (runCatching { lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER) }.getOrDefault(false)) {
+                add(LocationManager.NETWORK_PROVIDER)
+            }
+            if (runCatching { lm.isProviderEnabled(LocationManager.GPS_PROVIDER) }.getOrDefault(false)) {
+                add(LocationManager.GPS_PROVIDER)
+            }
         }
 
+        if (enabledProviders.isEmpty()) {
+            return bestLastKnown?.let { recordCoordinates(it.latitude, it.longitude, it.time) }
+                ?: snapshotCache?.latestAny()?.let { it.latitude to it.longitude }
+        }
+
+        // Race all enabled providers concurrently so the fastest valid fix wins (usually 200-800ms via FUSED/NETWORK)
+        val firstFix = CompletableDeferred<Location?>()
         val freshFix = withTimeoutOrNull(timeoutMs) {
             withContext(Dispatchers.Main) {
-                suspendCancellableCoroutine<Location?> { cont ->
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                        val cancelSignal = CancellationSignal()
-                        cont.invokeOnCancellation { cancelSignal.cancel() }
-                        runCatching {
-                            lm.getCurrentLocation(
-                                activeProvider,
-                                cancelSignal,
-                                ContextCompat.getMainExecutor(context),
-                            ) { loc ->
-                                if (cont.isActive) cont.resume(loc)
+                val activeCancellations = mutableListOf<() -> Unit>()
+                var pendingProviders = enabledProviders.size
+
+                fun completeEmptyIfExhausted() {
+                    pendingProviders -= 1
+                    if (pendingProviders <= 0 && !firstFix.isCompleted) {
+                        firstFix.complete(null)
+                    }
+                }
+
+                try {
+                    for (provider in enabledProviders) {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                            val cancelSignal = CancellationSignal()
+                            activeCancellations += { cancelSignal.cancel() }
+                            runCatching {
+                                lm.getCurrentLocation(
+                                    provider,
+                                    cancelSignal,
+                                    ContextCompat.getMainExecutor(context),
+                                ) { loc ->
+                                    if (loc != null && (loc.latitude != 0.0 || loc.longitude != 0.0)) {
+                                        firstFix.complete(loc)
+                                    } else {
+                                        completeEmptyIfExhausted()
+                                    }
+                                }
+                            }.onFailure {
+                                completeEmptyIfExhausted()
                             }
-                        }.onFailure {
-                            if (cont.isActive) cont.resume(null)
-                        }
-                    } else {
-                        val listener = object : LocationListener {
-                            override fun onLocationChanged(location: Location) {
-                                runCatching { lm.removeUpdates(this) }
-                                if (cont.isActive) cont.resume(location)
+                        } else {
+                            val listener = object : LocationListener {
+                                override fun onLocationChanged(location: Location) {
+                                    runCatching { lm.removeUpdates(this) }
+                                    if (location.latitude != 0.0 || location.longitude != 0.0) {
+                                        firstFix.complete(location)
+                                    } else {
+                                        completeEmptyIfExhausted()
+                                    }
+                                }
+                                @Deprecated("Deprecated in Java")
+                                override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) = Unit
+                                override fun onProviderEnabled(provider: String) = Unit
+                                override fun onProviderDisabled(provider: String) {
+                                    runCatching { lm.removeUpdates(this) }
+                                    completeEmptyIfExhausted()
+                                }
                             }
-                            @Deprecated("Deprecated in Java")
-                            override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) = Unit
-                            override fun onProviderEnabled(provider: String) = Unit
-                            override fun onProviderDisabled(provider: String) {
-                                runCatching { lm.removeUpdates(this) }
-                                if (cont.isActive) cont.resume(null)
+                            activeCancellations += { runCatching { lm.removeUpdates(listener) } }
+                            runCatching {
+                                @Suppress("DEPRECATION")
+                                lm.requestSingleUpdate(provider, listener, Looper.getMainLooper())
+                            }.onFailure {
+                                completeEmptyIfExhausted()
                             }
-                        }
-                        cont.invokeOnCancellation {
-                            runCatching { lm.removeUpdates(listener) }
-                        }
-                        runCatching {
-                            @Suppress("DEPRECATION")
-                            lm.requestSingleUpdate(activeProvider, listener, Looper.getMainLooper())
-                        }.onFailure {
-                            if (cont.isActive) cont.resume(null)
                         }
                     }
+                    firstFix.await()
+                } finally {
+                    activeCancellations.forEach { cancel -> runCatching { cancel() } }
                 }
             }
         }
 
         val chosen = freshFix ?: bestLastKnown
-        return chosen?.let { it.latitude to it.longitude }
+        return chosen?.let { recordCoordinates(it.latitude, it.longitude, it.time) }
+            ?: snapshotCache?.latestAny()?.let { it.latitude to it.longitude }
+    }
+
+    private fun placeCacheKey(lat: Double, lon: Double): String =
+        "rev:${"%.3f".format(Locale.US, lat)}:${"%.3f".format(Locale.US, lon)}"
+
+    private fun mergeAndSortPlaces(
+        lat: Double,
+        lon: Double,
+        immediatePlaces: List<StoryPlaceSuggestion>,
+        additionalPlaces: List<StoryPlaceSuggestion>,
+    ): List<StoryPlaceSuggestion> {
+        val immediateKeys = immediatePlaces.map { LocationMatcher.normalize(it.name) }.toSet()
+        val allNearby = deduplicatePlaces(immediatePlaces + additionalPlaces).map { item ->
+            if (item.distanceMeters == null && item.latitude != null && item.longitude != null &&
+                (item.latitude != 0.0 || item.longitude != 0.0)
+            ) {
+                item.copy(
+                    distanceMeters = LocationMatcher.haversineMeters(lat, lon, item.latitude, item.longitude),
+                )
+            } else {
+                item
+            }
+        }
+        val topImmediate = allNearby.filter { LocationMatcher.normalize(it.name) in immediateKeys }
+        val nearbyPois = allNearby
+            .filterNot { LocationMatcher.normalize(it.name) in immediateKeys }
+            .sortedBy { it.distanceMeters ?: Double.MAX_VALUE }
+        return topImmediate + nearbyPois
+    }
+
+    private fun cacheResolvedPlaces(lat: Double, lon: Double, cacheKey: String, places: List<StoryPlaceSuggestion>) {
+        if (places.isEmpty()) return
+        placeCache[cacheKey] = System.currentTimeMillis() to places
+        _prewarmedPlaces.value = places
+        val bestCity = places.firstOrNull { it.category == "city" }?.name
+            ?: places.firstOrNull { it.category == "neighbourhood" }?.subtitle
+            ?: places.firstOrNull()?.name
+        if (!bestCity.isNullOrBlank()) {
+            snapshotCache?.updateAddress(lat, lon, bestCity, province = null)
+        }
     }
 
     /**
-     * Resolves multi-granularity real-world place suggestions (neighborhood, street, POI, city)
-     * around the user's current coordinates with accurate Haversine distances.
+     * Progressively streams real-world places around `(lat, lon)`:
+     * Stage 1 emits fast geocoder + Photon results within ~0.3–1.8s so the UI populates right away,
+     * Stage 2 enriches with Nominatim / Overpass / backend (bounded by tight timeouts).
      */
-    suspend fun resolveCurrentPlaces(
+    fun resolveCurrentPlacesFlow(
         lat: Double,
         lon: Double,
         forceRefresh: Boolean = false,
-    ): List<StoryPlaceSuggestion> =
+    ): Flow<List<StoryPlaceSuggestion>> = channelFlow {
         withContext(Dispatchers.IO) {
-            val cacheKey = "rev:${"%.3f".format(Locale.US, lat)}:${"%.3f".format(Locale.US, lon)}"
+            val cacheKey = placeCacheKey(lat, lon)
             if (!forceRefresh) {
                 placeCache[cacheKey]?.let { (ts, items) ->
-                    if (System.currentTimeMillis() - ts < 10 * 60_000L && items.isNotEmpty()) return@withContext items
+                    if (System.currentTimeMillis() - ts < 15 * 60_000L && items.isNotEmpty()) {
+                        _prewarmedPlaces.value = items
+                        send(items)
+                        return@withContext
+                    }
                 }
             }
 
-            val merged = coroutineScope {
-                val androidGeoDeferred = async { reverseGeocodeAndroid(lat, lon) }
-                val bigDataDeferred = async { reverseGeocodeBigDataCloud(lat, lon) }
-                val nominatimDeferred = async { reverseGeocodeNominatim(lat, lon) }
-                val photonDeferred = async { fetchNearbyPhoton(lat, lon) }
-                val overpassDeferred = async { fetchNearbyOverpass(lat, lon) }
-                val backendDeferred = async {
+            val androidGeoDeferred = async {
+                withTimeoutOrNull(1_600L) { reverseGeocodeAndroid(lat, lon) }.orEmpty()
+            }
+            val bigDataDeferred = async {
+                withTimeoutOrNull(2_000L) { reverseGeocodeBigDataCloud(lat, lon) }.orEmpty()
+            }
+            val photonDeferred = async {
+                withTimeoutOrNull(2_300L) { fetchNearbyPhoton(lat, lon) }.orEmpty()
+            }
+            val nominatimDeferred = async {
+                withTimeoutOrNull(2_500L) { reverseGeocodeNominatim(lat, lon) }.orEmpty()
+            }
+            val overpassDeferred = async {
+                withTimeoutOrNull(2_800L) { fetchNearbyOverpass(lat, lon) }.orEmpty()
+            }
+            val backendDeferred = async {
+                withTimeoutOrNull(2_200L) {
                     runCatching {
                         storyApi.getStoryPlacesContext(lat = lat, lon = lon).places.map { dto ->
                             val hasValidCoords = dto.latitude != 0.0 || dto.longitude != 0.0
@@ -262,55 +443,69 @@ class StoryDynamicContextService @Inject constructor(
                             )
                         }
                     }.getOrDefault(emptyList())
-                }
-
-                val immediatePlaces = deduplicatePlaces(
-                    nominatimDeferred.await() +
-                        bigDataDeferred.await() +
-                        androidGeoDeferred.await(),
-                )
-                val immediateKeys = immediatePlaces.map { LocationMatcher.normalize(it.name) }.toSet()
-
-                val allNearby = deduplicatePlaces(
-                    immediatePlaces +
-                        photonDeferred.await() +
-                        overpassDeferred.await() +
-                        backendDeferred.await(),
-                ).map { item ->
-                    if (item.distanceMeters == null && item.latitude != null && item.longitude != null &&
-                        (item.latitude != 0.0 || item.longitude != 0.0)
-                    ) {
-                        item.copy(
-                            distanceMeters = LocationMatcher.haversineMeters(lat, lon, item.latitude, item.longitude),
-                        )
-                    } else {
-                        item
-                    }
-                }
-
-                val topImmediate = allNearby.filter { LocationMatcher.normalize(it.name) in immediateKeys }
-                val nearbyPois = allNearby
-                    .filterNot { LocationMatcher.normalize(it.name) in immediateKeys }
-                    .sortedBy { it.distanceMeters ?: Double.MAX_VALUE }
-                topImmediate + nearbyPois
+                }.orEmpty()
             }
 
-            if (merged.isNotEmpty()) {
-                placeCache[cacheKey] = System.currentTimeMillis() to merged
-                merged
-            } else {
-                listOf(
-                    StoryPlaceSuggestion(
-                        name = "${"%.4f".format(Locale.US, lat)}, ${"%.4f".format(Locale.US, lon)}",
-                        subtitle = "مختصات موقعیت فعلی",
-                        latitude = lat,
-                        longitude = lon,
-                        category = "gps",
-                        distanceMeters = 0.0,
+            // Stage 1: emit fast Android + BigDataCloud + Photon immediately
+            val stage1Immediate = deduplicatePlaces(
+                bigDataDeferred.await() + androidGeoDeferred.await(),
+            )
+            val stage1List = mergeAndSortPlaces(
+                lat = lat,
+                lon = lon,
+                immediatePlaces = stage1Immediate,
+                additionalPlaces = photonDeferred.await(),
+            )
+            if (stage1List.isNotEmpty()) {
+                cacheResolvedPlaces(lat, lon, cacheKey, stage1List)
+                send(stage1List)
+            }
+
+            // Stage 2: enrich with Nominatim, Overpass & backend without blocking Stage 1
+            val nomResults = nominatimDeferred.await()
+            val overpassResults = overpassDeferred.await()
+            val backendResults = backendDeferred.await()
+
+            val fullImmediate = deduplicatePlaces(nomResults + stage1Immediate)
+            val stage2List = mergeAndSortPlaces(
+                lat = lat,
+                lon = lon,
+                immediatePlaces = fullImmediate,
+                additionalPlaces = photonDeferred.await() + overpassResults + backendResults,
+            )
+
+            if (stage2List.isNotEmpty()) {
+                if (stage2List != stage1List) {
+                    cacheResolvedPlaces(lat, lon, cacheKey, stage2List)
+                    send(stage2List)
+                }
+            } else if (stage1List.isEmpty()) {
+                send(
+                    listOf(
+                        StoryPlaceSuggestion(
+                            name = "${"%.4f".format(Locale.US, lat)}, ${"%.4f".format(Locale.US, lon)}",
+                            subtitle = "مختصات موقعیت فعلی",
+                            latitude = lat,
+                            longitude = lon,
+                            category = "gps",
+                            distanceMeters = 0.0,
+                        ),
                     ),
                 )
             }
         }
+    }
+
+    /**
+     * Resolves multi-granularity real-world place suggestions (neighborhood, street, POI, city)
+     * around the user's current coordinates with accurate Haversine distances.
+     */
+    suspend fun resolveCurrentPlaces(
+        lat: Double,
+        lon: Double,
+        forceRefresh: Boolean = false,
+    ): List<StoryPlaceSuggestion> =
+        resolveCurrentPlacesFlow(lat, lon, forceRefresh).last()
 
     /**
      * Live dynamic place/city/POI search in Persian & English, optionally biased toward user's coordinates.

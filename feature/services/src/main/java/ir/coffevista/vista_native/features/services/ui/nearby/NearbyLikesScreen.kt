@@ -63,6 +63,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalLayoutDirection
+import ir.coffevista.vista_native.core.designsystem.component.VistaViuStateIllustration
+import ir.coffevista.vista_native.core.designsystem.component.VistaViuStateKind
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -321,13 +323,11 @@ private fun ChatRequestsTabContent(
             contentAlignment = Alignment.Center,
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(
-                    imageVector = Icons.Rounded.Forum,
-                    contentDescription = null,
-                    tint = VistaBrandColors.Indigo.copy(alpha = 0.55f),
-                    modifier = Modifier.size(56.dp),
+                VistaViuStateIllustration(
+                    kind = VistaViuStateKind.EmptyChat,
+                    size = 136.dp,
                 )
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(10.dp))
                 Text(
                     text = "هنوز درخواست چتی ثبت نشده است.\nاز صفحه اطراف من می‌توانید مستقیم درخواست چت بفرستید.",
                     style = MaterialTheme.typography.bodyMedium.copy(
@@ -593,13 +593,11 @@ private fun ReceivedLikesTabContent(
             contentAlignment = Alignment.Center,
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(
-                    imageVector = Icons.Rounded.FavoriteBorder,
-                    contentDescription = null,
-                    tint = VistaBrandColors.Indigo.copy(alpha = 0.5f),
-                    modifier = Modifier.size(56.dp),
+                VistaViuStateIllustration(
+                    kind = VistaViuStateKind.Empty,
+                    size = 136.dp,
                 )
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(12.dp))
                 Text(
                     text = "هنوز کسی لایکت نکرده!\nبا کاوش بیشتر، دیده می‌شی",
                     style = MaterialTheme.typography.bodyMedium.copy(
@@ -730,13 +728,11 @@ private fun MatchesTabContent(
             contentAlignment = Alignment.Center,
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(
-                    imageVector = Icons.Rounded.Star,
-                    contentDescription = null,
-                    tint = Color(0xFFF59E0B),
-                    modifier = Modifier.size(56.dp),
+                VistaViuStateIllustration(
+                    kind = VistaViuStateKind.Empty,
+                    size = 136.dp,
                 )
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(12.dp))
                 Text(
                     text = "هنوز مَچی نداری!\nبا کاوش در «اطراف من» شروع کن",
                     style = MaterialTheme.typography.bodyMedium.copy(

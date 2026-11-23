@@ -25,6 +25,7 @@ import javax.inject.Singleton
 class OfflineFirstFeedRepository @Inject constructor(
     private val feedDao: FeedDao,
     private val feedApi: FeedApi,
+    private val postLocationRegistry: PostLocationRegistry? = null,
 ) : FeedRepository {
 
     private val exploreLimit = 15
@@ -147,10 +148,18 @@ class OfflineFirstFeedRepository @Inject constructor(
     override suspend fun refreshPost(accountId: String, postId: String): FeedPost {
         val post = feedApi.getPost(postId)
         val storageAccountId = detailStorageKey(accountId)
-        feedDao.insertPosts(
-            listOf(post.asEntity(accountId = storageAccountId, sortOrder = 0)),
+        val existingLocation = if (post.location.isNullOrBlank()) {
+            feedDao.findAnyPostById(postId)?.location?.trim()?.takeIf(String::isNotBlank)
+        } else {
+            null
+        }
+        val entity = post.asEntityPreservingLocation(
+            accountId = storageAccountId,
+            sortOrder = 0,
+            fallbackLocations = if (existingLocation != null) mapOf(postId to existingLocation) else emptyMap(),
         )
-        return post.asEntity(storageAccountId, 0).asExternalModel()
+        feedDao.insertPosts(listOf(entity))
+        return entity.asExternalModel()
     }
 
     override suspend fun refreshUserPosts(
@@ -180,10 +189,14 @@ class OfflineFirstFeedRepository @Inject constructor(
         require(normalized.isNotBlank()) { "هشتگ نامعتبر است" }
         val safeOffset = offset.coerceAtLeast(0)
         val response = feedApi.getHashtagPosts(normalized, hashtagLimit, safeOffset)
+        val fallbacks = resolveCachedLocationsForMissing(accountId, response.posts)
         return FeedSnapshot(
             posts = response.posts.mapIndexed { index, post ->
-                post.asEntity("$accountId${NAMESPACE_SEPARATOR}hashtag$NAMESPACE_SEPARATOR$normalized", index.toLong())
-                    .asExternalModel()
+                post.asEntityPreservingLocation(
+                    accountId = "$accountId${NAMESPACE_SEPARATOR}hashtag$NAMESPACE_SEPARATOR$normalized",
+                    sortOrder = index.toLong(),
+                    fallbackLocations = fallbacks,
+                ).asExternalModel()
             },
             hasMore = response.hasMore,
             nextOffset = safeOffset + response.posts.size,
@@ -209,10 +222,25 @@ class OfflineFirstFeedRepository @Inject constructor(
         }
 
         if (remoteResponse != null) {
+            val fallbacks = resolveCachedLocationsForMissing(accountId, remoteResponse.posts)
+            val remotePosts = remoteResponse.posts.mapIndexed { index, post ->
+                post.asEntityPreservingLocation(storageKey, index.toLong(), fallbacks)
+                    .asExternalModel()
+            }
+            val mergedPosts = if (safeOffset == 0) {
+                val localMatching = feedDao.getPostsWithLocation(accountId, "$accountId$NAMESPACE_SEPARATOR")
+                    .asSequence()
+                    .map { it.asExternalModel() }
+                    .filter { LocationMatcher.matches(it.location, normalized) }
+                    .toList()
+                (localMatching + remotePosts)
+                    .distinctBy(FeedPost::id)
+                    .sortedByDescending(FeedPost::createdAt)
+            } else {
+                remotePosts
+            }
             return FeedSnapshot(
-                posts = remoteResponse.posts.mapIndexed { index, post ->
-                    post.asEntity(storageKey, index.toLong()).asExternalModel()
-                },
+                posts = mergedPosts,
                 hasMore = remoteResponse.hasMore,
                 nextOffset = safeOffset + remoteResponse.posts.size,
             )
@@ -229,8 +257,10 @@ class OfflineFirstFeedRepository @Inject constructor(
             }
             val exploreDeferred = async {
                 try {
-                    feedApi.getExploreFeed(50, 0).posts.mapIndexed { idx, dto ->
-                        dto.asEntity(storageKey, idx.toLong()).asExternalModel()
+                    val dtos = feedApi.getExploreFeed(50, 0).posts
+                    val fallbacks = resolveCachedLocationsForMissing(accountId, dtos)
+                    dtos.mapIndexed { idx, dto ->
+                        dto.asEntityPreservingLocation(storageKey, idx.toLong(), fallbacks).asExternalModel()
                     }
                 } catch (e: CancellationException) {
                     throw e
@@ -240,8 +270,10 @@ class OfflineFirstFeedRepository @Inject constructor(
             }
             val followingDeferred = async {
                 try {
-                    feedApi.getFollowingFeed(50, 0).posts.mapIndexed { idx, dto ->
-                        dto.asEntity(storageKey, idx.toLong()).asExternalModel()
+                    val dtos = feedApi.getFollowingFeed(50, 0).posts
+                    val fallbacks = resolveCachedLocationsForMissing(accountId, dtos)
+                    dtos.mapIndexed { idx, dto ->
+                        dto.asEntityPreservingLocation(storageKey, idx.toLong(), fallbacks).asExternalModel()
                     }
                 } catch (e: CancellationException) {
                     throw e
@@ -267,12 +299,15 @@ class OfflineFirstFeedRepository @Inject constructor(
         storageAccountId: String,
         response: FeedResponseDto,
     ): FeedRefreshResult {
-        val entities = response.posts
-            .distinctBy(FeedPostDto::id)
+        val rootAccountId = storageAccountId.substringBefore(NAMESPACE_SEPARATOR)
+        val distinctPosts = response.posts.distinctBy(FeedPostDto::id)
+        val fallbacks = resolveCachedLocationsForMissing(rootAccountId, distinctPosts)
+        val entities = distinctPosts
             .mapIndexed { index, post ->
-                post.asEntity(
+                post.asEntityPreservingLocation(
                     accountId = storageAccountId,
                     sortOrder = index.toLong(),
+                    fallbackLocations = fallbacks,
                 )
             }
         feedDao.replaceFirstPage(
@@ -313,12 +348,15 @@ class OfflineFirstFeedRepository @Inject constructor(
             }
             val firstSortOrder =
                 (feedDao.getMaxSortOrder(storageAccountId) ?: -1L) + 1L
-            val newEntities = distinctPosts
-                .filterNot { it.id in existingIds }
+            val toInsert = distinctPosts.filterNot { it.id in existingIds }
+            val rootAccountId = storageAccountId.substringBefore(NAMESPACE_SEPARATOR)
+            val fallbacks = resolveCachedLocationsForMissing(rootAccountId, toInsert)
+            val newEntities = toInsert
                 .mapIndexed { index, post ->
-                    post.asEntity(
+                    post.asEntityPreservingLocation(
                         accountId = storageAccountId,
                         sortOrder = firstSortOrder + index,
+                        fallbackLocations = fallbacks,
                     )
                 }
             feedDao.appendPage(
@@ -403,7 +441,7 @@ class OfflineFirstFeedRepository @Inject constructor(
             ),
         )
         feedDao.updatePostFields(postId, content, hideLikeCount, hideCommentCount)
-        return response.asEntity(accountId, sortOrder = 0).asExternalModel()
+        return response.asEntityPreservingLocation(accountId, sortOrder = 0).asExternalModel()
     }
 
     override suspend fun deletePost(accountId: String, postId: String) {
@@ -471,6 +509,56 @@ class OfflineFirstFeedRepository @Inject constructor(
 
     override suspend fun updateAuthorFollowStatus(authorId: String, followStatus: String) {
         feedDao.updateAuthorFollowStatus(authorId, followStatus)
+    }
+
+    private suspend fun resolveCachedLocationsForMissing(
+        rootAccountId: String,
+        posts: List<FeedPostDto>,
+    ): Map<String, String> {
+        if (rootAccountId.isBlank() || posts.none { it.location.isNullOrBlank() }) {
+            return emptyMap()
+        }
+        val unresolvedIds = posts
+            .asSequence()
+            .filter { it.location.isNullOrBlank() && postLocationRegistry?.get(it.id) == null }
+            .mapTo(HashSet()) { it.id }
+        if (unresolvedIds.isEmpty()) return emptyMap()
+        val dbPosts = runCatching {
+            feedDao.getPostsWithLocation(rootAccountId, "$rootAccountId$NAMESPACE_SEPARATOR")
+        }.getOrDefault(emptyList())
+        if (dbPosts.isEmpty()) return emptyMap()
+        val resolved = LinkedHashMap<String, String>()
+        dbPosts.forEach { entity ->
+            if (entity.id in unresolvedIds) {
+                val loc = entity.location?.trim()?.takeIf(String::isNotBlank)
+                if (loc != null && resolved[entity.id] == null) {
+                    resolved[entity.id] = loc
+                    postLocationRegistry?.record(entity.id, loc)
+                }
+            }
+        }
+        return resolved
+    }
+
+    private fun FeedPostDto.asEntityPreservingLocation(
+        accountId: String,
+        sortOrder: Long,
+        fallbackLocations: Map<String, String> = emptyMap(),
+    ) = run {
+        val remoteLocation = location?.trim()?.takeIf(String::isNotBlank)
+        val effectiveLocation = if (remoteLocation != null) {
+            postLocationRegistry?.record(id, remoteLocation)
+            remoteLocation
+        } else {
+            postLocationRegistry?.get(id)
+                ?: fallbackLocations[id]?.trim()?.takeIf(String::isNotBlank)
+        }
+        val normalizedDto = if (effectiveLocation != null && remoteLocation == null) {
+            copy(location = effectiveLocation)
+        } else {
+            this
+        }
+        normalizedDto.asEntity(accountId = accountId, sortOrder = sortOrder)
     }
 
     private fun storageKey(accountId: String, kind: FeedKind): String = when (kind) {

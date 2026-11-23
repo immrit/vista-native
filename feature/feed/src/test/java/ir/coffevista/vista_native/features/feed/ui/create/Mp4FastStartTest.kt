@@ -132,6 +132,39 @@ class Mp4FastStartTest {
         assertFalse(output.exists())
     }
 
+    @Test
+    fun relocateMoovToFront_rewritesExtendToEofMoovSizeBeforeMdat() {
+        val ftyp = box("ftyp", "isom".toByteArray() + ByteArray(8))
+        val payload = byteArrayOf(5, 6, 7, 8, 9, 10, 11, 12)
+        val mdat = box("mdat", payload)
+        val origChunkOffset = ftyp.size + 8L
+        val stco = fullBox("stco", entryCount = 1, offsets = longArrayOf(origChunkOffset))
+        val moov = box("moov", box("trak", box("mdia", box("minf", box("stbl", stco)))))
+        // Simulate trailing moov with size32 == 0 ("extends to EOF").
+        val eofMoov = moov.copyOf().apply {
+            ByteBuffer.wrap(this, 0, 4).order(ByteOrder.BIG_ENDIAN).putInt(0)
+        }
+
+        val input = tempFolder.newFile("eof_moov.mp4").apply {
+            writeBytes(ftyp + mdat + eofMoov)
+        }
+        val output = File(tempFolder.root, "eof_moov_fast.mp4")
+
+        assertTrue(Mp4FastStart.relocateMoovToFront(input, output))
+        assertTrue(Mp4FastStart.isFastStart(output))
+        assertEquals(input.length(), output.length())
+
+        val outBytes = output.readBytes()
+        val relocatedMoovSize = ByteBuffer.wrap(outBytes, ftyp.size, 4).order(ByteOrder.BIG_ENDIAN).int
+        assertEquals(moov.size, relocatedMoovSize)
+        val patchedOffsets = readStcoOffsets(outBytes)
+        assertEquals(listOf(origChunkOffset.toInt() + moov.size), patchedOffsets)
+        assertArrayEquals(
+            payload,
+            outBytes.copyOfRange(patchedOffsets[0], patchedOffsets[0] + payload.size),
+        )
+    }
+
     private fun box(type: String, payload: ByteArray): ByteArray {
         val total = 8 + payload.size
         return ByteBuffer.allocate(total).order(ByteOrder.BIG_ENDIAN).apply {

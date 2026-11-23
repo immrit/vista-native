@@ -54,6 +54,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalLayoutDirection
 import ir.coffevista.vista_native.core.designsystem.component.rememberBufferedTextState
+import ir.coffevista.vista_native.core.designsystem.component.VistaViuStateIllustration
+import ir.coffevista.vista_native.core.designsystem.component.VistaViuStateKind
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
@@ -204,16 +207,24 @@ fun FollowersFollowingScreen(
                     }
                 } else if (activeList.isEmpty()) {
                     Box(
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier.fillMaxSize().padding(24.dp),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Text(
-                            text = if (uiState.searchQuery.isNotBlank()) "کاربری با این مشخصات یافت نشد"
-                            else if (uiState.selectedTab == 0) "هنوز دنبال‌کننده‌ای وجود ندارد"
-                            else "هنوز کاربری را دنبال نکرده‌اید",
-                            color = Color.Gray,
-                            fontSize = 14.sp,
-                        )
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            VistaViuStateIllustration(
+                                kind = if (uiState.searchQuery.isNotBlank()) VistaViuStateKind.SearchEmpty else VistaViuStateKind.Empty,
+                                size = 140.dp,
+                            )
+                            Spacer(Modifier.height(10.dp))
+                            Text(
+                                text = if (uiState.searchQuery.isNotBlank()) "کاربری با این مشخصات یافت نشد"
+                                else if (uiState.selectedTab == 0) "هنوز دنبال‌کننده‌ای وجود ندارد"
+                                else "هنوز کاربری را دنبال نکرده‌اید",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 14.sp,
+                                textAlign = TextAlign.Center,
+                            )
+                        }
                     }
                 } else {
                     LazyColumn(

@@ -2,7 +2,9 @@ package ir.coffevista.vista_native.features.startup
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.material3.MaterialTheme
@@ -17,6 +19,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import ir.coffevista.vista_native.core.designsystem.component.VistaButton
+import ir.coffevista.vista_native.core.designsystem.component.VistaViuStateIllustration
+import ir.coffevista.vista_native.core.designsystem.component.VistaViuStateKind
 import ir.coffevista.vista_native.core.network.SystemGateMonitor
 import kotlinx.coroutines.delay
 
@@ -47,6 +51,11 @@ fun MaintenanceScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
+        VistaViuStateIllustration(
+            kind = VistaViuStateKind.Maintenance,
+            size = 160.dp,
+        )
+        Spacer(Modifier.height(16.dp))
         Text(
             text = title,
             style = MaterialTheme.typography.headlineSmall,

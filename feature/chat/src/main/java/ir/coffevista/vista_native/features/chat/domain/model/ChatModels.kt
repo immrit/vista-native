@@ -302,24 +302,18 @@ fun Message.inboxPreviewText(): String = attachment?.let { value ->
     chatMessageTypePreview(value.kind.name, secret = false)
 } ?: when (val value = content) {
     is MessageContent.Text -> {
-        DuelInviteParser.formatPreviewIfDuel(value.value, transportType)
-            ?: SessionAlertParser.formatPreview(value.value, transportType)
-            ?: SharedPostParser.tryParse(value.value)?.let { post ->
-                "📮 پست از ${post.authorName}"
-            }
-            ?: if (value.value.trim().startsWith("{") && value.value.trim().endsWith("}")) {
-                chatMessageTypePreview(transportType, secret = false) ?: "پیام جدید"
-            } else {
-                value.value
-            }
+        StructuredMessageFormatter.formatStructuredOrJsonPreview(
+            raw = value.value,
+            transportType = transportType,
+            sharedPostWithColon = false,
+        ) ?: value.value
     }
     is MessageContent.Structured -> {
-        DuelInviteParser.formatPreviewIfDuel(value.payload, transportType)
-            ?: SessionAlertParser.formatPreview(value.payload, transportType)
-            ?: SharedPostParser.tryParse(value.payload)?.let { post ->
-                "📮 پست از ${post.authorName}"
-            }
-            ?: chatMessageTypePreview(value.kind, secret = false)
+        StructuredMessageFormatter.formatStructuredOrJsonPreview(
+            raw = value.payload,
+            transportType = transportType ?: value.kind,
+            sharedPostWithColon = false,
+        ) ?: chatMessageTypePreview(value.kind, secret = false)
             ?: "پیام جدید"
     }
     MessageContent.Deleted -> "این پیام حذف شده است"
@@ -334,18 +328,14 @@ fun Conversation.inboxPreviewText(): String? = lastMessage
     ?.trim()
     ?.takeIf(String::isNotEmpty)
     ?.let { preview ->
-        DuelInviteParser.formatPreviewIfDuel(preview)
-            ?: SessionAlertParser.formatPreview(preview, lastMessageType)
-            ?: SharedPostParser.tryParse(preview)?.let { post ->
-                "📮 پست از ${post.authorName}"
-            }
-            ?: when {
-                preview.startsWith("wf:") -> "🎤 پیام صوتی"
-                preview.startsWith("{") && preview.endsWith("}") ->
-                    chatMessageTypePreview(lastMessageType, secret = false) ?: "پیام جدید"
-                preview.looksLikeOpaqueConversationPreview() -> if (type == ConversationType.SECRET) "🔒 پیام محرمانه" else "پیام جدید"
-                else -> preview
-            }
+        StructuredMessageFormatter.formatStructuredOrJsonPreview(
+            raw = preview,
+            transportType = lastMessageType,
+            sharedPostWithColon = false,
+        ) ?: when {
+            preview.looksLikeOpaqueConversationPreview() -> if (type == ConversationType.SECRET) "🔒 پیام محرمانه" else "پیام جدید"
+            else -> preview
+        }
     }
 
 private fun String.looksLikeOpaqueConversationPreview(): Boolean {

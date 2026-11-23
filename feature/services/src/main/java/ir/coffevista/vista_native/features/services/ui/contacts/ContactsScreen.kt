@@ -63,6 +63,9 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import ir.coffevista.vista_native.core.designsystem.component.VistaViuStateIllustration
+import ir.coffevista.vista_native.core.designsystem.component.VistaViuStateKind
+import ir.coffevista.vista_native.core.designsystem.component.inferVistaViuStateKind
 import coil.compose.AsyncImage
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
@@ -567,20 +570,11 @@ private fun EmptyContactsCard(
                 modifier = Modifier.padding(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(64.dp)
-                        .background(VistaBrandColors.Indigo.copy(alpha = 0.1f), CircleShape),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.People,
-                        contentDescription = null,
-                        tint = VistaBrandColors.Indigo,
-                        modifier = Modifier.size(32.dp),
-                    )
-                }
-                Spacer(modifier = Modifier.height(16.dp))
+                VistaViuStateIllustration(
+                    kind = VistaViuStateKind.Empty,
+                    size = 132.dp,
+                )
+                Spacer(modifier = Modifier.height(12.dp))
                 Text(
                     text = "هنوز از مخاطبینت کسی عضو ویستا نشده",
                     style = MaterialTheme.typography.titleMedium.copy(
@@ -638,25 +632,24 @@ private fun ErrorCard(
             .padding(24.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center,
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
         ) {
-            Icon(
-                imageVector = Icons.Rounded.ErrorOutline,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.error,
-                modifier = Modifier.size(24.dp),
+            VistaViuStateIllustration(
+                kind = inferVistaViuStateKind(message, isError = true),
+                size = 136.dp,
             )
-            Spacer(modifier = Modifier.width(8.dp))
+            Spacer(modifier = Modifier.height(10.dp))
             Text(
                 text = "خطا در بارگذاری مخاطبین",
                 style = MaterialTheme.typography.bodyMedium.copy(
                     fontFamily = VistaFontFamily,
                     color = MaterialTheme.vistaColors.contentSecondary,
                 ),
+                textAlign = TextAlign.Center,
             )
-            Spacer(modifier = Modifier.width(12.dp))
+            Spacer(modifier = Modifier.height(8.dp))
             TextButton(onClick = onRetry) {
                 Text(
                     text = "تلاش مجدد",

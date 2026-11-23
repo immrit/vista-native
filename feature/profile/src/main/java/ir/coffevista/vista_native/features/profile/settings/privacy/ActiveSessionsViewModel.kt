@@ -9,6 +9,8 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import ir.coffevista.vista_native.core.common.DeviceMetadataProvider
 import ir.coffevista.vista_native.core.common.SessionCredentialsProvider
+import ir.coffevista.vista_native.core.common.looksLikeJsonPayload
+import ir.coffevista.vista_native.core.network.BackendErrorParser
 import ir.coffevista.vista_native.core.security.BiometricAuthenticator
 import ir.coffevista.vista_native.core.security.SessionStore
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -361,11 +363,9 @@ class ActiveSessionsViewModel @Inject constructor(
 
     private fun parseApiErrorMessage(rawBody: String?): String? {
         if (rawBody.isNullOrBlank()) return null
-        return runCatching {
-            val obj = JSONObject(rawBody)
-            obj.optJSONObject("error")?.optString("message")?.takeIf(String::isNotBlank)
-                ?: obj.optString("message").takeIf(String::isNotBlank)
-        }.getOrNull()
+        val parsed = BackendErrorParser.parse(rawBody).message ?: return null
+        if (looksLikeJsonPayload(parsed)) return null
+        return parsed.takeIf { it.any { ch -> ch in '\u0600'..'\u06FF' } }
     }
 }
 

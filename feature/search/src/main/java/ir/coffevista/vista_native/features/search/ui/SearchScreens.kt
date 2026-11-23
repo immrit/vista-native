@@ -47,6 +47,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import ir.coffevista.vista_native.core.designsystem.component.LocalMiniPlayerSlot
 import ir.coffevista.vista_native.core.designsystem.component.VistaMiniPlayerHost
+import ir.coffevista.vista_native.core.designsystem.component.VistaViuStateIllustration
+import ir.coffevista.vista_native.core.designsystem.component.VistaViuStateKind
+import ir.coffevista.vista_native.core.designsystem.component.inferVistaViuStateKind
 import ir.coffevista.vista_native.core.designsystem.component.rememberBufferedTextState
 import ir.coffevista.vista_native.core.designsystem.component.rememberVistaHaptics
 import androidx.compose.ui.unit.Dp
@@ -591,14 +594,12 @@ private fun LauncherContent(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 24.dp),
+                            .padding(vertical = 20.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
-                        Icon(
-                            imageVector = Icons.Outlined.Tag,
-                            contentDescription = null,
-                            modifier = Modifier.size(44.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                        VistaViuStateIllustration(
+                            kind = VistaViuStateKind.SearchEmpty,
+                            size = 112.dp,
                         )
                         Spacer(Modifier.height(8.dp))
                         Text(
@@ -1072,12 +1073,13 @@ private fun EmptyContent() {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        SearchOffGlyph(
-            modifier = Modifier.size(52.dp),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        VistaViuStateIllustration(
+            kind = VistaViuStateKind.SearchEmpty,
+            size = 160.dp,
         )
         Spacer(Modifier.height(14.dp))
         Text("نتیجه‌ای پیدا نشد", style = MaterialTheme.typography.titleMedium)
+        Spacer(Modifier.height(4.dp))
         Text(
             "عبارت دیگری را امتحان کنید",
             style = MaterialTheme.typography.bodyMedium,
@@ -1096,6 +1098,11 @@ private fun ErrorContent(message: String?, onRetry: () -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
+        VistaViuStateIllustration(
+            kind = inferVistaViuStateKind(message, isError = true),
+            size = 152.dp,
+        )
+        Spacer(Modifier.height(12.dp))
         Text("جستجو انجام نشد", style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.height(6.dp))
         Text(

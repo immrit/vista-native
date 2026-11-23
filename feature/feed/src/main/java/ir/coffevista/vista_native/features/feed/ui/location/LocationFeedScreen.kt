@@ -43,6 +43,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import ir.coffevista.vista_native.core.designsystem.component.VistaViuStateIllustration
+import ir.coffevista.vista_native.core.designsystem.component.VistaViuStateKind
+import ir.coffevista.vista_native.core.designsystem.component.inferVistaViuStateKind
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -1031,21 +1034,11 @@ private fun EmptyLocationState(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Box(
-            modifier = Modifier
-                .size(64.dp)
-                .clip(CircleShape)
-                .background(Color(0xFFFF4B55).copy(alpha = 0.14f)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = Icons.Rounded.LocationOn,
-                contentDescription = null,
-                tint = Color(0xFFFF4B55),
-                modifier = Modifier.size(34.dp),
-            )
-        }
-        Spacer(Modifier.height(14.dp))
+        VistaViuStateIllustration(
+            kind = if (errorMessage != null) inferVistaViuStateKind(errorMessage, isError = true) else VistaViuStateKind.SearchEmpty,
+            size = 148.dp,
+        )
+        Spacer(Modifier.height(12.dp))
         Text(
             text = locationName,
             style = MaterialTheme.typography.titleMedium,
