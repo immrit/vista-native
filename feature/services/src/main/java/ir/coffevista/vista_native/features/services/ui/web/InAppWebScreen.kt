@@ -451,7 +451,7 @@ fun InAppWebScreen(
                                 // A scoped SSO surface must not inherit a prior broad web session.
                                 CookieManager.getInstance().removeAllCookies {
                                     CookieManager.getInstance().flush()
-                                    startLoad()
+                                    post { startLoad() }
                                 }
                             }
                         }

@@ -6,7 +6,6 @@
     <cache-path name="camera_photos" path="camera/" />
     <cache-path name="story_uploads" path="story_uploads/" />
     <cache-path name="story_shares" path="story_shares/" />
-    <cache-path name="updates" path="updates/" />
     <cache-path name="shared_incoming" path="shared_incoming/" />
     <files-path name="voice_files" path="voice/" />
     <external-cache-path name="external_shared_media" path="shared_media/" />

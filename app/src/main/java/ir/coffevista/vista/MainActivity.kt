@@ -86,9 +86,6 @@ class MainActivity : FragmentActivity() {
     private var routedSharedContent by mutableStateOf<ir.coffevista.vista_native.share.RoutedSharedContent?>(null)
     private var availableUpdate by mutableStateOf<ir.coffevista.vista_native.update.UpdateCheckResult?>(null)
     private var updateBarState by mutableStateOf<ir.coffevista.vista_native.features.shell.ShellUpdateBarState?>(null)
-    private var downloadedUpdateApk: java.io.File? = null
-    private var updateDownloadJob: Job? = null
-    private var pendingInstallAfterPermission = false
     private var lastUpdateCheckAtMillis = 0L
     private var shareIntentGeneration = 0L
     private var lastSignedInUserId: String? = null
@@ -417,57 +414,23 @@ class MainActivity : FragmentActivity() {
                             val isAppLocked = biometricUnlockRequired && sessionStore.isBiometricEnabled()
                             if (!isAppLocked) {
                                 availableUpdate?.takeIf { it.isMandatory }?.let { update ->
-                                    val bar = updateBarState
-                                    val downloading = bar?.stage == ir.coffevista.vista_native.features.shell.ShellUpdateStage.Downloading ||
-                                        bar?.stage == ir.coffevista.vista_native.features.shell.ShellUpdateStage.Verifying
-                                    val readyToInstall = bar?.stage == ir.coffevista.vista_native.features.shell.ShellUpdateStage.ReadyToInstall
                                     androidx.compose.material3.AlertDialog(
                                         onDismissRequest = { /* Mandatory update cannot be dismissed */ },
                                         title = {
                                             Text(text = "به‌روزرسانی ضروری ویستا")
                                         },
                                         text = {
-                                            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                                Text(
-                                                    text = buildString {
-                                                        append("نسخه ")
-                                                        append(update.versionName ?: "جدید")
-                                                        append(" ویستا آماده دریافت است.\nبرای ادامه استفاده از برنامه، لطفاً به نسخه جدید به‌روزرسانی کنید.")
-                                                    },
-                                                )
-                                                if (downloading && bar != null) {
-                                                    androidx.compose.material3.LinearProgressIndicator(
-                                                        progress = { bar.progress.coerceIn(0f, 1f) },
-                                                    )
-                                                    Text(
-                                                        text = if (bar.stage == ir.coffevista.vista_native.features.shell.ShellUpdateStage.Verifying) {
-                                                            "در حال بررسی فایل..."
-                                                        } else {
-                                                            "در حال دریافت: ${(bar.progress * 100f).toInt()}%"
-                                                        },
-                                                        style = MaterialTheme.typography.bodySmall,
-                                                    )
-                                                } else if (bar?.stage == ir.coffevista.vista_native.features.shell.ShellUpdateStage.Error && !bar.errorMessage.isNullOrBlank()) {
-                                                    Text(
-                                                        text = bar.errorMessage.orEmpty(),
-                                                        color = MaterialTheme.colorScheme.error,
-                                                        style = MaterialTheme.typography.bodySmall,
-                                                    )
-                                                }
-                                            }
+                                            Text(
+                                                text = buildString {
+                                                    append("نسخه ")
+                                                    append(update.versionName ?: "جدید")
+                                                    append(" ویستا منتشر شده است.\nبرای ادامه استفاده از برنامه، لطفاً از کافه‌بازار به‌روزرسانی کنید.")
+                                                },
+                                            )
                                         },
                                         confirmButton = {
-                                            Button(
-                                                enabled = bar?.stage != ir.coffevista.vista_native.features.shell.ShellUpdateStage.Verifying,
-                                                onClick = ::handleUpdateBarClick,
-                                            ) {
-                                                Text(
-                                                    when {
-                                                        downloading -> "لغو دریافت"
-                                                        readyToInstall -> "نصب نسخه جدید"
-                                                        else -> "به‌روزرسانی"
-                                                    },
-                                                )
+                                            Button(onClick = ::handleUpdateBarClick) {
+                                                Text("به‌روزرسانی در بازار")
                                             }
                                         },
                                         dismissButton = null,
@@ -541,18 +504,6 @@ class MainActivity : FragmentActivity() {
         reconcilePendingChatNotification()
         if (System.currentTimeMillis() - lastUpdateCheckAtMillis >= 15 * 60 * 1000L) {
             checkForAppUpdate(showUpToDateToast = false)
-        }
-    }
-
-    override fun onResume() {
-        super.onResume()
-        if (pendingInstallAfterPermission) {
-            pendingInstallAfterPermission = false
-            if (vistaUpdateManager.canInstallPackages()) {
-                downloadedUpdateApk?.takeIf { it.exists() }?.let { apk ->
-                    vistaUpdateManager.installApk(apk)
-                }
-            }
         }
     }
 
@@ -635,34 +586,23 @@ class MainActivity : FragmentActivity() {
             )
             if (result.updateAvailable) {
                 availableUpdate = result
-                val currentBar = updateBarState
-                val alreadyDownloadingSame = currentBar != null &&
-                    currentBar.versionCode == result.versionCode &&
-                    (currentBar.stage == ir.coffevista.vista_native.features.shell.ShellUpdateStage.Downloading ||
-                        currentBar.stage == ir.coffevista.vista_native.features.shell.ShellUpdateStage.Verifying)
-                if (!alreadyDownloadingSame) {
-                    val cachedApk = vistaUpdateManager.getCachedValidApk(result.versionCode, result.sha256)
-                    downloadedUpdateApk = cachedApk
-                    updateBarState = ir.coffevista.vista_native.features.shell.ShellUpdateBarState(
-                        versionCode = result.versionCode,
-                        versionName = result.versionName ?: "جدید",
-                        fileSizeBytes = result.fileSizeBytes,
-                        releaseNotes = result.releaseNotes.orEmpty(),
-                        isMandatory = result.isMandatory,
-                        stage = if (cachedApk != null) {
-                            ir.coffevista.vista_native.features.shell.ShellUpdateStage.ReadyToInstall
-                        } else {
-                            ir.coffevista.vista_native.features.shell.ShellUpdateStage.Available
-                        },
-                        progress = if (cachedApk != null) 1f else 0f,
-                        downloadedBytes = if (cachedApk != null) cachedApk.length() else 0L,
-                        totalBytes = result.fileSizeBytes,
-                    )
+                updateBarState = ir.coffevista.vista_native.features.shell.ShellUpdateBarState(
+                    versionCode = result.versionCode,
+                    versionName = result.versionName ?: "جدید",
+                    fileSizeBytes = 0L,
+                    releaseNotes = result.releaseNotes.orEmpty(),
+                    isMandatory = result.isMandatory,
+                    stage = ir.coffevista.vista_native.features.shell.ShellUpdateStage.Available,
+                    progress = 0f,
+                    downloadedBytes = 0L,
+                    totalBytes = 0L,
+                )
+                if (showUpToDateToast) {
+                    vistaUpdateManager.openStoreForUpdate()
                 }
             } else {
                 availableUpdate = null
                 updateBarState = null
-                downloadedUpdateApk = null
                 if (showUpToDateToast) {
                     android.widget.Toast.makeText(
                         this@MainActivity,
@@ -675,125 +615,10 @@ class MainActivity : FragmentActivity() {
     }
 
     private fun handleUpdateBarClick() {
-        val update = availableUpdate ?: return
-        val currentBar = updateBarState ?: return
-        when (currentBar.stage) {
-            ir.coffevista.vista_native.features.shell.ShellUpdateStage.Downloading -> {
-                updateDownloadJob?.cancel()
-                updateDownloadJob = null
-                updateBarState = currentBar.copy(
-                    stage = ir.coffevista.vista_native.features.shell.ShellUpdateStage.Available,
-                    progress = 0f,
-                    downloadedBytes = 0L,
-                    errorMessage = null,
-                )
-            }
-            ir.coffevista.vista_native.features.shell.ShellUpdateStage.Verifying -> Unit
-            ir.coffevista.vista_native.features.shell.ShellUpdateStage.ReadyToInstall -> {
-                val cached = downloadedUpdateApk?.takeIf { it.exists() }
-                    ?: vistaUpdateManager.getCachedValidApk(update.versionCode, update.sha256)
-                if (cached != null) {
-                    downloadedUpdateApk = cached
-                    launchApkInstaller(cached)
-                } else {
-                    startUpdateDownload(update, currentBar)
-                }
-            }
-            ir.coffevista.vista_native.features.shell.ShellUpdateStage.Available,
-            ir.coffevista.vista_native.features.shell.ShellUpdateStage.Error -> {
-                val downloadUrl = update.downloadUrl?.takeIf(String::isNotBlank)
-                if (downloadUrl == null) {
-                    vistaUpdateManager.openStoreForUpdate()
-                } else {
-                    startUpdateDownload(update, currentBar)
-                }
-            }
-        }
-    }
-
-    private fun startUpdateDownload(
-        update: ir.coffevista.vista_native.update.UpdateCheckResult,
-        currentBar: ir.coffevista.vista_native.features.shell.ShellUpdateBarState,
-    ) {
-        updateDownloadJob?.cancel()
-        updateBarState = currentBar.copy(
-            stage = ir.coffevista.vista_native.features.shell.ShellUpdateStage.Downloading,
-            progress = 0f,
-            downloadedBytes = 0L,
-            totalBytes = update.fileSizeBytes,
-            errorMessage = null,
-        )
-        updateDownloadJob = lifecycleScope.launch {
-            val result = vistaUpdateManager.downloadApk(
-                update = update,
-                onProgress = { copied, total ->
-                    val resolvedTotal = if (total > 0L) total else update.fileSizeBytes
-                    val fraction = if (resolvedTotal > 0L) {
-                        (copied.toFloat() / resolvedTotal.toFloat()).coerceIn(0f, 1f)
-                    } else {
-                        0f
-                    }
-                    runOnUiThread {
-                        updateBarState = updateBarState?.copy(
-                            stage = ir.coffevista.vista_native.features.shell.ShellUpdateStage.Downloading,
-                            progress = fraction,
-                            downloadedBytes = copied,
-                            totalBytes = resolvedTotal,
-                        )
-                    }
-                },
-                onVerifying = {
-                    runOnUiThread {
-                        updateBarState = updateBarState?.copy(
-                            stage = ir.coffevista.vista_native.features.shell.ShellUpdateStage.Verifying,
-                            progress = 1f,
-                        )
-                    }
-                },
-            )
-            when (result) {
-                is ir.coffevista.vista_native.update.ApkDownloadResult.ReadyToInstall -> {
-                    downloadedUpdateApk = result.apkFile
-                    updateBarState = updateBarState?.copy(
-                        stage = ir.coffevista.vista_native.features.shell.ShellUpdateStage.ReadyToInstall,
-                        progress = 1f,
-                        downloadedBytes = result.apkFile.length(),
-                        errorMessage = null,
-                    )
-                    launchApkInstaller(result.apkFile)
-                }
-                is ir.coffevista.vista_native.update.ApkDownloadResult.Failed -> {
-                    updateBarState = updateBarState?.copy(
-                        stage = ir.coffevista.vista_native.features.shell.ShellUpdateStage.Error,
-                        errorMessage = result.message,
-                    )
-                    android.widget.Toast.makeText(
-                        this@MainActivity,
-                        result.message,
-                        android.widget.Toast.LENGTH_LONG,
-                    ).show()
-                }
-                ir.coffevista.vista_native.update.ApkDownloadResult.Cancelled -> Unit
-            }
-        }
-    }
-
-    private fun launchApkInstaller(apkFile: java.io.File) {
-        if (!vistaUpdateManager.canInstallPackages()) {
-            pendingInstallAfterPermission = true
+        if (!vistaUpdateManager.openStoreForUpdate()) {
             android.widget.Toast.makeText(
                 this@MainActivity,
-                "لطفاً اجازه نصب برنامه از این منبع را فعال کنید",
-                android.widget.Toast.LENGTH_LONG,
-            ).show()
-            vistaUpdateManager.openUnknownSourcesSettings()
-            return
-        }
-        val launched = vistaUpdateManager.installApk(apkFile)
-        if (!launched) {
-            android.widget.Toast.makeText(
-                this@MainActivity,
-                "باز کردن نصب‌کننده اندروید با خطا مواجه شد",
+                "امکان باز کردن صفحهٔ ویستا در کافه‌بازار وجود ندارد",
                 android.widget.Toast.LENGTH_SHORT,
             ).show()
         }
