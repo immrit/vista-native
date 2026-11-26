@@ -136,7 +136,7 @@ fun VistaNotchMetaballHeader(
     val titleScale = androidx.compose.ui.util.lerp(1.0f, 0.84f, collapseProgress)
     val totalHeaderHeight = maxOf(statusBarTop + 56.dp, currentTitleTopY + 52.dp)
 
-    val glassPillTint = if (isDark) Color(0xFF1A222C) else Color(0xFFFFFFFF)
+    val glassPillTint = if (isDark) Color(0xFF16191E) else Color(0xFFFFFFFF)
     val glassPillAlpha = if (isDark) 0.58f else 0.64f
 
     Box(
@@ -554,7 +554,7 @@ fun VistaProfileGlassActionButton(
         else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
     }
     val cardShape = RoundedCornerShape(16.dp)
-    val cardTint = if (isDark) Color(0xFF1A222C) else Color(0xFFFFFFFF)
+    val cardTint = if (isDark) Color(0xFF16191E) else Color(0xFFFFFFFF)
     Column(
         modifier = modifier
             .height(58.dp)
@@ -630,7 +630,7 @@ fun VistaSegmentedGlassTabs(
     val isDark = isSystemInDarkTheme()
     val containerShape = RoundedCornerShape(22.dp)
     val itemShape = RoundedCornerShape(18.dp)
-    val containerTint = if (isDark) Color(0xFF1A222C) else Color(0xFFFFFFFF)
+    val containerTint = if (isDark) Color(0xFF16191E) else Color(0xFFFFFFFF)
 
     Box(
         modifier = modifier.fillMaxWidth(),

@@ -96,7 +96,7 @@ object VistaShareSheetTokens {
     val CircleBorder = Color(0xFF383B44)
     val DividerColor = Color(0xFF2A2C32)
     val HandleColor = Color(0xFF52555E)
-    val AccentBlue = VistaBrandColors.Indigo
+    val AccentBlue = VistaBrandColors.ViuBlue
     val TextPrimary = Color.White
     val TextSecondary = Color(0xFFA0A4B0)
 }

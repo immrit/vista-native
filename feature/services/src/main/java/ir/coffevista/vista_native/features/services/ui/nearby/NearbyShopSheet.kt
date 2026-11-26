@@ -106,7 +106,7 @@ fun NearbyShopSheet(
                                 .clip(CircleShape)
                                 .background(
                                     Brush.linearGradient(
-                                        listOf(Color(0xFFF59E0B), Color(0xFFEC4899)),
+                                        listOf(Color(0xFFF59E0B), Color(0xFFF0543B)),
                                     ),
                                 ),
                             contentAlignment = Alignment.Center,
@@ -145,7 +145,7 @@ fun NearbyShopSheet(
                 // Wallet summary strip
                 Surface(
                     shape = RoundedCornerShape(16.dp),
-                    color = Color(0xFF1C1E2E),
+                    color = Color(0xFF1B1E23),
                     border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
                     modifier = Modifier.fillMaxWidth(),
                 ) {
@@ -186,8 +186,8 @@ fun NearbyShopSheet(
                     Spacer(modifier = Modifier.height(10.dp))
                     Surface(
                         shape = RoundedCornerShape(14.dp),
-                        color = VistaBrandColors.Indigo.copy(alpha = 0.18f),
-                        border = BorderStroke(1.dp, VistaBrandColors.Indigo.copy(alpha = 0.45f)),
+                        color = VistaBrandColors.ViuBlueDeep.copy(alpha = 0.18f),
+                        border = BorderStroke(1.dp, VistaBrandColors.ViuBlueDeep.copy(alpha = 0.45f)),
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Row(
@@ -214,7 +214,7 @@ fun NearbyShopSheet(
                                 onClick = onVerifyPendingPayment,
                                 shape = RoundedCornerShape(10.dp),
                                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = VistaBrandColors.Indigo),
+                                colors = ButtonDefaults.buttonColors(containerColor = VistaBrandColors.ViuBlueDeep),
                             ) {
                                 Text("بررسی خرید", fontFamily = VistaFontFamily, fontSize = 11.sp)
                             }
@@ -264,7 +264,7 @@ fun NearbyShopSheet(
 
                 TabRow(
                     selectedTabIndex = selectedTab,
-                    containerColor = Color(0xFF1C1E2E),
+                    containerColor = Color(0xFF1B1E23),
                     contentColor = Color.White,
                     modifier = Modifier.clip(RoundedCornerShape(12.dp)),
                 ) {
@@ -303,7 +303,7 @@ fun NearbyShopSheet(
                             .height(220.dp),
                         contentAlignment = Alignment.Center,
                     ) {
-                        CircularProgressIndicator(color = VistaBrandColors.Indigo)
+                        CircularProgressIndicator(color = VistaBrandColors.ViuBlueDeep)
                     }
                 } else if (selectedTab == 0) {
                     LazyColumn(
@@ -359,7 +359,7 @@ private fun WalletStatChip(
         leadingIcon()
         Spacer(modifier = Modifier.width(8.dp))
         Column {
-            Text(text = label, fontFamily = VistaFontFamily, fontSize = 10.sp, color = Color(0xFF94A3B8))
+            Text(text = label, fontFamily = VistaFontFamily, fontSize = 11.sp, color = Color(0xFF94A3B8))
             Text(
                 text = value,
                 fontFamily = VistaFontFamily,
@@ -380,10 +380,10 @@ private fun ChatRequestPackRow(
 ) {
     Surface(
         shape = RoundedCornerShape(16.dp),
-        color = if (pack.isPopular) VistaBrandColors.Indigo.copy(alpha = 0.14f) else Color(0xFF1C1E2E),
+        color = if (pack.isPopular) VistaBrandColors.ViuBlueDeep.copy(alpha = 0.14f) else Color(0xFF1B1E23),
         border = BorderStroke(
             width = if (pack.isPopular) 1.5.dp else 1.dp,
-            color = if (pack.isPopular) VistaBrandColors.Indigo else Color.White.copy(alpha = 0.08f),
+            color = if (pack.isPopular) VistaBrandColors.ViuBlueDeep else Color.White.copy(alpha = 0.08f),
         ),
         modifier = Modifier.fillMaxWidth(),
     ) {
@@ -406,12 +406,12 @@ private fun ChatRequestPackRow(
                     if (pack.badge.isNotBlank()) {
                         Surface(
                             shape = RoundedCornerShape(8.dp),
-                            color = if (pack.isPopular) Color(0xFFEC4899) else Color(0xFFF59E0B).copy(alpha = 0.2f),
+                            color = if (pack.isPopular) Color(0xFFF0543B) else Color(0xFFF59E0B).copy(alpha = 0.2f),
                         ) {
                             Text(
                                 text = pack.badge,
                                 fontFamily = VistaFontFamily,
-                                fontSize = 10.sp,
+                                fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = if (pack.isPopular) Color.White else Color(0xFFFBBF24),
                                 modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
@@ -438,7 +438,7 @@ private fun ChatRequestPackRow(
                     onClick = onBuy,
                     enabled = !isBusy,
                     shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = VistaBrandColors.Indigo),
+                    colors = ButtonDefaults.buttonColors(containerColor = VistaBrandColors.ViuBlueDeep),
                 ) {
                     if (isBusy) {
                         CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = Color.White)
@@ -478,7 +478,7 @@ private fun CoinPackageRow(
 ) {
     Surface(
         shape = RoundedCornerShape(16.dp),
-        color = Color(0xFF1C1E2E),
+        color = Color(0xFF1B1E23),
         border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
         modifier = Modifier.fillMaxWidth(),
     ) {
@@ -509,7 +509,7 @@ private fun CoinPackageRow(
                             Text(
                                 text = "+${formatFarsiNumber(pkg.bonus)} هدیه",
                                 fontFamily = VistaFontFamily,
-                                fontSize = 10.sp,
+                                fontSize = 11.sp,
                                 color = Color(0xFF34D399),
                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                             )

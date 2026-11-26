@@ -49,6 +49,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import ir.coffevista.vista_native.core.designsystem.theme.vistaColors
 
 data class AdminEditPostResult(
     val content: String?,
@@ -126,7 +127,7 @@ fun VistaAdminEditPostDialog(
                 Icon(
                     imageVector = Icons.Default.CheckCircle,
                     contentDescription = null,
-                    tint = Color(0xFF6366F1),
+                    tint = MaterialTheme.vistaColors.viuBlue,
                     modifier = Modifier.size(26.dp),
                 )
                 Spacer(modifier = Modifier.width(8.dp))
@@ -341,7 +342,7 @@ fun VistaAdminEditPostDialog(
                     Icon(
                         imageVector = Icons.Default.Notifications,
                         contentDescription = null,
-                        tint = Color(0xFF6366F1),
+                        tint = MaterialTheme.vistaColors.viuBlue,
                         modifier = Modifier.size(18.dp),
                     )
                     Spacer(Modifier.width(6.dp))
@@ -368,13 +369,14 @@ fun VistaAdminEditPostDialog(
                 },
                 enabled = !isSubmitting,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF6366F1),
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
                 ),
             ) {
                 if (isSubmitting) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(18.dp),
-                        color = Color.White,
+                        color = MaterialTheme.colorScheme.onPrimary,
                         strokeWidth = 2.dp,
                     )
                 } else {

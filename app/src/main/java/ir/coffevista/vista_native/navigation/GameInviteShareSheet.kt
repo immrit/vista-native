@@ -60,6 +60,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import ir.coffevista.vista_native.core.designsystem.component.VistaVerificationBadge
+import ir.coffevista.vista_native.core.designsystem.theme.vistaColors
 import ir.coffevista.vista_native.features.chat.domain.model.ChatUser
 import ir.coffevista.vista_native.features.chat.domain.model.Conversation
 import ir.coffevista.vista_native.features.chat.domain.model.ConversationType
@@ -329,7 +330,7 @@ internal fun GameInviteShareModal(
                             modifier = Modifier
                                 .size(34.dp)
                                 .clip(RoundedCornerShape(10.dp))
-                                .background(Color(0xFF7C3AED)),
+                                .background(MaterialTheme.vistaColors.viuBlue),
                             contentAlignment = Alignment.Center,
                         ) {
                             Icon(
@@ -497,13 +498,16 @@ internal fun GameInviteShareModal(
                 Button(
                     onClick = { sendToSelectedConversations() },
                     enabled = selectedIds.isNotEmpty() && !isSending,
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C3AED)),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                    ),
                     shape = RoundedCornerShape(14.dp),
                     modifier = Modifier.fillMaxWidth().height(48.dp),
                 ) {
                     if (isSending) {
                         CircularProgressIndicator(
-                            color = Color.White,
+                            color = MaterialTheme.colorScheme.onPrimary,
                             strokeWidth = 2.dp,
                             modifier = Modifier.size(18.dp),
                         )

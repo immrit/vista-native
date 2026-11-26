@@ -87,7 +87,7 @@ import ir.coffevista.vista_native.core.designsystem.glass.VistaGlassState
 import ir.coffevista.vista_native.core.designsystem.glass.vistaGlassSource
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaBrandColors
 
-private val TelegramAccentBlue = VistaBrandColors.Indigo
+private val TelegramAccentBlue = VistaBrandColors.ViuBlueDeep
 
 /**
  * تب موسیقی درون‌برنامه‌ای در باتم‌شیت پیوست چت:
@@ -277,7 +277,7 @@ internal fun ChatAttachmentMusicTabContent(
                                             Brush.linearGradient(
                                                 listOf(
                                                     if (isPlaying) TelegramAccentBlue else TelegramAccentBlue.copy(alpha = 0.75f),
-                                                    VistaBrandColors.Indigo,
+                                                    VistaBrandColors.ViuBlueDeep,
                                                 ),
                                             ),
                                         )
@@ -568,7 +568,7 @@ internal fun ChatAttachmentFilesTabContent(
                                         )
                                         Text(
                                             text = file.extension.uppercase().take(4),
-                                            fontSize = 8.5.sp,
+                                            fontSize = 11.sp,
                                             fontWeight = FontWeight.ExtraBold,
                                             color = visual.color,
                                         )
@@ -613,12 +613,12 @@ private fun resolveFileBadgeVisual(extension: String): FileBadgeVisual {
     return when (extension.lowercase()) {
         "pdf" -> FileBadgeVisual(Icons.Default.PictureAsPdf, Color(0xFFE11D48))
         in VistaMediaBrowserHelpers.CHAT_ALLOWED_AUDIO_EXTENSIONS ->
-            FileBadgeVisual(Icons.Default.Audiotrack, Color(0xFF7C3AED))
+            FileBadgeVisual(Icons.Default.Audiotrack, Color(0xFFF0543B))
         in VistaMediaBrowserHelpers.CHAT_ALLOWED_VIDEO_EXTENSIONS ->
-            FileBadgeVisual(Icons.Default.VideoFile, VistaBrandColors.Violet)
+            FileBadgeVisual(Icons.Default.VideoFile, VistaBrandColors.ViuBlue)
         in VistaMediaBrowserHelpers.CHAT_ALLOWED_IMAGE_EXTENSIONS ->
             FileBadgeVisual(Icons.Default.Image, Color(0xFF0D9488))
-        else -> FileBadgeVisual(Icons.Default.Description, VistaBrandColors.Indigo)
+        else -> FileBadgeVisual(Icons.Default.Description, VistaBrandColors.ViuBlueDeep)
     }
 }
 

@@ -1,19 +1,32 @@
 package ir.coffevista.vista_native.features.services.ui
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -21,40 +34,50 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.rounded.Build
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.CloudOff
+import androidx.compose.material.icons.rounded.ContactPage
+import androidx.compose.material.icons.rounded.LockOpen
+import androidx.compose.material.icons.rounded.People
+import androidx.compose.material.icons.rounded.PersonAdd
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Schedule
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.IconButton
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
-import ir.coffevista.vista_native.core.designsystem.component.VistaMiniPlayerHost
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import ir.coffevista.vista_native.core.network.SystemGateMonitor
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
-import ir.coffevista.vista_native.core.designsystem.glass.VistaGlassScrollSync
-import ir.coffevista.vista_native.core.designsystem.glass.VistaGlassTokens
-import ir.coffevista.vista_native.core.designsystem.glass.rememberVistaGlassState
-import ir.coffevista.vista_native.core.designsystem.glass.vistaGlass
-import ir.coffevista.vista_native.core.designsystem.glass.vistaGlassSource
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -66,47 +89,72 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
-import androidx.compose.material.icons.rounded.Build
-import androidx.compose.material.icons.rounded.CloudOff
-import androidx.compose.material.icons.rounded.ContactPage
-import androidx.compose.material.icons.rounded.GridView
-import androidx.compose.material.icons.rounded.LockOpen
-import androidx.compose.material.icons.rounded.People
-import androidx.compose.material.icons.rounded.PersonAdd
-import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material.icons.rounded.Schedule
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Icon
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import ir.coffevista.vista_native.core.designsystem.component.VistaMiniPlayerHost
+import ir.coffevista.vista_native.core.designsystem.component.rememberVistaHaptics
+import ir.coffevista.vista_native.core.designsystem.component.rememberVistaShimmerBrush
+import ir.coffevista.vista_native.core.designsystem.glass.VistaGlassScrollSync
+import ir.coffevista.vista_native.core.designsystem.glass.VistaGlassTokens
+import ir.coffevista.vista_native.core.designsystem.glass.rememberVistaGlassState
+import ir.coffevista.vista_native.core.designsystem.glass.vistaGlass
+import ir.coffevista.vista_native.core.designsystem.glass.vistaGlassSource
+import ir.coffevista.vista_native.core.designsystem.icon.VistaIcons
 import ir.coffevista.vista_native.core.designsystem.theme.VistaFontFamily
 import ir.coffevista.vista_native.core.designsystem.theme.vistaColors
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaBrandColors
-import ir.coffevista.vista_native.features.services.data.ContactVistaUser
+import ir.coffevista.vista_native.core.network.RemoteServicesHubConfig
+import ir.coffevista.vista_native.core.network.SystemGateMonitor
 import ir.coffevista.vista_native.features.services.data.ServiceBanner
 import ir.coffevista.vista_native.features.services.data.ServiceMaintenance
 import ir.coffevista.vista_native.features.services.data.ServiceSection
 import ir.coffevista.vista_native.features.services.data.normalizedActiveSections
+import ir.coffevista.vista_native.features.services.data.normalizedHubSectionOrder
+import kotlinx.coroutines.delay
 
 private data class QuickButtonItem(
+    val key: String,
     val label: String,
     val subtitle: String,
     val kind: ServicesActionKind,
-    val motifNames: List<String>,
+    val iconName: String,
+    val badgeText: String,
+    val featured: Boolean,
     val gradientColors: List<Color>,
     val onClick: () -> Unit,
 )
+
+private fun Modifier.vistaCardPress(
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+): Modifier = composed {
+    val haptics = rememberVistaHaptics()
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed && enabled) 0.97f else 1f,
+        animationSpec = spring(
+            dampingRatio = 0.72f,
+            stiffness = Spring.StiffnessMediumLow,
+        ),
+        label = "vista_services_card_scale",
+    )
+    this
+        .graphicsLayer {
+            scaleX = scale
+            scaleY = scale
+        }
+        .clickable(
+            enabled = enabled,
+            interactionSource = interactionSource,
+            indication = ripple(bounded = true),
+            role = Role.Button,
+        ) {
+            haptics.tap()
+            onClick()
+        }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -123,50 +171,90 @@ fun ServicesScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val remoteConfig by SystemGateMonitor.remoteConfig.collectAsStateWithLifecycle()
+    val hubConfig = remoteConfig?.servicesHub ?: RemoteServicesHubConfig()
+    val isDarkServices = MaterialTheme.colorScheme.background.luminance() < 0.5f
+
+    val dispatchRoute: (String, String) -> Unit = remember(
+        onNavigateToNearby,
+        onNavigateToGame,
+        onNavigateToTopGroups,
+        onNavigateToContacts,
+        onNavigateToWeb,
+        onNavigateToSectionRoute,
+    ) {
+        { routeRaw, title ->
+            val route = routeRaw.trim()
+            when (route.lowercase()) {
+                "/nearby", "vista://nearby" -> onNavigateToNearby()
+                "/game", "/games", "vista://game", "vista://games" -> onNavigateToGame()
+                "/groups", "/group", "vista://groups", "vista://group" -> onNavigateToTopGroups()
+                "/contacts", "/contact", "vista://contacts", "vista://contact" -> onNavigateToContacts()
+                else -> if (route.startsWith("http", ignoreCase = true)) {
+                    onNavigateToWeb(route, title)
+                } else if (route.isNotEmpty()) {
+                    onNavigateToSectionRoute(route)
+                }
+            }
+        }
+    }
 
     val defaultQuickButtons = remember(
+        isDarkServices,
         onNavigateToNearby,
         onNavigateToGame,
         onNavigateToTopGroups,
         onNavigateToContacts,
     ) {
+        val groupsAccent = if (isDarkServices) Color(0xFFE5E7EB) else VistaBrandColors.InkBlack
         listOf(
             "nearby" to QuickButtonItem(
+                key = "nearby",
                 label = "اطراف من",
                 subtitle = "آدم‌های نزدیکت را پیدا کن",
                 kind = ServicesActionKind.NEARBY,
-                motifNames = listOf("location", "location", "location"),
-                gradientColors = listOf(VistaBrandColors.Indigo, VistaBrandColors.Violet),
+                iconName = "radar",
+                badgeText = "",
+                featured = true,
+                gradientColors = listOf(VistaBrandColors.ViuBlueDeep, VistaBrandColors.ViuBlue),
                 onClick = onNavigateToNearby,
             ),
             "game" to QuickButtonItem(
+                key = "game",
                 label = "بازی",
                 subtitle = "رقابت کن و امتیاز بگیر",
                 kind = ServicesActionKind.GAME,
-                motifNames = listOf("trophy", "bolt", "stars"),
-                gradientColors = listOf(Color(0xFFFF416C), Color(0xFFFF4B2B)),
+                iconName = "game",
+                badgeText = "رقابت",
+                featured = false,
+                gradientColors = listOf(VistaBrandColors.Coral, VistaBrandColors.CoralSoft),
                 onClick = onNavigateToGame,
             ),
             "groups" to QuickButtonItem(
+                key = "groups",
                 label = "گروه‌ها",
                 subtitle = "جمع‌های محبوب ویستا را ببین",
                 kind = ServicesActionKind.GROUPS,
-                motifNames = listOf("chat", "person_add", "chat"),
-                gradientColors = listOf(Color(0xFF11998E), Color(0xFF38EF7D)),
+                iconName = "groups",
+                badgeText = "",
+                featured = false,
+                gradientColors = listOf(groupsAccent, groupsAccent.copy(alpha = 0.85f)),
                 onClick = onNavigateToTopGroups,
             ),
             "contacts" to QuickButtonItem(
+                key = "contacts",
                 label = "مخاطبین",
                 subtitle = "دوستانت را در ویستا پیدا کن",
                 kind = ServicesActionKind.CONTACTS,
-                motifNames = listOf("person_add", "phone", "phone"),
-                gradientColors = listOf(Color(0xFF00B4DB), Color(0xFF0083B0)),
+                iconName = "contacts",
+                badgeText = "",
+                featured = false,
+                gradientColors = listOf(VistaBrandColors.ViuBlue, VistaBrandColors.ViuBlueDeep),
                 onClick = onNavigateToContacts,
             ),
         )
     }
 
-    val quickButtons = remember(defaultQuickButtons, remoteConfig) {
+    val quickButtons = remember(defaultQuickButtons, remoteConfig, dispatchRoute) {
         val overrides = remoteConfig?.quickServices.orEmpty()
         if (overrides.isEmpty()) {
             defaultQuickButtons.map { it.second }
@@ -176,25 +264,56 @@ fun ServicesScreen(
                 .filter { it.enabled }
                 .sortedBy { it.sortOrder }
                 .mapNotNull { ov ->
-                    val base = baseMap[ov.key] ?: return@mapNotNull null
+                    val base = baseMap[ov.key]
                     val parsedColors = listOfNotNull(
-                        runCatching { Color(android.graphics.Color.parseColor(ov.gradientStart)) }.getOrNull(),
-                        runCatching { Color(android.graphics.Color.parseColor(ov.gradientEnd)) }.getOrNull(),
-                    ).takeIf { it.size == 2 } ?: base.gradientColors
-                    base.copy(
-                        label = ov.title.ifBlank { base.label },
-                        subtitle = ov.subtitle.ifBlank { base.subtitle },
-                        gradientColors = parsedColors,
-                    )
+                        parseHexColorOrNull(ov.gradientStart),
+                        parseHexColorOrNull(ov.gradientEnd),
+                    ).takeIf { it.size == 2 }
+                    if (base != null) {
+                        val route = ov.route.trim()
+                        val clickHandler = if (route.isNotBlank()) {
+                            { dispatchRoute(route, ov.title.ifBlank { base.label }) }
+                        } else {
+                            base.onClick
+                        }
+                        base.copy(
+                            label = ov.title.ifBlank { base.label },
+                            subtitle = ov.subtitle.ifBlank { base.subtitle },
+                            iconName = ov.icon.ifBlank { base.iconName },
+                            badgeText = ov.badgeText,
+                            featured = ov.featured || (ov.key == "nearby" && overrides.none { it.featured }),
+                            gradientColors = parsedColors ?: base.gradientColors,
+                            onClick = clickHandler,
+                        )
+                    } else {
+                        val title = ov.title.trim()
+                        val route = ov.route.trim()
+                        if (title.isBlank() || route.isBlank()) return@mapNotNull null
+                        QuickButtonItem(
+                            key = ov.key,
+                            label = title,
+                            subtitle = ov.subtitle.ifBlank { "باز کردن سرویس" },
+                            kind = ServicesActionKind.CUSTOM,
+                            iconName = ov.icon.ifBlank { "grid" },
+                            badgeText = ov.badgeText,
+                            featured = ov.featured,
+                            gradientColors = parsedColors
+                                ?: listOf(VistaBrandColors.ViuBlueDeep, VistaBrandColors.ViuBlue),
+                            onClick = { dispatchRoute(route, title) },
+                        )
+                    }
                 }
         }
+    }
+
+    val blockOrder = remember(hubConfig.sectionOrder) {
+        normalizedHubSectionOrder(hubConfig.sectionOrder)
     }
 
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
         val servicesGlassState = rememberVistaGlassState()
         val servicesListState = rememberLazyListState()
         VistaGlassScrollSync(servicesGlassState, servicesListState)
-        val isDarkServices = MaterialTheme.colorScheme.background.luminance() < 0.5f
 
         Scaffold(
             modifier = modifier.fillMaxSize(),
@@ -207,43 +326,83 @@ fun ServicesScreen(
                             .vistaGlass(
                                 state = servicesGlassState,
                                 shape = RectangleShape,
-                                tint = if (isDarkServices) Color(0xFF1A222C) else Color(0xFFFFFFFF),
+                                tint = if (isDarkServices) Color(0xFF16181C) else Color(0xFFFFFFFF),
                                 isDark = isDarkServices,
                                 blurRadius = VistaGlassTokens.BarBlur,
-                                tintAlphaOverride = if (isDarkServices) 0.58f else 0.62f,
+                                tintAlphaOverride = if (isDarkServices) 0.72f else 0.78f,
                                 drawHighlight = true,
                                 rimWidth = 0.dp,
-                                shadowElevation = 3.dp,
+                                shadowElevation = 2.dp,
                             ),
                     ) {
-                        ir.coffevista.vista_native.core.designsystem.component.VistaAppBarAmbientOverlay(
-                            modifier = Modifier.matchParentSize(),
-                        )
                         TopAppBar(
                             title = {
-                                Text(
-                                    text = "سرویس‌ها",
-                                    style = MaterialTheme.typography.headlineMedium.copy(
-                                        fontFamily = VistaFontFamily,
-                                        fontWeight = FontWeight.Black,
-                                        fontSize = 22.sp,
-                                        color = MaterialTheme.colorScheme.onBackground,
-                                        letterSpacing = (-0.4).sp,
-                                    ),
-                                )
+                                Column {
+                                    Text(
+                                        text = hubConfig.headerTitle.ifBlank { "سرویس‌ها" },
+                                        style = MaterialTheme.typography.headlineMedium.copy(
+                                            fontFamily = VistaFontFamily,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            fontSize = 21.sp,
+                                            color = MaterialTheme.colorScheme.onBackground,
+                                            letterSpacing = (-0.4).sp,
+                                        ),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                    if (hubConfig.headerSubtitle.isNotBlank()) {
+                                        Text(
+                                            text = hubConfig.headerSubtitle,
+                                            style = MaterialTheme.typography.bodySmall.copy(
+                                                fontFamily = VistaFontFamily,
+                                                fontSize = 11.sp,
+                                                color = MaterialTheme.vistaColors.contentSecondary,
+                                            ),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
+                                }
                             },
                             actions = {
-                                IconButton(
-                                    onClick = { viewModel.refresh() },
-                                    modifier = Modifier.semantics {
-                                        contentDescription = "به‌روزرسانی"
-                                    },
+                                val refreshTransition = rememberInfiniteTransition(label = "services_refresh_spin")
+                                val spinAngle by refreshTransition.animateFloat(
+                                    initialValue = 0f,
+                                    targetValue = 360f,
+                                    animationSpec = infiniteRepeatable(
+                                        animation = tween(durationMillis = 850, easing = LinearEasing),
+                                        repeatMode = RepeatMode.Restart,
+                                    ),
+                                    label = "spin",
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .padding(end = 10.dp)
+                                        .size(38.dp)
+                                        .clip(CircleShape)
+                                        .background(
+                                            MaterialTheme.colorScheme.surfaceVariant.copy(
+                                                alpha = if (isDarkServices) 0.55f else 0.65f,
+                                            ),
+                                        )
+                                        .border(
+                                            width = 0.75.dp,
+                                            color = MaterialTheme.colorScheme.outlineVariant,
+                                            shape = CircleShape,
+                                        )
+                                        .vistaCardPress { viewModel.refresh() }
+                                        .semantics { contentDescription = "به‌روزرسانی" },
+                                    contentAlignment = Alignment.Center,
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Rounded.Refresh,
+                                        imageVector = VistaIcons.Refresh,
                                         contentDescription = "به‌روزرسانی",
                                         tint = MaterialTheme.colorScheme.onBackground,
-                                        modifier = Modifier.size(24.dp),
+                                        modifier = Modifier
+                                            .size(19.dp)
+                                            .graphicsLayer {
+                                                rotationZ = if (state.isRefreshing) spinAngle else 0f
+                                            },
                                     )
                                 }
                             },
@@ -277,116 +436,223 @@ fun ServicesScreen(
                         state = servicesListState,
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(
-                            top = innerPadding.calculateTopPadding(),
-                            bottom = 120.dp,
+                            top = innerPadding.calculateTopPadding() + 6.dp,
+                            bottom = 124.dp,
                         ),
                     ) {
-                    // 1. Dynamic Banners ("برای شما")
-                    when (val hub = state.hubState) {
-                        is ServicesHubUiState.Success -> {
-                            val banners = hub.data.banners.filter { it.isActive }
-                                .sortedWith(compareBy({ it.sortOrder }, { it.id }))
-                            if (banners.isNotEmpty()) {
-                                item {
-                                    SectionHeading(
-                                        title = "برای شما",
-                                        subtitle = "انتخاب‌های تازه ویستا",
-                                    )
-                                }
-                                items(banners, key = { it.id }) { banner ->
-                                    Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 5.dp)) {
-                                        BannerCard(
-                                            banner = banner,
-                                            onBannerClick = {
-                                                if (banner.link.isNotBlank() && banner.linkType != "none") {
-                                                    if (banner.linkType == "web" || banner.link.startsWith("http")) {
-                                                        onNavigateToWeb(banner.link, banner.title)
-                                                    } else {
-                                                        onNavigateToSectionRoute(banner.link)
+                        if (hubConfig.announcementText.isNotBlank()) {
+                            item(key = "hub_announcement") {
+                                HubAnnouncementStrip(
+                                    text = hubConfig.announcementText,
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                                )
+                            }
+                        }
+
+                        blockOrder.forEach { blockKey ->
+                            when (blockKey) {
+                                "banners" -> if (hubConfig.showBanners) {
+                                    when (val hub = state.hubState) {
+                                        is ServicesHubUiState.Loading -> {
+                                            item(key = "banners_shimmer") {
+                                                BannerLoadingSkeleton()
+                                            }
+                                        }
+                                        is ServicesHubUiState.Success -> {
+                                            val banners = hub.data.banners
+                                                .filter { it.isActive }
+                                                .sortedWith(compareBy({ it.sortOrder }, { it.id }))
+                                            if (banners.isNotEmpty()) {
+                                                item(key = "banners_heading") {
+                                                    SectionHeading(
+                                                        title = hubConfig.bannersTitle.ifBlank { "برای شما" },
+                                                        subtitle = hubConfig.bannersSubtitle,
+                                                    )
+                                                }
+                                                if (hubConfig.bannersLayout == "carousel" && banners.size > 1) {
+                                                    item(key = "banners_carousel") {
+                                                        BannersCarousel(
+                                                            banners = banners,
+                                                            autoPlay = hubConfig.bannerAutoPlay,
+                                                            onBannerClick = { banner ->
+                                                                if (banner.link.isNotBlank() && banner.linkType != "none") {
+                                                                    if (banner.linkType == "web" || banner.link.startsWith("http")) {
+                                                                        onNavigateToWeb(banner.link, banner.title)
+                                                                    } else {
+                                                                        onNavigateToSectionRoute(banner.link)
+                                                                    }
+                                                                }
+                                                            },
+                                                        )
+                                                    }
+                                                } else {
+                                                    items(banners, key = { "banner_${it.id}" }) { banner ->
+                                                        Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 5.dp)) {
+                                                            BannerCard(
+                                                                banner = banner,
+                                                                onBannerClick = {
+                                                                    if (banner.link.isNotBlank() && banner.linkType != "none") {
+                                                                        if (banner.linkType == "web" || banner.link.startsWith("http")) {
+                                                                            onNavigateToWeb(banner.link, banner.title)
+                                                                        } else {
+                                                                            onNavigateToSectionRoute(banner.link)
+                                                                        }
+                                                                    }
+                                                                },
+                                                            )
+                                                        }
                                                     }
                                                 }
-                                            },
+                                            }
+                                        }
+                                        is ServicesHubUiState.Error -> Unit
+                                    }
+                                }
+
+                                "quick_services" -> if (hubConfig.showQuickServices && quickButtons.isNotEmpty()) {
+                                    item(key = "quick_heading") {
+                                        SectionHeading(
+                                            title = hubConfig.quickTitle.ifBlank { "دسترسی سریع" },
+                                            subtitle = hubConfig.quickSubtitle,
+                                        )
+                                    }
+                                    item(key = "quick_content") {
+                                        QuickServicesSection(
+                                            buttons = quickButtons,
+                                            layout = hubConfig.quickLayout,
+                                            isDark = isDarkServices,
+                                            modifier = Modifier.padding(horizontal = 16.dp),
                                         )
                                     }
                                 }
-                            }
-                        }
-                        else -> Unit
-                    }
 
-                    // 2. Quick Actions Grid ("دسترسی سریع")
-                    item {
-                        SectionHeading(
-                            title = "دسترسی سریع",
-                            subtitle = "مسیرهای پرکاربرد",
-                        )
-                    }
-
-                    item {
-                        QuickButtonsGrid(
-                            buttons = quickButtons,
-                            modifier = Modifier.padding(horizontal = 16.dp),
-                        )
-                    }
-
-                    // 3. Contacts Rail ("آشناها در ویستا")
-                    item {
-                        ContactsHorizontalSection(
-                            state = state.contactsState,
-                            onAllContactsClick = onNavigateToContacts,
-                            onContactClick = onNavigateToUserProfile,
-                            onRetry = { viewModel.loadHub() },
-                            onGrantPermission = onNavigateToContacts,
-                        )
-                    }
-
-                    // 4. Managed Dynamic Sections Rail ("سرویس‌های بیشتر")
-                    when (val hub = state.hubState) {
-                        is ServicesHubUiState.Success -> {
-                            val sections = normalizedActiveSections(hub.data.sections)
-                            if (sections.isNotEmpty()) {
-                                item {
-                                    SectionHeading(
-                                        title = "سرویس‌های بیشتر",
-                                        subtitle = "انتخاب‌هایی که از ویستا برایت آماده شده",
-                                    )
+                                "contacts" -> if (hubConfig.showContacts) {
+                                    item(key = "contacts_section") {
+                                        ContactsHorizontalSection(
+                                            title = hubConfig.contactsTitle.ifBlank { "آشناها در ویستا" },
+                                            state = state.contactsState,
+                                            onAllContactsClick = onNavigateToContacts,
+                                            onContactClick = onNavigateToUserProfile,
+                                            onRetry = { viewModel.loadHub() },
+                                            onGrantPermission = onNavigateToContacts,
+                                        )
+                                    }
                                 }
-                                item {
-                                    LazyRow(
-                                        contentPadding = PaddingValues(horizontal = 16.dp),
-                                        horizontalArrangement = Arrangement.spacedBy(9.dp),
-                                    ) {
-                                        items(sections, key = { it.id }) { section ->
-                                            ManagedSectionCard(
-                                                section = section,
-                                                onClick = {
-                                                    val route = section.route.trim()
-                                                    if (route.startsWith("http")) {
-                                                        onNavigateToWeb(route, section.title)
-                                                    } else {
-                                                        onNavigateToSectionRoute(route)
+
+                                "sections" -> if (hubConfig.showSections) {
+                                    when (val hub = state.hubState) {
+                                        is ServicesHubUiState.Loading -> {
+                                            item(key = "sections_shimmer") {
+                                                SectionsLoadingSkeleton()
+                                            }
+                                        }
+                                        is ServicesHubUiState.Success -> {
+                                            val sections = normalizedActiveSections(hub.data.sections)
+                                            if (sections.isNotEmpty()) {
+                                                item(key = "sections_heading") {
+                                                    SectionHeading(
+                                                        title = hubConfig.sectionsTitle.ifBlank { "سرویس‌های بیشتر" },
+                                                        subtitle = hubConfig.sectionsSubtitle,
+                                                    )
+                                                }
+                                                item(key = "sections_content") {
+                                                    val openSection: (ServiceSection) -> Unit = { section ->
+                                                        val route = section.route.trim()
+                                                        if (route.startsWith("http", ignoreCase = true)) {
+                                                            onNavigateToWeb(route, section.title)
+                                                        } else {
+                                                            onNavigateToSectionRoute(route)
+                                                        }
                                                     }
-                                                },
-                                            )
+                                                    when (hubConfig.sectionsLayout) {
+                                                        "grid" -> ManagedSectionsGrid(
+                                                            sections = sections,
+                                                            isDark = isDarkServices,
+                                                            onSectionClick = openSection,
+                                                            modifier = Modifier.padding(horizontal = 16.dp),
+                                                        )
+                                                        "list" -> Column(
+                                                            modifier = Modifier.padding(horizontal = 16.dp),
+                                                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                                                        ) {
+                                                            sections.forEach { section ->
+                                                                ManagedSectionListCard(
+                                                                    section = section,
+                                                                    isDark = isDarkServices,
+                                                                    onClick = { openSection(section) },
+                                                                )
+                                                            }
+                                                        }
+                                                        else -> LazyRow(
+                                                            contentPadding = PaddingValues(horizontal = 16.dp),
+                                                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                                        ) {
+                                                            items(sections, key = { "sec_${it.id}" }) { section ->
+                                                                ManagedSectionCard(
+                                                                    section = section,
+                                                                    isDark = isDarkServices,
+                                                                    onClick = { openSection(section) },
+                                                                )
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        is ServicesHubUiState.Error -> {
+                                            item(key = "sections_error") {
+                                                InlineHubErrorState(
+                                                    title = "تازه‌های ویستا بارگذاری نشد",
+                                                    subtitle = "سرویس‌های اصلی همچنان در دسترس‌اند.",
+                                                    onRetry = { viewModel.loadHub() },
+                                                )
+                                            }
                                         }
                                     }
                                 }
                             }
                         }
-                        is ServicesHubUiState.Error -> {
-                            item {
-                                InlineHubErrorState(
-                                    title = "تازه‌های ویستا بارگذاری نشد",
-                                    subtitle = "سرویس‌های اصلی همچنان در دسترس‌اند.",
-                                    onRetry = { viewModel.loadHub() },
-                                )
-                            }
-                        }
-                        is ServicesHubUiState.Loading -> Unit
                     }
                 }
-                }
             }
+        }
+    }
+}
+
+@Composable
+private fun HubAnnouncementStrip(
+    text: String,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(0.75.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .background(MaterialTheme.vistaColors.viuBlue, CircleShape),
+            )
+            Text(
+                text = text,
+                style = MaterialTheme.typography.bodySmall.copy(
+                    fontFamily = VistaFontFamily,
+                    fontWeight = FontWeight.Medium,
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurface,
+                ),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }
@@ -406,195 +672,602 @@ private fun SectionHeading(
             text = title,
             style = MaterialTheme.typography.titleLarge.copy(
                 fontFamily = VistaFontFamily,
-                fontWeight = FontWeight.Black,
+                fontWeight = FontWeight.Bold,
                 fontSize = 17.sp,
                 color = MaterialTheme.colorScheme.onBackground,
+                letterSpacing = (-0.2).sp,
             ),
         )
-        Spacer(modifier = Modifier.height(2.dp))
-        Text(
-            text = subtitle,
-            style = MaterialTheme.typography.bodySmall.copy(
-                fontFamily = VistaFontFamily,
-                fontSize = 11.sp,
-                color = MaterialTheme.vistaColors.contentSecondary,
-            ),
+        if (subtitle.isNotBlank()) {
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall.copy(
+                    fontFamily = VistaFontFamily,
+                    fontSize = 11.5.sp,
+                    color = MaterialTheme.vistaColors.contentSecondary,
+                ),
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun BannersCarousel(
+    banners: List<ServiceBanner>,
+    autoPlay: Boolean,
+    onBannerClick: (ServiceBanner) -> Unit,
+) {
+    val pagerState = rememberPagerState(pageCount = { banners.size })
+    LaunchedEffect(pagerState, banners.size, autoPlay) {
+        if (!autoPlay || banners.size <= 1) return@LaunchedEffect
+        while (true) {
+            delay(5000L)
+            if (!pagerState.isScrollInProgress && banners.isNotEmpty()) {
+                val next = (pagerState.currentPage + 1) % banners.size
+                pagerState.animateScrollToPage(next)
+            }
+        }
+    }
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        HorizontalPager(
+            state = pagerState,
+            contentPadding = PaddingValues(horizontal = 16.dp),
+            pageSpacing = 12.dp,
+            modifier = Modifier.fillMaxWidth(),
+        ) { page ->
+            val banner = banners[page]
+            BannerCard(
+                banner = banner,
+                onBannerClick = { onBannerClick(banner) },
+            )
+        }
+        Spacer(modifier = Modifier.height(10.dp))
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            repeat(banners.size) { index ->
+                val active = pagerState.currentPage == index
+                val dotWidth by animateDpAsState(
+                    targetValue = if (active) 20.dp else 6.dp,
+                    animationSpec = tween(220),
+                    label = "banner_dot_width",
+                )
+                Box(
+                    modifier = Modifier
+                        .height(6.dp)
+                        .width(dotWidth)
+                        .clip(CircleShape)
+                        .background(
+                            if (active) MaterialTheme.vistaColors.viuBlue
+                            else MaterialTheme.colorScheme.outlineVariant,
+                        ),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun BannerLoadingSkeleton() {
+    val brush = rememberVistaShimmerBrush()
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .width(92.dp)
+                .height(16.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(brush),
+        )
+        Spacer(modifier = Modifier.height(10.dp))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(156.dp)
+                .clip(RoundedCornerShape(22.dp))
+                .background(brush),
         )
     }
 }
 
 @Composable
-private fun QuickButtonsGrid(
+private fun SectionsLoadingSkeleton() {
+    val brush = rememberVistaShimmerBrush()
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 20.dp, bottom = 8.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .padding(horizontal = 16.dp)
+                .width(116.dp)
+                .height(16.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(brush),
+        )
+        Spacer(modifier = Modifier.height(10.dp))
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            repeat(2) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(88.dp)
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(brush),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun QuickServicesSection(
     buttons: List<QuickButtonItem>,
+    layout: String,
+    isDark: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    Column(
-        modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            QuickCard(button = buttons[0], modifier = Modifier.weight(1f))
-            QuickCard(button = buttons[1], modifier = Modifier.weight(1f))
+    if (buttons.isEmpty()) return
+
+    when (layout) {
+        "list" -> {
+            Column(
+                modifier = modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                buttons.forEach { button ->
+                    CompactWideQuickCard(button = button, isDark = isDark)
+                }
+            }
         }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            QuickCard(button = buttons[2], modifier = Modifier.weight(1f))
-            QuickCard(button = buttons[3], modifier = Modifier.weight(1f))
+        "grid" -> {
+            val rows = buttons.chunked(2)
+            Column(
+                modifier = modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                rows.forEach { rowItems ->
+                    if (rowItems.size == 1) {
+                        CompactWideQuickCard(button = rowItems[0], isDark = isDark)
+                    } else {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            QuickGridCard(
+                                button = rowItems[0],
+                                isDark = isDark,
+                                modifier = Modifier.weight(1f),
+                            )
+                            QuickGridCard(
+                                button = rowItems[1],
+                                isDark = isDark,
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        else -> {
+            if (buttons.size == 1) {
+                HeroBentoQuickCard(
+                    button = buttons[0],
+                    isDark = isDark,
+                    modifier = modifier,
+                )
+                return
+            }
+            val heroIndex = buttons.indexOfFirst { it.featured }.takeIf { it >= 0 } ?: 0
+            val hero = buttons[heroIndex]
+            val remaining = buttons.filterIndexed { index, _ -> index != heroIndex }
+            val rows = remaining.chunked(2)
+
+            Column(
+                modifier = modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                HeroBentoQuickCard(button = hero, isDark = isDark)
+                rows.forEach { rowItems ->
+                    if (rowItems.size == 1) {
+                        CompactWideQuickCard(button = rowItems[0], isDark = isDark)
+                    } else {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            QuickGridCard(
+                                button = rowItems[0],
+                                isDark = isDark,
+                                modifier = Modifier.weight(1f),
+                            )
+                            QuickGridCard(
+                                button = rowItems[1],
+                                isDark = isDark,
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun QuickCard(
+private fun HeroBentoQuickCard(
     button: QuickButtonItem,
+    isDark: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val accent = button.gradientColors.first()
-    val surface = MaterialTheme.colorScheme.surface
-    val startTint = accent.copy(alpha = 0.12f)
-    val endTint = button.gradientColors.last().copy(alpha = 0.07f)
+    val cardBg = if (isDark) Color(0xFF1A1D23) else Color(0xFF121418)
+    val borderBrush = if (isDark) {
+        Brush.linearGradient(
+            listOf(
+                accent.copy(alpha = 0.45f),
+                Color.White.copy(alpha = 0.08f),
+            ),
+        )
+    } else {
+        Brush.linearGradient(
+            listOf(
+                Color.White.copy(alpha = 0.08f),
+                accent.copy(alpha = 0.25f),
+            ),
+        )
+    }
 
     Surface(
         modifier = modifier
-            .aspectRatio(1.22f)
-            .shadow(
-                elevation = 4.dp,
-                shape = RoundedCornerShape(20.dp),
-                ambientColor = accent.copy(alpha = 0.15f),
-                spotColor = accent.copy(alpha = 0.25f),
-            )
+            .fillMaxWidth()
+            .height(118.dp)
             .semantics {
                 role = Role.Button
                 contentDescription = "${button.label}، ${button.subtitle}"
             },
-        shape = RoundedCornerShape(20.dp),
-        color = surface,
-        border = androidx.compose.foundation.BorderStroke(
-            width = 1.dp,
-            color = accent.copy(alpha = 0.18f),
-        ),
+        shape = RoundedCornerShape(22.dp),
+        color = cardBg,
+        border = BorderStroke(0.9.dp, borderBrush),
     ) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                .vistaCardPress(onClick = button.onClick)
                 .background(
-                    Brush.linearGradient(
-                        colors = listOf(startTint, endTint),
+                    Brush.radialGradient(
+                        colors = listOf(
+                            accent.copy(alpha = if (isDark) 0.22f else 0.28f),
+                            Color.Transparent,
+                        ),
+                        center = Offset(140f, 120f),
+                        radius = 420f,
                     ),
                 )
-                .clickable(onClick = button.onClick),
-            contentAlignment = Alignment.Center,
+                .padding(horizontal = 16.dp, vertical = 14.dp),
         ) {
-            // Background motifs
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clip(RoundedCornerShape(20.dp)),
+            Row(
+                modifier = Modifier.fillMaxSize(),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                if (button.motifNames.isNotEmpty()) {
-                    ServicesMotifIcon(
-                        iconName = button.motifNames[0],
-                        color = accent.copy(alpha = 0.08f),
-                        modifier = Modifier
-                            .size(34.dp)
-                            .align(Alignment.TopStart)
-                            .offset(x = (-4).dp, y = 10.dp),
-                    )
-                }
-                if (button.motifNames.size > 1) {
-                    ServicesMotifIcon(
-                        iconName = button.motifNames[1],
-                        color = accent.copy(alpha = 0.08f),
-                        modifier = Modifier
-                            .size(38.dp)
-                            .align(Alignment.TopEnd)
-                            .offset(x = 6.dp, y = 38.dp),
-                    )
-                }
-                if (button.motifNames.size > 2) {
-                    ServicesMotifIcon(
-                        iconName = button.motifNames[2],
-                        color = accent.copy(alpha = 0.08f),
-                        modifier = Modifier
-                            .size(30.dp)
-                            .align(Alignment.BottomStart)
-                            .offset(x = 16.dp, y = 8.dp),
-                    )
-                }
-            }
-
-            // Foreground Content
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 10.dp, vertical = 12.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
-            ) {
-                // Elevated Glowing Icon Box
                 Box(
                     modifier = Modifier
                         .size(48.dp)
-                        .shadow(
-                            elevation = 10.dp,
-                            shape = RoundedCornerShape(14.dp),
-                            ambientColor = accent.copy(alpha = 0.35f),
-                            spotColor = accent.copy(alpha = 0.45f),
-                        )
                         .background(
-                            brush = Brush.linearGradient(button.gradientColors),
-                            shape = RoundedCornerShape(14.dp),
+                            color = accent.copy(alpha = 0.20f),
+                            shape = RoundedCornerShape(15.dp),
                         )
                         .border(
-                            width = 1.dp,
-                            color = Color.White.copy(alpha = 0.35f),
-                            shape = RoundedCornerShape(14.dp),
+                            width = 0.75.dp,
+                            color = accent.copy(alpha = 0.45f),
+                            shape = RoundedCornerShape(15.dp),
                         ),
                     contentAlignment = Alignment.Center,
                 ) {
                     ServicesActionIcon(
                         kind = button.kind,
-                        color = Color.White,
+                        iconName = button.iconName,
+                        color = if (accent.luminance() < 0.2f) Color.White else accent,
                         modifier = Modifier.size(24.dp),
                     )
                 }
 
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.width(14.dp))
 
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.Center,
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text(
+                            text = button.label,
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                fontFamily = VistaFontFamily,
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 17.sp,
+                                color = Color.White,
+                            ),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        if (button.badgeText.isNotBlank()) {
+                            ServiceBadgePill(
+                                text = button.badgeText,
+                                accent = accent,
+                                onDarkCard = true,
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = button.subtitle,
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontFamily = VistaFontFamily,
+                            fontSize = 12.sp,
+                            color = Color.White.copy(alpha = 0.76f),
+                            lineHeight = 17.sp,
+                        ),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(10.dp))
+
+                Box(
+                    modifier = Modifier
+                        .size(34.dp)
+                        .background(Color.White.copy(alpha = 0.12f), CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun QuickGridCard(
+    button: QuickButtonItem,
+    isDark: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val accent = button.gradientColors.first()
+    val safeAccent = if (!isDark && accent.luminance() > 0.85f) {
+        VistaBrandColors.InkBlack
+    } else if (isDark && accent.luminance() < 0.08f) {
+        Color(0xFFE5E7EB)
+    } else {
+        accent
+    }
+
+    Surface(
+        modifier = modifier
+            .height(126.dp)
+            .semantics {
+                role = Role.Button
+                contentDescription = "${button.label}، ${button.subtitle}"
+            },
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(0.75.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .vistaCardPress(onClick = button.onClick)
+                .padding(horizontal = 14.dp, vertical = 14.dp),
+            horizontalAlignment = Alignment.Start,
+            verticalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(42.dp)
+                        .background(
+                            color = safeAccent.copy(alpha = if (isDark) 0.16f else 0.11f),
+                            shape = RoundedCornerShape(13.dp),
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    ServicesActionIcon(
+                        kind = button.kind,
+                        iconName = button.iconName,
+                        color = safeAccent,
+                        modifier = Modifier.size(21.dp),
+                    )
+                }
+                if (button.badgeText.isNotBlank()) {
+                    ServiceBadgePill(
+                        text = button.badgeText,
+                        accent = safeAccent,
+                        onDarkCard = isDark,
+                    )
+                }
+            }
+
+            Column {
                 Text(
                     text = button.label,
                     style = MaterialTheme.typography.titleSmall.copy(
                         fontFamily = VistaFontFamily,
-                        fontWeight = FontWeight.Black,
-                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.5.sp,
                         color = MaterialTheme.colorScheme.onBackground,
                     ),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    textAlign = TextAlign.Center,
                 )
-
                 Spacer(modifier = Modifier.height(2.dp))
-
                 Text(
                     text = button.subtitle,
                     style = MaterialTheme.typography.bodySmall.copy(
                         fontFamily = VistaFontFamily,
-                        fontSize = 9.5.sp,
+                        fontSize = 11.5.sp,
                         color = MaterialTheme.vistaColors.contentSecondary,
-                        lineHeight = 13.sp,
+                        lineHeight = 15.sp,
                     ),
-                    maxLines = 1,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
-                    textAlign = TextAlign.Center,
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun CompactWideQuickCard(
+    button: QuickButtonItem,
+    isDark: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val accent = button.gradientColors.first()
+    val safeAccent = if (!isDark && accent.luminance() > 0.85f) {
+        VistaBrandColors.InkBlack
+    } else if (isDark && accent.luminance() < 0.08f) {
+        Color(0xFFE5E7EB)
+    } else {
+        accent
+    }
+
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(74.dp)
+            .semantics {
+                role = Role.Button
+                contentDescription = "${button.label}، ${button.subtitle}"
+            },
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(0.75.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .vistaCardPress(onClick = button.onClick)
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(42.dp)
+                    .background(
+                        color = safeAccent.copy(alpha = if (isDark) 0.16f else 0.11f),
+                        shape = RoundedCornerShape(13.dp),
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                ServicesActionIcon(
+                    kind = button.kind,
+                    iconName = button.iconName,
+                    color = safeAccent,
+                    modifier = Modifier.size(21.dp),
+                )
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Text(
+                        text = button.label,
+                        style = MaterialTheme.typography.titleSmall.copy(
+                            fontFamily = VistaFontFamily,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.5.sp,
+                            color = MaterialTheme.colorScheme.onBackground,
+                        ),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    if (button.badgeText.isNotBlank()) {
+                        ServiceBadgePill(
+                            text = button.badgeText,
+                            accent = safeAccent,
+                            onDarkCard = isDark,
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = button.subtitle,
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        fontFamily = VistaFontFamily,
+                        fontSize = 11.5.sp,
+                        color = MaterialTheme.vistaColors.contentSecondary,
+                    ),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Icon(
+                imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.vistaColors.contentSecondary,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun ServiceBadgePill(
+    text: String,
+    accent: Color,
+    onDarkCard: Boolean,
+) {
+    val badgeBg = if (onDarkCard) {
+        accent.copy(alpha = 0.24f)
+    } else {
+        accent.copy(alpha = 0.12f)
+    }
+    val badgeText = if (onDarkCard) Color.White else accent
+    Box(
+        modifier = Modifier
+            .background(badgeBg, CircleShape)
+            .padding(horizontal = 8.dp, vertical = 3.dp),
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontFamily = VistaFontFamily,
+                fontWeight = FontWeight.Bold,
+                fontSize = 11.sp,
+                color = badgeText,
+            ),
+            maxLines = 1,
+        )
     }
 }
 
@@ -604,7 +1277,7 @@ private fun BannerCard(
     onBannerClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val bgColor = parseHexColor(banner.bgColor, VistaBrandColors.Indigo)
+    val bgColor = parseHexColor(banner.bgColor, VistaBrandColors.InkBlack)
     val textColor = parseHexColor(banner.textColor, Color.White)
     val height = banner.heightDp.dp
     val clickable = banner.link.isNotBlank() && banner.linkType != "none"
@@ -618,17 +1291,17 @@ private fun BannerCard(
                 role = Role.Button
                 contentDescription = if (banner.subtitle.isEmpty()) banner.title else "${banner.title}، ${banner.subtitle}"
             },
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(22.dp),
         color = bgColor,
-        border = androidx.compose.foundation.BorderStroke(
-            width = 1.dp,
-            color = MaterialTheme.colorScheme.outlineVariant,
+        border = BorderStroke(
+            width = 0.75.dp,
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
         ),
     ) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .clickable(enabled = clickable, onClick = onBannerClick),
+                .vistaCardPress(enabled = clickable, onClick = onBannerClick),
         ) {
             if (hasImage) {
                 AsyncImage(
@@ -643,8 +1316,22 @@ private fun BannerCard(
                         .background(
                             Brush.verticalGradient(
                                 colors = listOf(
-                                    Color.Black.copy(alpha = 0.05f),
-                                    Color.Black.copy(alpha = 0.65f),
+                                    Color.Black.copy(alpha = 0.06f),
+                                    Color.Black.copy(alpha = 0.68f),
+                                ),
+                            ),
+                        ),
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.linearGradient(
+                                colors = listOf(
+                                    Color.White.copy(alpha = 0.12f),
+                                    Color.Transparent,
+                                    Color.Black.copy(alpha = 0.16f),
                                 ),
                             ),
                         ),
@@ -654,7 +1341,7 @@ private fun BannerCard(
             Row(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                    .padding(horizontal = 18.dp, vertical = 16.dp),
                 verticalAlignment = Alignment.Bottom,
             ) {
                 Column(
@@ -666,8 +1353,8 @@ private fun BannerCard(
                             text = banner.title,
                             style = MaterialTheme.typography.titleMedium.copy(
                                 fontFamily = VistaFontFamily,
-                                fontWeight = FontWeight.Black,
-                                fontSize = if (banner.heightDp > 160) 17.sp else 14.5.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = if (banner.heightDp > 160) 18.sp else 15.5.sp,
                                 color = textColor,
                             ),
                             maxLines = 2,
@@ -680,7 +1367,7 @@ private fun BannerCard(
                             text = banner.subtitle,
                             style = MaterialTheme.typography.bodySmall.copy(
                                 fontFamily = VistaFontFamily,
-                                fontSize = 11.sp,
+                                fontSize = 11.5.sp,
                                 color = textColor.copy(alpha = 0.88f),
                             ),
                             maxLines = 2,
@@ -690,18 +1377,18 @@ private fun BannerCard(
                 }
 
                 if (clickable) {
-                    Spacer(modifier = Modifier.width(10.dp))
+                    Spacer(modifier = Modifier.width(12.dp))
                     Box(
                         modifier = Modifier
-                            .size(32.dp)
+                            .size(34.dp)
                             .background(textColor.copy(alpha = 0.18f), CircleShape),
                         contentAlignment = Alignment.Center,
                     ) {
                         Icon(
-                            imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowLeft,
+                            imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
                             contentDescription = null,
                             tint = textColor,
-                            modifier = Modifier.size(16.dp),
+                            modifier = Modifier.size(19.dp),
                         )
                     }
                 }
@@ -712,6 +1399,7 @@ private fun BannerCard(
 
 @Composable
 private fun ContactsHorizontalSection(
+    title: String,
     state: ContactsRailUiState,
     onAllContactsClick: () -> Unit,
     onContactClick: (String) -> Unit,
@@ -719,21 +1407,22 @@ private fun ContactsHorizontalSection(
     onGrantPermission: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val viuBlue = MaterialTheme.vistaColors.viuBlue
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .padding(start = 16.dp, end = 16.dp, top = 20.dp),
-        shape = RoundedCornerShape(20.dp),
+            .padding(start = 16.dp, end = 16.dp, top = 22.dp),
+        shape = RoundedCornerShape(22.dp),
         color = MaterialTheme.colorScheme.surface,
-        border = androidx.compose.foundation.BorderStroke(
-            width = 1.dp,
+        border = BorderStroke(
+            width = 0.75.dp,
             color = MaterialTheme.colorScheme.outlineVariant,
         ),
     ) {
         when (state) {
             is ContactsRailUiState.Success -> {
                 val users = state.users
-                Column(modifier = Modifier.padding(vertical = 14.dp)) {
+                Column(modifier = Modifier.padding(vertical = 15.dp)) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -742,90 +1431,129 @@ private fun ContactsHorizontalSection(
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(34.dp)
+                                .size(38.dp)
                                 .background(
-                                    Color(0xFF10B981).copy(alpha = 0.12f),
-                                    RoundedCornerShape(10.dp),
+                                    viuBlue.copy(alpha = 0.13f),
+                                    RoundedCornerShape(12.dp),
                                 ),
                             contentAlignment = Alignment.Center,
                         ) {
                             Icon(
                                 imageVector = Icons.Rounded.People,
                                 contentDescription = null,
-                                tint = Color(0xFF10B981),
-                                modifier = Modifier.size(18.dp),
+                                tint = viuBlue,
+                                modifier = Modifier.size(20.dp),
                             )
                         }
-                        Spacer(modifier = Modifier.width(9.dp))
+                        Spacer(modifier = Modifier.width(10.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "آشناها در ویستا",
+                                text = title,
                                 style = MaterialTheme.typography.titleSmall.copy(
                                     fontFamily = VistaFontFamily,
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp,
+                                    fontSize = 14.sp,
                                 ),
                             )
                             Text(
                                 text = "${users.size} نفر از مخاطبینت اینجا هستند",
                                 style = MaterialTheme.typography.bodySmall.copy(
                                     fontFamily = VistaFontFamily,
-                                    fontSize = 10.sp,
+                                    fontSize = 11.5.sp,
                                     color = MaterialTheme.vistaColors.contentSecondary,
                                 ),
                             )
                         }
-                        TextButton(onClick = onAllContactsClick) {
+                        Box(
+                            modifier = Modifier
+                                .clip(CircleShape)
+                                .background(viuBlue.copy(alpha = 0.12f))
+                                .vistaCardPress(onClick = onAllContactsClick)
+                                .padding(horizontal = 12.dp, vertical = 6.dp),
+                        ) {
                             Text(
                                 text = "همه",
                                 style = MaterialTheme.typography.labelLarge.copy(
                                     fontFamily = VistaFontFamily,
-                                    color = VistaBrandColors.Indigo,
+                                    color = viuBlue,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp,
                                 ),
                             )
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
 
                     LazyRow(
-                        contentPadding = PaddingValues(horizontal = 10.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
                         items(users, key = { it.id }) { user ->
                             Column(
                                 modifier = Modifier
-                                    .width(66.dp)
-                                    .clickable { onContactClick(user.id) },
+                                    .width(68.dp)
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .vistaCardPress { onContactClick(user.id) }
+                                    .padding(vertical = 4.dp),
                                 horizontalAlignment = Alignment.CenterHorizontally,
                             ) {
-                                if (user.avatarUrl.isNotBlank()) {
-                                    AsyncImage(
-                                        model = user.avatarUrl,
-                                        contentDescription = null,
-                                        contentScale = ContentScale.Crop,
-                                        modifier = Modifier
-                                            .size(50.dp)
-                                            .clip(CircleShape),
-                                    )
-                                } else {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(50.dp)
-                                            .background(
-                                                VistaBrandColors.Indigo.copy(alpha = 0.12f),
-                                                CircleShape,
-                                            ),
-                                        contentAlignment = Alignment.Center,
-                                    ) {
-                                        Text(
-                                            text = user.fullName.firstOrNull()?.toString() ?: "?",
-                                            style = MaterialTheme.typography.titleMedium.copy(
-                                                fontFamily = VistaFontFamily,
-                                                fontWeight = FontWeight.Bold,
-                                                color = VistaBrandColors.Indigo,
-                                            ),
+                                Box(contentAlignment = Alignment.BottomEnd) {
+                                    if (user.avatarUrl.isNotBlank()) {
+                                        AsyncImage(
+                                            model = user.avatarUrl,
+                                            contentDescription = null,
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier
+                                                .size(52.dp)
+                                                .border(
+                                                    width = 1.5.dp,
+                                                    color = viuBlue.copy(alpha = 0.35f),
+                                                    shape = CircleShape,
+                                                )
+                                                .padding(2.dp)
+                                                .clip(CircleShape),
                                         )
+                                    } else {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(52.dp)
+                                                .background(
+                                                    viuBlue.copy(alpha = 0.13f),
+                                                    CircleShape,
+                                                )
+                                                .border(
+                                                    width = 1.dp,
+                                                    color = viuBlue.copy(alpha = 0.3f),
+                                                    shape = CircleShape,
+                                                ),
+                                            contentAlignment = Alignment.Center,
+                                        ) {
+                                            Text(
+                                                text = user.fullName.firstOrNull()?.toString() ?: "?",
+                                                style = MaterialTheme.typography.titleMedium.copy(
+                                                    fontFamily = VistaFontFamily,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = viuBlue,
+                                                ),
+                                            )
+                                        }
+                                    }
+                                    if (user.isVerified) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(16.dp)
+                                                .background(viuBlue, CircleShape)
+                                                .border(1.5.dp, MaterialTheme.colorScheme.surface, CircleShape),
+                                            contentAlignment = Alignment.Center,
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Rounded.Check,
+                                                contentDescription = null,
+                                                tint = Color.White,
+                                                modifier = Modifier.size(10.dp),
+                                            )
+                                        }
                                     }
                                 }
                                 Spacer(modifier = Modifier.height(6.dp))
@@ -833,7 +1561,7 @@ private fun ContactsHorizontalSection(
                                     text = if (user.username.isNotBlank()) "@${user.username}" else user.fullName,
                                     style = MaterialTheme.typography.bodySmall.copy(
                                         fontFamily = VistaFontFamily,
-                                        fontSize = 9.5.sp,
+                                        fontSize = 11.sp,
                                         fontWeight = FontWeight.SemiBold,
                                     ),
                                     maxLines = 1,
@@ -859,22 +1587,36 @@ private fun ContactsHorizontalSection(
                     iconName = "people",
                     title = "هنوز دوستی پیدا نشد",
                     subtitle = "هر وقت یکی از مخاطبینت به ویستا بیاید، اینجا می‌بینی.",
-                    actionLabel = "مشاهده مخاطبین",
+                    actionLabel = "مخاطبین",
                     onAction = onAllContactsClick,
                 )
             }
             is ContactsRailUiState.Loading -> {
-                Box(
+                val shimmer = rememberVistaShimmerBrush()
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(24.dp),
-                    contentAlignment = Alignment.Center,
+                        .padding(horizontal = 16.dp, vertical = 18.dp),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
-                    CircularProgressIndicator(
-                        strokeWidth = 2.dp,
-                        color = VistaBrandColors.Indigo,
-                        modifier = Modifier.size(24.dp),
-                    )
+                    repeat(5) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Box(
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .clip(CircleShape)
+                                    .background(shimmer),
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Box(
+                                modifier = Modifier
+                                    .width(42.dp)
+                                    .height(10.dp)
+                                    .clip(RoundedCornerShape(5.dp))
+                                    .background(shimmer),
+                            )
+                        }
+                    }
                 }
             }
             is ContactsRailUiState.Error -> {
@@ -899,6 +1641,7 @@ private fun CompactStateBanner(
     onAction: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val viuBlue = MaterialTheme.vistaColors.viuBlue
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -909,8 +1652,8 @@ private fun CompactStateBanner(
             modifier = Modifier
                 .size(44.dp)
                 .background(
-                    VistaBrandColors.Indigo.copy(alpha = 0.12f),
-                    RoundedCornerShape(12.dp),
+                    viuBlue.copy(alpha = 0.13f),
+                    RoundedCornerShape(13.dp),
                 ),
             contentAlignment = Alignment.Center,
         ) {
@@ -924,7 +1667,7 @@ private fun CompactStateBanner(
             Icon(
                 imageVector = imageVector,
                 contentDescription = null,
-                tint = VistaBrandColors.Indigo,
+                tint = viuBlue,
                 modifier = Modifier.size(22.dp),
             )
         }
@@ -935,7 +1678,8 @@ private fun CompactStateBanner(
                 style = MaterialTheme.typography.titleSmall.copy(
                     fontFamily = VistaFontFamily,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 12.5.sp,
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onBackground,
                 ),
             )
             Spacer(modifier = Modifier.height(2.dp))
@@ -943,19 +1687,27 @@ private fun CompactStateBanner(
                 text = subtitle,
                 style = MaterialTheme.typography.bodySmall.copy(
                     fontFamily = VistaFontFamily,
-                    fontSize = 10.sp,
+                    fontSize = 11.5.sp,
                     color = MaterialTheme.vistaColors.contentSecondary,
-                    lineHeight = 14.sp,
+                    lineHeight = 16.sp,
                 ),
             )
         }
-        TextButton(onClick = onAction) {
+        Spacer(modifier = Modifier.width(8.dp))
+        Box(
+            modifier = Modifier
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primary)
+                .vistaCardPress(onClick = onAction)
+                .padding(horizontal = 13.dp, vertical = 7.dp),
+        ) {
             Text(
                 text = actionLabel,
                 style = MaterialTheme.typography.labelMedium.copy(
                     fontFamily = VistaFontFamily,
-                    color = VistaBrandColors.Indigo,
+                    color = MaterialTheme.colorScheme.onPrimary,
                     fontWeight = FontWeight.Bold,
+                    fontSize = 11.5.sp,
                 ),
             )
         }
@@ -963,51 +1715,90 @@ private fun CompactStateBanner(
 }
 
 @Composable
+private fun ManagedSectionsGrid(
+    sections: List<ServiceSection>,
+    isDark: Boolean,
+    onSectionClick: (ServiceSection) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val rows = sections.chunked(2)
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        rows.forEach { rowItems ->
+            if (rowItems.size == 1) {
+                ManagedSectionListCard(
+                    section = rowItems[0],
+                    isDark = isDark,
+                    onClick = { onSectionClick(rowItems[0]) },
+                )
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    ManagedSectionCard(
+                        section = rowItems[0],
+                        isDark = isDark,
+                        onClick = { onSectionClick(rowItems[0]) },
+                        modifier = Modifier.weight(1f),
+                    )
+                    ManagedSectionCard(
+                        section = rowItems[1],
+                        isDark = isDark,
+                        onClick = { onSectionClick(rowItems[1]) },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun ManagedSectionCard(
     section: ServiceSection,
+    isDark: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val accent = parseHexColor(section.color, VistaBrandColors.Indigo)
-    val surface = MaterialTheme.colorScheme.surface
+    val accent = parseHexColor(section.color, MaterialTheme.vistaColors.viuBlue)
 
     Surface(
         modifier = modifier
-            .width(208.dp)
-            .height(96.dp)
+            .width(222.dp)
+            .height(92.dp)
             .semantics {
                 role = Role.Button
                 contentDescription = "${section.title}، ${section.subtitle}"
             },
-        shape = RoundedCornerShape(16.dp),
-        color = surface,
-        border = androidx.compose.foundation.BorderStroke(
-            width = 1.dp,
-            color = accent.copy(alpha = 0.22f),
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(
+            width = 0.75.dp,
+            color = MaterialTheme.colorScheme.outlineVariant,
         ),
     ) {
         Row(
             modifier = Modifier
                 .fillMaxSize()
-                .background(
-                    Brush.horizontalGradient(
-                        colors = listOf(accent.copy(alpha = 0.12f), surface),
-                    ),
-                )
-                .clickable(onClick = onClick)
-                .padding(horizontal = 12.dp, vertical = 10.dp),
+                .vistaCardPress(onClick = onClick)
+                .padding(horizontal = 13.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
                 modifier = Modifier
-                    .size(42.dp)
-                    .background(accent.copy(alpha = 0.18f), RoundedCornerShape(12.dp)),
+                    .size(44.dp)
+                    .background(
+                        accent.copy(alpha = if (isDark) 0.16f else 0.12f),
+                        RoundedCornerShape(14.dp),
+                    ),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(
-                    imageVector = Icons.Rounded.GridView,
-                    contentDescription = null,
-                    tint = accent,
+                ServicesVectorIcon(
+                    name = section.icon,
+                    color = accent,
                     modifier = Modifier.size(22.dp),
                 )
             }
@@ -1021,7 +1812,8 @@ private fun ManagedSectionCard(
                     style = MaterialTheme.typography.titleSmall.copy(
                         fontFamily = VistaFontFamily,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 12.5.sp,
+                        fontSize = 13.5.sp,
+                        color = MaterialTheme.colorScheme.onBackground,
                     ),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -1032,7 +1824,7 @@ private fun ManagedSectionCard(
                         text = section.subtitle,
                         style = MaterialTheme.typography.bodySmall.copy(
                             fontFamily = VistaFontFamily,
-                            fontSize = 9.5.sp,
+                            fontSize = 11.5.sp,
                             color = MaterialTheme.vistaColors.contentSecondary,
                         ),
                         maxLines = 1,
@@ -1042,10 +1834,93 @@ private fun ManagedSectionCard(
             }
             Spacer(modifier = Modifier.width(6.dp))
             Icon(
-                imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowLeft,
+                imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
                 contentDescription = null,
-                tint = accent.copy(alpha = 0.8f),
-                modifier = Modifier.size(12.dp),
+                tint = accent.copy(alpha = 0.85f),
+                modifier = Modifier.size(16.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun ManagedSectionListCard(
+    section: ServiceSection,
+    isDark: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val accent = parseHexColor(section.color, MaterialTheme.vistaColors.viuBlue)
+
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(76.dp)
+            .semantics {
+                role = Role.Button
+                contentDescription = "${section.title}، ${section.subtitle}"
+            },
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(
+            width = 0.75.dp,
+            color = MaterialTheme.colorScheme.outlineVariant,
+        ),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .vistaCardPress(onClick = onClick)
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .background(
+                        accent.copy(alpha = if (isDark) 0.16f else 0.12f),
+                        RoundedCornerShape(13.dp),
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                ServicesVectorIcon(
+                    name = section.icon,
+                    color = accent,
+                    modifier = Modifier.size(22.dp),
+                )
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = section.title,
+                    style = MaterialTheme.typography.titleSmall.copy(
+                        fontFamily = VistaFontFamily,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.onBackground,
+                    ),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (section.subtitle.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = section.subtitle,
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontFamily = VistaFontFamily,
+                            fontSize = 11.5.sp,
+                            color = MaterialTheme.vistaColors.contentSecondary,
+                        ),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            Icon(
+                imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.vistaColors.contentSecondary,
+                modifier = Modifier.size(18.dp),
             )
         }
     }
@@ -1058,27 +1933,42 @@ private fun InlineHubErrorState(
     onRetry: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    CompactStateBanner(
-        iconName = "cloud_off",
-        title = title,
-        subtitle = subtitle,
-        actionLabel = "تلاش دوباره",
-        onAction = onRetry,
-        modifier = modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-    )
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(0.75.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        CompactStateBanner(
+            iconName = "cloud_off",
+            title = title,
+            subtitle = subtitle,
+            actionLabel = "تلاش دوباره",
+            onAction = onRetry,
+        )
+    }
 }
 
-private fun parseHexColor(hex: String, fallback: Color): Color = try {
-    val clean = hex.removePrefix("#")
-    val colorLong = clean.toLong(16)
-    if (clean.length == 6) {
-        Color((colorLong.toInt()) or 0xFF000000.toInt())
+private fun parseHexColorOrNull(hex: String): Color? = try {
+    val clean = hex.trim().removePrefix("#")
+    if (clean.length != 6 && clean.length != 8) {
+        null
     } else {
-        Color(colorLong.toInt())
+        val colorLong = clean.toLong(16)
+        if (clean.length == 6) {
+            Color((colorLong.toInt()) or 0xFF000000.toInt())
+        } else {
+            Color(colorLong.toInt())
+        }
     }
 } catch (_: Exception) {
-    fallback
+    null
 }
+
+private fun parseHexColor(hex: String, fallback: Color): Color =
+    parseHexColorOrNull(hex) ?: fallback
 
 @Composable
 private fun ServicesMaintenanceView(
@@ -1211,7 +2101,8 @@ private fun ServicesMaintenanceView(
             onClick = onRetry,
             shape = RoundedCornerShape(16.dp),
             colors = ButtonDefaults.buttonColors(
-                containerColor = VistaBrandColors.Indigo,
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
             ),
             modifier = Modifier
                 .fillMaxWidth(0.75f)

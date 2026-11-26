@@ -707,7 +707,7 @@ fun StoryPlayerScreen(
                                                 Text(
                                                     text = "دوستان نزدیک",
                                                     color = Color.White,
-                                                    fontSize = 10.sp,
+                                                    fontSize = 11.sp,
                                                     fontWeight = FontWeight.Bold,
                                                 )
                                             }
@@ -865,7 +865,7 @@ fun StoryPlayerScreen(
                                                     Icon(
                                                         imageVector = Icons.Default.Send,
                                                         contentDescription = "ارسال پاسخ",
-                                                        tint = VistaBrandColors.Pink,
+                                                        tint = VistaBrandColors.Coral,
                                                     )
                                                 }
                                             }
@@ -909,7 +909,7 @@ fun StoryPlayerScreen(
                                     Icon(
                                         imageVector = if (isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
                                         contentDescription = "لایک",
-                                        tint = if (isLiked) VistaBrandColors.Pink else Color.White,
+                                        tint = if (isLiked) VistaBrandColors.Coral else Color.White,
                                         modifier = Modifier.size(24.dp),
                                     )
                                 }
@@ -963,7 +963,7 @@ fun StoryPlayerScreen(
                                     .height(120.dp),
                                 contentAlignment = Alignment.Center,
                             ) {
-                                CircularProgressIndicator(color = VistaBrandColors.Indigo)
+                                CircularProgressIndicator(color = VistaBrandColors.ViuBlue)
                             }
                         } else if (questionAnswers.isEmpty()) {
                             Box(
@@ -1159,9 +1159,9 @@ fun StoryPlayerScreen(
                                     .padding(vertical = 10.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                Icon(Icons.Default.Add, contentDescription = null, tint = VistaBrandColors.Pink)
+                                Icon(Icons.Default.Add, contentDescription = null, tint = VistaBrandColors.Coral)
                                 Spacer(modifier = Modifier.width(12.dp))
-                                Text("هایلایت جدید…", color = VistaBrandColors.Pink, fontWeight = FontWeight.Bold)
+                                Text("هایلایت جدید…", color = VistaBrandColors.Coral, fontWeight = FontWeight.Bold)
                             }
                             userHighlights.forEach { highlight ->
                                 Row(
@@ -1239,7 +1239,7 @@ fun StoryPlayerScreen(
                                 }
                             },
                         ) {
-                            Text("ایجاد", color = VistaBrandColors.Pink, fontWeight = FontWeight.Bold)
+                            Text("ایجاد", color = VistaBrandColors.Coral, fontWeight = FontWeight.Bold)
                         }
                     },
                     dismissButton = {

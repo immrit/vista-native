@@ -90,7 +90,7 @@ private enum class AttachmentSheetTab {
     DUEL,
 }
 
-private val TelegramGlassBlue = VistaBrandColors.Indigo
+private val TelegramGlassBlue = VistaBrandColors.ViuBlueDeep
 
 /**
  * باتم‌شیت پیوست صفحه چت به سبک تلگرام با طراحی Liquid Glass:
@@ -591,10 +591,10 @@ private fun AttachmentGlassFloatingBar(
             .vistaGlassHalo(
                 state = glassState,
                 isDark = isDark,
-                tint = if (isDark) Color(0xFF10161E) else Color(0xFFF6F8FB),
-                blurRadius = 22.dp,
-                startOffsetFraction = 0.14f,
-                maxAlpha = if (isDark) 0.58f else 0.62f,
+                tint = if (isDark) Color(0xFF0E1115) else Color(0xFFF7F8FA),
+                blurRadius = 18.dp,
+                startOffsetFraction = 0.18f,
+                maxAlpha = if (isDark) 0.28f else 0.30f,
             ),
         contentAlignment = Alignment.BottomCenter,
     ) {
@@ -668,7 +668,7 @@ private fun AttachmentGlassFloatingBar(
                                 .clip(RoundedCornerShape(23.dp))
                                 .background(
                                     Brush.linearGradient(
-                                        listOf(TelegramGlassBlue, VistaBrandColors.Indigo)
+                                        listOf(TelegramGlassBlue, VistaBrandColors.ViuBlueDeep)
                                     ),
                                 )
                                 .clickable(role = Role.Button, onClick = onSendSelected)
@@ -811,7 +811,7 @@ private fun AttachmentGlassTabItem(
             Spacer(Modifier.height(2.dp))
             Text(
                 text = label,
-                fontSize = 10.5.sp,
+                fontSize = 11.sp,
                 fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
                 color = tintColor,
                 maxLines = 1,

@@ -198,7 +198,7 @@ private fun FlutterFaqCard(item: FlutterFaqItem, expanded: Boolean, onToggle: ()
 private data class FaqPresentation(val icon: ImageVector, val color: Color)
 
 private fun faqPresentation(category: String) = when (category) {
-    "حساب کاربری" -> FaqPresentation(Icons.Default.Lock, Color(0xFF6366F1))
+    "حساب کاربری" -> FaqPresentation(Icons.Default.Lock, Color(0xFF0097C7))
     "چت و پیام‌رسانی" -> FaqPresentation(Icons.Default.Chat, Color(0xFF9C27B0))
     "پست و محتوا" -> FaqPresentation(Icons.Default.AddCircle, Color(0xFF009688))
     "امنیت" -> FaqPresentation(Icons.Default.Shield, Color(0xFF4CAF50))
@@ -206,7 +206,7 @@ private fun faqPresentation(category: String) = when (category) {
     "جستجو" -> FaqPresentation(Icons.Default.Search, Color(0xFF3F51B5))
     "استوری" -> FaqPresentation(Icons.Default.CameraAlt, Color(0xFFE91E63))
     "آفلاین" -> FaqPresentation(Icons.Default.OfflineBolt, Color(0xFF757575))
-    "محدودیت‌ها" -> FaqPresentation(Icons.Default.Info, Color(0xFF6366F1))
+    "محدودیت‌ها" -> FaqPresentation(Icons.Default.Info, Color(0xFF0097C7))
     "مشکلات فنی" -> FaqPresentation(Icons.Default.Speed, Color(0xFFFF9800))
     "ویژگی‌های خاص" -> FaqPresentation(Icons.Default.Verified, Color(0xFFFFC107))
     else -> FaqPresentation(Icons.Default.SupportAgent, Color(0xFF009688))

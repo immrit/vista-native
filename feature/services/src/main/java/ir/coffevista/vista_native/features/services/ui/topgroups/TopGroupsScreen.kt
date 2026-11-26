@@ -122,9 +122,6 @@ fun TopGroupsScreen(
                         .fillMaxWidth()
                         .background(MaterialTheme.colorScheme.background),
                 ) {
-                    ir.coffevista.vista_native.core.designsystem.component.VistaAppBarAmbientOverlay(
-                        modifier = Modifier.matchParentSize(),
-                    )
                     TopAppBar(
                         title = {
                             Text(
@@ -167,7 +164,7 @@ fun TopGroupsScreen(
                         ) {
                             CircularProgressIndicator(
                                 strokeWidth = 2.5.dp,
-                                color = VistaBrandColors.Indigo,
+                                color = VistaBrandColors.ViuBlueDeep,
                             )
                         }
                     }
@@ -239,7 +236,7 @@ fun TopGroupsScreen(
                                                 fontSize = 13.5.sp,
                                             ),
                                             singleLine = true,
-                                            cursorBrush = SolidColor(VistaBrandColors.Indigo),
+                                            cursorBrush = SolidColor(VistaBrandColors.ViuBlueDeep),
                                             decorationBox = { innerTextField ->
                                                 if (searchQuery.isEmpty()) {
                                                     Text(
@@ -370,18 +367,18 @@ private fun HeroCompetitionBanner(modifier: Modifier = Modifier) {
             .shadow(
                 elevation = 8.dp,
                 shape = RoundedCornerShape(20.dp),
-                ambientColor = VistaBrandColors.Indigo.copy(alpha = 0.3f),
-                spotColor = VistaBrandColors.Indigo.copy(alpha = 0.4f),
+                ambientColor = VistaBrandColors.ViuBlueDeep.copy(alpha = 0.3f),
+                spotColor = VistaBrandColors.ViuBlueDeep.copy(alpha = 0.4f),
             ),
         shape = RoundedCornerShape(20.dp),
-        color = VistaBrandColors.Indigo,
+        color = VistaBrandColors.ViuBlueDeep,
     ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(
                     Brush.linearGradient(
-                        colors = listOf(VistaBrandColors.Indigo, VistaBrandColors.VioletDeep),
+                        colors = listOf(VistaBrandColors.ViuBlueDeep, VistaBrandColors.ViuBlue),
                     ),
                 )
                 .padding(18.dp),
@@ -457,7 +454,7 @@ private fun TopGroupItemRow(
                 text = "#${rankIndex + 1}",
                 style = MaterialTheme.typography.titleMedium.copy(
                     fontFamily = VistaFontFamily,
-                    fontWeight = FontWeight.Black,
+                    fontWeight = FontWeight.Bold,
                     fontSize = if (isTop3) 18.sp else 16.sp,
                     color = rankColor,
                 ),
@@ -480,13 +477,13 @@ private fun TopGroupItemRow(
                 Box(
                     modifier = Modifier
                         .size(52.dp)
-                        .background(VistaBrandColors.Indigo.copy(alpha = 0.12f), CircleShape),
+                        .background(VistaBrandColors.ViuBlueDeep.copy(alpha = 0.12f), CircleShape),
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.People,
                         contentDescription = null,
-                        tint = VistaBrandColors.Indigo,
+                        tint = VistaBrandColors.ViuBlueDeep,
                         modifier = Modifier.size(26.dp),
                     )
                 }
@@ -568,7 +565,7 @@ private fun TopGroupItemRow(
                                     text = "${group.verifiedCount}",
                                     style = MaterialTheme.typography.labelSmall.copy(
                                         fontFamily = VistaFontFamily,
-                                        fontSize = 10.sp,
+                                        fontSize = 11.sp,
                                         color = Color(0xFF3B82F6),
                                     ),
                                 )
@@ -578,7 +575,7 @@ private fun TopGroupItemRow(
                     if (group.premiumCount > 0) {
                         Surface(
                             shape = RoundedCornerShape(8.dp),
-                            color = Color(0xFFA855F7).copy(alpha = 0.12f),
+                            color = Color(0xFF1FB6E8).copy(alpha = 0.12f),
                         ) {
                             Row(
                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
@@ -587,7 +584,7 @@ private fun TopGroupItemRow(
                                 Icon(
                                     imageVector = Icons.Rounded.WorkspacePremium,
                                     contentDescription = null,
-                                    tint = Color(0xFFA855F7),
+                                    tint = Color(0xFF1FB6E8),
                                     modifier = Modifier.size(12.dp),
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
@@ -595,8 +592,8 @@ private fun TopGroupItemRow(
                                     text = "${group.premiumCount}",
                                     style = MaterialTheme.typography.labelSmall.copy(
                                         fontFamily = VistaFontFamily,
-                                        fontSize = 10.sp,
-                                        color = Color(0xFFA855F7),
+                                        fontSize = 11.sp,
+                                        color = Color(0xFF1FB6E8),
                                     ),
                                 )
                             }
@@ -664,7 +661,7 @@ private fun ErrorTopGroupsState(
                 text = "تلاش مجدد",
                 style = MaterialTheme.typography.labelLarge.copy(
                     fontFamily = VistaFontFamily,
-                    color = VistaBrandColors.Indigo,
+                    color = VistaBrandColors.ViuBlueDeep,
                     fontWeight = FontWeight.Bold,
                 ),
             )

@@ -143,14 +143,14 @@ fun VistaViuStateIllustration(
         animationsEnabled && !isPreview && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
 
     val (primaryAccent, secondaryAccent) = when (kind) {
-        VistaViuStateKind.SearchEmpty -> Color(0xFF00D4FF) to VistaBrandColors.Indigo
-        VistaViuStateKind.Offline -> Color(0xFFF59E0B) to Color(0xFF00D4FF)
-        VistaViuStateKind.Error -> Color(0xFFF43F5E) to Color(0xFFF96B5B)
-        VistaViuStateKind.Maintenance -> Color(0xFFF59E0B) to Color(0xFF1FB6E8)
-        VistaViuStateKind.EmptyChat -> Color(0xFF1FB6E8) to VistaBrandColors.Indigo
-        VistaViuStateKind.Locked -> Color(0xFF10B981) to VistaBrandColors.Indigo
-        VistaViuStateKind.NotFound -> VistaBrandColors.Indigo to Color(0xFF00D4FF)
-        VistaViuStateKind.Empty -> Color(0xFF00D4FF) to VistaBrandColors.Violet
+        VistaViuStateKind.SearchEmpty -> VistaBrandColors.ViuBlue to VistaBrandColors.ViuBlueDeep
+        VistaViuStateKind.Offline -> Color(0xFFF59E0B) to VistaBrandColors.ViuBlue
+        VistaViuStateKind.Error -> VistaBrandColors.Coral to VistaBrandColors.CoralSoft
+        VistaViuStateKind.Maintenance -> Color(0xFFF59E0B) to VistaBrandColors.ViuBlue
+        VistaViuStateKind.EmptyChat -> VistaBrandColors.ViuBlue to VistaBrandColors.ViuBlueDeep
+        VistaViuStateKind.Locked -> Color(0xFF10B981) to VistaBrandColors.ViuBlue
+        VistaViuStateKind.NotFound -> VistaBrandColors.ViuBlue to VistaBrandColors.Coral
+        VistaViuStateKind.Empty -> VistaBrandColors.ViuBlue to VistaBrandColors.Coral
     }
 
     Box(

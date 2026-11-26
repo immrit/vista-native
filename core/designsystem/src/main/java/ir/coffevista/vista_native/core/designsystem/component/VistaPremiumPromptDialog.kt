@@ -56,6 +56,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import ir.coffevista.vista_native.core.designsystem.theme.vistaColors
+import ir.coffevista.vista_native.core.designsystem.tokens.VistaBrandColors
 
 val LocalNavigateToPremium = staticCompositionLocalOf<(() -> Unit)?> { null }
 
@@ -77,13 +79,13 @@ fun VistaPremiumBottomSheet(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val heroGradient = Brush.linearGradient(
         colors = listOf(
-            Color(0xFF4F8DFD),
-            Color(0xFF8B5CF6),
-            Color(0xFFD946EF),
+            Color(0xFF121417),
+            Color(0xFF123442),
+            VistaBrandColors.ViuBlueDeep,
         ),
     )
-    val ctaBlue = Color(0xFF2589F5)
-    val badgeViolet = Color(0xFF9E5CF6)
+    val ctaBlue = MaterialTheme.vistaColors.viuBlue
+    val badgeViu = MaterialTheme.vistaColors.viuBlue
 
     val showcaseFeatures = listOf(
         ShowcaseFeatureItem(
@@ -225,7 +227,7 @@ fun VistaPremiumBottomSheet(
                         Spacer(modifier = Modifier.height(10.dp))
                         Surface(
                             shape = RoundedCornerShape(12.dp),
-                            color = Color(0xFF4F46E5).copy(alpha = 0.82f),
+                            color = VistaBrandColors.InkBlack.copy(alpha = 0.72f),
                         ) {
                             Text(
                                 text = "ویستا پریمیوم • تیک طلایی",
@@ -243,7 +245,7 @@ fun VistaPremiumBottomSheet(
                 if (!feature.isNullOrBlank()) {
                     Surface(
                         shape = RoundedCornerShape(12.dp),
-                        color = badgeViolet.copy(alpha = 0.12f),
+                        color = badgeViu.copy(alpha = 0.12f),
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Text(
@@ -285,13 +287,13 @@ fun VistaPremiumBottomSheet(
                                 modifier = Modifier
                                     .size(38.dp)
                                     .clip(CircleShape)
-                                    .background(badgeViolet.copy(alpha = 0.9f)),
+                                    .background(badgeViu.copy(alpha = 0.16f)),
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Icon(
                                     imageVector = item.icon,
                                     contentDescription = null,
-                                    tint = Color.White,
+                                    tint = badgeViu,
                                     modifier = Modifier.size(20.dp),
                                 )
                             }
@@ -318,7 +320,7 @@ fun VistaPremiumBottomSheet(
                                         ) {
                                             Text(
                                                 text = item.badge,
-                                                fontSize = 10.sp,
+                                                fontSize = 11.sp,
                                                 fontWeight = FontWeight.SemiBold,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp),
@@ -360,8 +362,8 @@ fun VistaPremiumBottomSheet(
                         .height(50.dp),
                     shape = RoundedCornerShape(14.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = ctaBlue,
-                        contentColor = Color.White,
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary,
                     ),
                 ) {
                     Text(

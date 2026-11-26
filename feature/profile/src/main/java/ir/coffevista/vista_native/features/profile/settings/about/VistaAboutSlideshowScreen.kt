@@ -76,7 +76,7 @@ fun VistaAboutSlideshowScreen(
             subtitle = "پلتفرم اجتماعی پیشرفته و امن",
             description = "چت، اشتراک‌گذاری، استوری، موزیک",
             icon = Icons.Outlined.RocketLaunch,
-            gradientColors = listOf(Color(0xFF6366F1), Color(0xFF8B5CF6)),
+            gradientColors = listOf(Color(0xFF121417), Color(0xFF0097C7)),
             features = listOf("چت و پیام‌رسانی پیشرفته", "اشتراک‌گذاری محتوا", "سیستم استوری", "پخش‌کننده موزیک"),
         ),
         SlideItemData(
@@ -92,7 +92,7 @@ fun VistaAboutSlideshowScreen(
             subtitle = "زیرساخت ابری پیشرفته",
             description = "۹۹.۹٪ زمان کارکرد تضمین شده",
             icon = Icons.Outlined.Cloud,
-            gradientColors = listOf(Color(0xFF7E57C2), Color(0xFFE91E63)),
+            gradientColors = listOf(Color(0xFF0097C7), Color(0xFFF0543B)),
             features = listOf("زیرساخت ابری پایدار", "پشتیبان‌گیری خودکار", "مقیاس‌پذیری بالا", "CDN سریع جهانی"),
         ),
         SlideItemData(

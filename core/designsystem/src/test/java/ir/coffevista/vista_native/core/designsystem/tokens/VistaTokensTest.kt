@@ -12,31 +12,32 @@ import org.junit.Test
 class VistaTokensTest {
     @Test
     fun `brand palette matches approved Vista identity`() {
-        assertEquals(Color(0xFF6366F1), VistaBrandColors.Indigo)
-        assertEquals(Color(0xFF4F46E5), VistaBrandColors.IndigoDeep)
-        assertEquals(Color(0xFF8B5CF6), VistaBrandColors.Violet)
-        assertEquals(Color(0xFFEC4899), VistaBrandColors.Pink)
+        assertEquals(Color(0xFF111215), VistaBrandColors.InkBlack)
+        assertEquals(Color(0xFFF4F5F7), VistaBrandColors.InkWhite)
+        assertEquals(Color(0xFF1FB6E8), VistaBrandColors.ViuBlue)
+        assertEquals(Color(0xFF0097C7), VistaBrandColors.ViuBlueDeep)
+        assertEquals(Color(0xFFF0543B), VistaBrandColors.Coral)
     }
 
     @Test
-    fun `light semantic palette matches Flutter source`() {
-        assertEquals(Color(0xFF0F1117), VistaSemanticPalettes.Light.contentPrimary)
-        assertEquals(Color(0xFF6B7280), VistaSemanticPalettes.Light.contentSecondary)
+    fun `light semantic palette matches approved identity`() {
+        assertEquals(Color(0xFF111215), VistaSemanticPalettes.Light.contentPrimary)
+        assertEquals(Color(0xFF656C76), VistaSemanticPalettes.Light.contentSecondary)
         assertEquals(Color(0xFFE5E7EB), VistaSemanticPalettes.Light.divider)
         assertEquals(Color(0xFF10B981), VistaSemanticPalettes.Light.success)
         assertEquals(Color(0xFFF59E0B), VistaSemanticPalettes.Light.warning)
-        assertEquals(Color(0xFF6366F1), VistaSemanticPalettes.Light.focus)
+        assertEquals(VistaBrandColors.ViuBlueDeep, VistaSemanticPalettes.Light.focus)
     }
 
     @Test
-    fun `dark semantic palette matches Flutter source`() {
-        assertEquals(Color(0xFFF0F0FF), VistaSemanticPalettes.Dark.contentPrimary)
-        assertEquals(Color(0xFF8B8BAD), VistaSemanticPalettes.Dark.contentSecondary)
-        assertEquals(Color(0xFF2A2A45), VistaSemanticPalettes.Dark.divider)
+    fun `dark semantic palette matches approved identity`() {
+        assertEquals(Color(0xFFF3F4F6), VistaSemanticPalettes.Dark.contentPrimary)
+        assertEquals(Color(0xFF8A919C), VistaSemanticPalettes.Dark.contentSecondary)
+        assertEquals(Color(0xFF23272E), VistaSemanticPalettes.Dark.divider)
         assertEquals(Color(0xFF34D399), VistaSemanticPalettes.Dark.success)
         assertEquals(Color(0xFFFBBF24), VistaSemanticPalettes.Dark.warning)
-        assertEquals(Color(0xFF6366F1), VistaSemanticPalettes.Dark.focus)
-        assertEquals(Color(0xFF6E6E92), VistaSemanticPalettes.Dark.disabledContent)
+        assertEquals(VistaBrandColors.ViuBlue, VistaSemanticPalettes.Dark.focus)
+        assertEquals(Color(0xFF636973), VistaSemanticPalettes.Dark.disabledContent)
     }
 
     @Test
@@ -93,7 +94,7 @@ class VistaTokensTest {
     @Test
     fun `semantic content contrast meets normal text threshold`() {
         assertTrue(contrast(VistaSemanticPalettes.Light.contentPrimary, Color.White) >= 4.5)
-        assertTrue(contrast(VistaSemanticPalettes.Dark.contentPrimary, Color(0xFF13131E)) >= 4.5)
+        assertTrue(contrast(VistaSemanticPalettes.Dark.contentPrimary, Color(0xFF121417)) >= 4.5)
         assertTrue(contrast(VistaSemanticPalettes.Light.onSuccess, VistaSemanticPalettes.Light.success) >= 4.5)
         assertTrue(contrast(VistaSemanticPalettes.Dark.onWarning, VistaSemanticPalettes.Dark.warning) >= 4.5)
     }

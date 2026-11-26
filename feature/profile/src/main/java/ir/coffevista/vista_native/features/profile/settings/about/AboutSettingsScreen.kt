@@ -123,8 +123,8 @@ fun AboutSettingsScreen(
                 VistaSettingsGroup {
                     VistaSettingsTile(
                         icon = Icons.Outlined.Info,
-                        iconColor = Color(0xFF6366F1),
-                        iconContainerColor = Color(0xFF6366F1).copy(alpha = 0.12f),
+                        iconColor = Color(0xFF0097C7),
+                        iconContainerColor = Color(0xFF0097C7).copy(alpha = 0.12f),
                         title = "درباره ویستا",
                         subtitle = "اطلاعات کلی درباره برنامه و تیم سازنده",
                         onClick = onSlideshowClick,

@@ -133,7 +133,7 @@ fun DataStorageSettingsScreen(
                                 text = cacheSizeText,
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = VistaBrandColors.Indigo,
+                                color = VistaBrandColors.ViuBlueDeep,
                             )
                         }
 

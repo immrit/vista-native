@@ -35,6 +35,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ir.coffevista.vista_native.core.designsystem.navigation.LocalVistaInternalLinkNavigator
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaBrandColors
+import ir.coffevista.vista_native.features.chat.presentation.VistaChatPalette
+import ir.coffevista.vista_native.features.chat.presentation.isChatDarkTheme
 
 private val URL_REGEX = Regex(
     """https?://[^\s<>"'{}|\\^`]+""",
@@ -63,12 +65,13 @@ fun ChatLinkPreviewCard(
     val uriHandler = LocalUriHandler.current
     val internalNavigator = LocalVistaInternalLinkNavigator.current
     val domain = remember(url) { extractDomain(url) }
+    val isDark = isChatDarkTheme()
 
-    val accentColor = if (isMine) Color.White.copy(alpha = 0.95f) else VistaBrandColors.Indigo
+    val accentColor = if (isMine) Color.White.copy(alpha = 0.95f) else VistaChatPalette.incomingActiveWave(isDark)
     val cardBackground = if (isMine) {
-        Color.White.copy(alpha = 0.16f)
+        VistaChatPalette.outgoingNestedCardBg(isDark)
     } else {
-        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f)
+        VistaChatPalette.incomingNestedCardBg(isDark)
     }
     val subTextColor = if (isMine) Color.White.copy(alpha = 0.75f) else MaterialTheme.colorScheme.onSurfaceVariant
 

@@ -82,12 +82,12 @@ fun DuelInviteCard(
     }
 
     val isDark = isSystemInDarkTheme()
-    val cardBg = if (isDark) Color(0xFF1F1B33) else Color(0xFFFAF8FF)
-    val cardBorder = if (isDark) Color(0xFF4C3F7A) else Color(0xFFDDD6FE)
-    val primaryText = if (isDark) Color(0xFFF5F3FF) else Color(0xFF312E81)
-    val secondaryText = if (isDark) Color(0xFFC4B5FD) else Color(0xFF6D28D9)
-    val chipBg = if (isDark) Color(0xFF2B2447) else Color(0xFFF3EDFF)
-    val chipBorder = if (isDark) Color(0xFF5B4B91) else Color(0xFFE9D5FF)
+    val cardBg = if (isDark) Color(0xFF14171C) else Color(0xFFFFFFFF)
+    val cardBorder = if (isDark) Color(0xFF232B30) else Color(0xFFE5E7EB)
+    val primaryText = if (isDark) Color(0xFFF3F5F7) else Color(0xFF111215)
+    val secondaryText = if (isDark) Color(0xFF1FB6E8) else Color(0xFF0097C7)
+    val chipBg = if (isDark) Color(0xFF1B1E23) else Color(0xFFF0F2F4)
+    val chipBorder = if (isDark) Color(0xFF2A2E37) else Color(0xFFE2E5EA)
 
     val inviterName = preview?.player1?.name?.takeIf { it.isNotBlank() }
         ?: invite.inviterName?.takeIf { it.isNotBlank() }
@@ -122,7 +122,7 @@ fun DuelInviteCard(
             Triple("شروع شد (۲ نفر)", Color(0xFFD97706), Color.White)
         }
         isWaiting -> if (isParticipant) {
-            Triple("در انتظار حریف", Color(0xFF6D28D9), Color.White)
+            Triple("در انتظار حریف", Color(0xFF0097C7), Color.White)
         } else {
             Triple("آماده شروع", Color(0xFF059669), Color.White)
         }
@@ -153,7 +153,7 @@ fun DuelInviteCard(
     val headerGradient = if (isExpired || isCancelled) {
         listOf(Color(0xFF64748B), Color(0xFF475569))
     } else {
-        listOf(Color(0xFFEC4899), Color(0xFF7C3AED))
+        listOf(Color(0xFF121417), Color(0xFF007EA8))
     }
 
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
@@ -211,7 +211,7 @@ fun DuelInviteCard(
                             text = "رقابت ۶ راندی دوستانه",
                             color = Color.White.copy(alpha = 0.85f),
                             fontFamily = VistaFontFamily,
-                            fontSize = 10.sp,
+                            fontSize = 11.sp,
                             maxLines = 1,
                         )
                     }
@@ -228,7 +228,7 @@ fun DuelInviteCard(
                         color = badgeFg,
                         fontFamily = VistaFontFamily,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 10.sp,
+                        fontSize = 11.sp,
                         maxLines = 1,
                     )
                 }
@@ -263,7 +263,7 @@ fun DuelInviteCard(
                                         .size(34.dp)
                                         .clip(CircleShape)
                                         .background(chipBg)
-                                        .border(1.5.dp, Color(0xFFC4B5FD), CircleShape),
+                                        .border(1.5.dp, Color(0xFF1FB6E8), CircleShape),
                                     contentAlignment = Alignment.Center,
                                 ) {
                                     if (!inviterAvatar.isNullOrBlank()) {
@@ -307,7 +307,7 @@ fun DuelInviteCard(
                                     color = secondaryText,
                                     fontFamily = VistaFontFamily,
                                     fontWeight = FontWeight.ExtraBold,
-                                    fontSize = 10.sp,
+                                    fontSize = 11.sp,
                                 )
                             }
 
@@ -330,8 +330,8 @@ fun DuelInviteCard(
                                     modifier = Modifier
                                         .size(34.dp)
                                         .clip(CircleShape)
-                                        .background(if (isDark) Color(0xFF42213F) else Color(0xFFFCE7F3))
-                                        .border(1.5.dp, Color(0xFFF9A8D4), CircleShape),
+                                        .background(if (isDark) Color(0xFF381814) else Color(0xFFFDEBE8))
+                                        .border(1.5.dp, Color(0xFFF0543B), CircleShape),
                                     contentAlignment = Alignment.Center,
                                 ) {
                                     if (!player2.avatarUrl.isNullOrBlank()) {
@@ -379,7 +379,7 @@ fun DuelInviteCard(
                                 color = secondaryText,
                                 fontFamily = VistaFontFamily,
                                 fontWeight = FontWeight.SemiBold,
-                                fontSize = 10.sp,
+                                fontSize = 11.sp,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
@@ -392,7 +392,7 @@ fun DuelInviteCard(
                                 .size(40.dp)
                                 .clip(CircleShape)
                                 .background(chipBg)
-                                .border(1.5.dp, Color(0xFFC4B5FD), CircleShape),
+                                .border(1.5.dp, Color(0xFF1FB6E8), CircleShape),
                             contentAlignment = Alignment.Center,
                         ) {
                             if (!inviterAvatar.isNullOrBlank()) {
@@ -474,10 +474,10 @@ fun DuelInviteCard(
                         modifier = Modifier
                             .weight(1f)
                             .clip(RoundedCornerShape(10.dp))
-                            .background(if (isDark) Color(0xFF391D35) else Color(0xFFFDF2F8))
+                            .background(if (isDark) Color(0xFF381814) else Color(0xFFFDEBE8))
                             .border(
                                 0.7.dp,
-                                if (isDark) Color(0xFF7A3569) else Color(0xFFFBCFE8),
+                                if (isDark) Color(0xFF6E2B21) else Color(0xFFF8C6BE),
                                 RoundedCornerShape(10.dp),
                             )
                             .padding(horizontal = 8.dp, vertical = 6.dp),
@@ -486,7 +486,7 @@ fun DuelInviteCard(
                         Icon(
                             imageVector = Icons.Rounded.EmojiEvents,
                             contentDescription = null,
-                            tint = Color(0xFFDB2777),
+                            tint = Color(0xFFF0543B),
                             modifier = Modifier.size(13.dp),
                         )
                         Spacer(Modifier.width(4.dp))
@@ -496,7 +496,7 @@ fun DuelInviteCard(
                             } else {
                                 "جایزه سکه"
                             },
-                            color = if (isDark) Color(0xFFF9A8D4) else Color(0xFF9D174D),
+                            color = if (isDark) Color(0xFFFFB4A8) else Color(0xFFB3321D),
                             fontFamily = VistaFontFamily,
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 11.sp,
@@ -529,7 +529,7 @@ fun DuelInviteCard(
                             color = secondaryText,
                             fontFamily = VistaFontFamily,
                             fontWeight = FontWeight.SemiBold,
-                            fontSize = 10.sp,
+                            fontSize = 11.sp,
                             maxLines = 1,
                         )
                     }
@@ -552,7 +552,7 @@ fun DuelInviteCard(
                         listOf(Color(0xFF9CA3AF), Color(0xFF6B7280)),
                     )
                     isParticipant && !canJoin -> Brush.horizontalGradient(
-                        listOf(Color(0xFF7C3AED), Color(0xFF5B21B6)),
+                        listOf(Color(0xFF0097C7), Color(0xFF007EA8)),
                     )
                     else -> Brush.horizontalGradient(
                         listOf(Color(0xFF10B981), Color(0xFF059669)),

@@ -34,25 +34,25 @@ import ir.coffevista.vista_native.core.designsystem.tokens.VistaSemanticColors
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaSemanticPalettes
 
 private val VistaLightColorScheme = lightColorScheme(
-    primary = VistaBrandColors.Indigo,
+    primary = VistaBrandColors.InkBlack,
     onPrimary = Color.White,
-    primaryContainer = Color(0xFFE0E7FF),
-    onPrimaryContainer = Color(0xFF312E81),
-    secondary = VistaBrandColors.VioletDeep,
+    primaryContainer = Color(0xFFECEEF2),
+    onPrimaryContainer = VistaBrandColors.InkBlack,
+    secondary = VistaBrandColors.ViuBlueDeep,
     onSecondary = Color.White,
-    secondaryContainer = Color(0xFFEDE9FE),
-    onSecondaryContainer = Color(0xFF4C1D95),
-    tertiary = VistaBrandColors.PinkDeep,
+    secondaryContainer = VistaBrandColors.ViuBlueSurfaceLight,
+    onSecondaryContainer = Color(0xFF053B4E),
+    tertiary = VistaBrandColors.CoralDeep,
     onTertiary = Color.White,
-    tertiaryContainer = Color(0xFFFCE7F3),
-    onTertiaryContainer = Color(0xFF831843),
-    background = Color(0xFFF8F9FF),
+    tertiaryContainer = Color(0xFFFDEBE8),
+    onTertiaryContainer = Color(0xFF5C190E),
+    background = Color(0xFFFAFAFA),
     onBackground = VistaSemanticPalettes.Light.contentPrimary,
     surface = Color.White,
     onSurface = VistaSemanticPalettes.Light.contentPrimary,
-    surfaceVariant = Color(0xFFF3F4FF),
+    surfaceVariant = Color(0xFFF0F2F4),
     onSurfaceVariant = VistaSemanticPalettes.Light.contentSecondary,
-    outline = Color(0xFFE5E7EB),
+    outline = Color(0xFFE2E5EA),
     outlineVariant = VistaSemanticPalettes.Light.divider,
     error = Color(0xFFEF4444),
     onError = Color.White,
@@ -61,28 +61,28 @@ private val VistaLightColorScheme = lightColorScheme(
 )
 
 private val VistaDarkColorScheme = darkColorScheme(
-    primary = VistaBrandColors.Indigo,
-    onPrimary = Color.White,
-    primaryContainer = Color(0xFF2E2E6E),
-    onPrimaryContainer = Color(0xFFF0F0FF),
-    secondary = VistaBrandColors.Violet,
-    onSecondary = Color.White,
-    secondaryContainer = Color(0xFF2E2E6E),
-    onSecondaryContainer = Color(0xFFF0F0FF),
-    tertiary = VistaBrandColors.Pink,
+    primary = VistaBrandColors.InkWhite,
+    onPrimary = Color(0xFF090A0C),
+    primaryContainer = Color(0xFF22262E),
+    onPrimaryContainer = VistaBrandColors.InkWhite,
+    secondary = VistaBrandColors.ViuBlue,
+    onSecondary = Color(0xFF041820),
+    secondaryContainer = VistaBrandColors.ViuBlueSurfaceDark,
+    onSecondaryContainer = Color(0xFFD6F4FF),
+    tertiary = VistaBrandColors.Coral,
     onTertiary = Color.White,
-    tertiaryContainer = Color(0xFF252540),
-    onTertiaryContainer = Color(0xFFF0F0FF),
-    background = Color(0xFF09090F),
+    tertiaryContainer = Color(0xFF381814),
+    onTertiaryContainer = Color(0xFFFFDCD6),
+    background = Color(0xFF090A0C),
     onBackground = VistaSemanticPalettes.Dark.contentPrimary,
-    surface = Color(0xFF13131E),
+    surface = Color(0xFF121417),
     onSurface = VistaSemanticPalettes.Dark.contentPrimary,
-    surfaceVariant = Color(0xFF1C1C2E),
+    surfaceVariant = Color(0xFF1B1E23),
     onSurfaceVariant = VistaSemanticPalettes.Dark.contentSecondary,
-    outline = Color(0xFF2A2A45),
+    outline = Color(0xFF2A2E37),
     outlineVariant = VistaSemanticPalettes.Dark.divider,
     error = Color(0xFFF87171),
-    onError = Color(0xFF09090F),
+    onError = Color(0xFF090A0C),
     errorContainer = Color(0xFF7F1D1D),
     onErrorContainer = Color(0xFFFEE2E2),
 )
@@ -216,8 +216,8 @@ fun VistaTheme(
 @Composable
 private fun VistaSystemBars(darkTheme: Boolean) {
     val view = LocalView.current
-    val statusBarColor = if (darkTheme) Color(0xFF13131E) else Color.White
-    val navigationBarColor = if (darkTheme) Color(0xFF09090F) else Color.White
+    val statusBarColor = if (darkTheme) Color(0xFF121417) else Color.White
+    val navigationBarColor = if (darkTheme) Color(0xFF090A0C) else Color.White
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as? Activity)?.window ?: return@SideEffect

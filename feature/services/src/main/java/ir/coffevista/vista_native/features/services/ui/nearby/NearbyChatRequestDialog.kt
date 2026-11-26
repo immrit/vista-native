@@ -125,7 +125,7 @@ fun NearbyChatRequestDialog(
                                 modifier = Modifier
                                     .size(48.dp)
                                     .clip(CircleShape)
-                                    .background(VistaBrandColors.Indigo),
+                                    .background(VistaBrandColors.ViuBlueDeep),
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Text(
@@ -220,7 +220,7 @@ fun NearbyChatRequestDialog(
                     maxLines = 4,
                     shape = RoundedCornerShape(14.dp),
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = VistaBrandColors.Indigo,
+                        focusedBorderColor = VistaBrandColors.ViuBlueDeep,
                         unfocusedBorderColor = Color.White.copy(alpha = 0.14f),
                         focusedTextColor = Color.White,
                         unfocusedTextColor = Color.White,
@@ -280,7 +280,7 @@ fun NearbyChatRequestDialog(
                         onClick = { onSend(introMessage.trim()) },
                         enabled = !isSending,
                         shape = RoundedCornerShape(14.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = VistaBrandColors.Indigo),
+                        colors = ButtonDefaults.buttonColors(containerColor = VistaBrandColors.ViuBlueDeep),
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(50.dp),

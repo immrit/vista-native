@@ -202,14 +202,14 @@ private fun VistaIdCardFront(
         effectiveVerification.contains("gold") -> Color(0xFFFFC107)
         effectiveVerification.contains("blue") -> Color(0xFF0095F6)
         effectiveVerification.contains("black") -> Color(0xFF9E9E9E)
-        else -> Color(0xFF6366F1)
+        else -> Color(0xFF1FB6E8)
     }
 
     val gradientColors = when {
         effectiveVerification.contains("gold") -> listOf(Color(0xFFFFC107), Color(0xFFFF9800))
         effectiveVerification.contains("blue") -> listOf(Color(0xFF0095F6), Color(0xFF38BDF8))
         effectiveVerification.contains("black") -> listOf(Color(0xFF757575), Color(0xFF424242))
-        else -> listOf(Color(0xFF6366F1), Color(0xFF8B5CF6))
+        else -> listOf(Color(0xFF1FB6E8), Color(0xFF0097C7))
     }
 
     val userTitle = when {
@@ -232,9 +232,9 @@ private fun VistaIdCardFront(
             .background(
                 Brush.linearGradient(
                     colors = listOf(
-                        Color(0xFF1E1E2E),
-                        Color(0xFF12121C),
-                        Color(0xFF0A0A0F),
+                        Color(0xFF14171C),
+                        Color(0xFF0E1014),
+                        Color(0xFF090A0C),
                     ),
                     start = Offset(0f, 0f),
                     end = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY),
@@ -293,7 +293,7 @@ private fun VistaIdCardFront(
                         Text(
                             text = userTitle,
                             color = Color.White.copy(alpha = 0.4f),
-                            fontSize = 8.sp,
+                            fontSize = 11.sp,
                             letterSpacing = 1.sp,
                         )
                     }
@@ -337,7 +337,7 @@ private fun VistaIdCardFront(
                             modifier = Modifier
                                 .fillMaxSize()
                                 .clip(CircleShape)
-                                .background(Color(0xFF1E1E2E)),
+                                .background(Color(0xFF14171C)),
                             contentAlignment = Alignment.Center,
                         ) {
                             Icon(
@@ -508,7 +508,7 @@ private fun VistaIdCardBack(
                     Text(
                         text = "VISTA",
                         color = Color(0xFF9E9E9E),
-                        fontSize = 10.sp,
+                        fontSize = 11.sp,
                         fontWeight = FontWeight.SemiBold,
                         letterSpacing = 1.5.sp,
                     )
@@ -517,7 +517,7 @@ private fun VistaIdCardBack(
                 Text(
                     text = "@${user.username ?: ""}",
                     color = Color(0xFFBDBDBD),
-                    fontSize = 10.sp,
+                    fontSize = 11.sp,
                 )
             }
         }

@@ -67,15 +67,15 @@ data class RemoteBannerSlot(
     val subtitle: String = "",
     val imageUrl: String = "",
     val linkUrl: String = "",
-    val bgColor: String = "#6366F1",
+    val bgColor: String = "#0097C7",
     val textColor: String = "#FFFFFF",
 )
 
 data class RemoteThemeOverride(
     val enabled: Boolean = false,
     val holidayName: String = "",
-    val primaryHex: String = "#6366F1",
-    val accentHex: String = "#EC4899",
+    val primaryHex: String = "#0097C7",
+    val accentHex: String = "#F0543B",
     val badgeText: String = "",
 )
 
@@ -93,8 +93,33 @@ data class RemoteQuickServiceItem(
     val route: String,
     val enabled: Boolean = true,
     val sortOrder: Int = 0,
-    val gradientStart: String = "#6366F1",
-    val gradientEnd: String = "#8B5CF6",
+    val gradientStart: String = "#0097C7",
+    val gradientEnd: String = "#1FB6E8",
+    val icon: String = "",
+    val badgeText: String = "",
+    val featured: Boolean = false,
+)
+
+data class RemoteServicesHubConfig(
+    val headerTitle: String = "سرویس‌ها",
+    val headerSubtitle: String = "ابزارها، سرگرمی و جمع‌های ویستا",
+    val announcementText: String = "",
+    val bannersTitle: String = "برای شما",
+    val bannersSubtitle: String = "انتخاب‌های تازه ویستا",
+    val quickTitle: String = "دسترسی سریع",
+    val quickSubtitle: String = "مسیرهای پرکاربرد",
+    val contactsTitle: String = "آشناها در ویستا",
+    val sectionsTitle: String = "سرویس‌های بیشتر",
+    val sectionsSubtitle: String = "انتخاب‌هایی که از ویستا برایت آماده شده",
+    val quickLayout: String = "bento",
+    val bannersLayout: String = "carousel",
+    val bannerAutoPlay: Boolean = true,
+    val sectionsLayout: String = "rail",
+    val showBanners: Boolean = true,
+    val showQuickServices: Boolean = true,
+    val showContacts: Boolean = true,
+    val showSections: Boolean = true,
+    val sectionOrder: List<String> = listOf("banners", "quick_services", "contacts", "sections"),
 )
 
 data class RemoteBrandOrnament(
@@ -151,6 +176,7 @@ data class RemoteConfigSnapshot(
     val themeOverride: RemoteThemeOverride = RemoteThemeOverride(),
     val ads: RemoteAdsConfig = RemoteAdsConfig(),
     val quickServices: List<RemoteQuickServiceItem> = emptyList(),
+    val servicesHub: RemoteServicesHubConfig = RemoteServicesHubConfig(),
     val brandOrnament: RemoteBrandOrnament = RemoteBrandOrnament(),
     val ambientEffect: RemoteAmbientEffect = RemoteAmbientEffect(),
     val navigationSlots: List<RemoteNavigationSlot> = emptyList(),
@@ -492,7 +518,7 @@ internal fun parseRemoteConfigSnapshot(obj: JsonObject): RemoteConfigSnapshot {
         subtitle = (slot?.get("subtitle") as? JsonPrimitive)?.contentOrNull.orEmpty(),
         imageUrl = (slot?.get("image_url") as? JsonPrimitive)?.contentOrNull.orEmpty(),
         linkUrl = (slot?.get("link_url") as? JsonPrimitive)?.contentOrNull.orEmpty(),
-        bgColor = (slot?.get("bg_color") as? JsonPrimitive)?.contentOrNull ?: "#6366F1",
+        bgColor = (slot?.get("bg_color") as? JsonPrimitive)?.contentOrNull ?: "#0097C7",
         textColor = (slot?.get("text_color") as? JsonPrimitive)?.contentOrNull ?: "#FFFFFF",
     )
 
@@ -500,8 +526,8 @@ internal fun parseRemoteConfigSnapshot(obj: JsonObject): RemoteConfigSnapshot {
     val themeOverride = RemoteThemeOverride(
         enabled = (themeObj?.get("enabled") as? JsonPrimitive)?.booleanOrNull ?: false,
         holidayName = (themeObj?.get("holiday_name") as? JsonPrimitive)?.contentOrNull.orEmpty(),
-        primaryHex = (themeObj?.get("primary_hex") as? JsonPrimitive)?.contentOrNull ?: "#6366F1",
-        accentHex = (themeObj?.get("accent_hex") as? JsonPrimitive)?.contentOrNull ?: "#EC4899",
+        primaryHex = (themeObj?.get("primary_hex") as? JsonPrimitive)?.contentOrNull ?: "#0097C7",
+        accentHex = (themeObj?.get("accent_hex") as? JsonPrimitive)?.contentOrNull ?: "#F0543B",
         badgeText = (themeObj?.get("badge_text") as? JsonPrimitive)?.contentOrNull.orEmpty(),
     )
 
@@ -523,10 +549,48 @@ internal fun parseRemoteConfigSnapshot(obj: JsonObject): RemoteConfigSnapshot {
             route = (q["route"] as? JsonPrimitive)?.contentOrNull.orEmpty(),
             enabled = (q["enabled"] as? JsonPrimitive)?.booleanOrNull ?: true,
             sortOrder = (q["sort_order"] as? JsonPrimitive)?.intOrNull ?: 0,
-            gradientStart = (q["gradient_start"] as? JsonPrimitive)?.contentOrNull ?: "#6366F1",
-            gradientEnd = (q["gradient_end"] as? JsonPrimitive)?.contentOrNull ?: "#8B5CF6",
+            gradientStart = (q["gradient_start"] as? JsonPrimitive)?.contentOrNull ?: "#0097C7",
+            gradientEnd = (q["gradient_end"] as? JsonPrimitive)?.contentOrNull ?: "#1FB6E8",
+            icon = (q["icon"] as? JsonPrimitive)?.contentOrNull.orEmpty(),
+            badgeText = (q["badge_text"] as? JsonPrimitive)?.contentOrNull.orEmpty(),
+            featured = (q["featured"] as? JsonPrimitive)?.booleanOrNull ?: false,
         )
     }.orEmpty()
+
+    val hubObj = uiObj?.get("services_hub") as? JsonObject
+    val hubDef = RemoteServicesHubConfig()
+    val servicesHub = if (hubObj == null) {
+        hubDef
+    } else {
+        fun hubStr(k: String, fallback: String): String =
+            (hubObj[k] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() } ?: fallback
+
+        val parsedOrder = (hubObj["section_order"] as? JsonArray)
+            ?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull?.trim()?.lowercase() }
+            ?.takeIf { it.isNotEmpty() }
+            ?: hubDef.sectionOrder
+        RemoteServicesHubConfig(
+            headerTitle = hubStr("header_title", hubDef.headerTitle),
+            headerSubtitle = (hubObj["header_subtitle"] as? JsonPrimitive)?.contentOrNull ?: hubDef.headerSubtitle,
+            announcementText = (hubObj["announcement_text"] as? JsonPrimitive)?.contentOrNull.orEmpty(),
+            bannersTitle = hubStr("banners_title", hubDef.bannersTitle),
+            bannersSubtitle = (hubObj["banners_subtitle"] as? JsonPrimitive)?.contentOrNull ?: hubDef.bannersSubtitle,
+            quickTitle = hubStr("quick_title", hubDef.quickTitle),
+            quickSubtitle = (hubObj["quick_subtitle"] as? JsonPrimitive)?.contentOrNull ?: hubDef.quickSubtitle,
+            contactsTitle = hubStr("contacts_title", hubDef.contactsTitle),
+            sectionsTitle = hubStr("sections_title", hubDef.sectionsTitle),
+            sectionsSubtitle = (hubObj["sections_subtitle"] as? JsonPrimitive)?.contentOrNull ?: hubDef.sectionsSubtitle,
+            quickLayout = hubStr("quick_layout", hubDef.quickLayout).lowercase(),
+            bannersLayout = hubStr("banners_layout", hubDef.bannersLayout).lowercase(),
+            bannerAutoPlay = (hubObj["banner_auto_play"] as? JsonPrimitive)?.booleanOrNull ?: hubDef.bannerAutoPlay,
+            sectionsLayout = hubStr("sections_layout", hubDef.sectionsLayout).lowercase(),
+            showBanners = (hubObj["show_banners"] as? JsonPrimitive)?.booleanOrNull ?: hubDef.showBanners,
+            showQuickServices = (hubObj["show_quick_services"] as? JsonPrimitive)?.booleanOrNull ?: hubDef.showQuickServices,
+            showContacts = (hubObj["show_contacts"] as? JsonPrimitive)?.booleanOrNull ?: hubDef.showContacts,
+            showSections = (hubObj["show_sections"] as? JsonPrimitive)?.booleanOrNull ?: hubDef.showSections,
+            sectionOrder = parsedOrder,
+        )
+    }
 
     val rollouts = (obj["rollouts"] as? JsonObject)?.mapNotNull { (k, v) ->
         val pct = (v as? JsonPrimitive)?.intOrNull ?: return@mapNotNull null
@@ -601,6 +665,7 @@ internal fun parseRemoteConfigSnapshot(obj: JsonObject): RemoteConfigSnapshot {
         themeOverride = themeOverride,
         ads = ads,
         quickServices = quickServices,
+        servicesHub = servicesHub,
         brandOrnament = brandOrnament,
         ambientEffect = ambientEffect,
         navigationSlots = navigationSlots,

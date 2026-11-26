@@ -322,7 +322,7 @@ private fun FollowUserRow(
             Button(
                 onClick = onToggleFollow,
                 shape = RoundedCornerShape(20.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = VistaBrandColors.Indigo),
+                colors = ButtonDefaults.buttonColors(containerColor = VistaBrandColors.InkBlack),
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
                 modifier = Modifier.height(34.dp),
             ) {

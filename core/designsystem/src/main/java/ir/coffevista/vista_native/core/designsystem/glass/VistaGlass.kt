@@ -460,7 +460,7 @@ fun Modifier.vistaGlass(
 fun Modifier.vistaGlassHalo(
     state: VistaGlassState,
     isDark: Boolean,
-    tint: Color = if (isDark) Color(0xFF141C24) else Color(0xFFF7F9FA),
+    tint: Color = if (isDark) Color(0xFF0E1115) else Color(0xFFF7F8FA),
     blurRadius: Dp = 16.dp,
     startOffsetFraction: Float = 0.16f,
     maxAlpha: Float = if (isDark) 0.44f else 0.46f,

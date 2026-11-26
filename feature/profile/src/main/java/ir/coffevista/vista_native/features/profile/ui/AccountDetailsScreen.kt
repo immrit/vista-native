@@ -227,8 +227,8 @@ private fun AccountTypeCard(profile: ProfileHeaderModel) {
         ResolvedVerificationBadgeType.BLACK_TICK -> Tuple4(
             "اکانت مؤسس و بنیان‌گذار",
             "این اکانت متعلق به تیم مؤسس و بنیان‌گذاران ویستا می‌باشد و دارای نشان رسمی تأیید هویت است.",
-            Color(0xFF1E1E2E),
-            Color(0xFFE0E7FF),
+            Color(0xFF111215),
+            Color(0xFFECEEF2),
         )
         ResolvedVerificationBadgeType.GOLD_TICK -> Tuple4(
             "اکانت تأیید شده طلایی",
@@ -341,7 +341,7 @@ private fun MembershipCard(profile: ProfileHeaderModel) {
         when {
             order <= 100 -> Tuple4("عضو بنیان‌گذار  #$order", Color(0xFFB45309), Color(0xFFFEF3C7), R.drawable.ic_badge_founder)
             order <= 1000 -> Tuple4("از اولین هزار نفر  #$order", Color(0xFF1D4ED8), Color(0xFFDBEAFE), R.drawable.ic_badge_rocket)
-            order <= 10000 -> Tuple4("عضو پیشگام  #$order", Color(0xFF6D28D9), Color(0xFFF3E8FF), R.drawable.ic_badge_bolt)
+            order <= 10000 -> Tuple4("عضو پیشگام  #$order", Color(0xFF0097C7), Color(0xFFE3F6FC), R.drawable.ic_badge_bolt)
             else -> Tuple4("عضو شماره  #$order", Color(0xFF475569), Color(0xFFF1F5F9), R.drawable.ic_badge_star)
         }
     }

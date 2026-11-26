@@ -49,6 +49,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import ir.coffevista.vista_native.core.designsystem.component.VistaMiniPlayerHost
+import ir.coffevista.vista_native.core.designsystem.component.rememberVistaShimmerBrush
 import ir.coffevista.vista_native.core.designsystem.component.VistaViuStateIllustration
 import ir.coffevista.vista_native.core.designsystem.component.VistaViuStateKind
 import androidx.compose.material3.FilledIconButton
@@ -265,7 +266,7 @@ internal fun NotificationsScreenContent(
                     .vistaGlass(
                         state = notificationsGlassState,
                         shape = RectangleShape,
-                        tint = if (isDarkNotif) Color(0xFF1A222C) else Color.White,
+                        tint = if (isDarkNotif) Color(0xFF16191E) else Color.White,
                         isDark = isDarkNotif,
                         blurRadius = VistaGlassTokens.BarBlur,
                         tintAlphaOverride = if (isDarkNotif) 0.58f else 0.62f,
@@ -274,9 +275,6 @@ internal fun NotificationsScreenContent(
                         shadowElevation = 3.dp,
                     ),
             ) {
-                ir.coffevista.vista_native.core.designsystem.component.VistaAppBarAmbientOverlay(
-                    modifier = Modifier.matchParentSize(),
-                )
                 Column(modifier = Modifier.fillMaxWidth()) {
                     TopAppBar(
                         title = {
@@ -679,6 +677,7 @@ private fun NotificationEmptyState(onRetry: () -> Unit) {
 
 @Composable
 private fun NotificationTabsShimmer() {
+    val shimmerBrush = rememberVistaShimmerBrush()
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -690,8 +689,8 @@ private fun NotificationTabsShimmer() {
                 modifier = Modifier
                     .width(80.dp)
                     .height(38.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)),
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(shimmerBrush),
             )
         }
     }
@@ -699,6 +698,7 @@ private fun NotificationTabsShimmer() {
 
 @Composable
 private fun NotificationListShimmer() {
+    val shimmerBrush = rememberVistaShimmerBrush()
     LazyColumn(modifier = Modifier.fillMaxSize()) {
         items(8) {
             Row(
@@ -710,15 +710,15 @@ private fun NotificationListShimmer() {
                     modifier = Modifier
                         .size(48.dp)
                         .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)),
+                        .background(shimmerBrush),
                 )
                 Spacer(Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
-                    Box(Modifier.width(85.dp).height(14.dp).background(MaterialTheme.colorScheme.surfaceVariant))
+                    Box(Modifier.width(85.dp).height(14.dp).clip(RoundedCornerShape(6.dp)).background(shimmerBrush))
                     Spacer(Modifier.height(8.dp))
-                    Box(Modifier.fillMaxWidth().height(12.dp).background(MaterialTheme.colorScheme.surfaceVariant))
+                    Box(Modifier.fillMaxWidth().height(12.dp).clip(RoundedCornerShape(6.dp)).background(shimmerBrush))
                     Spacer(Modifier.height(6.dp))
-                    Box(Modifier.width(180.dp).height(12.dp).background(MaterialTheme.colorScheme.surfaceVariant))
+                    Box(Modifier.width(180.dp).height(12.dp).clip(RoundedCornerShape(6.dp)).background(shimmerBrush))
                 }
             }
         }
@@ -871,7 +871,7 @@ private fun notificationIcon(type: String): ImageVector = when (type) {
 }
 
 private fun notificationIconColor(type: String): Color = when (type) {
-    "like" -> Color(0xFFE53935)
+    "like" -> Color(0xFFF0543B)
     "comment" -> Color(0xFF1E88E5)
     "comment_reply" -> Color(0xFFFB8C00)
     "follow", "follow_request_accepted" -> Color(0xFF43A047)

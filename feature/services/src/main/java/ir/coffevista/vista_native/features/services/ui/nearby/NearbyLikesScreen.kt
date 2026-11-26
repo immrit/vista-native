@@ -143,11 +143,11 @@ fun NearbyLikesScreen(
                 TabRow(
                     selectedTabIndex = selectedTab,
                     containerColor = MaterialTheme.colorScheme.background,
-                    contentColor = VistaBrandColors.Indigo,
+                    contentColor = VistaBrandColors.ViuBlueDeep,
                     indicator = { tabPositions ->
                         TabRowDefaults.SecondaryIndicator(
                             modifier = Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
-                            color = VistaBrandColors.Indigo,
+                            color = VistaBrandColors.ViuBlueDeep,
                         )
                     },
                 ) {
@@ -199,7 +199,7 @@ fun NearbyLikesScreen(
                     ) {
                         CircularProgressIndicator(
                             strokeWidth = 2.5.dp,
-                            color = VistaBrandColors.Indigo,
+                            color = VistaBrandColors.ViuBlueDeep,
                         )
                     }
                 } else {
@@ -430,14 +430,14 @@ private fun ChatRequestCardItem(
                     Box(
                         modifier = Modifier
                             .size(50.dp)
-                            .background(VistaBrandColors.Indigo.copy(alpha = 0.14f), CircleShape),
+                            .background(VistaBrandColors.ViuBlueDeep.copy(alpha = 0.14f), CircleShape),
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
                             text = req.fullName.firstOrNull()?.toString() ?: "؟",
                             fontFamily = VistaFontFamily,
                             fontWeight = FontWeight.Bold,
-                            color = VistaBrandColors.Indigo,
+                            color = VistaBrandColors.ViuBlueDeep,
                         )
                     }
                 }
@@ -529,7 +529,7 @@ private fun ChatRequestCardItem(
                     Button(
                         onClick = onOpenChat,
                         shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = VistaBrandColors.Indigo),
+                        colors = ButtonDefaults.buttonColors(containerColor = VistaBrandColors.ViuBlueDeep),
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Icon(Icons.AutoMirrored.Rounded.Chat, contentDescription = null, modifier = Modifier.size(16.dp))
@@ -654,7 +654,7 @@ private fun ReceivedLikeItem(
                 Box(
                     modifier = Modifier
                         .size(52.dp)
-                        .background(VistaBrandColors.Indigo.copy(alpha = 0.12f), CircleShape),
+                        .background(VistaBrandColors.ViuBlueDeep.copy(alpha = 0.12f), CircleShape),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
@@ -662,7 +662,7 @@ private fun ReceivedLikeItem(
                         style = MaterialTheme.typography.titleMedium.copy(
                             fontFamily = VistaFontFamily,
                             fontWeight = FontWeight.Bold,
-                            color = VistaBrandColors.Indigo,
+                            color = VistaBrandColors.ViuBlueDeep,
                         ),
                     )
                 }
@@ -789,7 +789,7 @@ private fun MatchItemRow(
                 Box(
                     modifier = Modifier
                         .size(52.dp)
-                        .background(VistaBrandColors.Indigo.copy(alpha = 0.12f), CircleShape),
+                        .background(VistaBrandColors.ViuBlueDeep.copy(alpha = 0.12f), CircleShape),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
@@ -797,7 +797,7 @@ private fun MatchItemRow(
                         style = MaterialTheme.typography.titleMedium.copy(
                             fontFamily = VistaFontFamily,
                             fontWeight = FontWeight.Bold,
-                            color = VistaBrandColors.Indigo,
+                            color = VistaBrandColors.ViuBlueDeep,
                         ),
                     )
                 }
@@ -834,7 +834,7 @@ private fun MatchItemRow(
                 Icon(
                     imageVector = Icons.AutoMirrored.Rounded.Chat,
                     contentDescription = "گفتگو",
-                    tint = VistaBrandColors.Indigo,
+                    tint = VistaBrandColors.ViuBlueDeep,
                     modifier = Modifier.size(22.dp),
                 )
             }

@@ -68,6 +68,8 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaBrandColors
+import ir.coffevista.vista_native.features.chat.presentation.VistaChatPalette
+import ir.coffevista.vista_native.features.chat.presentation.isChatDarkTheme
 import ir.coffevista.vista_native.features.chat.domain.model.DownloadState
 import ir.coffevista.vista_native.features.chat.domain.model.DownloadTask
 import ir.coffevista.vista_native.features.chat.presentation.audio.AudioWaveformExtractor
@@ -202,13 +204,15 @@ fun VoicePlayerBubble(
         ChatAudioPlayer.toggle(track, queue)
     }
 
-    val activeColor = if (isOutgoing) Color.White else VistaBrandColors.VioletDeep
+    val isDark = isChatDarkTheme()
+    val activeColor = if (isOutgoing) Color.White else VistaChatPalette.incomingActiveWave(isDark)
     val inactiveColor = if (isOutgoing) {
         Color.White.copy(alpha = 0.36f)
     } else {
         MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.26f)
     }
-    val unreadAccent = VistaBrandColors.Indigo
+    val unreadAccent = VistaBrandColors.ViuBlue
+    val incomingPlayAccent = VistaChatPalette.incomingAccent(isDark)
 
     Row(
         modifier = modifier
@@ -231,8 +235,8 @@ fun VoicePlayerBubble(
                     } else {
                         Brush.linearGradient(
                             listOf(
-                                VistaBrandColors.Indigo,
-                                VistaBrandColors.VioletDeep,
+                                incomingPlayAccent,
+                                incomingPlayAccent,
                             ),
                         )
                     },
@@ -474,9 +478,9 @@ fun VoicePlayerBubble(
                     ) {
                         Text(
                             text = speedLabel,
-                            fontSize = 10.sp,
+                            fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
-                            color = if (isOutgoing) Color.White else VistaBrandColors.VioletDeep,
+                            color = if (isOutgoing) Color.White else VistaChatPalette.incomingActiveWave(isDark),
                         )
                     }
                 }

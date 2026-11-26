@@ -206,7 +206,7 @@ fun StoryElementsOverlay(
                             )
                             Text(
                                 text = loc.address?.takeIf { it.isNotBlank() } ?: "مشاهده روی نقشه ←",
-                                color = Color(0xFFA5B4FC),
+                                color = Color(0xFF1FB6E8),
                                 fontWeight = FontWeight.SemiBold,
                                 fontSize = 11.sp,
                             )
@@ -274,7 +274,7 @@ private fun ExternalLinkConfirmationDialog(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(26.dp))
-                    .background(Color(0xF5151722))
+                    .background(Color(0xF5121417))
                     .border(1.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(26.dp))
                     .padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -287,13 +287,13 @@ private fun ExternalLinkConfirmationDialog(
                         modifier = Modifier
                             .size(38.dp)
                             .clip(CircleShape)
-                            .background(Color(0xFF6366F1).copy(alpha = 0.22f)),
+                            .background(VistaBrandColors.ViuBlue.copy(alpha = 0.22f)),
                         contentAlignment = Alignment.Center,
                     ) {
                         Icon(
                             imageVector = Icons.Default.Link,
                             contentDescription = null,
-                            tint = Color(0xFFA5B4FC),
+                            tint = Color(0xFF1FB6E8),
                             modifier = Modifier.size(20.dp),
                         )
                     }
@@ -307,7 +307,7 @@ private fun ExternalLinkConfirmationDialog(
                         if (host.isNotBlank()) {
                             Text(
                                 text = host,
-                                color = Color(0xFFA5B4FC),
+                                color = Color(0xFF1FB6E8),
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.SemiBold,
                             )
@@ -385,7 +385,7 @@ private fun QuestionAnswerDialog(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(26.dp))
-                    .background(Color(0xF5151722))
+                    .background(Color(0xF5121417))
                     .border(1.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(26.dp))
                     .padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -410,7 +410,7 @@ private fun QuestionAnswerDialog(
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedContainerColor = Color.White.copy(alpha = 0.08f),
                         unfocusedContainerColor = Color.White.copy(alpha = 0.05f),
-                        focusedBorderColor = VistaBrandColors.Indigo,
+                        focusedBorderColor = VistaBrandColors.ViuBlueDeep,
                         unfocusedBorderColor = Color.White.copy(alpha = 0.14f),
                         focusedTextColor = Color.White,
                         unfocusedTextColor = Color.White,
@@ -431,7 +431,7 @@ private fun QuestionAnswerDialog(
                         enabled = answer.isNotBlank(),
                         shape = RoundedCornerShape(16.dp),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = VistaBrandColors.Indigo,
+                            containerColor = VistaBrandColors.ViuBlueDeep,
                             contentColor = Color.White,
                         ),
                         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp),

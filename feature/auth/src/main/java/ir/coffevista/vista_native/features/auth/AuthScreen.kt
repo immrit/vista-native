@@ -57,6 +57,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.contentDescription
@@ -294,7 +295,7 @@ private fun PasswordScreen(
                     Text(
                         text = "ارسال مجدد کد به ایمیل",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = VistaBrandColors.Indigo,
+                        color = VistaBrandColors.ViuBlueDeep,
                     )
                 }
             } else if (state.twoFactorHasRecovery) {
@@ -344,7 +345,7 @@ private fun PasswordScreen(
                     Text(
                         text = if (state.isTwoFactor) "رمز دو مرحله‌ای را فراموش کرده‌ام" else "فراموشی رمز عبور؟",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = VistaBrandColors.Indigo,
+                        color = VistaBrandColors.ViuBlueDeep,
                     )
                 }
             }
@@ -479,11 +480,11 @@ private fun OtpScreen(
             )
         } else {
             val resendColor = if (
-                MaterialTheme.colorScheme.background == Color(0xFF09090F)
+                MaterialTheme.colorScheme.background.luminance() < 0.5f
             ) {
-                VistaBrandColors.Indigo
+                VistaBrandColors.ViuBlue
             } else {
-                VistaBrandColors.IndigoDeep
+                VistaBrandColors.ViuBlueDeep
             }
             TextButton(
                 onClick = { onAction(AuthAction.ResendOtp) },
@@ -584,9 +585,9 @@ private fun AuthTextField(
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
     keyboardActions: KeyboardActions = KeyboardActions.Default,
 ) {
-    val isDark = MaterialTheme.colorScheme.background == Color(0xFF09090F)
-    val fieldColor = if (isDark) Color(0xFF1C1C2E) else Color(0xFFF3F4FF)
-    val hintColor = if (isDark) Color(0xFF6E6E92) else Color(0xFF707787)
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val fieldColor = if (isDark) Color(0xFF1B1E23) else Color(0xFFF0F2F4)
+    val hintColor = if (isDark) Color(0xFF636973) else Color(0xFF656C76)
     val shape = RoundedCornerShape(VistaRadii.Medium)
     val interactionSource = remember { MutableInteractionSource() }
     val colors = OutlinedTextFieldDefaults.colors(
@@ -594,10 +595,10 @@ private fun AuthTextField(
         unfocusedContainerColor = fieldColor,
         disabledContainerColor = fieldColor,
         errorContainerColor = fieldColor,
-        focusedBorderColor = VistaBrandColors.Indigo,
+        focusedBorderColor = VistaBrandColors.ViuBlueDeep,
         unfocusedBorderColor = MaterialTheme.colorScheme.outline,
         errorBorderColor = MaterialTheme.colorScheme.error,
-        cursorColor = VistaBrandColors.Indigo,
+        cursorColor = VistaBrandColors.ViuBlueDeep,
     )
     val (bufferedValue, handleValueChange) = rememberBufferedTextState(
         externalValue = value,
@@ -620,7 +621,7 @@ private fun AuthTextField(
         keyboardOptions = keyboardOptions,
         keyboardActions = keyboardActions,
         interactionSource = interactionSource,
-        cursorBrush = SolidColor(VistaBrandColors.Indigo),
+        cursorBrush = SolidColor(VistaBrandColors.ViuBlueDeep),
         decorationBox = { innerTextField ->
             OutlinedTextFieldDefaults.DecorationBox(
                 value = bufferedValue,
@@ -709,9 +710,9 @@ private fun OtpBoxes(
     enabled: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    val isDark = MaterialTheme.colorScheme.background == Color(0xFF09090F)
-    val fieldColor = if (isDark) Color(0xFF1C1C2E) else Color(0xFFF3F4FF)
-    val cursorColor = if (isDark) Color(0xFF6E6E92) else Color(0xFF9CA3AF)
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val fieldColor = if (isDark) Color(0xFF1B1E23) else Color(0xFFF0F2F4)
+    val cursorColor = if (isDark) Color(0xFF636973) else Color(0xFF9AA1AB)
     Box(modifier) {
         OutlinedTextField(
             value = value,
@@ -753,7 +754,7 @@ private fun OtpBoxes(
                             if (focused) {
                                 Modifier.border(
                                     width = 1.5.dp,
-                                    color = VistaBrandColors.Indigo,
+                                    color = VistaBrandColors.ViuBlueDeep,
                                     shape = RoundedCornerShape(VistaRadii.Medium),
                                 )
                             } else {
@@ -796,10 +797,10 @@ private fun AuthPrimaryButton(
             .height(VistaComponentSize.Button),
         shape = RoundedCornerShape(VistaRadii.Medium),
         colors = ButtonDefaults.buttonColors(
-            containerColor = Color(0xFF4F46E5),
-            contentColor = Color.White,
+            containerColor = MaterialTheme.colorScheme.primary,
+            contentColor = MaterialTheme.colorScheme.onPrimary,
             disabledContainerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
-            disabledContentColor = Color.White,
+            disabledContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
         ),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(
             horizontal = 24.dp,
@@ -809,7 +810,7 @@ private fun AuthPrimaryButton(
         if (loading) {
             CircularProgressIndicator(
                 modifier = Modifier.size(20.dp),
-                color = Color.White,
+                color = MaterialTheme.colorScheme.onPrimary,
                 strokeWidth = 2.dp,
             )
         } else {
@@ -845,7 +846,7 @@ private fun AuthSnackbar(
         modifier = modifier
             .shadow(6.dp, shape)
             .clip(shape)
-            .background(Color(0xFF13131E))
+            .background(Color(0xFF121417))
             .padding(horizontal = 16.dp, vertical = 12.dp),
     ) {
         Text(
@@ -860,9 +861,9 @@ private fun AuthSnackbar(
 
 @Composable
 private fun RibbonBackground() {
-    val isDark = MaterialTheme.colorScheme.background == Color(0xFF09090F)
-    val base = if (isDark) Color.Black else Color.White
-    val orb1 = if (isDark) Color(0xFF13131E) else Color(0xFFF5F5F7)
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val base = if (isDark) Color(0xFF090A0C) else Color.White
+    val orb1 = if (isDark) Color(0xFF121417) else Color(0xFFF4F5F7)
     val orb2 = if (isDark) Color(0xFF121212) else Color(0xFFEBEBF0)
     val orb3 = if (isDark) Color(0xFF222222) else Color(0xFFEEEEEE)
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {

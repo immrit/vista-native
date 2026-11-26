@@ -108,13 +108,13 @@ fun StoryViewersBottomSheet(
                             modifier = Modifier
                                 .size(36.dp)
                                 .clip(CircleShape)
-                                .background(VistaBrandColors.Indigo.copy(alpha = 0.22f)),
+                                .background(VistaBrandColors.ViuBlueDeep.copy(alpha = 0.22f)),
                             contentAlignment = Alignment.Center,
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Visibility,
                                 contentDescription = null,
-                                tint = VistaBrandColors.Indigo,
+                                tint = VistaBrandColors.ViuBlueDeep,
                                 modifier = Modifier.size(19.dp),
                             )
                         }
@@ -157,7 +157,7 @@ fun StoryViewersBottomSheet(
                             contentAlignment = Alignment.Center,
                         ) {
                             CircularProgressIndicator(
-                                color = VistaBrandColors.Indigo,
+                                color = VistaBrandColors.ViuBlueDeep,
                                 modifier = Modifier.size(32.dp),
                             )
                         }

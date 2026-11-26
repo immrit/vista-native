@@ -251,9 +251,6 @@ fun HashtagPostsScreen(
                         .fillMaxWidth()
                         .background(MaterialTheme.colorScheme.surface),
                 ) {
-                    ir.coffevista.vista_native.core.designsystem.component.VistaAppBarAmbientOverlay(
-                        modifier = Modifier.matchParentSize(),
-                    )
                     TopAppBar(
                         title = { Text("#$normalized", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                         navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "بازگشت") } },

@@ -44,10 +44,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.foundation.isSystemInDarkTheme
 import ir.coffevista.vista_native.core.designsystem.glass.VistaGlassState
 import ir.coffevista.vista_native.core.designsystem.glass.VistaGlassTokens
 import ir.coffevista.vista_native.core.designsystem.glass.vistaGlass
+import ir.coffevista.vista_native.features.chat.presentation.VistaChatPalette
+import ir.coffevista.vista_native.features.chat.presentation.isChatDarkTheme
 import ir.coffevista.vista_native.features.chat.domain.model.Message
 import ir.coffevista.vista_native.features.chat.domain.model.MessageContent
 import ir.coffevista.vista_native.features.chat.domain.model.StructuredMessageFormatter
@@ -83,9 +84,9 @@ fun PinnedMessagesBar(
         else currentMessage.attachment?.fileName ?: "رسانه پیوست"
     }
 
-    val isDark = isSystemInDarkTheme()
+    val isDark = isChatDarkTheme()
     val capsuleShape = RoundedCornerShape(22.dp)
-    val glassTint = if (isDark) Color(0xFF1A222C) else Color(0xFFFFFFFF)
+    val glassTint = VistaChatPalette.topBarTint(isDark)
     Row(
         modifier = modifier
             .fillMaxWidth()

@@ -67,7 +67,7 @@ fun ProfileQrDialog(
     }
 
     val brandGradient = Brush.verticalGradient(
-        colors = listOf(VistaBrandColors.Indigo, VistaBrandColors.Pink),
+        colors = listOf(VistaBrandColors.ViuBlueDeep, VistaBrandColors.Coral),
     )
 
     Dialog(onDismissRequest = onDismiss) {
@@ -165,7 +165,7 @@ fun ProfileQrDialog(
                         context.startActivity(Intent.createChooser(sendIntent, "اشتراک‌گذاری پروفایل"))
                     },
                     shape = RoundedCornerShape(20.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = VistaBrandColors.Indigo),
+                    colors = ButtonDefaults.buttonColors(containerColor = VistaBrandColors.ViuBlueDeep),
                     modifier = Modifier.fillMaxWidth().height(46.dp),
                 ) {
                     Icon(imageVector = Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp))

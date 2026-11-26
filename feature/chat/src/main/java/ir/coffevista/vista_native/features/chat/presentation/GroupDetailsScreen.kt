@@ -58,6 +58,8 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Share
+import ir.coffevista.vista_native.core.designsystem.component.VistaActionItem
+import ir.coffevista.vista_native.core.designsystem.component.VistaActionMenuSheet
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
@@ -257,7 +259,7 @@ fun GroupDetailsScreen(
     val inviteLink = info?.inviteCode?.let { "https://cafevista.ir/group/$it" }
     val isDark = isSystemInDarkTheme()
     val pageBgColor = if (isDark) Color(0xFF0F141A) else Color(0xFFF2F4F7)
-    val cardBgColor = if (isDark) Color(0xFF1A222C) else Color(0xFFFFFFFF)
+    val cardBgColor = if (isDark) Color(0xFF16191E) else Color(0xFFFFFFFF)
     val groupScrollState = rememberScrollState()
     val groupGlassState = rememberVistaGlassState()
     LaunchedEffect(groupScrollState.value) {
@@ -678,7 +680,7 @@ fun GroupDetailsScreen(
                                                             Spacer(Modifier.width(6.dp))
                                                             Text(
                                                                 "شما",
-                                                                fontSize = 10.sp,
+                                                                fontSize = 11.sp,
                                                                 color = MaterialTheme.colorScheme.primary,
                                                                 modifier = Modifier
                                                                     .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(4.dp))
@@ -967,83 +969,77 @@ fun GroupDetailsScreen(
                 menuContentDescription = "گزینه‌های گروه",
                 onMenuClick = { menuExpanded = true },
                 menuDropdownContent = {
-                    DropdownMenu(
-                        expanded = menuExpanded,
-                        onDismissRequest = { menuExpanded = false },
-                    ) {
+                    val groupMenuItems = buildList {
                         if (isAdmin) {
-                            DropdownMenuItem(
-                                text = { Text("ویرایش نام گروه") },
-                                onClick = {
-                                    menuExpanded = false
-                                    editedNameText = displayName
-                                    editNameDialogVisible = true
-                                },
-                                leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) },
+                            add(
+                                VistaActionItem(
+                                    label = "ویرایش نام گروه",
+                                    icon = Icons.Default.Edit,
+                                    onClick = {
+                                        editedNameText = displayName
+                                        editNameDialogVisible = true
+                                    },
+                                ),
                             )
-                            DropdownMenuItem(
-                                text = { Text("افزودن عضو") },
-                                onClick = {
-                                    menuExpanded = false
-                                    selectedTabIndex = 0
-                                    addMembersExpanded = true
-                                },
-                                leadingIcon = { Icon(Icons.Default.PersonAdd, contentDescription = null) },
+                            add(
+                                VistaActionItem(
+                                    label = "افزودن عضو",
+                                    icon = Icons.Default.PersonAdd,
+                                    onClick = {
+                                        selectedTabIndex = 0
+                                        addMembersExpanded = true
+                                    },
+                                ),
                             )
                         }
                         if (inviteLink != null) {
-                            DropdownMenuItem(
-                                text = { Text("کپی لینک دعوت") },
-                                onClick = {
-                                    menuExpanded = false
-                                    clipboard.setText(AnnotatedString(inviteLink))
-                                    scope.launch { snackbarHostState.showSnackbar("لینک دعوت کپی شد") }
-                                },
-                                leadingIcon = { Icon(Icons.Default.ContentCopy, contentDescription = null) },
+                            add(
+                                VistaActionItem(
+                                    label = "کپی لینک دعوت",
+                                    icon = Icons.Default.ContentCopy,
+                                    onClick = {
+                                        clipboard.setText(AnnotatedString(inviteLink))
+                                        scope.launch { snackbarHostState.showSnackbar("لینک دعوت کپی شد") }
+                                    },
+                                ),
                             )
-                            DropdownMenuItem(
-                                text = { Text("اشتراک لینک دعوت") },
-                                onClick = {
-                                    menuExpanded = false
-                                    val sendIntent = Intent().apply {
-                                        action = Intent.ACTION_SEND
-                                        putExtra(Intent.EXTRA_TEXT, "دعوت به گروه $displayName در Vista:\n$inviteLink")
-                                        type = "text/plain"
-                                    }
-                                    context.startActivity(Intent.createChooser(sendIntent, "اشتراک لینک دعوت"))
-                                },
-                                leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) },
+                            add(
+                                VistaActionItem(
+                                    label = "اشتراک لینک دعوت",
+                                    icon = Icons.Default.Share,
+                                    onClick = {
+                                        val sendIntent = Intent().apply {
+                                            action = Intent.ACTION_SEND
+                                            putExtra(Intent.EXTRA_TEXT, "دعوت به گروه $displayName در Vista:\n$inviteLink")
+                                            type = "text/plain"
+                                        }
+                                        context.startActivity(Intent.createChooser(sendIntent, "اشتراک لینک دعوت"))
+                                    },
+                                ),
                             )
                         }
-                        DropdownMenuItem(
-                            text = { Text("تازه‌سازی اطلاعات") },
-                            onClick = {
-                                menuExpanded = false
-                                onRefresh()
-                            },
-                            leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null) },
+                        add(
+                            VistaActionItem(
+                                label = "تازه‌سازی اطلاعات",
+                                icon = Icons.Default.Refresh,
+                                onClick = onRefresh,
+                            ),
                         )
-                        HorizontalDivider()
-                        DropdownMenuItem(
-                            text = {
-                                Text(
-                                    if (isCreator) "حذف گروه برای همه" else "ترک گروه",
-                                    color = MaterialTheme.colorScheme.error,
-                                )
-                            },
-                            onClick = {
-                                menuExpanded = false
-                                if (isCreator) onDelete() else onLeave()
-                            },
-                            leadingIcon = {
-                                Icon(
-                                    Icons.Default.Delete,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.error,
-                                )
-                            },
+                        add(
+                            VistaActionItem(
+                                label = if (isCreator) "حذف گروه برای همه" else "ترک گروه",
+                                icon = Icons.Default.Delete,
+                                isDestructive = true,
+                                onClick = { if (isCreator) onDelete() else onLeave() },
+                            ),
                         )
                     }
+                    VistaActionMenuSheet(
+                        visible = menuExpanded,
+                        title = "گزینه‌های گروه",
+                        items = groupMenuItems,
+                        onDismiss = { menuExpanded = false },
+                    )
                 },
                 modifier = Modifier.align(Alignment.TopCenter),
             )

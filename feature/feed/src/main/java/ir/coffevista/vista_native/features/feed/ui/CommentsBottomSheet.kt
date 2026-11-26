@@ -40,6 +40,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import ir.coffevista.vista_native.core.designsystem.component.VistaReportReasonDialog
 import ir.coffevista.vista_native.core.designsystem.component.rememberVistaHaptics
+import ir.coffevista.vista_native.core.designsystem.theme.vistaColors
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -77,6 +78,9 @@ import androidx.compose.ui.unit.sp
 import ir.coffevista.vista_native.features.feed.ui.components.ReportReasonDialog
 import ir.coffevista.vista_native.core.designsystem.component.VistaEmojiText
 import ir.coffevista.vista_native.core.designsystem.glass.LocalVistaGlassState
+import ir.coffevista.vista_native.core.designsystem.component.VistaActionItem
+import ir.coffevista.vista_native.core.designsystem.component.VistaPopupMenu
+import ir.coffevista.vista_native.core.designsystem.icon.VistaIcons
 import ir.coffevista.vista_native.core.designsystem.glass.VistaGlassState
 import ir.coffevista.vista_native.core.designsystem.glass.VistaGlassTokens
 import ir.coffevista.vista_native.core.designsystem.glass.vistaGlass
@@ -822,7 +826,7 @@ private fun CommentItem(
                             text = if (!isCommentAuthor) "ویرایش ناظر" else "ویرایش",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
-                            color = if (!isCommentAuthor) Color(0xFF6366F1) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                            color = if (!isCommentAuthor) MaterialTheme.vistaColors.viuBlue else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                             modifier = Modifier
                                 .clip(RoundedCornerShape(16.dp))
                                 .clickable {
@@ -849,85 +853,66 @@ private fun CommentItem(
                                 }
                                 .padding(horizontal = 10.dp, vertical = 6.dp),
                         )
-                        DropdownMenu(
-                            expanded = showMenu,
-                            onDismissRequest = { showMenu = false },
-                        ) {
+                        val commentMenuItems = buildList {
                             if (canEdit) {
                                 val isModEdit = !isCommentAuthor
-                                DropdownMenuItem(
-                                    text = { Text(if (isModEdit) "ویرایش ناظر" else "ویرایش") },
-                                    leadingIcon = {
-                                        Icon(
-                                            imageVector = if (isModEdit) Icons.Default.CheckCircle else Icons.Default.Edit,
-                                            contentDescription = null,
-                                            tint = if (isModEdit) Color(0xFF6366F1) else MaterialTheme.colorScheme.onSurface,
-                                            modifier = Modifier.size(18.dp),
-                                        )
-                                    },
-                                    onClick = {
-                                        showMenu = false
-                                        editContent = comment.content
-                                        isEditingInline = true
-                                    },
+                                add(
+                                    VistaActionItem(
+                                        label = if (isModEdit) "ویرایش ناظر" else "ویرایش",
+                                        icon = if (isModEdit) Icons.Default.CheckCircle else Icons.Default.Edit,
+                                        iconTint = if (isModEdit) MaterialTheme.vistaColors.viuBlue else null,
+                                        onClick = {
+                                            editContent = comment.content
+                                            isEditingInline = true
+                                        },
+                                    ),
                                 )
                             } else if (isCommentAuthor) {
-                                DropdownMenuItem(
-                                    text = { Text("ویرایش (پریمیوم)") },
-                                    leadingIcon = {
-                                        Icon(
-                                            imageVector = Icons.Default.Lock,
-                                            contentDescription = null,
-                                            tint = Color(0xFFFFB300),
-                                            modifier = Modifier.size(18.dp),
-                                        )
-                                    },
-                                    onClick = {
-                                        showMenu = false
-                                        onLockedEditClick()
-                                    },
+                                add(
+                                    VistaActionItem(
+                                        label = "ویرایش (پریمیوم)",
+                                        icon = Icons.Default.Lock,
+                                        iconTint = Color(0xFFFFB300),
+                                        onClick = onLockedEditClick,
+                                    ),
                                 )
                             }
-                            DropdownMenuItem(
-                                text = { Text("کپی متن") },
-                                leadingIcon = {
-                                    Icon(
-                                        imageVector = Icons.Default.ContentCopy,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(18.dp),
-                                    )
-                                },
-                                onClick = {
-                                    showMenu = false
-                                    clipboardManager.setText(AnnotatedString(comment.content))
-                                    android.widget.Toast.makeText(context, "متن نظر کپی شد", android.widget.Toast.LENGTH_SHORT).show()
-                                },
+                            add(
+                                VistaActionItem(
+                                    label = "کپی متن",
+                                    icon = Icons.Default.ContentCopy,
+                                    onClick = {
+                                        clipboardManager.setText(AnnotatedString(comment.content))
+                                        android.widget.Toast.makeText(context, "متن نظر کپی شد", android.widget.Toast.LENGTH_SHORT).show()
+                                    },
+                                ),
                             )
                             if (canDelete) {
-                                DropdownMenuItem(
-                                    text = { Text("حذف", color = Color.Red) },
-                                    leadingIcon = {
-                                        Icon(Icons.Default.Delete, contentDescription = null, tint = Color.Red, modifier = Modifier.size(18.dp))
-                                    },
-                                    onClick = {
-                                        showMenu = false
-                                        confirmDelete = true
-                                    },
+                                add(
+                                    VistaActionItem(
+                                        label = "حذف",
+                                        icon = Icons.Default.Delete,
+                                        isDestructive = true,
+                                        onClick = { confirmDelete = true },
+                                    ),
                                 )
                             }
                             if (canReport) {
-                                DropdownMenuItem(
-                                    text = { Text("گزارش") },
-                                    leadingIcon = {
-                                        CustomFlagIcon(modifier = Modifier.size(18.dp))
-                                    },
-                                    onClick = {
-                                        showMenu = false
-                                        onReport()
-                                    },
+                                add(
+                                    VistaActionItem(
+                                        label = "گزارش",
+                                        icon = VistaIcons.Flag,
+                                        iconTint = Color(0xFFFF9800),
+                                        onClick = onReport,
+                                    ),
                                 )
                             }
                         }
+                        VistaPopupMenu(
+                            expanded = showMenu,
+                            onDismissRequest = { showMenu = false },
+                            items = commentMenuItems,
+                        )
                     }
                 }
             }
@@ -1186,7 +1171,7 @@ internal fun CommentComposer(
                     .vistaGlass(
                         state = glassState,
                         shape = bannerShape,
-                        tint = if (isDark) Color(0xFF1A222C) else Color.White,
+                        tint = if (isDark) Color(0xFF16191E) else Color.White,
                         isDark = isDark,
                         blurRadius = VistaGlassTokens.PillBlur,
                         tintAlphaOverride = if (isDark) 0.62f else 0.68f,
@@ -1282,7 +1267,7 @@ internal fun CommentComposer(
                     .vistaGlass(
                         state = glassState,
                         shape = capsuleShape,
-                        tint = if (isDark) Color(0xFF1A222C) else Color.White,
+                        tint = if (isDark) Color(0xFF16191E) else Color.White,
                         isDark = isDark,
                         blurRadius = VistaGlassTokens.PillBlur,
                         tintAlphaOverride = if (isDark) 0.58f else 0.62f,
@@ -1386,7 +1371,7 @@ internal fun CommentComposer(
                         .size(38.dp)
                         .clip(CircleShape)
                         .background(
-                            if (canSend) Color(0xFF6366F1)
+                            if (canSend) MaterialTheme.vistaColors.viuBlue
                             else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
                         )
                         .clickable(enabled = canSend) {
@@ -1428,15 +1413,7 @@ internal fun CommentComposer(
     }
 
     if (glassState != null) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .vistaGlassHalo(
-                    state = glassState,
-                    isDark = isDark,
-                    fromTop = false,
-                ),
-        ) {
+        Box(modifier = Modifier.fillMaxWidth()) {
             composerBody()
         }
     } else {

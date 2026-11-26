@@ -30,6 +30,10 @@ import ir.coffevista.vista_native.features.chat.presentation.audio.MusicPlayerBu
 import ir.coffevista.vista_native.core.designsystem.component.resolveMusicTitle
 import ir.coffevista.vista_native.core.designsystem.component.VistaBadgeDefaults
 import ir.coffevista.vista_native.core.designsystem.component.VistaMiniPlayerHost
+import ir.coffevista.vista_native.core.designsystem.component.VistaActionItem
+import ir.coffevista.vista_native.core.designsystem.component.VistaActionMenuSheet
+import ir.coffevista.vista_native.core.designsystem.component.VistaPopupMenu
+import ir.coffevista.vista_native.core.designsystem.icon.VistaIcons
 import ir.coffevista.vista_native.core.designsystem.component.VistaViuStateIllustration
 import ir.coffevista.vista_native.core.designsystem.component.VistaViuStateKind
 import ir.coffevista.vista_native.core.designsystem.component.inferVistaViuStateKind
@@ -40,6 +44,7 @@ import ir.coffevista.vista_native.core.designsystem.glass.rememberVistaGlassStat
 import ir.coffevista.vista_native.core.designsystem.glass.LocalVistaGlassState
 import ir.coffevista.vista_native.core.designsystem.glass.VistaGlassScrollSync
 import ir.coffevista.vista_native.core.designsystem.glass.VistaGlassTokens
+import ir.coffevista.vista_native.core.designsystem.theme.vistaColors
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.onSizeChanged
 import ir.coffevista.vista_native.core.designsystem.component.VistaNotificationBadge
@@ -532,7 +537,7 @@ fun ConversationListScreen(
                 modifier = Modifier.vistaGlass(
                     state = conversationsGlassState,
                     shape = androidx.compose.ui.graphics.RectangleShape,
-                    tint = if (isDarkConversations) Color(0xFF1A222C) else Color(0xFFFFFFFF),
+                    tint = if (isDarkConversations) Color(0xFF16191E) else Color(0xFFFFFFFF),
                     isDark = isDarkConversations,
                     blurRadius = VistaGlassTokens.BarBlur,
                     tintAlphaOverride = if (isDarkConversations) 0.58f else 0.62f,
@@ -594,24 +599,22 @@ fun ConversationListScreen(
                         IconButton(onClick = { menuVisible = true }) {
                             Icon(Icons.Default.MoreVert, contentDescription = "گزینه‌های پیام‌ها")
                         }
-                        DropdownMenu(expanded = menuVisible, onDismissRequest = { menuVisible = false }) {
-                            DropdownMenuItem(
-                                text = { Text(if (state.includeArchived) "گفتگوهای اصلی" else "گفتگوهای بایگانی") },
-                                leadingIcon = { Icon(Icons.Default.Archive, contentDescription = null) },
-                                onClick = {
-                                    menuVisible = false
-                                    onShowArchived(!state.includeArchived)
-                                },
-                            )
-                            DropdownMenuItem(
-                                text = { Text("گفتگوی محرمانه جدید") },
-                                leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
-                                onClick = {
-                                    menuVisible = false
-                                    onNewSecretChat()
-                                },
-                            )
-                        }
+                        VistaPopupMenu(
+                            expanded = menuVisible,
+                            onDismissRequest = { menuVisible = false },
+                            items = listOf(
+                                VistaActionItem(
+                                    label = if (state.includeArchived) "گفتگوهای اصلی" else "گفتگوهای بایگانی",
+                                    icon = VistaIcons.Archive,
+                                    onClick = { onShowArchived(!state.includeArchived) },
+                                ),
+                                VistaActionItem(
+                                    label = "گفتگوی محرمانه جدید",
+                                    icon = VistaIcons.Lock,
+                                    onClick = onNewSecretChat,
+                                ),
+                            ),
+                        )
                     }
                 },
             )
@@ -748,7 +751,7 @@ fun ConversationListScreen(
                     Icon(
                         imageVector = Icons.Filled.AddComment,
                         contentDescription = null,
-                        tint = Color.White,
+                        tint = MaterialTheme.colorScheme.onPrimary,
                         modifier = Modifier.size(24.dp),
                     )
                 }
@@ -1132,7 +1135,7 @@ private fun ConversationRow(
                                 formatConversationTime(it),
                                 fontSize = 12.sp,
                                 fontWeight = if (conversation.unreadCount > 0) FontWeight.Medium else FontWeight.Normal,
-                                color = if (conversation.unreadCount > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = if (conversation.unreadCount > 0) MaterialTheme.vistaColors.viuBlue else MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                     }
@@ -1150,7 +1153,7 @@ private fun ConversationRow(
                             },
                             modifier = Modifier.weight(1f),
                             style = TextStyle(
-                                color = if (typing) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = if (typing) MaterialTheme.vistaColors.viuBlue else MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontSize = 13.sp,
                                 fontWeight = if (typing || conversation.unreadCount > 0) FontWeight.Medium else FontWeight.Normal,
                                 fontStyle = if (typing) FontStyle.Italic else FontStyle.Normal,
@@ -1240,7 +1243,7 @@ private fun InboxMessageStatusMark(status: MessageStatus) {
         MessageStatus.READ -> Icon(
             imageVector = Icons.Default.DoneAll,
             contentDescription = "خوانده شد",
-            tint = MaterialTheme.colorScheme.primary,
+            tint = MaterialTheme.vistaColors.viuBlue,
             modifier = Modifier.size(15.dp),
         )
     }
@@ -1348,7 +1351,7 @@ private fun SwipeActionButton(
     ) {
         Icon(icon, contentDescription = label, tint = Color.White, modifier = Modifier.size(22.dp))
         Spacer(Modifier.height(3.dp))
-        Text(label, color = Color.White, fontSize = 10.sp, maxLines = 1)
+        Text(label, color = Color.White, fontSize = 11.sp, maxLines = 1)
     }
 }
 
@@ -1468,7 +1471,7 @@ private fun ConnectionStatusIndicator(state: RealtimeConnectionState) {
             .padding(horizontal = if (connecting) 8.dp else 0.dp),
         contentAlignment = Alignment.Center,
     ) {
-        if (connecting) Text("در حال اتصال...", color = Color.White, fontSize = 10.sp)
+        if (connecting) Text("در حال اتصال...", color = Color.White, fontSize = 11.sp)
     }
 }
 
@@ -1794,7 +1797,7 @@ fun MessageDetailScreen(
     val localView = LocalView.current
     val internalNavigator = LocalVistaInternalLinkNavigator.current
     val isSecretConversation = state.conversation?.type == ConversationType.SECRET
-    val isDarkTheme = isSystemInDarkTheme()
+    val isDarkTheme = isChatDarkTheme()
     val isDebuggable = remember(context) {
         runCatching {
             (context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
@@ -2280,7 +2283,7 @@ fun MessageDetailScreen(
                 chatRootSizePx = coords.size
             }
             .focusProperties { canFocus = !hasPendingAttachments }
-            .background(if (isDarkTheme) Color(0xFF101419) else Color(0xFFDFE5E9)),
+            .background(VistaChatPalette.backdropFallback(isDarkTheme)),
     ) {
         val unreadWindow = remember(state.messages) { unreadMessageWindow(state.messages) }
         val floatingDateEpochMillis by remember(displayedRenderItems, listState) {
@@ -2316,12 +2319,12 @@ fun MessageDetailScreen(
             ),
             contentDescription = null,
             contentScale = ContentScale.Crop,
-            colorFilter = ColorFilter.tint(
-                color = if (isDarkTheme) Color.Black.copy(alpha = 0.2f)
-                else Color.White.copy(alpha = 0.2f),
-                blendMode = if (isDarkTheme) BlendMode.Darken else BlendMode.Lighten,
-            ),
             modifier = Modifier.fillMaxSize(),
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(VistaChatPalette.wallpaperScrim(isDarkTheme)),
         )
 
             Box(
@@ -2757,7 +2760,7 @@ fun MessageDetailScreen(
                                     .vistaGlass(
                                         state = chatGlassState,
                                         shape = CircleShape,
-                                        tint = if (isDarkTheme) Color(0xFF1A222C) else Color(0xFFFFFFFF),
+                                        tint = VistaChatPalette.topBarTint(isDarkTheme),
                                         isDark = isDarkTheme,
                                         blurRadius = VistaGlassTokens.PillBlur,
                                         tintAlphaOverride = if (isDarkTheme) 0.58f else 0.62f,
@@ -2792,7 +2795,7 @@ fun MessageDetailScreen(
                                     Text(
                                         if (unreadBelow > 99) "99+" else unreadBelow.toString(),
                                         color = Color.White,
-                                        fontSize = 10.sp,
+                                        fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold,
                                     )
                                 }
@@ -3051,8 +3054,7 @@ fun MessageDetailScreen(
         val inSelectionMode = selectedMessageKeys.isNotEmpty()
         val topBarBgColor = when {
             inSelectionMode -> MaterialTheme.colorScheme.primary
-            isDarkTheme -> Color(0xFF1A222C)
-            else -> Color(0xFFFFFFFF)
+            else -> VistaChatPalette.topBarTint(isDarkTheme)
         }
         val topBarGlassAlpha = when {
             inSelectionMode -> 0.94f
@@ -3459,72 +3461,76 @@ fun MessageDetailScreen(
                                         tint = MaterialTheme.colorScheme.onSurface,
                                     )
                                 }
-                                DropdownMenu(expanded = menuVisible, onDismissRequest = { menuVisible = false }) {
-                                    DropdownMenuItem(
-                                        text = { Text("جستجو") },
-                                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                                        onClick = {
-                                            menuVisible = false
-                                            searchVisible = true
-                                        },
+                                val roomMenuItems = buildList {
+                                    add(
+                                        VistaActionItem(
+                                            label = "جستجو",
+                                            icon = VistaIcons.Search,
+                                            onClick = { searchVisible = true },
+                                        ),
                                     )
                                     if (state.conversation?.type == ConversationType.GROUP) {
-                                        DropdownMenuItem(
-                                            text = { Text("اطلاعات گروه") },
-                                            leadingIcon = { Icon(Icons.Default.Group, contentDescription = null) },
-                                            onClick = {
-                                                menuVisible = false
-                                                groupSheetVisible = true
-                                                onRefreshGroup()
-                                            },
+                                        add(
+                                            VistaActionItem(
+                                                label = "اطلاعات گروه",
+                                                icon = VistaIcons.Group,
+                                                onClick = {
+                                                    groupSheetVisible = true
+                                                    onRefreshGroup()
+                                                },
+                                            ),
                                         )
                                     } else {
                                         if (isSecretConversation) {
-                                            DropdownMenuItem(
-                                                text = { Text("تایمر حذف خودکار") },
-                                                leadingIcon = { Icon(Icons.Default.Timer, contentDescription = null) },
-                                                onClick = {
-                                                    menuVisible = false
-                                                    autoDeleteDialogVisible = true
-                                                },
+                                            add(
+                                                VistaActionItem(
+                                                    label = "تایمر حذف خودکار",
+                                                    icon = VistaIcons.Timer,
+                                                    onClick = { autoDeleteDialogVisible = true },
+                                                ),
                                             )
-                                            DropdownMenuItem(
-                                                text = { Text("کد امنیتی (تأیید هویت E2EE)") },
-                                                leadingIcon = { Icon(Icons.Default.Security, contentDescription = null) },
-                                                onClick = {
-                                                    menuVisible = false
-                                                    onComputeSafetyNumber { }
-                                                    safetyNumberDialogVisible = true
-                                                },
+                                            add(
+                                                VistaActionItem(
+                                                    label = "کد امنیتی (تأیید هویت E2EE)",
+                                                    icon = VistaIcons.Shield,
+                                                    onClick = {
+                                                        onComputeSafetyNumber { }
+                                                        safetyNumberDialogVisible = true
+                                                    },
+                                                ),
                                             )
                                         } else if (state.conversation?.type == ConversationType.PRIVATE) {
-                                            DropdownMenuItem(
-                                                text = { Text("شروع گفتگوی محرمانه") },
-                                                leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
-                                                onClick = {
-                                                    menuVisible = false
-                                                    onStartSecretChat()
-                                                },
+                                            add(
+                                                VistaActionItem(
+                                                    label = "شروع گفتگوی محرمانه",
+                                                    icon = VistaIcons.Lock,
+                                                    onClick = onStartSecretChat,
+                                                ),
                                             )
                                         }
-                                        DropdownMenuItem(
-                                            text = { Text("اطلاعات کاربر") },
-                                            leadingIcon = { Icon(Icons.Default.Info, contentDescription = null) },
-                                            onClick = {
-                                                menuVisible = false
-                                                openPartnerDetails()
-                                            },
+                                        add(
+                                            VistaActionItem(
+                                                label = "اطلاعات کاربر",
+                                                icon = VistaIcons.Info,
+                                                onClick = { openPartnerDetails() },
+                                            ),
                                         )
-                                        DropdownMenuItem(
-                                            text = { Text("مسدود کردن", color = MaterialTheme.colorScheme.error) },
-                                            leadingIcon = { Icon(Icons.Default.Block, contentDescription = null) },
-                                            onClick = {
-                                                menuVisible = false
-                                                blockingPeerId = state.conversation?.peerId
-                                            },
+                                        add(
+                                            VistaActionItem(
+                                                label = "مسدود کردن",
+                                                icon = VistaIcons.Block,
+                                                isDestructive = true,
+                                                onClick = { blockingPeerId = state.conversation?.peerId },
+                                            ),
                                         )
                                     }
                                 }
+                                VistaActionMenuSheet(
+                                    visible = menuVisible,
+                                    title = "گزینه‌های گفتگو",
+                                    items = roomMenuItems,
+                                    onDismiss = { menuVisible = false },
+                                )
                             }
                         }
                     }
@@ -4252,6 +4258,8 @@ private fun MediaAlbumBubble(
                     }
                 }
             }
+            val isDark = isChatDarkTheme()
+            val albumOutgoingBorder = VistaChatPalette.outgoingBubbleBorder(isDark)
             val albumBaseModifier = Modifier
                 .align(
                     if (primary.isMine) AbsoluteAlignment.CenterRight
@@ -4268,9 +4276,19 @@ private fun MediaAlbumBubble(
                 .clip(bubbleShape)
                 .then(
                     if (primary.isMine) {
-                        Modifier.background(Brush.linearGradient(listOf(VistaBrandColors.Indigo, VistaBrandColors.VioletDeep)))
+                        Modifier
+                            .background(VistaChatPalette.outgoingBubbleBrush(isDark))
+                            .then(
+                                if (albumOutgoingBorder != Color.Transparent) {
+                                    Modifier.border(0.5.dp, albumOutgoingBorder, bubbleShape)
+                                } else {
+                                    Modifier
+                                },
+                            )
                     } else {
-                        Modifier.background(MaterialTheme.colorScheme.surfaceVariant)
+                        Modifier
+                            .background(VistaChatPalette.incomingBubbleBg(isDark))
+                            .border(0.5.dp, VistaChatPalette.incomingBubbleBorder(isDark), bubbleShape)
                     },
                 )
                 .then(
@@ -4936,6 +4954,8 @@ private fun MessageBubble(
                         }
                     }
                 }
+                val bubbleIsDark = isChatDarkTheme()
+                val bubbleOutgoingBorder = VistaChatPalette.outgoingBubbleBorder(bubbleIsDark)
                 Column(
                     modifier = Modifier
                         // This screen is RTL, where logical End resolves to the
@@ -4956,9 +4976,25 @@ private fun MessageBubble(
                             if (isSingleEmoji) {
                                 base
                             } else if (message.isMine) {
-                                base.background(Brush.linearGradient(listOf(VistaBrandColors.Indigo, VistaBrandColors.VioletDeep)))
+                                base
+                                    .background(VistaChatPalette.outgoingBubbleBrush(bubbleIsDark))
+                                    .then(
+                                        if (!selected && bubbleOutgoingBorder != Color.Transparent) {
+                                            Modifier.border(0.5.dp, bubbleOutgoingBorder, shape)
+                                        } else {
+                                            Modifier
+                                        },
+                                    )
                             } else {
-                                base.background(MaterialTheme.colorScheme.surfaceVariant)
+                                base
+                                    .background(VistaChatPalette.incomingBubbleBg(bubbleIsDark))
+                                    .then(
+                                        if (!selected) {
+                                            Modifier.border(0.5.dp, VistaChatPalette.incomingBubbleBorder(bubbleIsDark), shape)
+                                        } else {
+                                            Modifier
+                                        },
+                                    )
                             }
                         ).then(
                             if (selected) Modifier.border(
@@ -5030,8 +5066,8 @@ private fun MessageBubble(
                             )
                             .clip(RoundedCornerShape(8.dp))
                             .background(
-                                if (message.isMine) Color.White.copy(alpha = 0.15f)
-                                else Color.Black.copy(alpha = 0.05f),
+                                if (message.isMine) VistaChatPalette.outgoingNestedCardBg(bubbleIsDark)
+                                else VistaChatPalette.incomingNestedCardBg(bubbleIsDark),
                             )
                             .clickable(onClick = onJumpToRepliedMessage)
                             .padding(8.dp),
@@ -5068,7 +5104,7 @@ private fun MessageBubble(
                                     Text(
                                         text = if (isStoryReply) "پاسخ به استوری" else "پاسخ به یادداشت",
                                         color = if (message.isMine) Color.White else MaterialTheme.colorScheme.primary,
-                                        fontSize = 9.5.sp,
+                                        fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold,
                                     )
                                 }
@@ -5077,7 +5113,7 @@ private fun MessageBubble(
                                 if (isStoryReply || isNoteReply) replySender.ifBlank { "کاربر" }
                                 else "پاسخ به ${replySender.ifBlank { "کاربر" }}",
                                 color = if (message.isMine) Color.White.copy(alpha = 0.9f) else MaterialTheme.colorScheme.primary,
-                                fontSize = 10.5.sp,
+                                fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                             )
                             val replyDisplayContent = remember(message.replyToContent, message.replyToKind, isStoryReply, isNoteReply) {
@@ -5147,7 +5183,7 @@ private fun MessageBubble(
                                 Text(
                                     "ویرایش",
                                     color = Color.White.copy(alpha = 0.78f),
-                                    fontSize = 10.sp,
+                                    fontSize = 11.sp,
                                     fontStyle = FontStyle.Italic,
                                 )
                                 Spacer(Modifier.width(4.dp))
@@ -5223,7 +5259,7 @@ private fun MessageBubble(
                                 Text(
                                     "ویرایش شده",
                                     color = if (message.isMine) Color.White.copy(alpha = 0.55f) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-                                    fontSize = 10.sp,
+                                    fontSize = 11.sp,
                                     fontStyle = FontStyle.Italic,
                                 )
                                 Spacer(Modifier.width(4.dp))
@@ -5317,7 +5353,7 @@ private fun MessageBubble(
                                 highlightColor = if (message.isMine) {
                                     Color.White.copy(alpha = 0.32f)
                                 } else {
-                                    VistaBrandColors.Indigo.copy(alpha = 0.28f)
+                                    VistaBrandColors.ViuBlue.copy(alpha = 0.28f)
                                 },
                             )
                         },
@@ -5468,9 +5504,9 @@ private fun ComposerContextBanner(
     badgeText: String? = null,
     modifier: Modifier = Modifier,
 ) {
-    val isDark = isSystemInDarkTheme()
+    val isDark = isChatDarkTheme()
     val bannerShape = RoundedCornerShape(18.dp)
-    val bannerTint = if (isDark) Color(0xFF1A222C) else Color(0xFFFFFFFF)
+    val bannerTint = VistaChatPalette.composerCapsuleTint(isDark)
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -5534,7 +5570,7 @@ private fun ComposerContextBanner(
                         Text(
                             text = badgeText,
                             color = MaterialTheme.colorScheme.primary,
-                            fontSize = 9.5.sp,
+                            fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
                         )
                     }
@@ -6684,6 +6720,7 @@ private fun AttachmentBubble(
             }
             AttachmentKind.DOCUMENT, AttachmentKind.UNKNOWN -> {
                 val extension = (attachment.fileName ?: "").substringAfterLast('.', "").uppercase()
+                val docIsDark = isChatDarkTheme()
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -6706,8 +6743,8 @@ private fun AttachmentBubble(
                             .background(
                                 when {
                                     isDownloading -> Color.Transparent
-                                    isDownloaded -> if (message.isMine) Color.White.copy(alpha = 0.24f) else VistaBrandColors.Indigo.copy(alpha = 0.14f)
-                                    else -> if (message.isMine) Color.White.copy(alpha = 0.24f) else VistaBrandColors.Indigo
+                                    isDownloaded -> if (message.isMine) Color.White.copy(alpha = 0.18f) else VistaChatPalette.incomingNestedCardBg(docIsDark)
+                                    else -> if (message.isMine) Color.White.copy(alpha = 0.22f) else VistaChatPalette.incomingAccent(docIsDark)
                                 },
                                 CircleShape,
                             ),
@@ -6741,7 +6778,7 @@ private fun AttachmentBubble(
                                 Icon(
                                     Icons.Default.Description,
                                     contentDescription = "فایل",
-                                    tint = if (message.isMine) Color.White else VistaBrandColors.Indigo,
+                                    tint = if (message.isMine) Color.White else VistaChatPalette.incomingActiveWave(docIsDark),
                                     modifier = Modifier.size(22.dp),
                                 )
                             }
@@ -7134,7 +7171,7 @@ private fun MessageStatusMark(status: MessageStatus) {
                     )
                 } else {
                     val markColor = if (currentStatus == MessageStatus.READ) {
-                        Color(0xFF4FC3F7)
+                        VistaBrandColors.ViuBlue
                     } else {
                         Color.White.copy(alpha = 0.7f)
                     }
@@ -7436,10 +7473,10 @@ private fun Composer(
     val attachmentRotation = remember { Animatable(0f) }
     val composerScope = rememberCoroutineScope()
     var isVoiceActive by remember { mutableStateOf(false) }
-    val isDark = isSystemInDarkTheme()
+    val isDark = isChatDarkTheme()
     val composerGlass = LocalVistaGlassState.current
-    val capsuleBg = if (isDark) Color(0xFF1A222C) else Color.White
-    val iconTint = if (isDark) Color(0xFF8C9AA9) else Color(0xFF686E74)
+    val capsuleBg = VistaChatPalette.composerCapsuleTint(isDark)
+    val iconTint = VistaChatPalette.composerIconTint(isDark)
 
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
         Box(
@@ -7598,7 +7635,7 @@ private fun Composer(
                                         .background(MaterialTheme.colorScheme.primary)
                                         .clickable(
                                             interactionSource = remember { MutableInteractionSource() },
-                                            indication = ripple(bounded = true, color = Color.White),
+                                            indication = ripple(bounded = true, color = MaterialTheme.colorScheme.onPrimary),
                                         ) {
                                             sendHaptics.confirm()
                                             onSend()
@@ -7612,7 +7649,7 @@ private fun Composer(
                                     Icon(
                                         Icons.AutoMirrored.Filled.Send,
                                         contentDescription = null,
-                                        tint = Color.White,
+                                        tint = MaterialTheme.colorScheme.onPrimary,
                                         modifier = Modifier.size(18.dp),
                                     )
                                 }
@@ -7661,9 +7698,9 @@ private fun FloatingMessageDateOverlay(
 
 @Composable
 private fun FloatingMessageDateChip(epochMillis: Long) {
-    val isDark = isSystemInDarkTheme()
+    val isDark = isChatDarkTheme()
     val chipShape = RoundedCornerShape(18.dp)
-    val chipTint = if (isDark) Color(0xFF1A222C) else Color(0xFFFFFFFF)
+    val chipTint = VistaChatPalette.composerCapsuleTint(isDark)
     Text(
         text = localDayLabel(epochMillis),
         color = MaterialTheme.colorScheme.onSurface,
@@ -8359,7 +8396,7 @@ private fun PartnerDetailsScreen(
     val tabs = listOf("رسانه", "فایل‌ها", "لینک‌ها", "صدا", "GIF")
     val isDark = isSystemInDarkTheme()
     val pageBgColor = if (isDark) Color(0xFF0F141A) else Color(0xFFF2F4F7)
-    val cardBgColor = if (isDark) Color(0xFF1A222C) else Color(0xFFFFFFFF)
+    val cardBgColor = if (isDark) Color(0xFF16191E) else Color(0xFFFFFFFF)
     val cardBorderColor = if (isDark) Color(0x20FFFFFF) else Color(0x10000000)
     val detailsScrollState = rememberScrollState()
     val detailsGlassState = rememberVistaGlassState()
@@ -8727,35 +8764,30 @@ private fun PartnerDetailsScreen(
                 menuContentDescription = "گزینه‌های اطلاعات کاربر",
                 onMenuClick = { partnerMenuExpanded = true },
                 menuDropdownContent = {
-                    DropdownMenu(
-                        expanded = partnerMenuExpanded,
-                        onDismissRequest = { partnerMenuExpanded = false },
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("گزارش کاربر") },
-                            leadingIcon = { Icon(Icons.Default.Info, contentDescription = null) },
-                            onClick = {
-                                partnerMenuExpanded = false
-                                reportDialogVisible = true
-                            },
-                        )
-                        DropdownMenuItem(
-                            text = { Text("مسدود کردن", color = MaterialTheme.colorScheme.error) },
-                            leadingIcon = { Icon(Icons.Default.Block, tint = MaterialTheme.colorScheme.error, contentDescription = null) },
-                            onClick = {
-                                partnerMenuExpanded = false
-                                blockConfirmVisible = true
-                            },
-                        )
-                        DropdownMenuItem(
-                            text = { Text("پاک کردن تاریخچه گفتگو", color = MaterialTheme.colorScheme.error) },
-                            leadingIcon = { Icon(Icons.Default.Delete, tint = MaterialTheme.colorScheme.error, contentDescription = null) },
-                            onClick = {
-                                partnerMenuExpanded = false
-                                clearHistoryConfirmVisible = true
-                            },
-                        )
-                    }
+                    VistaActionMenuSheet(
+                        visible = partnerMenuExpanded,
+                        title = "گزینه‌های اطلاعات کاربر",
+                        onDismiss = { partnerMenuExpanded = false },
+                        items = listOf(
+                            VistaActionItem(
+                                label = "گزارش کاربر",
+                                icon = VistaIcons.Info,
+                                onClick = { reportDialogVisible = true },
+                            ),
+                            VistaActionItem(
+                                label = "مسدود کردن",
+                                icon = VistaIcons.Block,
+                                isDestructive = true,
+                                onClick = { blockConfirmVisible = true },
+                            ),
+                            VistaActionItem(
+                                label = "پاک کردن تاریخچه گفتگو",
+                                icon = VistaIcons.Delete,
+                                isDestructive = true,
+                                onClick = { clearHistoryConfirmVisible = true },
+                            ),
+                        ),
+                    )
                 },
                 verificationBadgeContent = {
                     ChatUserVerificationBadge(

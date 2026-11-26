@@ -323,7 +323,7 @@ internal fun OtherUserProfileContent(
                     .vistaGlass(
                         state = otherProfileGlassState,
                         shape = RectangleShape,
-                        tint = if (isDarkOtherProfile) androidx.compose.ui.graphics.Color(0xFF1A222C) else androidx.compose.ui.graphics.Color(0xFFFFFFFF),
+                        tint = if (isDarkOtherProfile) androidx.compose.ui.graphics.Color(0xFF16191E) else androidx.compose.ui.graphics.Color(0xFFFFFFFF),
                         isDark = isDarkOtherProfile,
                         blurRadius = VistaGlassTokens.BarBlur,
                         tintAlphaOverride = if (isDarkOtherProfile) 0.58f else 0.62f,
@@ -332,9 +332,6 @@ internal fun OtherUserProfileContent(
                         shadowElevation = 3.dp,
                     ),
             ) {
-                ir.coffevista.vista_native.core.designsystem.component.VistaAppBarAmbientOverlay(
-                    modifier = Modifier.matchParentSize(),
-                )
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()

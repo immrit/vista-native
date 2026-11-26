@@ -322,11 +322,7 @@ fun VistaInAppMediaPickerBottomSheet(
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(18.dp))
-                                .background(
-                                    Brush.linearGradient(
-                                        listOf(VistaBrandColors.Violet, VistaBrandColors.Indigo),
-                                    ),
-                                )
+                                .background(VistaBrandColors.ViuBlueDeep)
                                 .clickable {
                                     onMultipleSelected(selectedUris.toList())
                                     onDismiss()
@@ -415,7 +411,7 @@ fun VistaInAppMediaPickerBottomSheet(
                         galleryAccessState == VistaGalleryAccessState.MISSING_VIDEO_ONLY)
                 ) {
                     Surface(
-                        color = VistaBrandColors.Indigo.copy(alpha = if (isDark) 0.16f else 0.10f),
+                        color = VistaBrandColors.ViuBlueDeep.copy(alpha = if (isDark) 0.16f else 0.10f),
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier
                             .fillMaxWidth()
@@ -445,7 +441,7 @@ fun VistaInAppMediaPickerBottomSheet(
                                     text = "تکمیل دسترسی",
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = VistaBrandColors.Indigo,
+                                    color = VistaBrandColors.ViuBlueDeep,
                                 )
                             }
                         }
@@ -492,7 +488,7 @@ fun VistaInAppMediaPickerBottomSheet(
 
                         isLoading -> {
                             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                CircularProgressIndicator(color = VistaBrandColors.Indigo)
+                                CircularProgressIndicator(color = VistaBrandColors.ViuBlueDeep)
                             }
                         }
 
@@ -545,8 +541,8 @@ fun VistaInAppMediaPickerBottomSheet(
                                                     .background(
                                                         Brush.linearGradient(
                                                             listOf(
-                                                                VistaBrandColors.Violet,
-                                                                VistaBrandColors.Indigo,
+                                                                VistaBrandColors.ViuBlue,
+                                                                VistaBrandColors.ViuBlueDeep,
                                                             ),
                                                         ),
                                                     )
@@ -744,7 +740,7 @@ fun VistaInAppMediaPickerBottomSheet(
                                                     if (isSelected) {
                                                         Modifier.border(
                                                             2.dp,
-                                                            VistaBrandColors.Indigo,
+                                                            VistaBrandColors.ViuBlueDeep,
                                                             RoundedCornerShape(6.dp),
                                                         )
                                                     } else {
@@ -781,7 +777,7 @@ fun VistaInAppMediaPickerBottomSheet(
                                                     Text(
                                                         text = VistaMediaBrowserHelpers.formatMediaDuration(item.durationMs),
                                                         color = Color.White,
-                                                        fontSize = 10.sp,
+                                                        fontSize = 11.sp,
                                                     )
                                                 }
                                             } else if (item.isGif) {
@@ -796,7 +792,7 @@ fun VistaInAppMediaPickerBottomSheet(
                                                     Text(
                                                         text = "GIF",
                                                         color = Color.White,
-                                                        fontSize = 9.5.sp,
+                                                        fontSize = 11.sp,
                                                         fontWeight = FontWeight.Bold,
                                                     )
                                                 }
@@ -811,7 +807,7 @@ fun VistaInAppMediaPickerBottomSheet(
                                                         .clip(CircleShape)
                                                         .then(
                                                             if (isSelected) {
-                                                                Modifier.background(VistaBrandColors.Indigo)
+                                                                Modifier.background(VistaBrandColors.ViuBlueDeep)
                                                             } else {
                                                                 Modifier
                                                                     .background(Color.Black.copy(alpha = 0.30f))
@@ -914,7 +910,7 @@ private fun VistaInAppSearchBar(
                     color = MaterialTheme.colorScheme.onSurface,
                     fontSize = 13.5.sp,
                 ),
-                cursorBrush = SolidColor(VistaBrandColors.Indigo),
+                cursorBrush = SolidColor(VistaBrandColors.ViuBlueDeep),
                 modifier = Modifier.fillMaxWidth(),
             )
         }
@@ -944,7 +940,7 @@ private fun VistaFilterChipPill(
         modifier = Modifier
             .clip(shape)
             .background(
-                if (selected) VistaBrandColors.Indigo
+                if (selected) VistaBrandColors.ViuBlueDeep
                 else if (isDark) Color.White.copy(alpha = 0.09f) else Color.Black.copy(alpha = 0.06f),
             )
             .clickable(onClick = onClick)
@@ -981,13 +977,13 @@ private fun VistaInAppPermissionCard(
             modifier = Modifier
                 .size(62.dp)
                 .clip(CircleShape)
-                .background(VistaBrandColors.Indigo.copy(alpha = 0.14f)),
+                .background(VistaBrandColors.ViuBlueDeep.copy(alpha = 0.14f)),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
                 imageVector = Icons.Default.Add,
                 contentDescription = null,
-                tint = VistaBrandColors.Indigo,
+                tint = VistaBrandColors.ViuBlueDeep,
                 modifier = Modifier.size(30.dp),
             )
         }
@@ -1011,7 +1007,7 @@ private fun VistaInAppPermissionCard(
         Button(
             onClick = onGrantClick,
             shape = RoundedCornerShape(16.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = VistaBrandColors.Indigo),
+            colors = ButtonDefaults.buttonColors(containerColor = VistaBrandColors.ViuBlueDeep),
         ) {
             Text("تأیید و اعطای دسترسی", color = Color.White, fontWeight = FontWeight.Bold)
         }
@@ -1031,7 +1027,7 @@ private fun VistaInAppPermissionCard(
         if (onSystemPickerClick != null) {
             Spacer(Modifier.height(6.dp))
             TextButton(onClick = onSystemPickerClick) {
-                Text("انتخاب از گالری سیستم", color = VistaBrandColors.Indigo)
+                Text("انتخاب از گالری سیستم", color = VistaBrandColors.ViuBlueDeep)
             }
         }
     }
@@ -1063,7 +1059,7 @@ private fun VistaInAppEmptyGalleryState(
             Button(
                 onClick = onGrantClick,
                 shape = RoundedCornerShape(16.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = VistaBrandColors.Indigo),
+                colors = ButtonDefaults.buttonColors(containerColor = VistaBrandColors.ViuBlueDeep),
             ) {
                 Text("تأیید و اعطای دسترسی", color = Color.White, fontWeight = FontWeight.Bold)
             }

@@ -176,7 +176,7 @@ class FeedRuntimeInstrumentationTest {
                         val root = activity.window.decorView
                         systemInsets[0] = ViewCompat.getRootWindowInsets(root)
                             ?.getInsets(WindowInsetsCompat.Type.systemBars())
-                        assertSystemBarColors(activity, "#F8F9FF", "#FFFFFF")
+                        assertSystemBarColors(activity, "#FFFFFF", "#FFFFFF")
                     }
                     val appBarTop = compose.onNodeWithTag("feed-app-bar")
                         .fetchSemanticsNode().boundsInRoot.top
@@ -200,8 +200,8 @@ class FeedRuntimeInstrumentationTest {
         try {
             launch("valid-session").use { scenario ->
                 listOf(
-                    "no" to ("#F8F9FF" to "#FFFFFF"),
-                    "yes" to ("#09090F" to "#09090F"),
+                    "no" to ("#FFFFFF" to "#FFFFFF"),
+                    "yes" to ("#121417" to "#090A0C"),
                 ).forEach { (mode, colors) ->
                     shell("cmd uimode night $mode")
                     awaitDeviceNightMode(mode == "yes")

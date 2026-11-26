@@ -79,7 +79,6 @@ import ir.coffevista.vista_native.core.database.profile.OwnProfileDao
 import ir.coffevista.vista_native.core.database.profile.hasBlueBadge
 import ir.coffevista.vista_native.core.database.profile.hasPremiumPrivileges
 import ir.coffevista.vista_native.core.database.profile.tierCapabilities
-import ir.coffevista.vista_native.core.designsystem.component.VistaAppBarAmbientOverlay
 import ir.coffevista.vista_native.core.designsystem.component.VistaVerificationBadge
 import ir.coffevista.vista_native.core.designsystem.navigation.LocalVistaInternalLinkNavigator
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaBrandColors
@@ -492,7 +491,6 @@ fun LocationFeedScreen(
                         .fillMaxWidth()
                         .background(MaterialTheme.colorScheme.surface),
                 ) {
-                    VistaAppBarAmbientOverlay(modifier = Modifier.matchParentSize())
                     TopAppBar(
                         title = {
                             Text(
@@ -880,7 +878,7 @@ private fun LocationStoriesSection(
 ) {
     val brandGradient = remember {
         Brush.linearGradient(
-            colors = listOf(VistaBrandColors.Indigo, VistaBrandColors.Violet, VistaBrandColors.Pink),
+            colors = listOf(VistaBrandColors.Coral, VistaBrandColors.CoralSoft, VistaBrandColors.ViuBlue),
         )
     }
     val closeFriendsGradient = remember {
@@ -981,7 +979,7 @@ private fun LocationStoriesSection(
                                 Text(
                                     text = user.stories.size.toString().toPersianDigits(),
                                     color = MaterialTheme.colorScheme.onPrimary,
-                                    fontSize = 9.5.sp,
+                                    fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
                                 )
                             }

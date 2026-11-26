@@ -5,7 +5,6 @@ import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -60,6 +59,8 @@ import androidx.compose.ui.util.lerp
 import ir.coffevista.vista_native.core.designsystem.component.VistaEmojiText
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaBrandColors
 import ir.coffevista.vista_native.features.chat.presentation.MessageGroupPosition
+import ir.coffevista.vista_native.features.chat.presentation.VistaChatPalette
+import ir.coffevista.vista_native.features.chat.presentation.isChatDarkTheme
 import ir.coffevista.vista_native.features.chat.presentation.messageBubbleCornerRounding
 import ir.coffevista.vista_native.features.chat.presentation.telegramXOuterCornerRadii
 import kotlin.math.PI
@@ -276,7 +277,7 @@ internal fun TelegramSendFlightOverlay(
     modifier: Modifier = Modifier,
 ) {
     val density = LocalDensity.current
-    val isDark = isSystemInDarkTheme()
+    val isDark = isChatDarkTheme()
     val latestTargetBounds by rememberUpdatedState(targetBoundsLocal ?: flight.fallbackTargetBoundsLocal)
     val latestOnFinished by rememberUpdatedState(onFlightFinished)
     val rawProgress = remember(flight.flightId) { Animatable(0f) }
@@ -332,11 +333,12 @@ internal fun TelegramSendFlightOverlay(
         bottomRight = lerp(23f, targetRadii.bottomRight, pX).dp,
     )
 
-    val startTextColor = if (isDark) Color(0xFFF1F5F9) else Color(0xFF1E2732)
+    val startTextColor = if (isDark) Color(0xFFF3F4F6) else Color(0xFF111215)
     val endTextColor = if (flight.targetAlignRight) Color.White else MaterialTheme.colorScheme.onSurface
     val textColor = lerp(startTextColor, endTextColor, pAlpha)
-    val startSurfaceTint = if (isDark) Color(0xFF1A222C) else Color.White
-    val endIncomingTint = MaterialTheme.colorScheme.surfaceVariant
+    val startSurfaceTint = VistaChatPalette.composerCapsuleTint(isDark)
+    val endIncomingTint = VistaChatPalette.incomingBubbleBg(isDark)
+    val outgoingColors = VistaChatPalette.outgoingBubbleColors(isDark)
     val arcLiftElevation = (sin(frame.progressY * PI).toFloat() * 3.dp.value).coerceAtLeast(0f).dp
     val shadowOpacity = frame.shadowAlpha
     val isRtlMessage = textDirection == TextDirection.Rtl || textDirection == TextDirection.ContentOrRtl
@@ -362,10 +364,10 @@ internal fun TelegramSendFlightOverlay(
                 Modifier
                     .background(startSurfaceTint.copy(alpha = 1f - pAlpha))
                     .background(
-                        brush = Brush.linearGradient(
+                        brush = Brush.verticalGradient(
                             listOf(
-                                VistaBrandColors.Indigo.copy(alpha = pAlpha),
-                                VistaBrandColors.VioletDeep.copy(alpha = pAlpha),
+                                outgoingColors[0].copy(alpha = pAlpha),
+                                outgoingColors[1].copy(alpha = pAlpha),
                             ),
                         ),
                     )

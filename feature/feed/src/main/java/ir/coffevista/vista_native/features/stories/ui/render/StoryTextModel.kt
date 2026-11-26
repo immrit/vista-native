@@ -64,7 +64,7 @@ internal enum class StoryTextGradient(val id: String, val colors: List<Color>, v
     Ocean("ocean", listOf(Color(0xFF2193B0), Color(0xFF6DD5ED)), false),
     Aurora("aurora", listOf(Color(0xFF00F5A0), Color(0xFF00D9F5), Color(0xFF7B61FF)), false),
     Gold("gold", listOf(Color(0xFFF7971E), Color(0xFFFFD200)), false),
-    Vista("vista", listOf(Color(0xFF6366F1), Color(0xFFEC4899)), false),
+    Vista("vista", listOf(Color(0xFF0097C7), Color(0xFFF0543B)), false),
     Candy("candy", listOf(Color(0xFFFF9A9E), Color(0xFFFAD0C4), Color(0xFFA18CD1)), false),
     Fire("fire", listOf(Color(0xFFFFF176), Color(0xFFFF7043), Color(0xFFD81B60)), true),
     Lagoon("lagoon", listOf(Color(0xFFE0FFFF), Color(0xFF4DD0E1), Color(0xFF3949AB)), true);

@@ -3,7 +3,6 @@
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -68,6 +67,8 @@ import ir.coffevista.vista_native.core.designsystem.component.formatAudioTime
 import ir.coffevista.vista_native.core.designsystem.component.resolveMusicTitle
 import ir.coffevista.vista_native.core.designsystem.component.resolveVerificationBadgeType
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaBrandColors
+import ir.coffevista.vista_native.features.chat.presentation.VistaChatPalette
+import ir.coffevista.vista_native.features.chat.presentation.isChatDarkTheme
 import ir.coffevista.vista_native.features.chat.domain.model.SharedPostDraft
 import ir.coffevista.vista_native.features.chat.presentation.audio.ChatAudioKind
 import ir.coffevista.vista_native.features.chat.presentation.audio.ChatAudioPlayer
@@ -94,18 +95,18 @@ fun SharedPostCard(
     onHashtagClick: (String) -> Unit = {},
     shape: Shape = RoundedCornerShape(14.dp),
 ) {
-    val isDarkTheme = isSystemInDarkTheme()
+    val isDarkTheme = isChatDarkTheme()
     val primaryTextColor = if (isMine) Color.White else MaterialTheme.colorScheme.onSurface
     val secondaryTextColor = if (isMine) Color.White.copy(alpha = 0.75f) else MaterialTheme.colorScheme.onSurfaceVariant
     val cardBackground = if (isMine) {
-        Color.White.copy(alpha = 0.12f)
+        VistaChatPalette.outgoingNestedCardBg(isDarkTheme)
     } else {
-        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+        VistaChatPalette.incomingNestedCardBg(isDarkTheme)
     }
     val cardBorder = if (isMine) {
-        Color.White.copy(alpha = 0.2f)
+        Color.White.copy(alpha = 0.14f)
     } else {
-        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+        VistaChatPalette.incomingBubbleBorder(isDarkTheme)
     }
 
     Column(
@@ -144,7 +145,7 @@ fun SharedPostCard(
                                 )
                                 .padding(1.5.dp)
                                 .clip(CircleShape)
-                                .background(if (isMine) VistaBrandColors.VioletDeep else MaterialTheme.colorScheme.surface)
+                                .background(if (isMine) VistaChatPalette.outgoingBubbleSolid(isDarkTheme) else VistaChatPalette.incomingNestedCardBg(isDarkTheme))
                         } else {
                             Modifier.background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
                         }
@@ -225,7 +226,7 @@ fun SharedPostCard(
             val hasEntities = remember(post.content) { post.content.contains('#') || post.content.contains('@') }
             if (hasEntities) {
                 val entityStyle = SpanStyle(
-                    color = if (isMine) Color(0xFFBBDEFB) else VistaBrandColors.Indigo,
+                    color = if (isMine) Color(0xFFBBDEFB) else if (isDarkTheme) VistaBrandColors.ViuBlue else VistaBrandColors.ViuBlueDeep,
                     fontWeight = FontWeight.Bold,
                 )
                 val annotated = remember(post.content) {
@@ -303,7 +304,7 @@ fun SharedPostCard(
                     val cleanTag = if (tag.startsWith("#")) tag else "#$tag"
                     Text(
                         text = cleanTag,
-                        color = if (isMine) Color(0xFFBBDEFB) else VistaBrandColors.Indigo,
+                        color = if (isMine) Color(0xFFBBDEFB) else if (isDarkTheme) VistaBrandColors.ViuBlue else VistaBrandColors.ViuBlueDeep,
                         fontSize = 11.5.sp,
                         fontWeight = FontWeight.Medium,
                         modifier = Modifier.clickable { onHashtagClick(tag.removePrefix("#")) },
@@ -422,7 +423,7 @@ fun SharedPostCard(
             ) {
                 Text(
                     text = "مشاهده پست ‹",
-                    color = if (isMine) Color.White.copy(alpha = 0.9f) else VistaBrandColors.Indigo,
+                    color = if (isMine) Color.White.copy(alpha = 0.9f) else if (isDarkTheme) VistaBrandColors.ViuBlue else VistaBrandColors.ViuBlueDeep,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 11.sp,
                 )
@@ -471,9 +472,11 @@ private fun SharedPostMusicPlayer(
     val activePosMs = if (isActive) positionMs else ChatAudioPlayer.savedPositionMs(trackId)
     val progress = if (durationMs > 0L) (activePosMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f) else 0f
 
-    val containerBg = if (isMine) Color.White.copy(alpha = 0.14f) else MaterialTheme.colorScheme.surface.copy(alpha = 0.72f)
-    val containerBorder = if (isMine) Color.White.copy(alpha = 0.22f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
+    val isDark = isChatDarkTheme()
+    val containerBg = if (isMine) Color.White.copy(alpha = 0.14f) else VistaChatPalette.incomingBubbleBg(isDark)
+    val containerBorder = if (isMine) Color.White.copy(alpha = 0.22f) else VistaChatPalette.incomingBubbleBorder(isDark)
     val accentColor = if (isMine) Color.White else MaterialTheme.colorScheme.primary
+    val incomingPlayBg = VistaChatPalette.incomingAccent(isDark)
 
     Row(
         modifier = Modifier
@@ -494,7 +497,7 @@ private fun SharedPostMusicPlayer(
                     if (isMine) {
                         SolidColor(Color.White.copy(alpha = 0.22f))
                     } else {
-                        Brush.linearGradient(listOf(VistaBrandColors.Indigo, VistaBrandColors.VioletDeep))
+                        Brush.linearGradient(listOf(incomingPlayBg, incomingPlayBg))
                     },
                 )
                 .clickable(role = Role.Button) { ChatAudioPlayer.toggle(track) },
@@ -559,7 +562,7 @@ private fun SharedPostMusicPlayer(
                     Text(
                         text = timeText.toPersianDigits(),
                         color = secondaryTextColor,
-                        fontSize = 10.sp,
+                        fontSize = 11.sp,
                         maxLines = 1,
                     )
                 }

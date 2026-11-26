@@ -151,7 +151,7 @@ fun ProfileQrScannerScreen(
                     modifier = Modifier
                         .size(260.dp)
                         .clip(RoundedCornerShape(28.dp))
-                        .border(3.dp, VistaBrandColors.Indigo, RoundedCornerShape(28.dp))
+                        .border(3.dp, VistaBrandColors.ViuBlue, RoundedCornerShape(28.dp))
                         .background(Color.White.copy(alpha = 0.05f)),
                     contentAlignment = Alignment.Center,
                 ) {

@@ -118,12 +118,12 @@ fun OnboardingScreen(
                 Text(
                     text = "VISTA",
                     fontSize = 14.sp,
-                    fontWeight = FontWeight.Black,
+                    fontWeight = FontWeight.Bold,
                     letterSpacing = 2.sp,
                 )
                 Text(
                     text = "دنیای نزدیک‌تر",
-                    fontSize = 10.sp,
+                    fontSize = 11.sp,
                     color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.56f),
                 )
             }
@@ -265,7 +265,7 @@ private fun OnboardingPage(
                     text = content.title,
                     modifier = Modifier.padding(top = 12.dp),
                     style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Black,
+                    fontWeight = FontWeight.Bold,
                     textAlign = TextAlign.Center,
                 )
                 Text(

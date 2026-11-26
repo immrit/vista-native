@@ -72,6 +72,32 @@ internal fun normalizedActiveSections(source: Iterable<ServiceSection>): List<Se
     return unique.values.toList()
 }
 
+internal val DEFAULT_HUB_SECTION_ORDER = listOf(
+    "banners",
+    "quick_services",
+    "contacts",
+    "sections",
+)
+
+/**
+ * Normalizes remote-configured section ordering for ServicesScreen:
+ * keeps valid unique keys in requested order and appends any missing defaults.
+ */
+internal fun normalizedHubSectionOrder(order: List<String>): List<String> {
+    val allowed = DEFAULT_HUB_SECTION_ORDER.toSet()
+    val seen = linkedSetOf<String>()
+    order.forEach { raw ->
+        val normalized = raw.trim().lowercase()
+        if (normalized in allowed) {
+            seen.add(normalized)
+        }
+    }
+    DEFAULT_HUB_SECTION_ORDER.forEach { key ->
+        seen.add(key)
+    }
+    return seen.toList()
+}
+
 @Immutable
 data class ContactVistaUser(
     val id: String,

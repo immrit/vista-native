@@ -139,7 +139,7 @@ internal fun ServiceSectionDto.toDomain(): ServiceSection = ServiceSection(
     subtitle = subtitle.orEmpty(),
     icon = icon ?: "grid",
     route = route.orEmpty(),
-    color = color ?: "#6366F1",
+    color = color ?: "#0097C7",
     isActive = isActive,
     sortOrder = sortOrder,
 )
@@ -152,7 +152,7 @@ internal fun ServiceBannerDto.toDomain(): ServiceBanner = ServiceBanner(
     link = link.orEmpty(),
     linkType = linkType ?: "web",
     heightType = heightType ?: "md",
-    bgColor = bgColor ?: "#6366F1",
+    bgColor = bgColor ?: "#0097C7",
     textColor = textColor ?: "#FFFFFF",
     isActive = isActive,
     sortOrder = sortOrder,

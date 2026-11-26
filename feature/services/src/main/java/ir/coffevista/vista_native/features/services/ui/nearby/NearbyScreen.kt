@@ -357,9 +357,6 @@ fun NearbyScreen(
                         .fillMaxWidth()
                         .background(MaterialTheme.colorScheme.background),
                 ) {
-                    ir.coffevista.vista_native.core.designsystem.component.VistaAppBarAmbientOverlay(
-                        modifier = Modifier.matchParentSize(),
-                    )
                     TopAppBar(
                         title = {
                             Row(
@@ -373,13 +370,13 @@ fun NearbyScreen(
                                         fontFamily = VistaFontFamily,
                                         fontWeight = FontWeight.ExtraBold,
                                         fontSize = 19.sp,
-                                        color = VistaBrandColors.Indigo,
+                                        color = VistaBrandColors.ViuBlueDeep,
                                     ),
                                 )
                                 if (!state.locationCity.isNullOrBlank()) {
                                     Surface(
                                         shape = RoundedCornerShape(50),
-                                        color = VistaBrandColors.Indigo.copy(alpha = 0.10f),
+                                        color = VistaBrandColors.ViuBlueDeep.copy(alpha = 0.10f),
                                     ) {
                                         Text(
                                             text = state.locationCity!!,
@@ -387,7 +384,7 @@ fun NearbyScreen(
                                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
                                             style = MaterialTheme.typography.labelSmall.copy(
                                                 fontFamily = VistaFontFamily,
-                                                color = VistaBrandColors.Indigo,
+                                                color = VistaBrandColors.ViuBlueDeep,
                                                 fontSize = 11.sp,
                                                 fontWeight = FontWeight.SemiBold,
                                             ),
@@ -445,7 +442,7 @@ fun NearbyScreen(
                                     Icon(
                                         imageVector = Icons.Rounded.Favorite,
                                         contentDescription = "درخواست‌ها، لایک‌ها و مچ‌ها",
-                                        tint = VistaBrandColors.Indigo,
+                                        tint = VistaBrandColors.ViuBlueDeep,
                                         modifier = Modifier.size(21.dp),
                                     )
                                 }
@@ -682,8 +679,8 @@ private fun NearbyWalletHeaderChip(
     Surface(
         onClick = onClick,
         shape = RoundedCornerShape(50),
-        color = VistaBrandColors.Indigo.copy(alpha = 0.12f),
-        border = BorderStroke(1.dp, VistaBrandColors.Indigo.copy(alpha = 0.30f)),
+        color = VistaBrandColors.ViuBlueDeep.copy(alpha = 0.12f),
+        border = BorderStroke(1.dp, VistaBrandColors.ViuBlueDeep.copy(alpha = 0.30f)),
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
@@ -707,7 +704,7 @@ private fun NearbyWalletHeaderChip(
             Icon(
                 imageVector = Icons.Rounded.ChatBubbleOutline,
                 contentDescription = "درخواست چت",
-                tint = VistaBrandColors.Indigo,
+                tint = VistaBrandColors.ViuBlueDeep,
                 modifier = Modifier.size(14.dp),
             )
             Text(
@@ -715,7 +712,7 @@ private fun NearbyWalletHeaderChip(
                 style = MaterialTheme.typography.labelMedium.copy(
                     fontFamily = VistaFontFamily,
                     fontWeight = FontWeight.Bold,
-                    color = VistaBrandColors.Indigo,
+                    color = VistaBrandColors.ViuBlueDeep,
                 ),
             )
         }
@@ -750,7 +747,7 @@ private fun NearbyZoneFilterStrip(
             Surface(
                 shape = RoundedCornerShape(50),
                 color = if (isSelected) {
-                    VistaBrandColors.Indigo
+                    VistaBrandColors.ViuBlueDeep
                 } else {
                     MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
                 },
@@ -952,7 +949,7 @@ private fun NearbyDeck(
             FloatingActionButton(
                 onClick = { currentCard?.let { onChatRequest(it) } },
                 shape = CircleShape,
-                containerColor = VistaBrandColors.Indigo,
+                containerColor = VistaBrandColors.ViuBlueDeep,
                 contentColor = Color.White,
                 elevation = FloatingActionButtonDefaults.elevation(4.dp),
                 modifier = Modifier.size(52.dp),
@@ -1024,7 +1021,7 @@ private fun DisabledDiscoveryView(onEnable: () -> Unit) {
             Button(
                 onClick = onEnable,
                 shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = VistaBrandColors.Indigo),
+                colors = ButtonDefaults.buttonColors(containerColor = VistaBrandColors.ViuBlueDeep),
             ) {
                 Text(
                     text = "فعال‌سازی «اطراف من»",
@@ -1094,7 +1091,7 @@ private fun LocationErrorView(
             Surface(
             shape = RoundedCornerShape(28.dp),
             color = MaterialTheme.colorScheme.surface,
-            border = BorderStroke(1.dp, VistaBrandColors.Indigo.copy(alpha = 0.22f)),
+            border = BorderStroke(1.dp, VistaBrandColors.ViuBlueDeep.copy(alpha = 0.22f)),
             tonalElevation = 6.dp,
             shadowElevation = 10.dp,
             modifier = Modifier.fillMaxWidth(),
@@ -1111,7 +1108,7 @@ private fun LocationErrorView(
                         .background(
                             brush = Brush.linearGradient(
                                 listOf(
-                                    VistaBrandColors.Indigo.copy(alpha = 0.18f),
+                                    VistaBrandColors.ViuBlueDeep.copy(alpha = 0.18f),
                                     Color(0xFF10B981).copy(alpha = 0.18f),
                                 )
                             ),
@@ -1122,7 +1119,7 @@ private fun LocationErrorView(
                     Icon(
                         imageVector = if (error == "service_off") Icons.Rounded.LocationOff else Icons.Rounded.MyLocation,
                         contentDescription = null,
-                        tint = VistaBrandColors.Indigo,
+                        tint = VistaBrandColors.ViuBlueDeep,
                         modifier = Modifier.size(40.dp),
                     )
                 }
@@ -1157,8 +1154,8 @@ private fun LocationErrorView(
 
                 Surface(
                     shape = RoundedCornerShape(16.dp),
-                    color = VistaBrandColors.Indigo.copy(alpha = 0.08f),
-                    border = BorderStroke(1.dp, VistaBrandColors.Indigo.copy(alpha = 0.14f)),
+                    color = VistaBrandColors.ViuBlueDeep.copy(alpha = 0.08f),
+                    border = BorderStroke(1.dp, VistaBrandColors.ViuBlueDeep.copy(alpha = 0.14f)),
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Column(
@@ -1187,7 +1184,7 @@ private fun LocationErrorView(
                             Icon(
                                 imageVector = Icons.Rounded.AutoAwesome,
                                 contentDescription = null,
-                                tint = VistaBrandColors.Indigo,
+                                tint = VistaBrandColors.ViuBlueDeep,
                                 modifier = Modifier.size(18.dp),
                             )
                             Spacer(modifier = Modifier.width(8.dp))
@@ -1209,7 +1206,7 @@ private fun LocationErrorView(
                 Button(
                     onClick = onAction,
                     shape = RoundedCornerShape(16.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = VistaBrandColors.Indigo),
+                    colors = ButtonDefaults.buttonColors(containerColor = VistaBrandColors.ViuBlueDeep),
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(50.dp),
@@ -1440,35 +1437,35 @@ private fun NearbyRadarScanningView(modifier: Modifier = Modifier) {
             val maxRadius = size.width / 2f
 
             drawCircle(
-                color = VistaBrandColors.Indigo.copy(alpha = 0.12f),
+                color = VistaBrandColors.ViuBlueDeep.copy(alpha = 0.12f),
                 radius = maxRadius,
                 style = Stroke(width = 1.5.dp.toPx()),
             )
             drawCircle(
-                color = VistaBrandColors.Indigo.copy(alpha = 0.18f),
+                color = VistaBrandColors.ViuBlueDeep.copy(alpha = 0.18f),
                 radius = maxRadius * 0.68f,
                 style = Stroke(width = 1.5.dp.toPx()),
             )
             drawCircle(
-                color = VistaBrandColors.Indigo.copy(alpha = 0.25f),
+                color = VistaBrandColors.ViuBlueDeep.copy(alpha = 0.25f),
                 radius = maxRadius * 0.38f,
                 style = Stroke(width = 1.5.dp.toPx()),
             )
 
             drawCircle(
-                color = VistaBrandColors.Indigo.copy(alpha = waveAlpha * 0.45f),
+                color = VistaBrandColors.ViuBlueDeep.copy(alpha = waveAlpha * 0.45f),
                 radius = maxRadius * waveScale,
                 style = Stroke(width = 2.dp.toPx()),
             )
 
             drawLine(
-                color = VistaBrandColors.Indigo.copy(alpha = 0.15f),
+                color = VistaBrandColors.ViuBlueDeep.copy(alpha = 0.15f),
                 start = Offset(centerOffset.x, 0f),
                 end = Offset(centerOffset.x, size.height),
                 strokeWidth = 1.dp.toPx(),
             )
             drawLine(
-                color = VistaBrandColors.Indigo.copy(alpha = 0.15f),
+                color = VistaBrandColors.ViuBlueDeep.copy(alpha = 0.15f),
                 start = Offset(0f, centerOffset.y),
                 end = Offset(size.width, centerOffset.y),
                 strokeWidth = 1.dp.toPx(),
@@ -1479,7 +1476,7 @@ private fun NearbyRadarScanningView(modifier: Modifier = Modifier) {
                     brush = Brush.sweepGradient(
                         colors = listOf(
                             Color.Transparent,
-                            VistaBrandColors.Indigo.copy(alpha = 0.35f),
+                            VistaBrandColors.ViuBlueDeep.copy(alpha = 0.35f),
                         ),
                         center = centerOffset,
                     ),
@@ -1496,7 +1493,7 @@ private fun NearbyRadarScanningView(modifier: Modifier = Modifier) {
                 .size(64.dp)
                 .background(
                     brush = Brush.linearGradient(
-                        listOf(VistaBrandColors.Indigo, VistaBrandColors.Violet),
+                        listOf(VistaBrandColors.ViuBlueDeep, VistaBrandColors.ViuBlue),
                     ),
                     shape = CircleShape,
                 ),
@@ -1609,7 +1606,7 @@ private fun NearbyEmptyRadarView(
             Button(
                 onClick = onRefresh,
                 shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = VistaBrandColors.Indigo),
+                colors = ButtonDefaults.buttonColors(containerColor = VistaBrandColors.ViuBlueDeep),
             ) {
                 Icon(imageVector = Icons.Rounded.Replay, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.width(6.dp))

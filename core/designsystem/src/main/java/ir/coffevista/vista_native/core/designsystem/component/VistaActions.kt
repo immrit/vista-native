@@ -18,14 +18,17 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -35,6 +38,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -44,8 +48,8 @@ import androidx.compose.ui.platform.LocalDensity
 import ir.coffevista.vista_native.core.designsystem.glass.LocalVistaGlassState
 import ir.coffevista.vista_native.core.designsystem.glass.VistaGlassTokens
 import ir.coffevista.vista_native.core.designsystem.glass.vistaGlass
-import ir.coffevista.vista_native.core.designsystem.tokens.VistaBrandColors
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaComponentSize
+import ir.coffevista.vista_native.core.designsystem.tokens.VistaRadii
 
 enum class VistaButtonVariant { Primary, Secondary, Outline, Text, Destructive }
 
@@ -60,6 +64,16 @@ fun VistaButton(
     content: @Composable RowScope.() -> Unit,
 ) {
     val haptics = rememberVistaHaptics()
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val pressScale by animateFloatAsState(
+        targetValue = if (isPressed && enabled && !loading) 0.98f else 1f,
+        animationSpec = spring(
+            dampingRatio = 0.72f,
+            stiffness = 560f,
+        ),
+        label = "vista_btn_press_scale",
+    )
     val hapticClick: () -> Unit = {
         haptics.tap()
         onClick()
@@ -69,18 +83,24 @@ fun VistaButton(
             minWidth = VistaComponentSize.TouchTarget,
             minHeight = VistaComponentSize.Button,
         )
+        .graphicsLayer {
+            scaleX = pressScale
+            scaleY = pressScale
+        }
         .semantics {
             if (loading) stateDescription = "در حال انجام"
         }
+    val buttonShape = RoundedCornerShape(VistaRadii.Medium)
     val renderedContent: @Composable RowScope.() -> Unit = {
         if (loading) {
             CircularProgressIndicator(
                 modifier = Modifier.size(20.dp),
                 strokeWidth = 2.dp,
-                color = if (variant == VistaButtonVariant.Outline || variant == VistaButtonVariant.Text) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.onPrimary
+                color = when (variant) {
+                    VistaButtonVariant.Outline, VistaButtonVariant.Text -> MaterialTheme.colorScheme.primary
+                    VistaButtonVariant.Secondary -> MaterialTheme.colorScheme.onSecondary
+                    VistaButtonVariant.Destructive -> MaterialTheme.colorScheme.onError
+                    VistaButtonVariant.Primary -> MaterialTheme.colorScheme.onPrimary
                 },
             )
         } else {
@@ -92,12 +112,16 @@ fun VistaButton(
             onClick = hapticClick,
             modifier = resolvedModifier,
             enabled = enabled && !loading,
+            shape = buttonShape,
+            interactionSource = interactionSource,
             content = renderedContent,
         )
         VistaButtonVariant.Text -> TextButton(
             onClick = hapticClick,
             modifier = resolvedModifier,
             enabled = enabled && !loading,
+            shape = buttonShape,
+            interactionSource = interactionSource,
             content = renderedContent,
         )
         else -> {
@@ -107,11 +131,22 @@ fun VistaButton(
                 VistaButtonVariant.Destructive -> MaterialTheme.colorScheme.error
                 else -> error("Handled above")
             }
+            val defaultContentColor = when (variant) {
+                VistaButtonVariant.Primary -> MaterialTheme.colorScheme.onPrimary
+                VistaButtonVariant.Secondary -> MaterialTheme.colorScheme.onSecondary
+                VistaButtonVariant.Destructive -> MaterialTheme.colorScheme.onError
+                else -> error("Handled above")
+            }
             Button(
                 onClick = hapticClick,
                 modifier = resolvedModifier,
                 enabled = enabled && !loading,
-                colors = ButtonDefaults.buttonColors(containerColor = containerColor ?: defaultColor),
+                shape = buttonShape,
+                interactionSource = interactionSource,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = containerColor ?: defaultColor,
+                    contentColor = defaultContentColor,
+                ),
                 content = renderedContent,
             )
         }
@@ -142,7 +177,7 @@ fun VistaFloatingActionButton(
         ).toDp()
     }
     val glassState = LocalVistaGlassState.current
-    val isDark = isSystemInDarkTheme()
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val haptics = rememberVistaHaptics()
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
@@ -174,7 +209,7 @@ fun VistaFloatingActionButton(
                             tint = MaterialTheme.colorScheme.primary,
                             isDark = isDark,
                             blurRadius = VistaGlassTokens.PillBlur,
-                            tintAlphaOverride = 0.72f,
+                            tintAlphaOverride = 0.88f,
                             drawHighlight = true,
                             rimWidth = 0.65.dp,
                             shadowElevation = 6.dp,
@@ -189,7 +224,7 @@ fun VistaFloatingActionButton(
             )
             .clickable(
                 interactionSource = interactionSource,
-                indication = ripple(bounded = true, color = Color.White),
+                indication = ripple(bounded = true, color = MaterialTheme.colorScheme.onPrimary),
                 role = Role.Button,
                 onClick = {
                     haptics.tap()
@@ -203,7 +238,9 @@ fun VistaFloatingActionButton(
             },
         contentAlignment = Alignment.Center,
     ) {
-        content()
+        CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onPrimary) {
+            content()
+        }
     }
 }
 

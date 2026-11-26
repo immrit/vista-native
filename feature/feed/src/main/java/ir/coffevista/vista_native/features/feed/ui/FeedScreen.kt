@@ -3,6 +3,9 @@
 import android.net.Uri
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -26,7 +29,15 @@ import ir.coffevista.vista_native.core.designsystem.component.resolveMusicRange
 import ir.coffevista.vista_native.core.designsystem.component.PostHeaderTimeOrMusicBadge
 import ir.coffevista.vista_native.core.designsystem.component.LocalBottomBarVisibility
 import ir.coffevista.vista_native.core.designsystem.component.LocalMiniPlayerSlot
+import ir.coffevista.vista_native.core.designsystem.component.VistaActionItem
+import ir.coffevista.vista_native.core.designsystem.component.VistaActionMenuSheet
 import ir.coffevista.vista_native.core.designsystem.component.VistaMiniPlayerHost
+import ir.coffevista.vista_native.core.designsystem.component.rememberVistaShimmerBrush
+import ir.coffevista.vista_native.core.designsystem.icon.VistaIcons
+import ir.coffevista.vista_native.core.designsystem.tokens.VistaRadii
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import ir.coffevista.vista_native.core.designsystem.component.VistaViuStateIllustration
 import ir.coffevista.vista_native.core.designsystem.component.VistaViuStateKind
 import ir.coffevista.vista_native.core.designsystem.component.inferVistaViuStateKind
@@ -84,8 +95,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.TextButton
@@ -516,7 +525,7 @@ internal fun FeedScreenContent(
     var isBarsVisible by rememberSaveable { mutableStateOf(true) }
     val coroutineScope = rememberCoroutineScope()
     var idleJob by remember { mutableStateOf<Job?>(null) }
-    var fullscreenMedia by remember { mutableStateOf<Pair<List<String>, Int>?>(null) }
+    var fullscreenMedia by remember { mutableStateOf<Triple<List<String>, Int, Rect?>?>(null) }
     val remoteConfig by SystemGateMonitor.remoteConfig.collectAsState()
 
     fun updateBarsVisibility(visible: Boolean) {
@@ -677,7 +686,7 @@ internal fun FeedScreenContent(
                         onLoadMore = onLoadMore,
                         onPostClick = onPostClick,
                         onVideoClick = onVideoClick,
-                        onMediaClick = { imgs, idx -> fullscreenMedia = imgs to idx },
+                        onMediaWithBoundsClick = { imgs, idx, bounds -> fullscreenMedia = Triple(imgs, idx, bounds) },
                         onAuthorClick = onAuthorClick,
                         onLikeClick = onLikeClick,
                         onSaveClick = onSaveClick,
@@ -759,7 +768,7 @@ internal fun FeedScreenContent(
                     Icon(
                         imageVector = Icons.Filled.PostAdd,
                         contentDescription = null,
-                        tint = Color.White,
+                        tint = MaterialTheme.colorScheme.onPrimary,
                         modifier = Modifier.size(26.dp),
                     )
                 }
@@ -789,7 +798,7 @@ internal fun FeedScreenContent(
                     .vistaGlass(
                         state = feedGlassState,
                         shape = androidx.compose.ui.graphics.RectangleShape,
-                        tint = if (isDarkFeed) Color(0xFF1A222C) else Color(0xFFFFFFFF),
+                        tint = if (isDarkFeed) Color(0xFF16191E) else Color(0xFFFFFFFF),
                         isDark = isDarkFeed,
                         blurRadius = VistaGlassTokens.BarBlur,
                         tintAlphaOverride = if (isDarkFeed) 0.58f else 0.62f,
@@ -825,10 +834,11 @@ internal fun FeedScreenContent(
                 }
             }
         }
-        fullscreenMedia?.let { (images, initialIndex) ->
+        fullscreenMedia?.let { (images, initialIndex, sourceBounds) ->
             ir.coffevista.vista_native.features.feed.ui.components.VistaFullscreenImageViewer(
                 images = images,
                 initialIndex = initialIndex,
+                sourceBounds = sourceBounds,
                 onDismiss = { fullscreenMedia = null },
             )
         }
@@ -984,6 +994,7 @@ internal fun FeedContent(
     onPostClick: (String) -> Unit,
     onVideoClick: (String) -> Unit = onPostClick,
     onMediaClick: ((List<String>, Int) -> Unit)? = null,
+    onMediaWithBoundsClick: ((List<String>, Int, Rect?) -> Unit)? = null,
     onAuthorClick: (String) -> Unit,
     onLikeClick: (String, Boolean, Long) -> Unit,
     onSaveClick: (String, Boolean) -> Unit,
@@ -1225,6 +1236,7 @@ internal fun FeedContent(
                     onVideoClick(post.id)
                 },
                 onMediaClick = onMediaClick,
+                onMediaWithBoundsClick = onMediaWithBoundsClick,
                 onAuthorClick = {
                     engagedPostIds.add(post.id)
                     onAuthorClick(post.userId)
@@ -1337,6 +1349,7 @@ fun VistaFeedPostCard(
     onPostClick: () -> Unit,
     onVideoClick: (() -> Unit)? = null,
     onMediaClick: ((List<String>, Int) -> Unit)? = null,
+    onMediaWithBoundsClick: ((List<String>, Int, Rect?) -> Unit)? = null,
     onAuthorClick: () -> Unit,
     onLikeClick: (String, Boolean, Long) -> Unit = { _, _, _ -> },
     onSaveClick: (String, Boolean) -> Unit = { _, _ -> },
@@ -1415,7 +1428,7 @@ fun VistaFeedPostCard(
                                 musicTitle = resolveMusicTitle(post),
                                 musicUrl = post.musicUrl,
                                 modifier = Modifier.weight(1f, fill = false),
-                                badgeColor = VistaBrandColors.Indigo,
+                                badgeColor = MaterialTheme.vistaColors.viuBlue,
                             )
                         } else {
                             Text(
@@ -1525,6 +1538,7 @@ fun VistaFeedPostCard(
         PostMedia(
             post = post,
             onMediaClick = onMediaClick,
+            onMediaWithBoundsClick = onMediaWithBoundsClick,
             autoplayVideo = autoplayVideo,
             videoDataSaver = videoDataSaver,
             onClick = {
@@ -1636,6 +1650,7 @@ private fun PostMedia(
     onClick: () -> Unit,
     onDoubleTap: () -> Unit,
     onMediaClick: ((List<String>, Int) -> Unit)? = null,
+    onMediaWithBoundsClick: ((List<String>, Int, Rect?) -> Unit)? = null,
     autoplayVideo: Boolean = true,
     videoDataSaver: Boolean = false,
     modifier: Modifier = Modifier,
@@ -1645,6 +1660,7 @@ private fun PostMedia(
     val ratio = parseAspectRatio(post.aspectRatio)
     var heartBurstKey by remember(post.id) { mutableStateOf(0) }
     var showHeartBurst by remember(post.id) { mutableStateOf(false) }
+    var mediaBounds by remember(post.id) { mutableStateOf<Rect?>(null) }
     val pagerState = if (post.imageUrls.size > 1) {
         rememberPagerState(pageCount = { post.imageUrls.size })
     } else {
@@ -1664,10 +1680,12 @@ private fun PostMedia(
     val latestOnDoubleTap by rememberUpdatedState(onDoubleTap)
     val latestOnClick by rememberUpdatedState(onClick)
     val latestOnMediaClick by rememberUpdatedState(onMediaClick)
+    val latestOnMediaWithBounds by rememberUpdatedState(onMediaWithBoundsClick)
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
+            .onGloballyPositioned { mediaBounds = it.boundsInRoot() }
+            .clip(RoundedCornerShape(VistaRadii.Large))
             .background(MaterialTheme.colorScheme.surfaceVariant)
             .pointerInput(post.id) {
                 detectTapGestures(
@@ -1678,13 +1696,19 @@ private fun PostMedia(
                     },
                     onTap = {
                         val currentPost = latestPost
+                        val currentMediaWithBounds = latestOnMediaWithBounds
                         val currentMediaClick = latestOnMediaClick
-                        if (currentPost.videoUrl.isNullOrBlank() && currentMediaClick != null) {
+                        if (currentPost.videoUrl.isNullOrBlank()) {
                             val images = currentPost.imageUrls.ifEmpty { listOfNotNull(latestMediaUrl) }
                             if (images.isNotEmpty()) {
                                 val page = latestPagerState?.currentPage ?: 0
-                                currentMediaClick(images, page)
-                                return@detectTapGestures
+                                if (currentMediaWithBounds != null) {
+                                    currentMediaWithBounds(images, page, mediaBounds)
+                                    return@detectTapGestures
+                                } else if (currentMediaClick != null) {
+                                    currentMediaClick(images, page)
+                                    return@detectTapGestures
+                                }
                             }
                         }
                         latestOnClick()
@@ -1751,17 +1775,31 @@ private fun PostMedia(
         AnimatedVisibility(
             visible = showHeartBurst,
             modifier = Modifier.align(Alignment.Center),
-            enter = fadeIn(animationSpec = tween(90)) + scaleIn(initialScale = 0.72f),
-            exit = fadeOut(animationSpec = tween(260)) + scaleOut(targetScale = 1.18f),
+            enter = fadeIn(animationSpec = tween(100)) + scaleIn(
+                initialScale = 0.78f,
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                    stiffness = 480f,
+                ),
+            ),
+            exit = fadeOut(animationSpec = tween(280)) +
+                slideOutVertically(targetOffsetY = { -it / 3 }, animationSpec = tween(280)) +
+                scaleOut(targetScale = 1.08f, animationSpec = tween(280)),
         ) {
-            Icon(
-                imageVector = Icons.Default.Favorite,
-                contentDescription = null,
-                tint = Color.White.copy(alpha = 0.92f),
-                modifier = Modifier
-                    .size(86.dp)
-                    .graphicsLayer { shadowElevation = 10f },
-            )
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = VistaIcons.HeartFilled,
+                    contentDescription = null,
+                    tint = VistaBrandColors.Coral.copy(alpha = 0.42f),
+                    modifier = Modifier.size(94.dp),
+                )
+                Icon(
+                    imageVector = VistaIcons.HeartFilled,
+                    contentDescription = null,
+                    tint = Color.White.copy(alpha = 0.96f),
+                    modifier = Modifier.size(82.dp),
+                )
+            }
         }
     }
 }
@@ -1778,7 +1816,7 @@ internal fun HashtagMentionCaption(
     modifier: Modifier = Modifier,
 ) {
     val entityStyle = SpanStyle(
-        color = Color(0xFF6366F1),
+        color = MaterialTheme.vistaColors.viuBlue,
         fontWeight = FontWeight.Bold,
     )
     val annotated = remember(text) {
@@ -1905,18 +1943,29 @@ private fun PostActionRow(
         targetValue = likeScale,
         animationSpec = spring(
             dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessLow,
+            stiffness = 480f,
         ),
         finishedListener = { likeScale = 1f },
         label = "likeScale",
     )
+    var likeRippleTrigger by remember { mutableStateOf(0) }
+    val likeRippleAnim = remember { Animatable(0f) }
+    LaunchedEffect(likeRippleTrigger) {
+        if (likeRippleTrigger > 0) {
+            likeRippleAnim.snapTo(0f)
+            likeRippleAnim.animateTo(
+                targetValue = 1f,
+                animationSpec = tween(durationMillis = 400, easing = FastOutSlowInEasing),
+            )
+        }
+    }
 
     var bookmarkScale by remember { mutableStateOf(1f) }
     val animatedBookmarkScale by animateFloatAsState(
         targetValue = bookmarkScale,
         animationSpec = spring(
             dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessLow,
+            stiffness = 480f,
         ),
         finishedListener = { bookmarkScale = 1f },
         label = "bookmarkScale",
@@ -1935,7 +1984,10 @@ private fun PostActionRow(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = ripple(bounded = false, radius = 22.dp),
                     onClick = {
-                        likeScale = 1.28f
+                        likeScale = 1.18f
+                        if (!post.isLiked) {
+                            likeRippleTrigger += 1
+                        }
                         vistaHaptics.confirm()
                         onLikeClick()
                     },
@@ -1945,8 +1997,9 @@ private fun PostActionRow(
             HeartIcon(
                 filled = post.isLiked,
                 inactiveColor = heartTint,
+                rippleProgress = likeRippleAnim.value,
                 modifier = Modifier
-                    .size(19.dp)
+                    .size(20.dp)
                     .graphicsLayer(scaleX = animatedLikeScale, scaleY = animatedLikeScale),
             )
         }
@@ -1974,11 +2027,11 @@ private fun PostActionRow(
                 ),
             contentAlignment = Alignment.Center,
         ) {
-            Image(
-                painter = painterResource(DesignSystemR.drawable.vista_post_comment),
+            Icon(
+                imageVector = VistaIcons.Comment,
                 contentDescription = "دیدگاه‌ها",
-                colorFilter = ColorFilter.tint(actionTint),
-                modifier = Modifier.size(19.dp),
+                tint = actionTint,
+                modifier = Modifier.size(20.dp),
             )
         }
         if (!post.hideCommentCount) {
@@ -1999,7 +2052,7 @@ private fun PostActionRow(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = ripple(bounded = false, radius = 22.dp),
                     onClick = {
-                        bookmarkScale = 1.28f
+                        bookmarkScale = 1.16f
                         vistaHaptics.confirm()
                         onSaveClick()
                     },
@@ -2028,10 +2081,10 @@ private fun PostActionRow(
                 ),
             contentAlignment = Alignment.Center,
         ) {
-            Image(
-                painter = painterResource(DesignSystemR.drawable.vista_post_send),
+            Icon(
+                imageVector = VistaIcons.Share,
                 contentDescription = "ارسال",
-                colorFilter = ColorFilter.tint(actionTint),
+                tint = actionTint,
                 modifier = Modifier.size(19.dp),
             )
         }
@@ -2050,200 +2103,123 @@ private fun PostActionRow(
                     ),
                 contentAlignment = Alignment.Center,
             ) {
-                MoreDots(color = actionTint, vertical = verticalMenu, modifier = Modifier.size(22.dp))
+                Icon(
+                    imageVector = if (verticalMenu) VistaIcons.MoreVertical else VistaIcons.MoreHorizontal,
+                    contentDescription = "گزینه‌های بیشتر",
+                    tint = actionTint,
+                    modifier = Modifier.size(20.dp),
+                )
             }
-            DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+            val feedPostMenuItems = buildList {
                 if (!isOwnPost) {
-                    DropdownMenuItem(
-                        text = {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Default.Flag,
-                                    contentDescription = null,
-                                    tint = Color(0xFFFF9800),
-                                    modifier = Modifier.size(20.dp),
-                                )
-                                Spacer(Modifier.width(8.dp))
-                                Text("گزارش پست")
-                            }
-                        },
-                        onClick = {
-                            menuExpanded = false
-                            onReportPost()
-                        }
+                    add(
+                        VistaActionItem(
+                            label = "گزارش پست",
+                            icon = VistaIcons.Flag,
+                            iconTint = Color(0xFFFF9800),
+                            onClick = onReportPost,
+                        ),
                     )
                 }
-                DropdownMenuItem(
-                    text = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.ContentCopy,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(20.dp),
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Text("کپی متن")
-                        }
-                    },
-                    onClick = {
-                        menuExpanded = false
-                        clipboard.setText(AnnotatedString(post.content.orEmpty()))
-                    }
+                add(
+                    VistaActionItem(
+                        label = "کپی متن",
+                        icon = VistaIcons.Copy,
+                        onClick = { clipboard.setText(AnnotatedString(post.content.orEmpty())) },
+                    ),
                 )
                 if (!isOwnPost) {
-                    DropdownMenuItem(
-                        text = {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Outlined.RemoveCircleOutline,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(20.dp),
-                                )
-                                Spacer(Modifier.width(8.dp))
-                                Text("کمتر نشان بده")
-                            }
-                        },
-                        onClick = {
-                            menuExpanded = false
-                            onNotInterested()
-                        }
+                    add(
+                        VistaActionItem(
+                            label = "کمتر نشان بده",
+                            icon = VistaIcons.Hide,
+                            iconTint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            onClick = onNotInterested,
+                        ),
                     )
                 }
                 if (isOwnPost || isBlueTick) {
-                    DropdownMenuItem(
-                        text = {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Default.Delete,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.error,
-                                    modifier = Modifier.size(20.dp),
-                                )
-                                Spacer(Modifier.width(8.dp))
-                                Text("حذف پست", color = MaterialTheme.colorScheme.error)
-                            }
-                        },
-                        onClick = {
-                            menuExpanded = false
-                            confirmDelete = true
-                        }
+                    add(
+                        VistaActionItem(
+                            label = "حذف پست",
+                            icon = VistaIcons.Delete,
+                            isDestructive = true,
+                            onClick = { confirmDelete = true },
+                        ),
                     )
                 }
                 if (isBlueTick || (isOwnPost && hasPremiumEdit)) {
-                    DropdownMenuItem(
-                        text = {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = if (isBlueTick && !isOwnPost) Icons.Default.AdminPanelSettings else Icons.Default.Edit,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(20.dp),
-                                )
-                                Spacer(Modifier.width(8.dp))
-                                Text(if (isBlueTick && !isOwnPost) "ویرایش ناظر" else "ویرایش پست")
-                            }
-                        },
-                        onClick = {
-                            menuExpanded = false
-                            onEditPost()
-                        }
+                    add(
+                        VistaActionItem(
+                            label = if (isBlueTick && !isOwnPost) "ویرایش ناظر" else "ویرایش پست",
+                            icon = if (isBlueTick && !isOwnPost) Icons.Default.AdminPanelSettings else VistaIcons.Edit,
+                            iconTint = MaterialTheme.colorScheme.primary,
+                            onClick = onEditPost,
+                        ),
                     )
                 } else if (isOwnPost) {
-                    DropdownMenuItem(
-                        text = {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Outlined.Lock,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(20.dp),
-                                )
-                                Spacer(Modifier.width(8.dp))
-                                Text("ویرایش پست", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Spacer(Modifier.weight(1f))
+                    add(
+                        VistaActionItem(
+                            label = "ویرایش پست",
+                            icon = VistaIcons.Lock,
+                            iconTint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            trailing = {
                                 Icon(
                                     imageVector = Icons.Default.WorkspacePremium,
                                     contentDescription = null,
                                     tint = Color(0xFFFFB800),
                                     modifier = Modifier.size(18.dp),
                                 )
-                            }
-                        },
-                        onClick = {
-                            menuExpanded = false
-                            onPremiumPrompt("ویرایش پست")
-                        }
+                            },
+                            onClick = { onPremiumPrompt("ویرایش پست") },
+                        ),
                     )
                 }
                 if (isOwnPost) {
                     if (hasPremiumEdit) {
-                        DropdownMenuItem(
-                            text = {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = if (post.hideLikeCount) Icons.Default.Visibility else Icons.Default.VisibilityOff,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(20.dp),
-                                    )
-                                    Spacer(Modifier.width(8.dp))
-                                    Text(if (post.hideLikeCount) "نمایش تعداد لایک" else "مخفی کردن تعداد لایک")
-                                }
-                            },
-                            onClick = {
-                                menuExpanded = false
-                                onVisibilityChange(!post.hideLikeCount, null)
-                            }
+                        add(
+                            VistaActionItem(
+                                label = if (post.hideLikeCount) "نمایش تعداد لایک" else "مخفی کردن تعداد لایک",
+                                icon = if (post.hideLikeCount) VistaIcons.Visibility else VistaIcons.VisibilityOff,
+                                iconTint = MaterialTheme.colorScheme.primary,
+                                onClick = { onVisibilityChange(!post.hideLikeCount, null) },
+                            ),
                         )
-                        DropdownMenuItem(
-                            text = {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = if (post.hideCommentCount) Icons.Default.Visibility else Icons.Default.VisibilityOff,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(20.dp),
-                                    )
-                                    Spacer(Modifier.width(8.dp))
-                                    Text(if (post.hideCommentCount) "نمایش تعداد دیدگاه" else "مخفی کردن تعداد دیدگاه")
-                                }
-                            },
-                            onClick = {
-                                menuExpanded = false
-                                onVisibilityChange(null, !post.hideCommentCount)
-                            }
+                        add(
+                            VistaActionItem(
+                                label = if (post.hideCommentCount) "نمایش تعداد دیدگاه" else "مخفی کردن تعداد دیدگاه",
+                                icon = if (post.hideCommentCount) VistaIcons.Visibility else VistaIcons.VisibilityOff,
+                                iconTint = MaterialTheme.colorScheme.primary,
+                                onClick = { onVisibilityChange(null, !post.hideCommentCount) },
+                            ),
                         )
                     } else {
-                        DropdownMenuItem(
-                            text = {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = Icons.Outlined.Lock,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(20.dp),
-                                    )
-                                    Spacer(Modifier.width(8.dp))
-                                    Text("کنترل آمار لایک/کامنت", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    Spacer(Modifier.weight(1f))
+                        add(
+                            VistaActionItem(
+                                label = "کنترل آمار لایک/کامنت",
+                                icon = VistaIcons.Lock,
+                                iconTint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                trailing = {
                                     Icon(
                                         imageVector = Icons.Default.WorkspacePremium,
                                         contentDescription = null,
                                         tint = Color(0xFFFFB800),
                                         modifier = Modifier.size(18.dp),
                                     )
-                                }
-                            },
-                            onClick = {
-                                menuExpanded = false
-                                onPremiumPrompt("مخفی‌سازی آمار لایک و کامنت")
-                            }
+                                },
+                                onClick = { onPremiumPrompt("مخفی‌سازی آمار لایک و کامنت") },
+                            ),
                         )
                     }
                 }
             }
+            VistaActionMenuSheet(
+                visible = menuExpanded,
+                items = feedPostMenuItems,
+                onDismiss = { menuExpanded = false },
+            )
         }
     }
     if (confirmDelete) AlertDialog(
@@ -2259,31 +2235,7 @@ private fun PostActionRow(
 private fun FeedSkeletonList(
     topPadding: androidx.compose.ui.unit.Dp = 8.dp,
 ) {
-    val transition = androidx.compose.animation.core.rememberInfiniteTransition(label = "shimmerTransition")
-    val translateAnim by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1000f,
-        animationSpec = androidx.compose.animation.core.infiniteRepeatable(
-            animation = androidx.compose.animation.core.tween(
-                durationMillis = 1200,
-                easing = androidx.compose.animation.core.LinearEasing,
-            ),
-            repeatMode = androidx.compose.animation.core.RepeatMode.Restart,
-        ),
-        label = "shimmerTranslate",
-    )
-
-    val baseColor = MaterialTheme.colorScheme.surfaceVariant
-    val highlightColor = MaterialTheme.colorScheme.surface
-    val shimmerBrush = androidx.compose.ui.graphics.Brush.linearGradient(
-        colors = listOf(
-            baseColor.copy(alpha = 0.6f),
-            highlightColor.copy(alpha = 0.9f),
-            baseColor.copy(alpha = 0.6f),
-        ),
-        start = androidx.compose.ui.geometry.Offset(x = translateAnim - 400f, y = translateAnim - 400f),
-        end = androidx.compose.ui.geometry.Offset(x = translateAnim, y = translateAnim),
-    )
+    val shimmerBrush = rememberVistaShimmerBrush()
 
     LazyColumn(
         contentPadding = PaddingValues(top = topPadding, bottom = 110.dp),
@@ -2304,7 +2256,7 @@ private fun FeedSkeletonList(
                             Modifier
                                 .width(120.dp)
                                 .height(14.dp)
-                                .clip(RoundedCornerShape(5.dp))
+                                .clip(RoundedCornerShape(6.dp))
                                 .background(shimmerBrush),
                         )
                         Spacer(Modifier.height(8.dp))
@@ -2312,7 +2264,7 @@ private fun FeedSkeletonList(
                             Modifier
                                 .width(82.dp)
                                 .height(11.dp)
-                                .clip(RoundedCornerShape(5.dp))
+                                .clip(RoundedCornerShape(6.dp))
                                 .background(shimmerBrush),
                         )
                     }
@@ -2322,7 +2274,7 @@ private fun FeedSkeletonList(
                     Modifier
                         .fillMaxWidth()
                         .height(180.dp)
-                        .clip(RoundedCornerShape(14.dp))
+                        .clip(RoundedCornerShape(VistaRadii.Large))
                         .background(shimmerBrush),
                 )
             }
@@ -2457,15 +2409,32 @@ private fun VideoIndicator(modifier: Modifier = Modifier) {
 private fun HeartIcon(
     filled: Boolean,
     inactiveColor: Color,
+    rippleProgress: Float = 0f,
     modifier: Modifier = Modifier,
 ) {
-    val color = if (filled) Color(0xFFE53935) else inactiveColor
+    val targetColor = if (filled) MaterialTheme.vistaColors.coral else inactiveColor
+    val color by animateColorAsState(
+        targetValue = targetColor,
+        animationSpec = tween(durationMillis = 220),
+        label = "heartColor",
+    )
+    val coral = MaterialTheme.vistaColors.coral
     Canvas(
         modifier.semantics {
             contentDescription = if (filled) "پسندیده شده" else "پسندیده نشده"
             role = Role.Image
         },
     ) {
+        if (rippleProgress > 0f && rippleProgress < 1f) {
+            val radius = size.minDimension * (0.35f + rippleProgress * 0.80f)
+            val strokePx = ((1f - rippleProgress) * 1.8f + 0.35f).dp.toPx()
+            val alpha = (1f - rippleProgress) * 0.65f
+            drawCircle(
+                color = coral.copy(alpha = alpha),
+                radius = radius,
+                style = Stroke(width = strokePx),
+            )
+        }
         val path = Path().apply {
             moveTo(size.width * .5f, size.height * .9f)
             cubicTo(
@@ -2502,7 +2471,12 @@ private fun BookmarkIcon(
     inactiveColor: Color,
     modifier: Modifier = Modifier,
 ) {
-    val color = if (filled) MaterialTheme.colorScheme.primary else inactiveColor
+    val targetColor = if (filled) MaterialTheme.vistaColors.viuBlue else inactiveColor
+    val color by animateColorAsState(
+        targetValue = targetColor,
+        animationSpec = tween(durationMillis = 220),
+        label = "bookmarkColor",
+    )
     Canvas(
         modifier.semantics {
             contentDescription = if (filled) "ذخیره شده" else "ذخیره نشده"
@@ -2570,10 +2544,10 @@ private fun NotificationBell(
             }
         ) {
             Icon(
-                imageVector = Icons.Outlined.Notifications,
+                imageVector = VistaIcons.BellOutline,
                 contentDescription = null,
                 tint = iconColor,
-                modifier = Modifier.size(26.dp),
+                modifier = Modifier.size(24.dp),
             )
         }
     }
@@ -2881,8 +2855,8 @@ private fun FeedUploadStatusStrip(
                             .background(
                                 Brush.horizontalGradient(
                                     listOf(
-                                        VistaBrandColors.Indigo,
-                                        VistaBrandColors.Violet,
+                                        VistaBrandColors.ViuBlueDeep,
+                                        VistaBrandColors.ViuBlue,
                                     ),
                                 ),
                             ),

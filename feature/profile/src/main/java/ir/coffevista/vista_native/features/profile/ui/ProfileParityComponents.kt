@@ -21,9 +21,10 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.foundation.pager.HorizontalPager
+import ir.coffevista.vista_native.core.designsystem.component.VistaActionItem
+import ir.coffevista.vista_native.core.designsystem.component.VistaActionMenuSheet
+import ir.coffevista.vista_native.core.designsystem.icon.VistaIcons
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -583,7 +584,7 @@ internal fun ProfileHeader(
                         .background(Color(0xFFFFC107), CircleShape)
                         .padding(horizontal = 5.dp, vertical = 1.dp),
                     color = Color.Black,
-                    fontSize = 10.sp,
+                    fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
                 )
             }
@@ -654,10 +655,10 @@ internal fun MemberOrderBadge(
         }
         joinOrder <= 10000 -> {
             Tuple5(
-                if (isDark) listOf(Color(0xFF1A0030), Color(0xFF2D0050))
-                else listOf(Color(0xFFFAF5FF), Color(0xFFF3E8FF)),
-                if (isDark) Color(0xFF7B2FBE) else Color(0xFF8B5CF6),
-                if (isDark) Color(0xFFD08BFF) else Color(0xFF6D28D9),
+                if (isDark) listOf(Color(0xFF0A222E), Color(0xFF103445))
+                else listOf(Color(0xFFEFF9FD), Color(0xFFD6F4FF)),
+                if (isDark) Color(0xFF0097C7) else Color(0xFF1FB6E8),
+                if (isDark) Color(0xFF67D8FA) else Color(0xFF007EA8),
                 R.drawable.ic_badge_bolt,
                 "عضو پیشگام \u200E#$joinOrder",
             )
@@ -756,14 +757,14 @@ fun ProfileNoteBubble(
     ) {
         Surface(
             shape = RoundedCornerShape(18.dp),
-            color = if (isDark) Color(0xF21C2230) else Color(0xF8FFFFFF),
+            color = if (isDark) Color(0xF216191E) else Color(0xF8FFFFFF),
             shadowElevation = 5.dp,
             border = BorderStroke(
                 width = 1.dp,
                 color = if (hasContent) {
                     if (isDark) Color(0x4DFFFFFF) else Color(0x22000000)
                 } else {
-                    Color(0xFF6366F1).copy(alpha = 0.65f)
+                    Color(0xFF1FB6E8).copy(alpha = 0.65f)
                 },
             ),
         ) {
@@ -776,8 +777,8 @@ fun ProfileNoteBubble(
                 if (hasContent) {
                     val (fontSize, lineHeight, maxLines) = when {
                         noteContent.length <= 14 -> Triple(11.5.sp, 15.sp, 2)
-                        noteContent.length <= 34 -> Triple(10.sp, 13.5.sp, 2)
-                        else -> Triple(9.sp, 12.sp, 3)
+                        noteContent.length <= 34 -> Triple(11.sp, 14.5.sp, 2)
+                        else -> Triple(11.sp, 14.5.sp, 3)
                     }
                     Text(
                         text = noteContent,
@@ -785,7 +786,7 @@ fun ProfileNoteBubble(
                             fontSize = fontSize,
                             lineHeight = lineHeight,
                             fontWeight = FontWeight.SemiBold,
-                            color = if (isDark) Color.White else Color(0xFF1E293B),
+                            color = if (isDark) Color.White else Color(0xFF111215),
                             textAlign = TextAlign.Center,
                             textDirection = TextDirection.ContentOrRtl,
                         ),
@@ -801,22 +802,22 @@ fun ProfileNoteBubble(
                             modifier = Modifier
                                 .size(16.dp)
                                 .clip(CircleShape)
-                                .background(Color(0xFF6366F1).copy(alpha = 0.15f)),
+                                .background(Color(0xFF1FB6E8).copy(alpha = 0.15f)),
                             contentAlignment = Alignment.Center,
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Add,
                                 contentDescription = null,
                                 modifier = Modifier.size(11.dp),
-                                tint = Color(0xFF6366F1),
+                                tint = Color(0xFF1FB6E8),
                             )
                         }
                         Text(
                             text = randomPrompt,
                             style = TextStyle(
-                                fontSize = 9.5.sp,
+                                fontSize = 11.sp,
                                 fontWeight = FontWeight.Medium,
-                                color = if (isDark) Color(0xFFA5B4FC) else Color(0xFF4F46E5),
+                                color = if (isDark) Color(0xFF67D8FA) else Color(0xFF0097C7),
                                 textAlign = TextAlign.Center,
                                 textDirection = TextDirection.ContentOrRtl,
                             ),
@@ -832,7 +833,7 @@ fun ProfileNoteBubble(
             modifier = Modifier
                 .size(6.5.dp)
                 .clip(CircleShape)
-                .background(if (isDark) Color(0xF21C2230) else Color(0xF8FFFFFF))
+                .background(if (isDark) Color(0xF216191E) else Color(0xF8FFFFFF))
                 .border(0.5.dp, if (isDark) Color(0x38FFFFFF) else Color(0x20000000), CircleShape),
         )
         Spacer(modifier = Modifier.height(1.5.dp))
@@ -840,7 +841,7 @@ fun ProfileNoteBubble(
             modifier = Modifier
                 .size(3.5.dp)
                 .clip(CircleShape)
-                .background(if (isDark) Color(0xF21C2230) else Color(0xF8FFFFFF))
+                .background(if (isDark) Color(0xF216191E) else Color(0xF8FFFFFF))
                 .border(0.5.dp, if (isDark) Color(0x38FFFFFF) else Color(0x20000000), CircleShape),
         )
     }
@@ -942,7 +943,7 @@ internal fun ProfileAvatar(
                         .align(Alignment.BottomEnd)
                         .size(24.dp)
                         .clip(CircleShape)
-                        .background(Color(0xFF6366F1))
+                        .background(Color(0xFF1FB6E8))
                         .border(BorderStroke(2.dp, MaterialTheme.colorScheme.background), CircleShape)
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
@@ -1201,7 +1202,7 @@ internal fun ProfilePostCard(
             val hasEntities = remember(contentText) { contentText.contains('#') || contentText.contains('@') }
             if (hasEntities) {
                 val entityStyle = SpanStyle(
-                    color = Color(0xFF6366F1),
+                    color = Color(0xFF1FB6E8),
                     fontWeight = FontWeight.Bold,
                 )
                 val annotated = remember(contentText) {
@@ -1467,199 +1468,116 @@ internal fun ProfilePostCard(
                         modifier = Modifier.size(20.dp),
                     )
                 }
-                DropdownMenu(
-                    expanded = showMenu,
-                    onDismissRequest = { showMenu = false },
-                ) {
-                    DropdownMenuItem(
-                        text = {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Image(
-                                    painter = painterResource(DesignSystemR.drawable.ic_share_social),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(20.dp),
-                                )
-                                Spacer(Modifier.width(8.dp))
-                                Text("اشتراک‌گذاری پست")
-                            }
-                        },
-                        onClick = {
-                            showMenu = false
-                            onShareClick()
-                        },
+                val postMenuItems = buildList {
+                    add(
+                        VistaActionItem(
+                            label = "اشتراک‌گذاری پست",
+                            icon = VistaIcons.Share,
+                            onClick = onShareClick,
+                        ),
                     )
                     if (!isOwnPost) {
-                        DropdownMenuItem(
-                            text = {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = Icons.Default.Flag,
-                                        contentDescription = null,
-                                        tint = Color(0xFFFF9800),
-                                        modifier = Modifier.size(20.dp),
-                                    )
-                                    Spacer(Modifier.width(8.dp))
-                                    Text("گزارش پست")
-                                }
-                            },
-                            onClick = {
-                                showMenu = false
-                                onReportPost()
-                            },
+                        add(
+                            VistaActionItem(
+                                label = "گزارش پست",
+                                icon = VistaIcons.Flag,
+                                iconTint = Color(0xFFFF9800),
+                                onClick = onReportPost,
+                            ),
                         )
                     }
-                    DropdownMenuItem(
-                        text = {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Default.ContentCopy,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(20.dp),
-                                )
-                                Spacer(Modifier.width(8.dp))
-                                Text("کپی متن")
-                            }
-                        },
-                        onClick = {
-                            showMenu = false
-                            clipboardManager.setText(AnnotatedString(post.content.orEmpty()))
-                            Toast.makeText(context, "متن پست کپی شد", Toast.LENGTH_SHORT).show()
-                        },
+                    add(
+                        VistaActionItem(
+                            label = "کپی متن",
+                            icon = VistaIcons.Copy,
+                            onClick = {
+                                clipboardManager.setText(AnnotatedString(post.content.orEmpty()))
+                                Toast.makeText(context, "متن پست کپی شد", Toast.LENGTH_SHORT).show()
+                            },
+                        ),
                     )
                     if (isOwnPost || isBlueTick) {
-                        DropdownMenuItem(
-                            text = {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = Icons.Default.Delete,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.error,
-                                        modifier = Modifier.size(20.dp),
-                                    )
-                                    Spacer(Modifier.width(8.dp))
-                                    Text("حذف پست", color = MaterialTheme.colorScheme.error)
-                                }
-                            },
-                            onClick = {
-                                showMenu = false
-                                confirmDelete = true
-                            },
+                        add(
+                            VistaActionItem(
+                                label = "حذف پست",
+                                icon = VistaIcons.Delete,
+                                isDestructive = true,
+                                onClick = { confirmDelete = true },
+                            ),
                         )
                     }
                     if (isBlueTick || (isOwnPost && hasPremiumEdit)) {
-                        DropdownMenuItem(
-                            text = {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = if (isBlueTick && !isOwnPost) Icons.Default.AdminPanelSettings else Icons.Default.Edit,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(20.dp),
-                                    )
-                                    Spacer(Modifier.width(8.dp))
-                                    Text(if (isBlueTick && !isOwnPost) "ویرایش ناظر" else "ویرایش پست")
-                                }
-                            },
-                            onClick = {
-                                showMenu = false
-                                onEditPost()
-                            },
+                        add(
+                            VistaActionItem(
+                                label = if (isBlueTick && !isOwnPost) "ویرایش ناظر" else "ویرایش پست",
+                                icon = if (isBlueTick && !isOwnPost) Icons.Default.AdminPanelSettings else VistaIcons.Edit,
+                                iconTint = MaterialTheme.colorScheme.primary,
+                                onClick = onEditPost,
+                            ),
                         )
                     } else if (isOwnPost) {
-                        DropdownMenuItem(
-                            text = {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = Icons.Outlined.Lock,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(20.dp),
-                                    )
-                                    Spacer(Modifier.width(8.dp))
-                                    Text("ویرایش پست", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    Spacer(Modifier.weight(1f))
+                        add(
+                            VistaActionItem(
+                                label = "ویرایش پست",
+                                icon = VistaIcons.Lock,
+                                iconTint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                trailing = {
                                     Icon(
                                         imageVector = Icons.Default.WorkspacePremium,
                                         contentDescription = null,
                                         tint = Color(0xFFFFB800),
                                         modifier = Modifier.size(18.dp),
                                     )
-                                }
-                            },
-                            onClick = {
-                                showMenu = false
-                                onPremiumPrompt("ویرایش پست")
-                            },
+                                },
+                                onClick = { onPremiumPrompt("ویرایش پست") },
+                            ),
                         )
                     }
                     if (isOwnPost) {
                         if (hasPremiumEdit) {
-                            DropdownMenuItem(
-                                text = {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(
-                                            imageVector = if (post.hideLikeCount) Icons.Default.Visibility else Icons.Default.VisibilityOff,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.size(20.dp),
-                                        )
-                                        Spacer(Modifier.width(8.dp))
-                                        Text(if (post.hideLikeCount) "نمایش تعداد لایک" else "مخفی کردن تعداد لایک")
-                                    }
-                                },
-                                onClick = {
-                                    showMenu = false
-                                    onVisibilityChange(!post.hideLikeCount, null)
-                                },
+                            add(
+                                VistaActionItem(
+                                    label = if (post.hideLikeCount) "نمایش تعداد لایک" else "مخفی کردن تعداد لایک",
+                                    icon = if (post.hideLikeCount) VistaIcons.Visibility else VistaIcons.VisibilityOff,
+                                    iconTint = MaterialTheme.colorScheme.primary,
+                                    onClick = { onVisibilityChange(!post.hideLikeCount, null) },
+                                ),
                             )
-                            DropdownMenuItem(
-                                text = {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(
-                                            imageVector = if (post.hideCommentCount) Icons.Default.Visibility else Icons.Default.VisibilityOff,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.size(20.dp),
-                                        )
-                                        Spacer(Modifier.width(8.dp))
-                                        Text(if (post.hideCommentCount) "نمایش تعداد دیدگاه" else "مخفی کردن تعداد دیدگاه")
-                                    }
-                                },
-                                onClick = {
-                                    showMenu = false
-                                    onVisibilityChange(null, !post.hideCommentCount)
-                                },
+                            add(
+                                VistaActionItem(
+                                    label = if (post.hideCommentCount) "نمایش تعداد دیدگاه" else "مخفی کردن تعداد دیدگاه",
+                                    icon = if (post.hideCommentCount) VistaIcons.Visibility else VistaIcons.VisibilityOff,
+                                    iconTint = MaterialTheme.colorScheme.primary,
+                                    onClick = { onVisibilityChange(null, !post.hideCommentCount) },
+                                ),
                             )
                         } else {
-                            DropdownMenuItem(
-                                text = {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(
-                                            imageVector = Icons.Outlined.Lock,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            modifier = Modifier.size(20.dp),
-                                        )
-                                        Spacer(Modifier.width(8.dp))
-                                        Text("کنترل آمار لایک/کامنت", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                        Spacer(Modifier.weight(1f))
+                            add(
+                                VistaActionItem(
+                                    label = "کنترل آمار لایک/کامنت",
+                                    icon = VistaIcons.Lock,
+                                    iconTint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    textColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    trailing = {
                                         Icon(
                                             imageVector = Icons.Default.WorkspacePremium,
                                             contentDescription = null,
                                             tint = Color(0xFFFFB800),
                                             modifier = Modifier.size(18.dp),
                                         )
-                                    }
-                                },
-                                onClick = {
-                                    showMenu = false
-                                    onPremiumPrompt("مخفی‌سازی آمار لایک و کامنت")
-                                },
+                                    },
+                                    onClick = { onPremiumPrompt("مخفی‌سازی آمار لایک و کامنت") },
+                                ),
                             )
                         }
                     }
                 }
+                VistaActionMenuSheet(
+                    visible = showMenu,
+                    items = postMenuItems,
+                    onDismiss = { showMenu = false },
+                )
             }
         }
     }
@@ -1945,7 +1863,7 @@ internal fun ProfileFAB(
         Icon(
             imageVector = Icons.Filled.PostAdd,
             contentDescription = null,
-            tint = Color.White,
+            tint = MaterialTheme.colorScheme.onPrimary,
             modifier = Modifier.size(26.dp),
         )
     }
@@ -1982,7 +1900,7 @@ internal fun VerificationBadgeIcon(
 
 @Composable
 private fun ProfileHeart(filled: Boolean, modifier: Modifier = Modifier) {
-    val color = if (filled) Color(0xFFE53935) else MaterialTheme.colorScheme.onBackground
+    val color = if (filled) Color(0xFFF0543B) else MaterialTheme.colorScheme.onBackground
     Canvas(modifier) {
         val path = Path().apply {
             moveTo(size.width * .5f, size.height * .9f)

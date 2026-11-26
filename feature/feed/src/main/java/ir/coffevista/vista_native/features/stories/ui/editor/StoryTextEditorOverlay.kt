@@ -297,7 +297,7 @@ internal fun StoryTextEditorOverlay(
                     modifier = Modifier
                         .size(38.dp)
                         .clip(CircleShape)
-                        .background(if (isEyedropperActive) VistaBrandColors.Pink else Color.White.copy(alpha = 0.14f)),
+                        .background(if (isEyedropperActive) VistaBrandColors.Coral else Color.White.copy(alpha = 0.14f)),
                 ) {
                     Icon(
                         imageVector = Icons.Default.Colorize,

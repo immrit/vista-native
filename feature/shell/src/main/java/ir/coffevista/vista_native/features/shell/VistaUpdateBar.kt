@@ -73,8 +73,8 @@ fun VistaUpdateBar(
     val startColor by animateColorAsState(
         targetValue = when (state.stage) {
             ShellUpdateStage.Error -> VistaUpdateErrorStart
-            ShellUpdateStage.ReadyToInstall -> VistaBrandColors.IndigoDeep
-            else -> VistaBrandColors.IndigoDeep
+            ShellUpdateStage.ReadyToInstall -> VistaBrandColors.ViuBlueRich
+            else -> VistaBrandColors.InkBlack
         },
         animationSpec = tween(durationMillis = 250),
         label = "update-bar-color-start",
@@ -82,8 +82,8 @@ fun VistaUpdateBar(
     val endColor by animateColorAsState(
         targetValue = when (state.stage) {
             ShellUpdateStage.Error -> VistaUpdateErrorEnd
-            ShellUpdateStage.ReadyToInstall -> VistaBrandColors.VioletDeep
-            else -> VistaBrandColors.Indigo
+            ShellUpdateStage.ReadyToInstall -> VistaBrandColors.ViuBlueDeep
+            else -> VistaBrandColors.ViuBlueDeep
         },
         animationSpec = tween(durationMillis = 250),
         label = "update-bar-color-end",

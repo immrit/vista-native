@@ -2,6 +2,8 @@ package ir.coffevista.vista_native.features.chat.presentation.audio
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -15,6 +17,8 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -36,13 +40,16 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import ir.coffevista.vista_native.core.designsystem.component.VistaActionItem
+import ir.coffevista.vista_native.core.designsystem.component.VistaPopupMenu
+import ir.coffevista.vista_native.core.designsystem.component.rememberVistaHaptics
+import androidx.compose.ui.graphics.graphicsLayer
+import kotlin.math.abs
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
@@ -105,7 +112,7 @@ fun ChatMiniAudioPlayer(
         if (track == null) return@AnimatedVisibility
 
         val isRounded = shape != RectangleShape
-        val tintColor = if (isDark) Color(0xFF1A222C) else Color(0xFFFFFFFF)
+        val tintColor = if (isDark) Color(0xFF16191E) else Color(0xFFFFFFFF)
         val glassModifier = if (glassState != null) {
             Modifier.vistaGlass(
                 state = glassState,
@@ -124,11 +131,24 @@ fun ChatMiniAudioPlayer(
 
         val durationMs = playerState.durationMs.takeIf { it > 0L } ?: track.durationMs
         val progress = if (durationMs > 0L) (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f) else 0f
-        val accentColor = if (isDark) Color(0xFF7CA4FF) else VistaBrandColors.Indigo
+        val accentColor = if (isDark) VistaBrandColors.ViuBlue else VistaBrandColors.ViuBlueDeep
+
+        val miniPlayerInteraction = remember { MutableInteractionSource() }
+        val isMiniPressed by miniPlayerInteraction.collectIsPressedAsState()
+        val miniScale by animateFloatAsState(
+            targetValue = if (isMiniPressed) 0.98f else 1f,
+            animationSpec = spring(dampingRatio = 0.72f, stiffness = 560f),
+            label = "miniPlayerPressScale",
+        )
+        val miniHaptics = rememberVistaHaptics()
 
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .graphicsLayer {
+                    scaleX = miniScale
+                    scaleY = miniScale
+                }
                 .clip(shape)
                 .then(glassModifier)
                 .testTag("chat-mini-audio-player"),
@@ -180,7 +200,10 @@ fun ChatMiniAudioPlayer(
                         .fillMaxHeight()
                         .clip(RoundedCornerShape(8.dp))
                         .combinedClickable(
+                            interactionSource = miniPlayerInteraction,
+                            indication = null,
                             onClick = {
+                                miniHaptics.tap()
                                 if (track.kind == ChatAudioKind.MUSIC) {
                                     onOpenFullPlayer()
                                 } else {
@@ -254,30 +277,18 @@ fun ChatMiniAudioPlayer(
                                 color = accentColor,
                             )
                         }
-                        DropdownMenu(
+                        VistaPopupMenu(
                             expanded = speedMenuExpanded,
                             onDismissRequest = { speedMenuExpanded = false },
-                        ) {
-                            ChatAudioPlayer.SPEED_CHOICES.forEach { speedOption ->
-                                DropdownMenuItem(
-                                    text = {
-                                        Text(
-                                            text = "${speedOption}×",
-                                            fontWeight = if (kotlin.math.abs(playerState.speed - speedOption) < 0.05f) {
-                                                FontWeight.Bold
-                                            } else FontWeight.Normal,
-                                            color = if (kotlin.math.abs(playerState.speed - speedOption) < 0.05f) {
-                                                accentColor
-                                            } else MaterialTheme.colorScheme.onSurface,
-                                        )
-                                    },
-                                    onClick = {
-                                        ChatAudioPlayer.setSpeed(speedOption)
-                                        speedMenuExpanded = false
-                                    },
+                            items = ChatAudioPlayer.SPEED_CHOICES.map { speedOption ->
+                                val isCurrent = abs(playerState.speed - speedOption) < 0.05f
+                                VistaActionItem(
+                                    label = "${speedOption}×",
+                                    textColor = if (isCurrent) accentColor else null,
+                                    onClick = { ChatAudioPlayer.setSpeed(speedOption) },
                                 )
-                            }
-                        }
+                            },
+                        )
                     }
                     Spacer(Modifier.width(2.dp))
                 }
@@ -326,7 +337,7 @@ fun ChatMiniAudioPlayer(
                                 .fillMaxWidth(progress)
                                 .background(
                                     Brush.horizontalGradient(
-                                        listOf(VistaBrandColors.Indigo, VistaBrandColors.VioletDeep),
+                                        listOf(VistaBrandColors.ViuBlueDeep, VistaBrandColors.ViuBlue),
                                     ),
                                 ),
                         )

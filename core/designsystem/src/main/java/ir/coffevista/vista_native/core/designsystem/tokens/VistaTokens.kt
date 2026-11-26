@@ -5,12 +5,21 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
 object VistaBrandColors {
-    val Indigo = Color(0xFF6366F1)
-    val IndigoDeep = Color(0xFF4F46E5)
-    val Violet = Color(0xFF8B5CF6)
-    val VioletDeep = Color(0xFF7C3AED)
-    val Pink = Color(0xFFEC4899)
-    val PinkDeep = Color(0xFFDB2777)
+    // Primary Monochrome Ink
+    val InkBlack = Color(0xFF111215)
+    val InkWhite = Color(0xFFF4F5F7)
+
+    // Signature Viu Blue (Viu Sky & Deep Cyan)
+    val ViuBlue = Color(0xFF1FB6E8)
+    val ViuBlueDeep = Color(0xFF0097C7)
+    val ViuBlueRich = Color(0xFF007EA8)
+    val ViuBlueSurfaceDark = Color(0xFF123442)
+    val ViuBlueSurfaceLight = Color(0xFFE3F6FC)
+
+    // Warm Coral (Likes, Stories, Notifications, Emotional Accents)
+    val Coral = Color(0xFFF0543B)
+    val CoralDeep = Color(0xFFE64E33)
+    val CoralSoft = Color(0xFFFF6B4A)
 }
 
 @Immutable
@@ -27,37 +36,61 @@ data class VistaSemanticColors(
     val pressedOverlay: Color,
     val disabledContent: Color,
     val disabledContainer: Color,
+    val viuBlue: Color,
+    val onViuBlue: Color,
+    val viuBlueContainer: Color,
+    val coral: Color,
+    val onCoral: Color,
+    val coralContainer: Color,
+    val glassTint: Color,
+    val glassHaloTint: Color,
 )
 
 object VistaSemanticPalettes {
     val Light = VistaSemanticColors(
-        contentPrimary = Color(0xFF0F1117),
-        contentSecondary = Color(0xFF6B7280),
+        contentPrimary = Color(0xFF111215),
+        contentSecondary = Color(0xFF656C76),
         divider = Color(0xFFE5E7EB),
-        overlay = Color(0x9909090F),
+        overlay = Color(0x99090A0C),
         success = Color(0xFF10B981),
         onSuccess = Color(0xFF0F1117),
         warning = Color(0xFFF59E0B),
         onWarning = Color(0xFF0F1117),
-        focus = VistaBrandColors.Indigo,
+        focus = VistaBrandColors.ViuBlueDeep,
         pressedOverlay = Color(0x14000000),
-        disabledContent = Color(0xFF9CA3AF),
+        disabledContent = Color(0xFF9AA1AB),
         disabledContainer = Color(0xFFE5E7EB),
+        viuBlue = VistaBrandColors.ViuBlueDeep,
+        onViuBlue = Color.White,
+        viuBlueContainer = VistaBrandColors.ViuBlueSurfaceLight,
+        coral = VistaBrandColors.CoralDeep,
+        onCoral = Color.White,
+        coralContainer = Color(0xFFFDEBE8),
+        glassTint = Color.White,
+        glassHaloTint = Color(0xFFF7F8FA),
     )
 
     val Dark = VistaSemanticColors(
-        contentPrimary = Color(0xFFF0F0FF),
-        contentSecondary = Color(0xFF8B8BAD),
-        divider = Color(0xFF2A2A45),
-        overlay = Color(0xB309090F),
+        contentPrimary = Color(0xFFF3F4F6),
+        contentSecondary = Color(0xFF8A919C),
+        divider = Color(0xFF23272E),
+        overlay = Color(0xB3090A0C),
         success = Color(0xFF34D399),
         onSuccess = Color(0xFF022C22),
         warning = Color(0xFFFBBF24),
         onWarning = Color(0xFF451A03),
-        focus = VistaBrandColors.Indigo,
+        focus = VistaBrandColors.ViuBlue,
         pressedOverlay = Color(0x1FFFFFFF),
-        disabledContent = Color(0xFF6E6E92),
-        disabledContainer = Color(0xFF252540),
+        disabledContent = Color(0xFF636973),
+        disabledContainer = Color(0xFF1F2329),
+        viuBlue = VistaBrandColors.ViuBlue,
+        onViuBlue = Color(0xFF041820),
+        viuBlueContainer = VistaBrandColors.ViuBlueSurfaceDark,
+        coral = VistaBrandColors.Coral,
+        onCoral = Color.White,
+        coralContainer = Color(0xFF381814),
+        glassTint = Color(0xFF16191E),
+        glassHaloTint = Color(0xFF0E1115),
     )
 }
 

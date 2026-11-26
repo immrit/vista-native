@@ -317,14 +317,14 @@ internal fun DynamicWeatherPickerBottomSheet(
                             )
                             Text(
                                 text = "در حال دریافت دمای لحظه‌ای…",
-                                fontSize = 10.5.sp,
+                                fontSize = 11.sp,
                                 color = Color.White.copy(alpha = 0.85f),
                             )
                         } else {
                             val feelsText = "${liveWeather.feelsLikeC.toString().toPersianDigits()}°"
                             Text(
                                 text = "${liveWeather.conditionEmoji} ${liveWeather.conditionLabel} • دمای محسوس: $feelsText • ضربه = تغییر تم",
-                                fontSize = 10.5.sp,
+                                fontSize = 11.sp,
                                 color = Color.White.copy(alpha = 0.8f),
                             )
                         }
@@ -397,7 +397,7 @@ internal fun DynamicWeatherPickerBottomSheet(
                         modifier = Modifier
                             .clip(RoundedCornerShape(13.dp))
                             .background(
-                                if (showCityName) VistaBrandColors.Indigo.copy(alpha = 0.45f)
+                                if (showCityName) VistaBrandColors.ViuBlueDeep.copy(alpha = 0.45f)
                                 else Color.White.copy(alpha = 0.08f),
                             )
                             .border(0.8.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(13.dp))
@@ -690,7 +690,7 @@ internal fun DynamicMentionPickerBottomSheet(
                     Spacer(Modifier.height(6.dp))
                     Text(
                         text = "برای تغییر ظاهر برچسب ضربه بزنید (${(previewVariant + 1).toPersianDigits()}/۴)",
-                        fontSize = 10.sp,
+                        fontSize = 11.sp,
                         color = Color.White.copy(alpha = 0.62f),
                     )
                 }

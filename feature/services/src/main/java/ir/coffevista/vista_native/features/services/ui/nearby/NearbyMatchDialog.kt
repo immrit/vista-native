@@ -59,7 +59,7 @@ fun NearbyMatchDialog(
             modifier = Modifier
                 .fillMaxWidth(0.88f)
                 .clip(RoundedCornerShape(28.dp)),
-            color = Color(0xFF1E1E2E).copy(alpha = 0.95f),
+            color = Color(0xFF121417).copy(alpha = 0.95f),
             shape = RoundedCornerShape(28.dp),
         ) {
             Column(
@@ -74,7 +74,7 @@ fun NearbyMatchDialog(
                         .size(72.dp)
                         .background(
                             Brush.linearGradient(
-                                listOf(VistaBrandColors.Indigo, Color(0xFFEC4899))
+                                listOf(VistaBrandColors.ViuBlueDeep, Color(0xFFF0543B))
                             ),
                             CircleShape
                         ),
@@ -127,7 +127,7 @@ fun NearbyMatchDialog(
                     Box(
                         modifier = Modifier
                             .size(100.dp)
-                            .background(VistaBrandColors.Indigo, CircleShape),
+                            .background(VistaBrandColors.ViuBlueDeep, CircleShape),
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
@@ -154,7 +154,7 @@ fun NearbyMatchDialog(
                         .height(52.dp),
                     shape = RoundedCornerShape(16.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = VistaBrandColors.Indigo,
+                        containerColor = VistaBrandColors.ViuBlueDeep,
                     ),
                 ) {
                     Icon(

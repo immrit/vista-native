@@ -86,6 +86,7 @@ import ir.coffevista.vista_native.core.designsystem.glass.VistaGlassTokens
 import ir.coffevista.vista_native.core.designsystem.glass.rememberVistaGlassState
 import ir.coffevista.vista_native.core.designsystem.glass.vistaGlass
 import ir.coffevista.vista_native.core.designsystem.glass.vistaGlassSource
+import ir.coffevista.vista_native.core.designsystem.motion.vistaSharedBounds
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -157,9 +158,6 @@ fun SearchLauncherScreen(
                 .align(Alignment.TopCenter)
                 .fillMaxWidth(),
         ) {
-            ir.coffevista.vista_native.core.designsystem.component.VistaAppBarAmbientOverlay(
-                modifier = Modifier.matchParentSize(),
-            )
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -169,11 +167,12 @@ fun SearchLauncherScreen(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .vistaSharedBounds("vista-search-bar")
                         .height(52.dp)
                         .vistaGlass(
                             state = searchGlassState,
                             shape = SearchFieldShape,
-                            tint = if (isDarkSearch) Color(0xFF1A222C) else Color(0xFFFFFFFF),
+                            tint = if (isDarkSearch) Color(0xFF16191E) else Color(0xFFFFFFFF),
                             isDark = isDarkSearch,
                             blurRadius = VistaGlassTokens.PillBlur,
                             tintAlphaOverride = if (isDarkSearch) 0.58f else 0.62f,
@@ -326,9 +325,6 @@ internal fun SearchWorkspaceContent(
             .testTag(SearchTestTags.Workspace),
     ) {
         Box(modifier = Modifier.fillMaxWidth()) {
-            ir.coffevista.vista_native.core.designsystem.component.VistaAppBarAmbientOverlay(
-                modifier = Modifier.matchParentSize(),
-            )
             Column(modifier = Modifier.fillMaxWidth()) {
                 SearchField(
                     value = state.query,
@@ -397,7 +393,7 @@ private fun SearchField(
     val showBackIcon = onBack != null
     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val glassState = ir.coffevista.vista_native.core.designsystem.glass.LocalVistaGlassState.current
-    val fieldTint = if (isDark) Color(0xFF1A222C) else Color(0xFFFFFFFF)
+    val fieldTint = if (isDark) Color(0xFF16191E) else Color(0xFFFFFFFF)
     val haptics = rememberVistaHaptics()
     val (bufferedValue, handleValueChange) = rememberBufferedTextState(
         externalValue = value,
@@ -415,6 +411,7 @@ private fun SearchField(
         modifier = Modifier
             .padding(start = 16.dp, top = 12.dp, end = 16.dp, bottom = 8.dp)
             .fillMaxWidth()
+            .vistaSharedBounds("vista-search-bar")
             .height(52.dp)
             .then(
                 if (glassState != null) {

@@ -677,7 +677,7 @@ internal fun StoryCameraStudio(
                                     },
                                     shape = RoundedCornerShape(22.dp),
                                     colors = ButtonDefaults.buttonColors(
-                                        containerColor = VistaBrandColors.Indigo,
+                                        containerColor = VistaBrandColors.ViuBlueDeep,
                                         contentColor = Color.White,
                                     ),
                                     contentPadding = PaddingValues(horizontal = 24.dp, vertical = 10.dp),
@@ -1273,7 +1273,7 @@ internal fun StoryCameraStudio(
                                                 permissionLauncher.launch(requiredVistaGalleryPermissions(activeGalleryFilter))
                                             },
                                             shape = RoundedCornerShape(18.dp),
-                                            colors = ButtonDefaults.buttonColors(containerColor = VistaBrandColors.Indigo),
+                                            colors = ButtonDefaults.buttonColors(containerColor = VistaBrandColors.ViuBlueDeep),
                                         ) {
                                             Text("اجازه دسترسی", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                         }
@@ -1319,7 +1319,7 @@ internal fun StoryCameraStudio(
                                     )
                                     Text(
                                         text = "تکمیل دسترسی",
-                                        color = VistaBrandColors.Indigo,
+                                        color = VistaBrandColors.ViuBlueDeep,
                                         fontSize = 11.5.sp,
                                         fontWeight = FontWeight.Bold,
                                     )
@@ -1385,7 +1385,7 @@ internal fun StoryCameraStudio(
                                                 Text(
                                                     text = "%02d:%02d".format(totalSec / 60, totalSec % 60).toPersianDigits(),
                                                     color = Color.White,
-                                                    fontSize = 10.sp,
+                                                    fontSize = 11.sp,
                                                     fontWeight = FontWeight.Bold,
                                                 )
                                             }

@@ -356,9 +356,6 @@ fun PricingScreen(
                         .fillMaxWidth()
                         .background(MaterialTheme.colorScheme.surface),
                 ) {
-                    ir.coffevista.vista_native.core.designsystem.component.VistaAppBarAmbientOverlay(
-                        modifier = Modifier.matchParentSize(),
-                    )
                     TopAppBar(
                         title = {
                             Text(
@@ -525,7 +522,7 @@ fun PricingScreen(
                                                 Text(
                                                     text = plan.badge,
                                                     style = MaterialTheme.typography.labelSmall.copy(
-                                                        fontSize = 10.sp,
+                                                        fontSize = 11.sp,
                                                         fontWeight = FontWeight.Bold,
                                                         color = Color(0xFF3E2723),
                                                     ),
@@ -549,7 +546,7 @@ fun PricingScreen(
                                             Text(
                                                 text = plan.originalPrice,
                                                 style = MaterialTheme.typography.labelSmall.copy(
-                                                    fontSize = 10.sp,
+                                                    fontSize = 11.sp,
                                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                                     textDecoration = TextDecoration.LineThrough,
                                                 ),
@@ -691,7 +688,7 @@ fun PricingScreen(
                                 .clip(RoundedCornerShape(20.dp))
                                 .background(
                                     Brush.linearGradient(
-                                        listOf(Color(0xFF7E57C2), Color(0xFF5E35B1)),
+                                        listOf(Color(0xFF121417), Color(0xFF0097C7)),
                                     ),
                                 )
                                 .padding(24.dp),
@@ -807,7 +804,7 @@ fun PricingScreen(
                                             onClick = { launchBazaarProduct(pkg.id, isSubscription = false) },
                                             shape = RoundedCornerShape(10.dp),
                                             colors = ButtonDefaults.buttonColors(
-                                                containerColor = Color(0xFF7E57C2),
+                                                containerColor = Color(0xFF0097C7),
                                             ),
                                             enabled = !uiState.isRequestingPayment && !uiState.isVerifyingPayment,
                                         ) {

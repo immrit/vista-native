@@ -110,7 +110,7 @@ fun ChatMediaPickerPanel(
     val isDark = isSystemInDarkTheme()
     val scope = rememberCoroutineScope()
     val pagerState = rememberPagerState(initialPage = 0) { ChatMediaTab.entries.size }
-    val accentColor = VistaBrandColors.Indigo
+    val accentColor = VistaBrandColors.ViuBlueDeep
     val panelBg = if (isDark) Color(0xFF1B242D) else Color(0xFFF4F6F8)
     val cardBg = if (isDark) Color(0xFF24313E) else Color(0xFFFFFFFF)
     val dividerColor = if (isDark) Color(0xFF2A3746) else Color(0xFFE2E6EA)
@@ -243,7 +243,7 @@ internal fun ChatEmojiPickerPanel(
     val context = LocalContext.current
     val recentEmojiStore = remember(context) { RecentEmojiStore(context) }
     val isDark = forceDarkTheme || isSystemInDarkTheme()
-    val accentColor = VistaBrandColors.Indigo
+    val accentColor = VistaBrandColors.ViuBlueDeep
     val panelBg = if (isDark) Color(0xFF141821) else Color(0xFFF4F6F8)
     val cardBg = if (isDark) Color(0xFF1E232F) else Color(0xFFFFFFFF)
     val dividerColor = if (isDark) Color(0xFF283040) else Color(0xFFE2E6EA)
@@ -847,7 +847,7 @@ private fun BackspaceButton(
         Icon(
             Icons.AutoMirrored.Filled.Backspace,
             contentDescription = "حذف",
-            tint = if (isPressed) VistaBrandColors.Indigo else tint,
+            tint = if (isPressed) VistaBrandColors.ViuBlueDeep else tint,
             modifier = Modifier.size(20.dp),
         )
     }

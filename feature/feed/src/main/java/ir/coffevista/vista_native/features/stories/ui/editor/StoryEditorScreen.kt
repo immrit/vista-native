@@ -795,7 +795,7 @@ fun StoryEditorScreen(
                                     modifier = Modifier
                                         .size(36.dp)
                                         .clip(CircleShape)
-                                        .background(if (isCurrent) VistaBrandColors.Indigo else Color.Transparent)
+                                        .background(if (isCurrent) VistaBrandColors.ViuBlueDeep else Color.Transparent)
                                         .clickable {
                                             selectedReactionElement?.let {
                                                 viewModel.updateReactionEmoji(it.id, emoji)
@@ -999,7 +999,7 @@ fun StoryEditorScreen(
                                     modifier = Modifier
                                         .clip(RoundedCornerShape(22.dp))
                                         .background(
-                                            if (is48h) VistaBrandColors.Indigo.copy(alpha = 0.88f)
+                                            if (is48h) VistaBrandColors.ViuBlueDeep.copy(alpha = 0.88f)
                                             else Color(0x9912141C),
                                         )
                                         .border(
@@ -1565,7 +1565,7 @@ fun StoryEditorScreen(
                                     .padding(vertical = 32.dp),
                                 contentAlignment = Alignment.Center,
                             ) {
-                                CircularProgressIndicator(color = VistaBrandColors.Indigo)
+                                CircularProgressIndicator(color = VistaBrandColors.ViuBlueDeep)
                             }
                             uiState.closeFriendsError != null -> {
                                 Text(
@@ -1715,7 +1715,7 @@ private fun StudioCircleIconButton(
             .size(42.dp)
             .clip(CircleShape)
             .background(
-                if (active) VistaBrandColors.Indigo.copy(alpha = 0.85f)
+                if (active) VistaBrandColors.ViuBlueDeep.copy(alpha = 0.85f)
                 else Color(0x8C101218),
             )
             .border(0.8.dp, Color.White.copy(alpha = if (active) 0.45f else 0.2f), CircleShape),
@@ -1736,7 +1736,7 @@ private fun StoryStudioModalDialog(
     confirmEnabled: Boolean,
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
-    confirmColor: Color = VistaBrandColors.Indigo,
+    confirmColor: Color = VistaBrandColors.ViuBlueDeep,
     content: @Composable () -> Unit,
 ) {
     Dialog(onDismissRequest = onDismiss) {
@@ -1814,7 +1814,7 @@ private fun LiveWidgetPreviewStage(
         Spacer(Modifier.height(8.dp))
         Text(
             text = "برای تغییر تم شیشه‌ای روی پیش‌نمایش بزنید",
-            fontSize = 10.sp,
+            fontSize = 11.sp,
             color = Color.White.copy(alpha = 0.72f),
         )
     }
@@ -1844,11 +1844,11 @@ private fun StoryStudioTextField(
         colors = OutlinedTextFieldDefaults.colors(
             focusedContainerColor = Color.White.copy(alpha = 0.07f),
             unfocusedContainerColor = Color.White.copy(alpha = 0.05f),
-            focusedBorderColor = VistaBrandColors.Indigo,
+            focusedBorderColor = VistaBrandColors.ViuBlueDeep,
             unfocusedBorderColor = Color.White.copy(alpha = 0.14f),
             focusedTextColor = Color.White,
             unfocusedTextColor = Color.White,
-            cursorColor = VistaBrandColors.Indigo,
+            cursorColor = VistaBrandColors.ViuBlueDeep,
         ),
         modifier = modifier.fillMaxWidth(),
     )
@@ -1863,7 +1863,7 @@ private fun StudioQuickChip(
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(14.dp))
-            .background(if (selected) VistaBrandColors.Indigo else Color.White.copy(alpha = 0.08f))
+            .background(if (selected) VistaBrandColors.ViuBlueDeep else Color.White.copy(alpha = 0.08f))
             .border(
                 0.8.dp,
                 if (selected) Color.White.copy(alpha = 0.35f) else Color.White.copy(alpha = 0.14f),
@@ -1923,9 +1923,9 @@ private fun StoryEmojiWidgetBottomSheet(
             StoryWidgetCardSpec("پیوند وب", "لینک قابل کلیک", Icons.Default.Link, Color(0xFF4092FF), true, onSelectLink),
             StoryWidgetCardSpec("عکس روی عکس", "قاب دایره، ستاره، قلب", Icons.Default.AddPhotoAlternate, Color(0xFF00E676), true, onSelectPhotoCutout),
             StoryWidgetCardSpec("آب‌وهوا", "دمای زنده هر شهر", Icons.Default.WbSunny, Color(0xFFFFB300), true, onSelectWeather),
-            StoryWidgetCardSpec("موزیک", "از گوشی یا ویترین", Icons.Default.MusicNote, VistaBrandColors.Pink, true, onSelectMusic),
-            StoryWidgetCardSpec("نظرسنجی", "رای‌گیری تعاملی", Icons.Default.Poll, VistaBrandColors.Indigo, true, onSelectPoll),
-            StoryWidgetCardSpec("پرسش و پاسخ", "دریافت نظر مخاطب", Icons.Default.ChatBubbleOutline, VistaBrandColors.Violet, true, onSelectQuestion),
+            StoryWidgetCardSpec("موزیک", "از گوشی یا ویترین", Icons.Default.MusicNote, VistaBrandColors.Coral, true, onSelectMusic),
+            StoryWidgetCardSpec("نظرسنجی", "رای‌گیری تعاملی", Icons.Default.Poll, VistaBrandColors.ViuBlueDeep, true, onSelectPoll),
+            StoryWidgetCardSpec("پرسش و پاسخ", "دریافت نظر مخاطب", Icons.Default.ChatBubbleOutline, VistaBrandColors.ViuBlue, true, onSelectQuestion),
             StoryWidgetCardSpec("@منشن", "اشاره", Icons.Default.AlternateEmail, Color(0xFFAB47BC), false, onSelectMention),
             StoryWidgetCardSpec("#هشتگ", "موضوع", Icons.Default.Tag, Color(0xFF29B6F6), false, onSelectHashtag),
             StoryWidgetCardSpec("تاریخ شمسی", "امروز", Icons.Default.CalendarMonth, Color(0xFF26A69A), false, onSelectDate),
@@ -1992,7 +1992,7 @@ private fun StoryEmojiWidgetBottomSheet(
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedContainerColor = Color.White.copy(alpha = 0.08f),
                         unfocusedContainerColor = Color.White.copy(alpha = 0.06f),
-                        focusedBorderColor = VistaBrandColors.Indigo,
+                        focusedBorderColor = VistaBrandColors.ViuBlueDeep,
                         unfocusedBorderColor = Color.White.copy(alpha = 0.12f),
                         focusedTextColor = Color.White,
                         unfocusedTextColor = Color.White,
@@ -2077,7 +2077,7 @@ private fun StoryEmojiWidgetBottomSheet(
                                     Text(
                                         text = item.subtitle,
                                         color = Color.White.copy(alpha = 0.6f),
-                                        fontSize = 10.sp,
+                                        fontSize = 11.sp,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
                                     )

@@ -137,7 +137,7 @@ internal const val WidgetVariantCount = 4
 internal fun widgetPalette(
     variant: Int,
     dominantColors: StoryDominantColors = StoryDominantColors(),
-    categoryAccent: Color = VistaBrandColors.Pink,
+    categoryAccent: Color = VistaBrandColors.Coral,
 ): WidgetPalette = when (Math.floorMod(variant, WidgetVariantCount)) {
     0 -> WidgetPalette(
         containerBrush = Brush.verticalGradient(listOf(Color(0xFFFFFFFF), Color(0xFFF6F7FB))),
@@ -162,8 +162,8 @@ internal fun widgetPalette(
         textShadow = false,
     )
     2 -> {
-        val cTop = if (dominantColors.topColor != Color(0xFF1A1B2F)) dominantColors.topColor else VistaBrandColors.Indigo
-        val cBot = if (dominantColors.bottomColor != Color(0xFF0F101A)) dominantColors.bottomColor else VistaBrandColors.Pink
+        val cTop = if (dominantColors.topColor != Color(0xFF1A1B2F)) dominantColors.topColor else VistaBrandColors.ViuBlue
+        val cBot = if (dominantColors.bottomColor != Color(0xFF0F101A)) dominantColors.bottomColor else VistaBrandColors.Coral
         val avgLum = (cTop.luminance() + cBot.luminance()) * 0.5f
         val fg = if (avgLum > 0.60f) Color(0xFF111318) else Color.White
         WidgetPalette(
@@ -345,7 +345,7 @@ internal fun StoryPillWidget(
     icon: ImageVector? = null,
     leadingEmoji: String? = null,
     trailing: String? = null,
-    categoryAccent: Color = VistaBrandColors.Pink,
+    categoryAccent: Color = VistaBrandColors.Coral,
     gleaming: Boolean = false,
 ) {
     val dominant = LocalStoryDominantColors.current
@@ -539,7 +539,7 @@ internal fun StoryQuestionWidget(
     onViewAnswers: (() -> Unit)? = null,
 ) {
     val dominant = LocalStoryDominantColors.current
-    val palette = widgetPalette(variant, dominant, VistaBrandColors.Violet)
+    val palette = widgetPalette(variant, dominant, VistaBrandColors.ViuBlueDeep)
     val shape = RoundedCornerShape(24.dp)
     Column(
         modifier = modifier
@@ -553,8 +553,8 @@ internal fun StoryQuestionWidget(
                 .background(
                     when (Math.floorMod(variant, WidgetVariantCount)) {
                         3 -> Brush.linearGradient(listOf(Color.White.copy(0.18f), Color.White.copy(0.08f)))
-                        1 -> Brush.linearGradient(listOf(Color(0xFF6366F1), Color(0xFFA855F7)))
-                        else -> Brush.linearGradient(listOf(VistaBrandColors.Indigo, VistaBrandColors.Violet, VistaBrandColors.Pink))
+                        1 -> Brush.linearGradient(listOf(VistaBrandColors.ViuBlueDeep, VistaBrandColors.ViuBlue))
+                        else -> Brush.linearGradient(listOf(VistaBrandColors.ViuBlue, VistaBrandColors.ViuBlueDeep, VistaBrandColors.Coral))
                     },
                 )
                 .padding(horizontal = 16.dp, vertical = 14.dp),
@@ -623,7 +623,7 @@ internal fun StoryPollWidget(
     onVote: ((optionIndex: Int) -> Unit)? = null,
 ) {
     val dominant = LocalStoryDominantColors.current
-    val palette = widgetPalette(variant, dominant, VistaBrandColors.Indigo)
+    val palette = widgetPalette(variant, dominant, VistaBrandColors.ViuBlue)
     val shape = RoundedCornerShape(24.dp)
     val hasVoted = poll.userVotedOptionId != null || poll.options.any { it.isVoted }
     val showResults = hasVoted || isAuthor
@@ -732,7 +732,7 @@ fun StoryMusicStickerWidget(
     variant: Int = 1,
 ) {
     val dominant = LocalStoryDominantColors.current
-    val palette = widgetPalette(variant, dominant, VistaBrandColors.Pink)
+    val palette = widgetPalette(variant, dominant, VistaBrandColors.Coral)
     val isCompactPill = Math.floorMod(variant, WidgetVariantCount) == 3
     val shape = if (isCompactPill) RoundedCornerShape(50) else RoundedCornerShape(20.dp)
 

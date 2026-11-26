@@ -274,16 +274,8 @@ fun VistaMusicPlayerCard(
     onCardClick: (() -> Unit)? = null,
 ) {
     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    val cardBackground = if (isDark) {
-        Color(0xFF131622)
-    } else {
-        Color(0xFFF7F8FC)
-    }
-    val cardBorder = if (isDark) {
-        Color.White.copy(alpha = 0.10f)
-    } else {
-        Color(0xFFE5E7F0)
-    }
+    val cardBackground = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (isDark) 0.72f else 0.75f)
+    val cardBorder = MaterialTheme.colorScheme.outlineVariant
 
     Surface(
         modifier = modifier
@@ -375,7 +367,7 @@ fun VistaMusicPlayerCard(
                     }
                     Text(
                         text = timeString,
-                        fontSize = 10.5.sp,
+                        fontSize = 11.sp,
                         fontWeight = FontWeight.Medium,
                         color = if (isDark) {
                             MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f)
@@ -397,8 +389,8 @@ fun VistaMusicPlayerCard(
                     seed = seed,
                     barCount = 34,
                     waveformHeight = 18.dp,
-                    activeBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                    inactiveColor = if (isDark) Color.White.copy(alpha = 0.16f) else Color(0xFFD6D8E2),
+                    activeBrush = SolidColor(if (isDark) Color(0xFF1FB6E8) else Color(0xFF0097C7)),
+                    inactiveColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.16f),
                     showTimeLabels = false,
                 )
             }

@@ -474,7 +474,7 @@ private fun messageContextMenuColors(): MessageContextMenuColors {
     val scheme = MaterialTheme.colorScheme
     return MessageContextMenuColors(
         surface = if (isDark) Color(0xFF1E2631) else Color(0xFFFDFEFF),
-        text = if (isDark) Color(0xFFF8FAFC) else Color(0xFF0F172A),
+        text = if (isDark) Color(0xFFF3F4F6) else Color(0xFF111215),
         icon = if (isDark) Color.White.copy(alpha = 0.78f) else Color(0xFF334155),
         divider = if (isDark) Color.White.copy(alpha = 0.10f) else Color(0xFFCBD5E1).copy(alpha = 0.65f),
         delete = scheme.error,

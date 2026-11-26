@@ -129,8 +129,8 @@ import java.util.EnumMap
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.abs
 
-private val TelegramScannerIndigo = Color(0xFF6366F1)
-private val TelegramScannerViolet = Color(0xFF8B5CF6)
+private val TelegramScannerIndigo = Color(0xFF1FB6E8)
+private val TelegramScannerViolet = Color(0xFF0097C7)
 private val TelegramScannerLocked = Color(0xFF10B981)
 
 @Composable

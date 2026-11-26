@@ -299,7 +299,7 @@ internal fun StoryDrawingEditorOverlay(
                     modifier = Modifier
                         .size(38.dp)
                         .clip(CircleShape)
-                        .background(if (isEyedropperActive) VistaBrandColors.Pink else Color.Black.copy(alpha = 0.6f)),
+                        .background(if (isEyedropperActive) VistaBrandColors.Coral else Color.Black.copy(alpha = 0.6f)),
                 ) {
                     Icon(
                         Icons.Default.Colorize,
@@ -334,7 +334,7 @@ internal fun StoryDrawingEditorOverlay(
                 modifier = Modifier
                     .size(40.dp)
                     .clip(CircleShape)
-                    .background(VistaBrandColors.Indigo),
+                    .background(VistaBrandColors.ViuBlueDeep),
             ) {
                 Icon(Icons.Default.Check, contentDescription = "تایید نقاشی", tint = Color.White)
             }
@@ -457,7 +457,7 @@ private fun BrushTypeChip(
         label = { Text(label, fontSize = 12.sp, fontWeight = FontWeight.Bold) },
         colors = FilterChipDefaults.filterChipColors(
             containerColor = Color.Transparent,
-            selectedContainerColor = VistaBrandColors.Indigo,
+            selectedContainerColor = VistaBrandColors.ViuBlueDeep,
             labelColor = Color.White,
             selectedLabelColor = Color.White,
             iconColor = Color.White,

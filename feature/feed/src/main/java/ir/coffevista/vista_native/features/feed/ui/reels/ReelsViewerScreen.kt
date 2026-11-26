@@ -54,10 +54,11 @@ import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.VolumeMute
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import ir.coffevista.vista_native.core.designsystem.component.VistaActionItem
+import ir.coffevista.vista_native.core.designsystem.component.VistaPopupMenu
+import ir.coffevista.vista_native.core.designsystem.icon.VistaIcons
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -986,19 +987,20 @@ private fun ReelsVideoItem(
                         modifier = Modifier.size(24.dp),
                     )
                 }
-                DropdownMenu(
+                VistaPopupMenu(
                     expanded = showMenu,
                     onDismissRequest = { showMenu = false },
-                ) {
-                    DropdownMenuItem(
-                        text = { Text("علاقه‌مند نیستم") },
-                        onClick = {
-                            engagedOnPage = true
-                            showMenu = false
-                            onNotInterested()
-                        },
-                    )
-                }
+                    items = listOf(
+                        VistaActionItem(
+                            label = "علاقه‌مند نیستم",
+                            icon = VistaIcons.Hide,
+                            onClick = {
+                                engagedOnPage = true
+                                onNotInterested()
+                            },
+                        ),
+                    ),
+                )
             }
 
             // Rotating Audio Vinyl Disc

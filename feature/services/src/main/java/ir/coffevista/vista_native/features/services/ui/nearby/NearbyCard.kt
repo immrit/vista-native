@@ -60,7 +60,7 @@ fun NearbyCard(
             .clip(RoundedCornerShape(28.dp))
             .clickable(onClick = onTap),
         shape = RoundedCornerShape(28.dp),
-        color = Color(0xFF1E1E2E),
+        color = Color(0xFF121417),
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
             // Full-bleed Avatar or Fallback
@@ -77,7 +77,7 @@ fun NearbyCard(
                         .fillMaxSize()
                         .background(
                             Brush.linearGradient(
-                                colors = listOf(VistaBrandColors.Indigo, Color(0xFF8B5CF6))
+                                colors = listOf(Color(0xFF121417), VistaBrandColors.ViuBlueDeep)
                             )
                         ),
                     contentAlignment = Alignment.Center,
@@ -152,7 +152,7 @@ fun NearbyCard(
                                 if (candidate.zoneType == "same_city") {
                                     Color(0xFF10B981).copy(alpha = 0.88f)
                                 } else {
-                                    VistaBrandColors.Indigo.copy(alpha = 0.88f)
+                                    VistaBrandColors.ViuBlueDeep.copy(alpha = 0.88f)
                                 },
                                 RoundedCornerShape(20.dp),
                             )

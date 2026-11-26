@@ -410,7 +410,7 @@ fun AddPostScreen(
                                 )
                                 Text(
                                     text = remaining.toString(),
-                                    fontSize = if (remaining.toString().length >= 4) 9.sp else 12.sp,
+                                    fontSize = if (remaining.toString().length >= 4) 11.sp else 12.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = indicatorColor,
                                 )
@@ -876,9 +876,9 @@ fun AddPostScreen(
                 if (!uiState.tierCapabilities.isTickOrPremium) {
                     val bannerGradient = Brush.linearGradient(
                         colors = listOf(
-                            Color(0xFF4F46E5),
-                            Color(0xFF8B5CF6),
-                            Color(0xFFD946EF),
+                            Color(0xFF121417),
+                            Color(0xFF123442),
+                            Color(0xFF0097C7),
                         ),
                     )
                     Column(
@@ -937,7 +937,7 @@ fun AddPostScreen(
                                     Text(
                                         text = "تا ۱۰۰۰ کاراکتر، موزیک و امکانات ویژه",
                                         color = Color.White.copy(alpha = 0.88f),
-                                        fontSize = 10.5.sp,
+                                        fontSize = 11.sp,
                                     )
                                 }
                                 Icon(
@@ -953,7 +953,7 @@ fun AddPostScreen(
                                 .padding(start = 24.dp)
                                 .size(9.dp)
                                 .graphicsLayer { rotationZ = 45f }
-                                .background(Color(0xFF4F46E5)),
+                                .background(Color(0xFF121417)),
                         )
                     }
                 }
@@ -1085,7 +1085,7 @@ private fun PremiumTag() {
     ) {
         Text(
             text = "پریمیوم",
-            fontSize = 9.sp,
+            fontSize = 11.sp,
             fontWeight = FontWeight.Bold,
             color = Color.Black,
             modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),

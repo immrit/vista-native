@@ -75,15 +75,15 @@ fun SessionAlertCard(
     val isApproved = status == "approved"
     val isRejected = status == "rejected"
 
-    val cardBg = if (isDark) Color(0xFF13131E) else Color(0xFFF8F9FF)
-    val cardBorder = if (isDark) Color(0xFF2A2A45) else Color(0xFFE5E7EB)
-    val titleColor = if (isDark) Color.White else Color(0xFF101828)
-    val subtitleColor = if (isDark) Color(0xFF8B8BAD) else Color(0xFF6B7280)
+    val cardBg = if (isDark) Color(0xFF121417) else Color(0xFFFAFAFA)
+    val cardBorder = if (isDark) Color(0xFF23272E) else Color(0xFFE5E7EB)
+    val titleColor = if (isDark) Color.White else Color(0xFF111215)
+    val subtitleColor = if (isDark) Color(0xFF8A919C) else Color(0xFF656C76)
 
     val accentColor = when {
         isApproved -> Color(0xFF22C55E)
         isRejected -> Color(0xFFEF4444)
-        else -> Color(0xFF6366F1)
+        else -> Color(0xFF1FB6E8)
     }
 
     val isDesktopOrWeb = alert.platform.lowercase().let {

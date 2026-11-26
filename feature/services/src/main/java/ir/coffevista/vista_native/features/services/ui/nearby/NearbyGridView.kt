@@ -132,7 +132,7 @@ private fun NearbyRadarGridTile(
                             .fillMaxSize()
                             .background(
                                 Brush.linearGradient(
-                                    listOf(VistaBrandColors.Indigo, Color(0xFF7C3AED)),
+                                    listOf(Color(0xFF121417), VistaBrandColors.ViuBlueDeep),
                                 ),
                             ),
                         contentAlignment = Alignment.Center,
@@ -187,7 +187,7 @@ private fun NearbyRadarGridTile(
                             Text(
                                 text = if (candidate.isOnlineNow) "آنلاین" else "نزدیک",
                                 fontFamily = VistaFontFamily,
-                                fontSize = 10.sp,
+                                fontSize = 11.sp,
                                 color = Color.White,
                             )
                         }
@@ -199,14 +199,14 @@ private fun NearbyRadarGridTile(
                             color = if (candidate.zoneType == "same_city") {
                                 Color(0xFF10B981).copy(alpha = 0.85f)
                             } else {
-                                VistaBrandColors.Indigo.copy(alpha = 0.85f)
+                                VistaBrandColors.ViuBlueDeep.copy(alpha = 0.85f)
                             },
                         ) {
                             Text(
                                 text = if (candidate.zoneType == "same_city") "هم‌شهری" else "هم‌استانی",
                                 fontFamily = VistaFontFamily,
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 9.sp,
+                                fontSize = 11.sp,
                                 color = Color.White,
                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
                             )
@@ -224,13 +224,13 @@ private fun NearbyRadarGridTile(
                     if (candidate.statusText.isNotBlank()) {
                         Surface(
                             shape = RoundedCornerShape(8.dp),
-                            color = Color(0xFFEC4899).copy(alpha = 0.82f),
+                            color = VistaBrandColors.Coral.copy(alpha = 0.82f),
                             modifier = Modifier.padding(bottom = 4.dp),
                         ) {
                             Text(
                                 text = candidate.statusText,
                                 fontFamily = VistaFontFamily,
-                                fontSize = 9.sp,
+                                fontSize = 11.sp,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 color = Color.White,
@@ -299,12 +299,12 @@ private fun NearbyRadarGridTile(
                     color = if (candidate.hasPendingChatRequest) {
                         Color(0xFF334155)
                     } else {
-                        VistaBrandColors.Indigo.copy(alpha = 0.22f)
+                        VistaBrandColors.ViuBlueDeep.copy(alpha = 0.22f)
                     },
                     border = BorderStroke(
                         1.dp,
                         if (candidate.hasPendingChatRequest) Color.White.copy(alpha = 0.1f)
-                        else VistaBrandColors.Indigo.copy(alpha = 0.55f),
+                        else VistaBrandColors.ViuBlueDeep.copy(alpha = 0.55f),
                     ),
                     modifier = Modifier
                         .weight(1f)
@@ -319,7 +319,7 @@ private fun NearbyRadarGridTile(
                         Icon(
                             imageVector = if (candidate.hasPendingChatRequest) Icons.Rounded.Schedule else Icons.Rounded.ChatBubbleOutline,
                             contentDescription = null,
-                            tint = if (candidate.hasPendingChatRequest) Color(0xFF94A3B8) else Color(0xFFA5B4FC),
+                            tint = if (candidate.hasPendingChatRequest) Color(0xFF8A919C) else Color(0xFF1FB6E8),
                             modifier = Modifier.size(14.dp),
                         )
                         Spacer(modifier = Modifier.width(4.dp))
@@ -335,8 +335,8 @@ private fun NearbyRadarGridTile(
 
                 Surface(
                     shape = RoundedCornerShape(11.dp),
-                    color = Color(0xFFEC4899).copy(alpha = 0.18f),
-                    border = BorderStroke(1.dp, Color(0xFFEC4899).copy(alpha = 0.45f)),
+                    color = VistaBrandColors.Coral.copy(alpha = 0.18f),
+                    border = BorderStroke(1.dp, VistaBrandColors.Coral.copy(alpha = 0.45f)),
                     modifier = Modifier
                         .size(34.dp)
                         .clickable(onClick = onLike),

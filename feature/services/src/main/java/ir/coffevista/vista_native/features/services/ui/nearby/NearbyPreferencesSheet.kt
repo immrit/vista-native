@@ -103,8 +103,8 @@ fun NearbyPreferencesSheet(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(16.dp))
-                    .background(VistaBrandColors.Indigo.copy(alpha = 0.08f))
-                    .border(1.dp, VistaBrandColors.Indigo.copy(alpha = 0.2f), RoundedCornerShape(16.dp))
+                    .background(VistaBrandColors.ViuBlueDeep.copy(alpha = 0.08f))
+                    .border(1.dp, VistaBrandColors.ViuBlueDeep.copy(alpha = 0.2f), RoundedCornerShape(16.dp))
                     .padding(horizontal = 16.dp, vertical = 10.dp)
             ) {
                 Row(
@@ -282,7 +282,7 @@ fun NearbyPreferencesSheet(
                         modifier = Modifier
                             .clip(RoundedCornerShape(10.dp))
                             .background(
-                                if (selected) VistaBrandColors.Indigo else MaterialTheme.colorScheme.surfaceVariant,
+                                if (selected) VistaBrandColors.ViuBlueDeep else MaterialTheme.colorScheme.surfaceVariant,
                             )
                             .clickable {
                                 currentPrefs = currentPrefs.copy(statusText = if (selected) "" else preset)
@@ -336,8 +336,8 @@ fun NearbyPreferencesSheet(
                 },
                 valueRange = 5f..200f,
                 colors = SliderDefaults.colors(
-                    thumbColor = VistaBrandColors.Indigo,
-                    activeTrackColor = VistaBrandColors.Indigo,
+                    thumbColor = VistaBrandColors.ViuBlueDeep,
+                    activeTrackColor = VistaBrandColors.ViuBlueDeep,
                 ),
             )
 
@@ -368,8 +368,8 @@ fun NearbyPreferencesSheet(
                 valueRange = 18f..80f,
                 steps = 61,
                 colors = SliderDefaults.colors(
-                    thumbColor = VistaBrandColors.Indigo,
-                    activeTrackColor = VistaBrandColors.Indigo,
+                    thumbColor = VistaBrandColors.ViuBlueDeep,
+                    activeTrackColor = VistaBrandColors.ViuBlueDeep,
                 ),
             )
 
@@ -383,7 +383,7 @@ fun NearbyPreferencesSheet(
                     .height(50.dp),
                 shape = RoundedCornerShape(14.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = VistaBrandColors.Indigo,
+                    containerColor = VistaBrandColors.ViuBlueDeep,
                 ),
             ) {
                 Text(
@@ -411,7 +411,7 @@ private fun PrefSelectableChip(
         modifier = modifier
             .clip(RoundedCornerShape(12.dp))
             .background(
-                if (selected) VistaBrandColors.Indigo else MaterialTheme.colorScheme.surfaceVariant
+                if (selected) VistaBrandColors.ViuBlueDeep else MaterialTheme.colorScheme.surfaceVariant
             )
             .clickable(onClick = onClick)
             .padding(vertical = 10.dp),

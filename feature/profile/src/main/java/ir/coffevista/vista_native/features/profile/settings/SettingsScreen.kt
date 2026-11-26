@@ -195,9 +195,6 @@ fun SettingsScreen(
                             .fillMaxWidth()
                             .background(MaterialTheme.colorScheme.surface),
                     ) {
-                        ir.coffevista.vista_native.core.designsystem.component.VistaAppBarAmbientOverlay(
-                            modifier = Modifier.matchParentSize(),
-                        )
                         TopAppBar(
                             title = {
                                 Text(
@@ -558,9 +555,9 @@ private fun SettingsPremiumCard(
 ) {
     val gradient = Brush.linearGradient(
         colors = listOf(
-            Color(0xFF7E57C2).copy(alpha = 0.85f),
-            Color(0xFF9575CD).copy(alpha = 0.75f),
-            Color(0xFFB39DDB).copy(alpha = 0.65f),
+            Color(0xFF121417),
+            Color(0xFF123442),
+            Color(0xFF0097C7),
         ),
     )
 
@@ -572,7 +569,7 @@ private fun SettingsPremiumCard(
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
-            containerColor = Color(0xFFEDE7F6),
+            containerColor = Color(0xFF121417),
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {

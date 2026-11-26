@@ -37,6 +37,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import ir.coffevista.vista_native.core.designsystem.theme.vistaColors
 import coil.compose.AsyncImage
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaBrandColors
 
@@ -107,7 +108,7 @@ fun ShareTargetBottomSheet(
                         .clip(RoundedCornerShape(12.dp))
                         .background(
                             Brush.linearGradient(
-                                colors = listOf(VistaBrandColors.Pink, VistaBrandColors.Indigo),
+                                colors = listOf(VistaBrandColors.InkBlack, VistaBrandColors.ViuBlueDeep),
                             ),
                         ),
                     contentAlignment = Alignment.Center,
@@ -156,7 +157,7 @@ fun ShareTargetBottomSheet(
                     } else {
                         VideoPlayCanvasIcon(
                             modifier = Modifier.size(44.dp),
-                            color = VistaBrandColors.Pink,
+                            color = VistaBrandColors.Coral,
                         )
                     }
 
@@ -187,7 +188,7 @@ fun ShareTargetBottomSheet(
 
             // Options
             ShareOptionItem(
-                gradient = listOf(Color(0xFF6366F1), Color(0xFF8B5CF6)),
+                gradient = listOf(VistaBrandColors.ViuBlueDeep, VistaBrandColors.ViuBlue),
                 title = "ارسال پیام",
                 subtitle = "برای یک نفر یا گروه بفرست",
                 onClick = { onSendToChat(content) },
@@ -196,7 +197,7 @@ fun ShareTargetBottomSheet(
 
             if (content.isMedia || content.isText) {
                 ShareOptionItem(
-                    gradient = listOf(Color(0xFFE91E63), Color(0xFFFF9800)),
+                    gradient = listOf(VistaBrandColors.CoralDeep, VistaBrandColors.CoralSoft),
                     title = "ایجاد پست",
                     subtitle = "در صفحه پروفایلت منتشر کن",
                     onClick = { onSendToPost(content) },
@@ -206,7 +207,7 @@ fun ShareTargetBottomSheet(
 
             if (content.isMedia && content.uris.isNotEmpty()) {
                 ShareOptionItem(
-                    gradient = listOf(Color(0xFF9C27B0), Color(0xFFE040FB)),
+                    gradient = listOf(VistaBrandColors.InkBlack, Color(0xFF2B313B)),
                     title = "ایجاد استوری",
                     subtitle = "۲۴ ساعت برای همه نمایش داده می‌شود",
                     onClick = { onSendToStory(content) },

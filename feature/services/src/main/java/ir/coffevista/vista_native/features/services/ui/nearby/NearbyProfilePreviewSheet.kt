@@ -103,7 +103,7 @@ fun NearbyProfilePreviewSheet(
                                 .matchParentSize()
                                 .background(
                                     Brush.linearGradient(
-                                        listOf(VistaBrandColors.Indigo, Color(0xFF8B5CF6)),
+                                        listOf(VistaBrandColors.ViuBlueDeep, Color(0xFF1FB6E8)),
                                     ),
                                 ),
                             contentAlignment = Alignment.Center,
@@ -217,7 +217,7 @@ fun NearbyProfilePreviewSheet(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     if (candidate.statusText.isNotBlank()) {
-                        PreviewBadge(text = candidate.statusText, bg = Color(0xFFEC4899).copy(alpha = 0.18f), fg = Color(0xFFF472B6))
+                        PreviewBadge(text = candidate.statusText, bg = Color(0xFFF0543B).copy(alpha = 0.18f), fg = Color(0xFFFF8A75))
                     }
                     if (candidate.gender.isNotBlank()) {
                         val gLabel = when (candidate.gender) {
@@ -255,7 +255,7 @@ fun NearbyProfilePreviewSheet(
                     onClick = onSendChatRequest,
                     enabled = !candidate.hasPendingChatRequest,
                     shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = VistaBrandColors.Indigo),
+                    colors = ButtonDefaults.buttonColors(containerColor = VistaBrandColors.ViuBlueDeep),
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(48.dp),
@@ -279,7 +279,7 @@ fun NearbyProfilePreviewSheet(
                     OutlinedButton(
                         onClick = onLike,
                         shape = RoundedCornerShape(12.dp),
-                        border = BorderStroke(1.dp, Color(0xFFEC4899).copy(alpha = 0.6f)),
+                        border = BorderStroke(1.dp, Color(0xFFF0543B).copy(alpha = 0.6f)),
                         contentPadding = PaddingValues(horizontal = 10.dp),
                         modifier = Modifier
                             .weight(1f)

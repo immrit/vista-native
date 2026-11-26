@@ -376,13 +376,13 @@ fun MusicPickerBottomSheet(
                             modifier = Modifier
                                 .size(34.dp)
                                 .clip(CircleShape)
-                                .background(VistaBrandColors.Pink.copy(alpha = 0.2f)),
+                                .background(VistaBrandColors.Coral.copy(alpha = 0.2f)),
                             contentAlignment = Alignment.Center,
                         ) {
                             Icon(
                                 imageVector = Icons.Default.MusicNote,
                                 contentDescription = null,
-                                tint = VistaBrandColors.Pink,
+                                tint = VistaBrandColors.Coral,
                                 modifier = Modifier.size(19.dp),
                             )
                         }
@@ -476,7 +476,7 @@ fun MusicPickerBottomSheet(
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedContainerColor = Color.White.copy(alpha = 0.08f),
                         unfocusedContainerColor = Color.White.copy(alpha = 0.05f),
-                        focusedBorderColor = VistaBrandColors.Pink,
+                        focusedBorderColor = VistaBrandColors.Coral,
                         unfocusedBorderColor = Color.White.copy(alpha = 0.12f),
                         focusedTextColor = Color.White,
                         unfocusedTextColor = Color.White,
@@ -494,12 +494,12 @@ fun MusicPickerBottomSheet(
                             .background(
                                 Brush.linearGradient(
                                     colors = listOf(
-                                        VistaBrandColors.Pink.copy(alpha = 0.24f),
-                                        VistaBrandColors.Indigo.copy(alpha = 0.22f),
+                                        VistaBrandColors.Coral.copy(alpha = 0.24f),
+                                        VistaBrandColors.ViuBlue.copy(alpha = 0.22f),
                                     ),
                                 ),
                             )
-                            .border(1.dp, VistaBrandColors.Pink.copy(alpha = 0.4f), RoundedCornerShape(16.dp))
+                            .border(1.dp, VistaBrandColors.Coral.copy(alpha = 0.4f), RoundedCornerShape(16.dp))
                             .clickable {
                                 if (hasAudioPermission) {
                                     coroutineScope.launch {
@@ -529,7 +529,7 @@ fun MusicPickerBottomSheet(
                                 modifier = Modifier
                                     .size(36.dp)
                                     .clip(CircleShape)
-                                    .background(VistaBrandColors.Pink.copy(alpha = 0.25f)),
+                                    .background(VistaBrandColors.Coral.copy(alpha = 0.25f)),
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Icon(
@@ -553,7 +553,7 @@ fun MusicPickerBottomSheet(
                                 Text(
                                     text = "نمایش مستقیم MP3، M4A، AAC، WAV با قابلیت جستجو و پیش‌نمایش",
                                     color = Color.White.copy(alpha = 0.65f),
-                                    fontSize = 10.5.sp,
+                                    fontSize = 11.sp,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                 )
@@ -562,7 +562,7 @@ fun MusicPickerBottomSheet(
                         Icon(
                             imageVector = Icons.Default.AudioFile,
                             contentDescription = null,
-                            tint = VistaBrandColors.Pink,
+                            tint = VistaBrandColors.Coral,
                             modifier = Modifier.size(20.dp),
                         )
                     }
@@ -599,7 +599,7 @@ fun MusicPickerBottomSheet(
                                         audioPermissionLauncher.launch(perm)
                                     },
                                     shape = RoundedCornerShape(18.dp),
-                                    colors = ButtonDefaults.buttonColors(containerColor = VistaBrandColors.Pink),
+                                    colors = ButtonDefaults.buttonColors(containerColor = VistaBrandColors.Coral),
                                 ) {
                                     Text("نمایش همه آهنگ‌های گوشی", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                                 }
@@ -610,7 +610,7 @@ fun MusicPickerBottomSheet(
                             (selectedTab == 1 && isLoadingMine) ||
                             (selectedTab == 2 && isLoadingCatalog) -> {
                             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                CircularProgressIndicator(color = VistaBrandColors.Pink, modifier = Modifier.size(34.dp))
+                                CircularProgressIndicator(color = VistaBrandColors.Coral, modifier = Modifier.size(34.dp))
                             }
                         }
 
@@ -672,12 +672,12 @@ fun MusicPickerBottomSheet(
                                             .fillMaxWidth()
                                             .clip(RoundedCornerShape(14.dp))
                                             .background(
-                                                if (isSelected) VistaBrandColors.Pink.copy(alpha = 0.16f)
+                                                if (isSelected) VistaBrandColors.Coral.copy(alpha = 0.16f)
                                                 else Color.White.copy(alpha = 0.05f),
                                             )
                                             .border(
                                                 width = 1.dp,
-                                                color = if (isSelected) VistaBrandColors.Pink.copy(alpha = 0.55f)
+                                                color = if (isSelected) VistaBrandColors.Coral.copy(alpha = 0.55f)
                                                 else Color.White.copy(alpha = 0.08f),
                                                 shape = RoundedCornerShape(14.dp),
                                             )
@@ -703,7 +703,7 @@ fun MusicPickerBottomSheet(
                                                 Icon(
                                                     imageVector = Icons.Default.MusicNote,
                                                     contentDescription = null,
-                                                    tint = VistaBrandColors.Pink,
+                                                    tint = VistaBrandColors.Coral,
                                                     modifier = Modifier.size(22.dp),
                                                 )
                                             }
@@ -764,7 +764,7 @@ fun MusicPickerBottomSheet(
                                                 .size(36.dp)
                                                 .clip(CircleShape)
                                                 .background(
-                                                    if (isPlaying) VistaBrandColors.Pink
+                                                    if (isPlaying) VistaBrandColors.Coral
                                                     else Color.White.copy(alpha = 0.1f),
                                                 ),
                                         ) {
@@ -890,7 +890,7 @@ private fun MusicTabPill(
         modifier = modifier
             .clip(RoundedCornerShape(14.dp))
             .background(
-                if (selected) VistaBrandColors.Pink
+                if (selected) VistaBrandColors.Coral
                 else Color.White.copy(alpha = 0.07f),
             )
             .border(
@@ -923,7 +923,7 @@ private fun MusicTabPill(
 
 @Composable
 private fun MiniAudioEqualizer(
-    color: Color = VistaBrandColors.Pink,
+    color: Color = VistaBrandColors.Coral,
     modifier: Modifier = Modifier,
 ) {
     val infiniteTransition = rememberInfiniteTransition(label = "equalizer")
@@ -1032,7 +1032,7 @@ private fun StoryMusicTrimmerView(
 
             Text(
                 text = "انجام شد",
-                color = Color(0xFF818CF8),
+                color = VistaBrandColors.ViuBlue,
                 fontSize = 14.5.sp,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier
@@ -1064,7 +1064,7 @@ private fun StoryMusicTrimmerView(
                 Icon(
                     imageVector = Icons.Default.MusicNote,
                     contentDescription = null,
-                    tint = VistaBrandColors.Pink,
+                    tint = VistaBrandColors.Coral,
                     modifier = Modifier.size(36.dp),
                 )
             }
@@ -1263,7 +1263,7 @@ private fun StoryMusicTrimmerView(
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedContainerColor = Color.White.copy(alpha = 0.06f),
                         unfocusedContainerColor = Color.White.copy(alpha = 0.04f),
-                        focusedBorderColor = VistaBrandColors.Pink,
+                        focusedBorderColor = VistaBrandColors.Coral,
                         unfocusedBorderColor = Color.White.copy(alpha = 0.12f),
                         focusedTextColor = Color.White,
                         unfocusedTextColor = Color.White,
@@ -1279,7 +1279,7 @@ private fun StoryMusicTrimmerView(
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedContainerColor = Color.White.copy(alpha = 0.06f),
                         unfocusedContainerColor = Color.White.copy(alpha = 0.04f),
-                        focusedBorderColor = VistaBrandColors.Pink,
+                        focusedBorderColor = VistaBrandColors.Coral,
                         unfocusedBorderColor = Color.White.copy(alpha = 0.12f),
                         focusedTextColor = Color.White,
                         unfocusedTextColor = Color.White,
@@ -1301,7 +1301,7 @@ private fun StoryMusicTrimmerView(
                         .size(18.dp)
                         .clip(RoundedCornerShape(5.dp))
                         .background(
-                            if (saveToVistaLibrary) VistaBrandColors.Pink
+                            if (saveToVistaLibrary) VistaBrandColors.Coral
                             else Color.White.copy(alpha = 0.1f),
                         )
                         .border(1.dp, Color.White.copy(alpha = 0.25f), RoundedCornerShape(5.dp)),
@@ -1329,7 +1329,7 @@ private fun StoryMusicTrimmerView(
             onClick = onConfirmSelection,
             shape = RoundedCornerShape(16.dp),
             colors = ButtonDefaults.buttonColors(
-                containerColor = VistaBrandColors.Pink,
+                containerColor = VistaBrandColors.Coral,
                 contentColor = Color.White,
             ),
             modifier = Modifier.fillMaxWidth(),

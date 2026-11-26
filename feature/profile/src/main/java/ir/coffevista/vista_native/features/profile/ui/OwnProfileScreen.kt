@@ -423,7 +423,7 @@ fun OwnProfileScreen(
                         .vistaGlass(
                             state = profileGlassState,
                             shape = RectangleShape,
-                            tint = if (isDarkProfile) androidx.compose.ui.graphics.Color(0xFF1A222C) else androidx.compose.ui.graphics.Color(0xFFFFFFFF),
+                            tint = if (isDarkProfile) androidx.compose.ui.graphics.Color(0xFF16191E) else androidx.compose.ui.graphics.Color(0xFFFFFFFF),
                             isDark = isDarkProfile,
                             blurRadius = VistaGlassTokens.BarBlur,
                             tintAlphaOverride = if (isDarkProfile) 0.58f else 0.62f,
@@ -432,9 +432,6 @@ fun OwnProfileScreen(
                             shadowElevation = 3.dp,
                         ),
                 ) {
-                    ir.coffevista.vista_native.core.designsystem.component.VistaAppBarAmbientOverlay(
-                        modifier = Modifier.matchParentSize(),
-                    )
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1148,8 +1145,8 @@ private fun NoteInputBottomSheet(
                     val previewText = content.trim().ifEmpty { activePrompt }
                     val (fontSize, lineHeight, maxLines) = when {
                         previewText.length <= 14 -> Triple(12.sp, 16.sp, 2)
-                        previewText.length <= 34 -> Triple(10.5.sp, 14.sp, 2)
-                        else -> Triple(9.5.sp, 12.5.sp, 3)
+                        previewText.length <= 34 -> Triple(11.5.sp, 15.sp, 2)
+                        else -> Triple(11.sp, 14.5.sp, 3)
                     }
 
                     Box(
@@ -1157,13 +1154,13 @@ private fun NoteInputBottomSheet(
                             .widthIn(min = 60.dp, max = 220.dp)
                             .shadow(6.dp, RoundedCornerShape(20.dp))
                             .clip(RoundedCornerShape(20.dp))
-                            .background(if (isDark) Color(0xF21C2230) else Color(0xF8FFFFFF))
+                            .background(if (isDark) Color(0xF216191E) else Color(0xF8FFFFFF))
                             .border(
                                 1.dp,
                                 if (content.isNotBlank()) {
                                     if (isDark) Color(0x4DFFFFFF) else Color(0x22000000)
                                 } else {
-                                    Color(0xFF6366F1).copy(alpha = 0.6f)
+                                    Color(0xFF1FB6E8).copy(alpha = 0.6f)
                                 },
                                 RoundedCornerShape(20.dp)
                             )
@@ -1179,7 +1176,7 @@ private fun NoteInputBottomSheet(
                                 color = if (content.isBlank()) {
                                     MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                                 } else {
-                                    if (isDark) Color.White else Color(0xFF0F172A)
+                                    if (isDark) Color.White else Color(0xFF111215)
                                 },
                                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                                 textDirection = TextDirection.ContentOrRtl,
@@ -1193,7 +1190,7 @@ private fun NoteInputBottomSheet(
                         modifier = Modifier
                             .size(7.dp)
                             .clip(CircleShape)
-                            .background(if (isDark) Color(0xF21C2230) else Color(0xF8FFFFFF))
+                            .background(if (isDark) Color(0xF216191E) else Color(0xF8FFFFFF))
                             .border(0.5.dp, if (isDark) Color(0x38FFFFFF) else Color(0x20000000), CircleShape),
                     )
                     Spacer(modifier = Modifier.height(2.dp))
@@ -1201,7 +1198,7 @@ private fun NoteInputBottomSheet(
                         modifier = Modifier
                             .size(4.dp)
                             .clip(CircleShape)
-                            .background(if (isDark) Color(0xF21C2230) else Color(0xF8FFFFFF))
+                            .background(if (isDark) Color(0xF216191E) else Color(0xF8FFFFFF))
                             .border(0.5.dp, if (isDark) Color(0x38FFFFFF) else Color(0x20000000), CircleShape),
                     )
                 }

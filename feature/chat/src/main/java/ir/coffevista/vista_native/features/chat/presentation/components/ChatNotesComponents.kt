@@ -246,11 +246,11 @@ internal fun ProfileNoteItem(
                         .widthIn(min = 48.dp, max = 80.dp)
                         .shadow(4.dp, RoundedCornerShape(14.dp))
                         .clip(RoundedCornerShape(14.dp))
-                        .background(if (isDark) Color(0xF21C2230) else Color(0xF8FFFFFF))
+                        .background(if (isDark) Color(0xF216191E) else Color(0xF8FFFFFF))
                         .border(
                             width = 0.5.dp,
                             color = if (text.isNullOrBlank()) {
-                                Color(0xFF6366F1).copy(alpha = 0.6f)
+                                Color(0xFF1FB6E8).copy(alpha = 0.6f)
                             } else {
                                 if (isDark) Color(0x38FFFFFF) else Color(0x22000000)
                             },
@@ -265,14 +265,14 @@ internal fun ProfileNoteItem(
                             Icons.Default.Add,
                             contentDescription = null,
                             modifier = Modifier.size(15.dp),
-                            tint = Color(0xFF6366F1),
+                            tint = Color(0xFF1FB6E8),
                         )
                         else -> {
                             val cleanText = text.trim()
                             val (fontSize, lineHeight, maxLines) = when {
-                                cleanText.length <= 12 -> Triple(10.sp, 13.sp, 2)
-                                cleanText.length <= 26 -> Triple(9.sp, 11.5.sp, 2)
-                                else -> Triple(8.sp, 10.5.sp, 3)
+                                cleanText.length <= 12 -> Triple(11.5.sp, 15.sp, 2)
+                                cleanText.length <= 26 -> Triple(11.sp, 14.5.sp, 2)
+                                else -> Triple(11.sp, 14.sp, 3)
                             }
                             Text(
                                 cleanText,
@@ -282,7 +282,7 @@ internal fun ProfileNoteItem(
                                 fontSize = fontSize,
                                 lineHeight = lineHeight,
                                 fontWeight = FontWeight.SemiBold,
-                                color = if (isDark) Color.White else Color(0xFF1E293B),
+                                color = if (isDark) Color.White else Color(0xFF111215),
                             )
                         }
                     }
@@ -292,7 +292,7 @@ internal fun ProfileNoteItem(
                     modifier = Modifier
                         .size(5.dp)
                         .clip(CircleShape)
-                        .background(if (isDark) Color(0xF21C2230) else Color(0xF8FFFFFF))
+                        .background(if (isDark) Color(0xF216191E) else Color(0xF8FFFFFF))
                         .border(0.5.dp, if (isDark) Color(0x30FFFFFF) else Color(0x18000000), CircleShape),
                 )
                 Spacer(Modifier.height(1.dp))
@@ -300,7 +300,7 @@ internal fun ProfileNoteItem(
                     modifier = Modifier
                         .size(2.5.dp)
                         .clip(CircleShape)
-                        .background(if (isDark) Color(0xF21C2230) else Color(0xF8FFFFFF))
+                        .background(if (isDark) Color(0xF216191E) else Color(0xF8FFFFFF))
                         .border(0.5.dp, if (isDark) Color(0x30FFFFFF) else Color(0x18000000), CircleShape),
                 )
             }
@@ -310,7 +310,7 @@ internal fun ProfileNoteItem(
             label,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            fontSize = 10.5.sp,
+            fontSize = 11.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
@@ -344,7 +344,7 @@ internal fun OwnNoteEditorSheet(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(20.dp))
-                        .background(if (isDark) Color(0xFF141923) else Color(0xFFF1F5F9))
+                        .background(if (isDark) Color(0xFF121417) else Color(0xFFF1F5F9))
                         .padding(vertical = 16.dp, horizontal = 16.dp),
                     contentAlignment = Alignment.Center,
                 ) {
@@ -352,21 +352,21 @@ internal fun OwnNoteEditorSheet(
                         val previewText = content.trim().ifEmpty { activePrompt }
                         val (fontSize, lineHeight, maxLines) = when {
                             previewText.length <= 14 -> Triple(12.sp, 16.sp, 2)
-                            previewText.length <= 34 -> Triple(10.5.sp, 14.sp, 2)
-                            else -> Triple(9.5.sp, 12.5.sp, 3)
+                            previewText.length <= 34 -> Triple(11.5.sp, 15.sp, 2)
+                            else -> Triple(11.sp, 14.5.sp, 3)
                         }
                         Box(
                             modifier = Modifier
                                 .widthIn(min = 60.dp, max = 220.dp)
                                 .shadow(5.dp, RoundedCornerShape(18.dp))
                                 .clip(RoundedCornerShape(18.dp))
-                                .background(if (isDark) Color(0xF21C2230) else Color(0xF8FFFFFF))
+                                .background(if (isDark) Color(0xF216191E) else Color(0xF8FFFFFF))
                                 .border(
                                     1.dp,
                                     if (content.isNotBlank()) {
                                         if (isDark) Color(0x4DFFFFFF) else Color(0x22000000)
                                     } else {
-                                        Color(0xFF6366F1).copy(alpha = 0.6f)
+                                        Color(0xFF1FB6E8).copy(alpha = 0.6f)
                                     },
                                     RoundedCornerShape(18.dp)
                                 )
@@ -382,7 +382,7 @@ internal fun OwnNoteEditorSheet(
                                     color = if (content.isBlank()) {
                                         MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                                     } else {
-                                        if (isDark) Color.White else Color(0xFF0F172A)
+                                        if (isDark) Color.White else Color(0xFF111215)
                                     },
                                     textAlign = TextAlign.Center,
                                 ),
@@ -395,7 +395,7 @@ internal fun OwnNoteEditorSheet(
                             modifier = Modifier
                                 .size(6.dp)
                                 .clip(CircleShape)
-                                .background(if (isDark) Color(0xF21C2230) else Color(0xF8FFFFFF))
+                                .background(if (isDark) Color(0xF216191E) else Color(0xF8FFFFFF))
                                 .border(0.5.dp, if (isDark) Color(0x38FFFFFF) else Color(0x20000000), CircleShape),
                         )
                         Spacer(modifier = Modifier.height(1.5.dp))
@@ -403,7 +403,7 @@ internal fun OwnNoteEditorSheet(
                             modifier = Modifier
                                 .size(3.5.dp)
                                 .clip(CircleShape)
-                                .background(if (isDark) Color(0xF21C2230) else Color(0xF8FFFFFF))
+                                .background(if (isDark) Color(0xF216191E) else Color(0xF8FFFFFF))
                                 .border(0.5.dp, if (isDark) Color(0x38FFFFFF) else Color(0x20000000), CircleShape),
                         )
                     }

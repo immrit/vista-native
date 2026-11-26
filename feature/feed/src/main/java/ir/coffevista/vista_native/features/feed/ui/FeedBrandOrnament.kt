@@ -275,7 +275,7 @@ internal fun VistaRemoteFeedBannerCard(
     if (!banner.enabled || (banner.title.isBlank() && banner.subtitle.isBlank())) return
     val uriHandler = LocalUriHandler.current
     val internalNavigator = LocalVistaInternalLinkNavigator.current
-    val bgColor = remember(banner.bgColor) { parseHexColor(banner.bgColor, Color(0xFF6366F1)) }
+    val bgColor = remember(banner.bgColor) { parseHexColor(banner.bgColor, Color(0xFF111215)) }
     val fgColor = remember(banner.textColor) { parseHexColor(banner.textColor, Color.White) }
 
     Surface(

@@ -56,7 +56,7 @@ fun StoryTray(
 ) {
     val brandGradient = remember {
         Brush.linearGradient(
-            colors = listOf(VistaBrandColors.Indigo, VistaBrandColors.Violet, VistaBrandColors.Pink),
+            colors = listOf(VistaBrandColors.Coral, VistaBrandColors.CoralSoft, VistaBrandColors.ViuBlue),
         )
     }
     val closeFriendsGradient = remember {
@@ -66,7 +66,7 @@ fun StoryTray(
     }
     val primaryGradient = remember {
         Brush.linearGradient(
-            colors = listOf(VistaBrandColors.Indigo, VistaBrandColors.Violet),
+            colors = listOf(VistaBrandColors.ViuBlueDeep, VistaBrandColors.ViuBlue),
         )
     }
 
@@ -272,7 +272,7 @@ private fun YourStoryItem(
             fontSize = 11.5.sp,
             fontWeight = if (hasActiveStories || isUploading) FontWeight.SemiBold else FontWeight.Normal,
             color = when {
-                isUploading -> VistaBrandColors.Indigo
+                isUploading -> VistaBrandColors.ViuBlue
                 hasActiveStories -> MaterialTheme.colorScheme.onSurface
                 else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f)
             },

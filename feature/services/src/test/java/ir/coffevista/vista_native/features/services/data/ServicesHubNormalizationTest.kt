@@ -18,6 +18,18 @@ class ServicesHubNormalizationTest {
         assertEquals(listOf(1L, 3L), result.map(ServiceSection::id))
     }
 
+    @Test
+    fun `normalizedHubSectionOrder deduplicates invalid keys and fills defaults`() {
+        val result = normalizedHubSectionOrder(
+            listOf("quick_services", "unknown_block", "QUICK_SERVICES", "sections"),
+        )
+
+        assertEquals(
+            listOf("quick_services", "sections", "banners", "contacts"),
+            result,
+        )
+    }
+
     private fun section(
         id: Long,
         title: String,
@@ -30,7 +42,7 @@ class ServicesHubNormalizationTest {
         subtitle = "",
         icon = "grid",
         route = route,
-        color = "#6366F1",
+        color = "#0097C7",
         isActive = active,
         sortOrder = order,
     )

@@ -3,8 +3,9 @@ package ir.coffevista.vista_native.features.shell
 import android.app.Activity
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
@@ -13,14 +14,17 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionLayout
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -131,7 +135,10 @@ import ir.coffevista.vista_native.core.designsystem.glass.rememberVistaGlassStat
 import ir.coffevista.vista_native.core.designsystem.glass.vistaGlass
 import ir.coffevista.vista_native.core.designsystem.glass.vistaGlassHalo
 import ir.coffevista.vista_native.core.designsystem.glass.vistaGlassSource
+import ir.coffevista.vista_native.core.designsystem.motion.LocalVistaAnimatedVisibilityScope
+import ir.coffevista.vista_native.core.designsystem.motion.LocalVistaSharedTransitionScope
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaLayout
+import ir.coffevista.vista_native.core.designsystem.tokens.VistaRadii
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaSpacing
 import ir.coffevista.vista_native.core.model.session.AuthenticatedContext
 import kotlinx.coroutines.launch
@@ -451,8 +458,13 @@ fun VistaShell(
                 openPostFromMiniPlayer,
             )
         }
-        Box(modifier = modifier.fillMaxSize()) {
-        CompositionLocalProvider(LocalMiniPlayerSlot provides miniPlayerSlot) {
+        @OptIn(ExperimentalSharedTransitionApi::class)
+        SharedTransitionLayout(modifier = modifier.fillMaxSize()) {
+        Box(modifier = Modifier.fillMaxSize()) {
+        CompositionLocalProvider(
+            LocalMiniPlayerSlot provides miniPlayerSlot,
+            LocalVistaSharedTransitionScope provides this@SharedTransitionLayout,
+        ) {
         NavHost(
             navController = navController,
             startDestination = ShellRoutes.FeedGraph,
@@ -652,43 +664,59 @@ fun VistaShell(
                 }
             }
             navigation(route = ShellRoutes.SearchGraph, startDestination = ShellRoutes.SearchRoot) {
-                composable(ShellRoutes.SearchRoot) {
-                    content.searchWorkspace(
-                        { userId ->
-                            navController.navigate(
-                                if (userId == context.userId) {
-                                    ShellRoutes.OwnProfileOverlay
-                                } else {
-                                    ShellRoutes.userProfile(userId)
-                                },
-                            )
-                        },
-                        { postId ->
-                            navController.navigate(ShellRoutes.postDetail(postId))
-                        },
-                        { tag -> navController.navigate(ShellRoutes.hashtag(tag)) },
-                        null,
-                        { navController.navigate(ShellRoutes.QrScanner) },
-                    )
+                composable(
+                    route = ShellRoutes.SearchRoot,
+                    enterTransition = { fadeIn(tween(200)) },
+                    exitTransition = { fadeOut(tween(180)) },
+                    popEnterTransition = { fadeIn(tween(200)) },
+                    popExitTransition = { fadeOut(tween(180)) },
+                ) {
+                    CompositionLocalProvider(LocalVistaAnimatedVisibilityScope provides this) {
+                        content.searchWorkspace(
+                            { userId ->
+                                navController.navigate(
+                                    if (userId == context.userId) {
+                                        ShellRoutes.OwnProfileOverlay
+                                    } else {
+                                        ShellRoutes.userProfile(userId)
+                                    },
+                                )
+                            },
+                            { postId ->
+                                navController.navigate(ShellRoutes.postDetail(postId))
+                            },
+                            { tag -> navController.navigate(ShellRoutes.hashtag(tag)) },
+                            null,
+                            { navController.navigate(ShellRoutes.QrScanner) },
+                        )
+                    }
                 }
-                composable(ShellRoutes.SearchWorkspace) {
-                    content.searchWorkspace(
-                        { userId ->
-                            navController.navigate(
-                                if (userId == context.userId) {
-                                    ShellRoutes.OwnProfileOverlay
-                                } else {
-                                    ShellRoutes.userProfile(userId)
-                                },
-                            )
-                        },
-                        { postId ->
-                            navController.navigate(ShellRoutes.postDetail(postId))
-                        },
-                        { tag -> navController.navigate(ShellRoutes.hashtag(tag)) },
-                        { navController.popBackStack() },
-                        { navController.navigate(ShellRoutes.QrScanner) },
-                    )
+                composable(
+                    route = ShellRoutes.SearchWorkspace,
+                    enterTransition = { fadeIn(tween(200)) },
+                    exitTransition = { fadeOut(tween(180)) },
+                    popEnterTransition = { fadeIn(tween(200)) },
+                    popExitTransition = { fadeOut(tween(180)) },
+                ) {
+                    CompositionLocalProvider(LocalVistaAnimatedVisibilityScope provides this) {
+                        content.searchWorkspace(
+                            { userId ->
+                                navController.navigate(
+                                    if (userId == context.userId) {
+                                        ShellRoutes.OwnProfileOverlay
+                                    } else {
+                                        ShellRoutes.userProfile(userId)
+                                    },
+                                )
+                            },
+                            { postId ->
+                                navController.navigate(ShellRoutes.postDetail(postId))
+                            },
+                            { tag -> navController.navigate(ShellRoutes.hashtag(tag)) },
+                            { navController.popBackStack() },
+                            { navController.navigate(ShellRoutes.QrScanner) },
+                        )
+                    }
                 }
             }
             navigation(route = ShellRoutes.ServicesGraph, startDestination = ShellRoutes.ServicesRoot) {
@@ -1335,6 +1363,7 @@ fun VistaShell(
                 }
             }
         }
+        }
     }
 }
 }
@@ -1398,7 +1427,7 @@ private fun VistaBottomIsland(
                 isDark = isDark,
                 blurRadius = 16.dp,
                 startOffsetFraction = 0.22f,
-                maxAlpha = if (isDark) 0.40f else 0.42f,
+                maxAlpha = if (isDark) 0.28f else 0.30f,
             ),
         contentAlignment = Alignment.BottomCenter,
     ) {
@@ -1409,8 +1438,8 @@ private fun VistaBottomIsland(
                 .height(58.dp)
                 .vistaGlass(
                     state = glassState,
-                    shape = RoundedCornerShape(29.dp),
-                    tint = if (isDark) Color(0xFF18202B) else Color.White,
+                    shape = RoundedCornerShape(VistaRadii.Pill),
+                    tint = if (isDark) Color(0xFF16191E) else Color.White,
                     isDark = isDark,
                     blurRadius = VistaGlassTokens.BarBlur,
                     tintAlphaOverride = if (isDark) 0.58f else 0.60f,
@@ -1418,123 +1447,140 @@ private fun VistaBottomIsland(
                     rimWidth = 0.6.dp,
                     shadowElevation = 5.dp,
                 ),
-            shape = RoundedCornerShape(29.dp),
+            shape = RoundedCornerShape(VistaRadii.Pill),
             color = Color.Transparent,
             shadowElevation = 0.dp,
         ) {
-            Row(
+            val slotMap = remember(navigationSlots) {
+                navigationSlots.associateBy { it.key.trim().lowercase() }
+            }
+            val visibleTabs = remember(slotMap) {
+                ShellTab.entries
+                    .filter { tab ->
+                        tab == ShellTab.Feed || (slotMap[tab.name.lowercase()]?.visible != false)
+                    }
+                    .sortedWith(
+                        compareBy(
+                            { slotMap[it.name.lowercase()]?.sortOrder ?: it.ordinal },
+                            { it.ordinal },
+                        ),
+                    )
+            }
+            val selectedIndex = visibleTabs.indexOf(selectedTab).coerceAtLeast(0)
+            val tabCount = visibleTabs.size.coerceAtLeast(1)
+            val activeColor = MaterialTheme.colorScheme.primary
+            val inactiveColor = if (isLight) Color(0xFF656C76) else Color(0xFF8A919C)
+            val animatedIndex by animateFloatAsState(
+                targetValue = selectedIndex.toFloat(),
+                animationSpec = spring(
+                    dampingRatio = 0.78f,
+                    stiffness = 420f,
+                ),
+                label = "nav_sliding_pill_index",
+            )
+            val tabSpacing = 3.dp
+            BoxWithConstraints(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(horizontal = 5.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(3.dp),
+                contentAlignment = Alignment.CenterStart,
             ) {
-                val slotMap = remember(navigationSlots) {
-                    navigationSlots.associateBy { it.key.trim().lowercase() }
-                }
-                val visibleTabs = remember(slotMap) {
-                    ShellTab.entries
-                        .filter { tab ->
-                            tab == ShellTab.Feed || (slotMap[tab.name.lowercase()]?.visible != false)
-                        }
-                        .sortedWith(
-                            compareBy(
-                                { slotMap[it.name.lowercase()]?.sortOrder ?: it.ordinal },
-                                { it.ordinal },
-                            ),
-                        )
-                }
-                val haptics = rememberVistaHaptics()
-                visibleTabs.forEach { tab ->
-                    val slot = slotMap[tab.name.lowercase()]
-                    val tabLabel = slot?.label?.takeIf { it.isNotBlank() } ?: tab.labelFa
-                    val slotBadgeText = slot?.badgeText?.trim().orEmpty()
-                    val selected = tab == selectedTab
-                    val activeColor = MaterialTheme.colorScheme.primary
-                    val inactiveColor = if (isLight) Color(0xFF1A1D21) else Color(0xFFD5DCE6)
-                    val tabInteractionSource = remember { MutableInteractionSource() }
-                    val isTabPressed by tabInteractionSource.collectIsPressedAsState()
-                    val tabScale by animateFloatAsState(
-                        targetValue = when {
-                            isTabPressed -> 0.93f
-                            selected -> 1.05f
-                            else -> 1.0f
-                        },
-                        animationSpec = spring(
-                            dampingRatio = Spring.DampingRatioMediumBouncy,
-                            stiffness = Spring.StiffnessMedium,
+                val slotWidth = ((maxWidth - tabSpacing * (tabCount - 1)) / tabCount).coerceAtLeast(0.dp)
+                val slotStep = slotWidth + tabSpacing
+                Box(
+                    modifier = Modifier
+                        .offset(x = slotStep * animatedIndex)
+                        .width(slotWidth)
+                        .height(50.dp)
+                        .clip(RoundedCornerShape(VistaRadii.XXLarge))
+                        .background(
+                            activeColor.copy(alpha = if (isLight) 0.10f else 0.17f),
+                            RoundedCornerShape(VistaRadii.XXLarge),
                         ),
-                        label = "tab_scale_${tab.name}",
-                    )
-                    val pillAlpha by animateFloatAsState(
-                        targetValue = if (selected) 1f else 0f,
-                        animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
-                        label = "tab_pill_${tab.name}",
-                    )
-                    val tabIconColor by animateColorAsState(
-                        targetValue = if (selected) activeColor else inactiveColor,
-                        animationSpec = tween(durationMillis = 180),
-                        label = "tab_color_${tab.name}",
-                    )
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(50.dp)
-                            .testTag("shell-tab-${tab.name.lowercase()}")
-                            .graphicsLayer {
-                                scaleX = tabScale
-                                scaleY = tabScale
-                            }
-                            .clip(RoundedCornerShape(25.dp))
-                            .background(
-                                activeColor.copy(alpha = (if (isLight) 0.12f else 0.19f) * pillAlpha),
-                                RoundedCornerShape(25.dp),
-                            )
-                            .clickable(
-                                interactionSource = tabInteractionSource,
-                                indication = ripple(bounded = true),
-                                onClick = {
-                                    haptics.tap()
-                                    onSelect(tab)
-                                },
-                            )
-                            .semantics(mergeDescendants = true) {
-                                contentDescription = tabLabel
-                                role = Role.Tab
-                                this.selected = selected
-                            },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        VistaBadgedBox(
-                            badge = {
-                                if (tab == ShellTab.Chat && chatBadgeCount > 0) {
-                                    VistaNotificationBadge(
-                                        count = chatBadgeCount,
-                                        borderColor = if (isDark) Color(0xFF18202B) else Color.White,
-                                        modifier = Modifier.testTag("shell-chat-badge"),
-                                    )
-                                } else if (slotBadgeText.isNotBlank()) {
-                                    Surface(
-                                        shape = RoundedCornerShape(6.dp),
-                                        color = MaterialTheme.colorScheme.primary,
-                                    ) {
-                                        Text(
-                                            text = slotBadgeText.take(6),
-                                            color = Color.White,
-                                            fontSize = 8.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
-                                        )
-                                    }
+                )
+                Row(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(tabSpacing),
+                ) {
+                    val haptics = rememberVistaHaptics()
+                    visibleTabs.forEach { tab ->
+                        val slot = slotMap[tab.name.lowercase()]
+                        val tabLabel = slot?.label?.takeIf { it.isNotBlank() } ?: tab.labelFa
+                        val slotBadgeText = slot?.badgeText?.trim().orEmpty()
+                        val selected = tab == selectedTab
+                        val tabInteractionSource = remember { MutableInteractionSource() }
+                        val isTabPressed by tabInteractionSource.collectIsPressedAsState()
+                        val tabScale by animateFloatAsState(
+                            targetValue = if (isTabPressed) 0.94f else 1.0f,
+                            animationSpec = spring(
+                                dampingRatio = 0.72f,
+                                stiffness = 580f,
+                            ),
+                            label = "tab_press_scale_${tab.name}",
+                        )
+                        val tabIconColor by animateColorAsState(
+                            targetValue = if (selected) activeColor else inactiveColor,
+                            animationSpec = tween(durationMillis = 180),
+                            label = "tab_color_${tab.name}",
+                        )
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(50.dp)
+                                .testTag("shell-tab-${tab.name.lowercase()}")
+                                .graphicsLayer {
+                                    scaleX = tabScale
+                                    scaleY = tabScale
                                 }
-                            },
+                                .clip(RoundedCornerShape(VistaRadii.XXLarge))
+                                .clickable(
+                                    interactionSource = tabInteractionSource,
+                                    indication = ripple(bounded = true),
+                                    onClick = {
+                                        haptics.tap()
+                                        onSelect(tab)
+                                    },
+                                )
+                                .semantics(mergeDescendants = true) {
+                                    contentDescription = tabLabel
+                                    role = Role.Tab
+                                    this.selected = selected
+                                },
+                            contentAlignment = Alignment.Center,
                         ) {
-                            VistaNavigationIcon(
-                                tab = tab,
-                                selected = selected,
-                                color = tabIconColor,
-                                modifier = Modifier.size(24.dp),
-                            )
+                            VistaBadgedBox(
+                                badge = {
+                                    if (tab == ShellTab.Chat && chatBadgeCount > 0) {
+                                        VistaNotificationBadge(
+                                            count = chatBadgeCount,
+                                            borderColor = if (isDark) Color(0xFF16191E) else Color.White,
+                                            modifier = Modifier.testTag("shell-chat-badge"),
+                                        )
+                                    } else if (slotBadgeText.isNotBlank()) {
+                                        Surface(
+                                            shape = RoundedCornerShape(VistaRadii.Small),
+                                            color = ir.coffevista.vista_native.core.designsystem.tokens.VistaBrandColors.ViuBlueDeep,
+                                        ) {
+                                            Text(
+                                                text = slotBadgeText.take(6),
+                                                color = Color.White,
+                                                fontSize = 11.sp,
+                                                lineHeight = 12.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
+                                            )
+                                        }
+                                    }
+                                },
+                            ) {
+                                VistaNavigationIcon(
+                                    tab = tab,
+                                    selected = selected,
+                                    color = tabIconColor,
+                                    modifier = Modifier.size(24.dp),
+                                )
+                            }
                         }
                     }
                 }

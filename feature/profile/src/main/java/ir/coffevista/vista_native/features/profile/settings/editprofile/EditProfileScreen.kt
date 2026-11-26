@@ -242,7 +242,7 @@ fun EditProfileScreen(
                         Icon(
                             imageVector = Icons.Outlined.CameraAlt,
                             contentDescription = "تغییر تصویر",
-                            tint = Color.White,
+                            tint = MaterialTheme.colorScheme.onPrimary,
                             modifier = Modifier.size(16.dp),
                         )
                     }

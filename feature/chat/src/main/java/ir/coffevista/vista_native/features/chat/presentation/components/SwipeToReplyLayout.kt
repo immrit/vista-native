@@ -122,7 +122,7 @@ fun SwipeToReplyLayout(
                     .size(36.dp)
                     .scale(progress)
                     .clip(CircleShape)
-                    .background(VistaBrandColors.VioletDeep)
+                    .background(VistaBrandColors.ViuBlueDeep)
                     .graphicsLayer {
                         rotationZ = (1f - progress) * -90f
                     },

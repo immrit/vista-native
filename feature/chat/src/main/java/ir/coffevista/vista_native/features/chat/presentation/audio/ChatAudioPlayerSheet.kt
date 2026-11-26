@@ -9,6 +9,8 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
@@ -56,11 +58,11 @@ import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import ir.coffevista.vista_native.core.designsystem.component.VistaActionItem
+import ir.coffevista.vista_native.core.designsystem.component.VistaPopupMenu
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -150,11 +152,11 @@ fun ChatAudioPlayerSheet(
         }
     }
 
-    val sheetBg = if (isDark) Color(0xFF13131E) else Color(0xFFF8F9FF)
-    val panelBg = if (isDark) Color(0xFF1C1C2E) else Color(0xFFFFFFFF)
-    val dividerColor = if (isDark) Color(0xFF2A2A45) else Color(0xFFE5E7EB)
-    val titleColor = if (isDark) Color.White else Color(0xFF121820)
-    val subtitleColor = if (isDark) Color(0xFF8B8BAD) else Color(0xFF6B7280)
+    val sheetBg = if (isDark) Color(0xFF121417) else Color(0xFFFAFAFA)
+    val panelBg = if (isDark) Color(0xFF1B1E23) else Color(0xFFFFFFFF)
+    val dividerColor = if (isDark) Color(0xFF23272E) else Color(0xFFE5E7EB)
+    val titleColor = if (isDark) Color.White else Color(0xFF111215)
+    val subtitleColor = if (isDark) Color(0xFF8A919C) else Color(0xFF656C76)
 
     val shareHandler: (ChatAudioTrack) -> Unit = remember(context, onShareTrack) {
         { item ->
@@ -171,7 +173,7 @@ fun ChatAudioPlayerSheet(
         sheetState = sheetState,
         containerColor = sheetBg,
         dragHandle = null,
-        shape = RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp),
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
     ) {
         Column(
             modifier = Modifier
@@ -390,31 +392,40 @@ fun ChatAudioPlayerSheet(
 
                         Spacer(Modifier.width(12.dp))
 
-                        Box(
-                            modifier = Modifier
-                                .size(48.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(
-                                    Brush.linearGradient(
-                                        listOf(TelegramAccentBlue, TelegramAccentBlueDeep),
+                        AnimatedContent(
+                            targetState = track.id,
+                            transitionSpec = {
+                                (fadeIn(tween(200)) + scaleIn(tween(200), initialScale = 0.94f))
+                                    .togetherWith(fadeOut(tween(120)))
+                            },
+                            label = "audioSheetCoverTransition",
+                        ) { _ ->
+                            Box(
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(
+                                        Brush.linearGradient(
+                                            listOf(TelegramAccentBlue, TelegramAccentBlueDeep),
+                                        ),
                                     ),
-                                ),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            if (activeCover != null) {
-                                Image(
-                                    bitmap = activeCover,
-                                    contentDescription = null,
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier.fillMaxSize(),
-                                )
-                            } else {
-                                Icon(
-                                    imageVector = Icons.Default.MusicNote,
-                                    contentDescription = null,
-                                    tint = Color.White,
-                                    modifier = Modifier.size(24.dp),
-                                )
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                if (activeCover != null) {
+                                    Image(
+                                        bitmap = activeCover,
+                                        contentDescription = null,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize(),
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Default.MusicNote,
+                                        contentDescription = null,
+                                        tint = Color.White,
+                                        modifier = Modifier.size(24.dp),
+                                    )
+                                }
                             }
                         }
                     }
@@ -486,70 +497,56 @@ fun ChatAudioPlayerSheet(
                                         modifier = Modifier.size(23.dp),
                                     )
                                 }
-                                DropdownMenu(
+                                VistaPopupMenu(
                                     expanded = repeatMenuExpanded,
                                     onDismissRequest = { repeatMenuExpanded = false },
-                                ) {
-                                    DropdownMenuItem(
-                                        text = { Text("پخش تصادفی (Shuffle)") },
-                                        leadingIcon = { Icon(Icons.Default.Shuffle, contentDescription = null) },
-                                        trailingIcon = {
-                                            if (playerState.shuffle) {
-                                                Icon(Icons.Default.Check, contentDescription = null, tint = TelegramAccentBlue)
-                                            }
-                                        },
-                                        onClick = {
-                                            ChatAudioPlayer.toggleShuffle()
-                                            repeatMenuExpanded = false
-                                        },
-                                    )
-                                    HorizontalDivider()
-                                    DropdownMenuItem(
-                                        text = { Text("بدون تکرار") },
-                                        leadingIcon = { Icon(Icons.Default.Repeat, contentDescription = null) },
-                                        trailingIcon = {
-                                            if (playerState.repeatMode == ChatAudioRepeatMode.OFF) {
-                                                Icon(Icons.Default.Check, contentDescription = null, tint = TelegramAccentBlue)
-                                            }
-                                        },
-                                        onClick = {
-                                            while (ChatAudioPlayer.state.value.repeatMode != ChatAudioRepeatMode.OFF) {
-                                                ChatAudioPlayer.cycleRepeat()
-                                            }
-                                            repeatMenuExpanded = false
-                                        },
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text("تکرار کل لیست") },
-                                        leadingIcon = { Icon(Icons.Default.Repeat, contentDescription = null) },
-                                        trailingIcon = {
-                                            if (playerState.repeatMode == ChatAudioRepeatMode.ALL) {
-                                                Icon(Icons.Default.Check, contentDescription = null, tint = TelegramAccentBlue)
-                                            }
-                                        },
-                                        onClick = {
-                                            while (ChatAudioPlayer.state.value.repeatMode != ChatAudioRepeatMode.ALL) {
-                                                ChatAudioPlayer.cycleRepeat()
-                                            }
-                                            repeatMenuExpanded = false
-                                        },
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text("تکرار همین آهنگ") },
-                                        leadingIcon = { Icon(Icons.Default.RepeatOne, contentDescription = null) },
-                                        trailingIcon = {
-                                            if (playerState.repeatMode == ChatAudioRepeatMode.ONE) {
-                                                Icon(Icons.Default.Check, contentDescription = null, tint = TelegramAccentBlue)
-                                            }
-                                        },
-                                        onClick = {
-                                            while (ChatAudioPlayer.state.value.repeatMode != ChatAudioRepeatMode.ONE) {
-                                                ChatAudioPlayer.cycleRepeat()
-                                            }
-                                            repeatMenuExpanded = false
-                                        },
-                                    )
-                                }
+                                    items = listOf(
+                                        VistaActionItem(
+                                            label = "پخش تصادفی (Shuffle)",
+                                            icon = Icons.Default.Shuffle,
+                                            trailing = if (playerState.shuffle) {
+                                                { Icon(Icons.Default.Check, contentDescription = null, tint = TelegramAccentBlue, modifier = Modifier.size(18.dp)) }
+                                            } else null,
+                                            onClick = { ChatAudioPlayer.toggleShuffle() },
+                                        ),
+                                        VistaActionItem(
+                                            label = "بدون تکرار",
+                                            icon = Icons.Default.Repeat,
+                                            trailing = if (playerState.repeatMode == ChatAudioRepeatMode.OFF) {
+                                                { Icon(Icons.Default.Check, contentDescription = null, tint = TelegramAccentBlue, modifier = Modifier.size(18.dp)) }
+                                            } else null,
+                                            onClick = {
+                                                while (ChatAudioPlayer.state.value.repeatMode != ChatAudioRepeatMode.OFF) {
+                                                    ChatAudioPlayer.cycleRepeat()
+                                                }
+                                            },
+                                        ),
+                                        VistaActionItem(
+                                            label = "تکرار کل لیست",
+                                            icon = Icons.Default.Repeat,
+                                            trailing = if (playerState.repeatMode == ChatAudioRepeatMode.ALL) {
+                                                { Icon(Icons.Default.Check, contentDescription = null, tint = TelegramAccentBlue, modifier = Modifier.size(18.dp)) }
+                                            } else null,
+                                            onClick = {
+                                                while (ChatAudioPlayer.state.value.repeatMode != ChatAudioRepeatMode.ALL) {
+                                                    ChatAudioPlayer.cycleRepeat()
+                                                }
+                                            },
+                                        ),
+                                        VistaActionItem(
+                                            label = "تکرار همین آهنگ",
+                                            icon = Icons.Default.RepeatOne,
+                                            trailing = if (playerState.repeatMode == ChatAudioRepeatMode.ONE) {
+                                                { Icon(Icons.Default.Check, contentDescription = null, tint = TelegramAccentBlue, modifier = Modifier.size(18.dp)) }
+                                            } else null,
+                                            onClick = {
+                                                while (ChatAudioPlayer.state.value.repeatMode != ChatAudioRepeatMode.ONE) {
+                                                    ChatAudioPlayer.cycleRepeat()
+                                                }
+                                            },
+                                        ),
+                                    ),
+                                )
                             }
 
                             IconButton(onClick = { ChatAudioPlayer.previous() }) {
@@ -601,65 +598,58 @@ fun ChatAudioPlayerSheet(
                                         modifier = Modifier.size(23.dp),
                                     )
                                 }
-                                DropdownMenu(
+                                VistaPopupMenu(
                                     expanded = optionsMenuExpanded,
                                     onDismissRequest = { optionsMenuExpanded = false },
-                                ) {
-                                    ChatAudioPlayer.SPEED_CHOICES.forEach { speedOption ->
-                                        val selected = abs(playerState.speed - speedOption) < 0.05f
-                                        DropdownMenuItem(
-                                            text = { Text("سرعت ${speedOption}×") },
-                                            leadingIcon = { Icon(Icons.Default.Speed, contentDescription = null) },
-                                            trailingIcon = {
-                                                if (selected) {
-                                                    Icon(Icons.Default.Check, contentDescription = null, tint = TelegramAccentBlue)
-                                                }
-                                            },
-                                            onClick = {
-                                                ChatAudioPlayer.setSpeed(speedOption)
-                                                optionsMenuExpanded = false
-                                            },
+                                    items = buildList {
+                                        ChatAudioPlayer.SPEED_CHOICES.forEach { speedOption ->
+                                            val selected = abs(playerState.speed - speedOption) < 0.05f
+                                            add(
+                                                VistaActionItem(
+                                                    label = "سرعت ${speedOption}×",
+                                                    icon = Icons.Default.Speed,
+                                                    trailing = if (selected) {
+                                                        { Icon(Icons.Default.Check, contentDescription = null, tint = TelegramAccentBlue, modifier = Modifier.size(18.dp)) }
+                                                    } else null,
+                                                    onClick = { ChatAudioPlayer.setSpeed(speedOption) },
+                                                ),
+                                            )
+                                        }
+                                        if (onSaveTrack != null) {
+                                            add(
+                                                VistaActionItem(
+                                                    label = "ذخیره در موسیقی‌ها",
+                                                    icon = Icons.Default.Download,
+                                                    onClick = { onSaveTrack(track) },
+                                                ),
+                                            )
+                                        }
+                                        add(
+                                            VistaActionItem(
+                                                label = "اشتراک‌گذاری",
+                                                icon = Icons.Default.Share,
+                                                onClick = { shareHandler(track) },
+                                            ),
                                         )
-                                    }
-                                    HorizontalDivider()
-                                    if (onSaveTrack != null) {
-                                        DropdownMenuItem(
-                                            text = { Text("ذخیره در موسیقی‌ها") },
-                                            leadingIcon = { Icon(Icons.Default.Download, contentDescription = null) },
-                                            onClick = {
-                                                optionsMenuExpanded = false
-                                                onSaveTrack(track)
-                                            },
-                                        )
-                                    }
-                                    DropdownMenuItem(
-                                        text = { Text("اشتراک‌گذاری") },
-                                        leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) },
-                                        onClick = {
-                                            optionsMenuExpanded = false
-                                            shareHandler(track)
-                                        },
-                                    )
-                                    if (track.postId != null && onJumpToPost != null) {
-                                        DropdownMenuItem(
-                                            text = { Text("مشاهده پست") },
-                                            leadingIcon = { Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null) },
-                                            onClick = {
-                                                optionsMenuExpanded = false
-                                                onJumpToPost(track.postId!!)
-                                            },
-                                        )
-                                    } else if (track.conversationId.isNotBlank() && onJumpToMessage != null) {
-                                        DropdownMenuItem(
-                                            text = { Text("نمایش در گفتگو") },
-                                            leadingIcon = { Icon(Icons.Default.Forum, contentDescription = null) },
-                                            onClick = {
-                                                optionsMenuExpanded = false
-                                                onJumpToMessage(track.id)
-                                            },
-                                        )
-                                    }
-                                }
+                                        if (track.postId != null && onJumpToPost != null) {
+                                            add(
+                                                VistaActionItem(
+                                                    label = "مشاهده پست",
+                                                    icon = Icons.AutoMirrored.Filled.OpenInNew,
+                                                    onClick = { onJumpToPost(track.postId!!) },
+                                                ),
+                                            )
+                                        } else if (track.conversationId.isNotBlank() && onJumpToMessage != null) {
+                                            add(
+                                                VistaActionItem(
+                                                    label = "نمایش در گفتگو",
+                                                    icon = Icons.Default.Forum,
+                                                    onClick = { onJumpToMessage(track.id) },
+                                                ),
+                                            )
+                                        }
+                                    },
+                                )
                             }
                         }
                     }
@@ -769,57 +759,44 @@ private fun PlaylistTrackRow(
                     modifier = Modifier.size(20.dp),
                 )
             }
-            DropdownMenu(
+            VistaPopupMenu(
                 expanded = rowMenuExpanded,
                 onDismissRequest = { rowMenuExpanded = false },
-            ) {
-                DropdownMenuItem(
-                    text = { Text(if (isPlaying) "مکث" else "پخش") },
-                    leadingIcon = {
-                        Icon(
-                            if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                            contentDescription = null,
+                items = buildList {
+                    add(
+                        VistaActionItem(
+                            label = if (isPlaying) "مکث" else "پخش",
+                            icon = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                            onClick = onClick,
+                        ),
+                    )
+                    if (onSave != null) {
+                        add(
+                            VistaActionItem(
+                                label = "ذخیره در موسیقی‌ها",
+                                icon = Icons.Default.Download,
+                                onClick = onSave,
+                            ),
                         )
-                    },
-                    onClick = {
-                        rowMenuExpanded = false
-                        onClick()
-                    },
-                )
-                if (onSave != null) {
-                    DropdownMenuItem(
-                        text = { Text("ذخیره در موسیقی‌ها") },
-                        leadingIcon = { Icon(Icons.Default.Download, contentDescription = null) },
-                        onClick = {
-                            rowMenuExpanded = false
-                            onSave()
-                        },
+                    }
+                    add(
+                        VistaActionItem(
+                            label = "اشتراک‌گذاری",
+                            icon = Icons.Default.Share,
+                            onClick = onShare,
+                        ),
                     )
-                }
-                DropdownMenuItem(
-                    text = { Text("اشتراک‌گذاری") },
-                    leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) },
-                    onClick = {
-                        rowMenuExpanded = false
-                        onShare()
-                    },
-                )
-                if (onJump != null) {
-                    DropdownMenuItem(
-                        text = { Text(jumpLabel) },
-                        leadingIcon = {
-                            Icon(
-                                if (item.postId != null) Icons.AutoMirrored.Filled.OpenInNew else Icons.Default.Forum,
-                                contentDescription = null,
-                            )
-                        },
-                        onClick = {
-                            rowMenuExpanded = false
-                            onJump()
-                        },
-                    )
-                }
-            }
+                    if (onJump != null) {
+                        add(
+                            VistaActionItem(
+                                label = jumpLabel,
+                                icon = if (item.postId != null) Icons.AutoMirrored.Filled.OpenInNew else Icons.Default.Forum,
+                                onClick = onJump,
+                            ),
+                        )
+                    }
+                },
+            )
         }
     }
 }

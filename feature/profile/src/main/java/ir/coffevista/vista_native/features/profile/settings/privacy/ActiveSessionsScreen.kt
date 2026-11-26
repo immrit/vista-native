@@ -131,31 +131,31 @@ private fun rememberTelegramDevicesPalette(): TelegramDevicesPalette {
     return remember(dark) {
         if (dark) {
             TelegramDevicesPalette(
-                screenBg = Color(0xFF09090F),
-                cardBg = Color(0xFF13131E),
-                cardBorder = Color(0xFF2A2A45),
-                sectionTitle = Color(0xFF818CF8),
-                textPrimary = Color(0xFFF0F0FF),
-                textSecondary = Color(0xFF8B8BAD),
-                divider = Color(0xFF2A2A45),
-                ctaBlue = Color(0xFF6366F1),
+                screenBg = Color(0xFF090A0C),
+                cardBg = Color(0xFF121417),
+                cardBorder = Color(0xFF23272E),
+                sectionTitle = Color(0xFF1FB6E8),
+                textPrimary = Color(0xFFF3F4F6),
+                textSecondary = Color(0xFF8A919C),
+                divider = Color(0xFF23272E),
+                ctaBlue = Color(0xFF1FB6E8),
                 dangerRed = Color(0xFFF87171),
-                onlineBlue = Color(0xFF818CF8),
-                backButtonBg = Color(0xFF1C1C2E),
+                onlineBlue = Color(0xFF1FB6E8),
+                backButtonBg = Color(0xFF1B1E23),
             )
         } else {
             TelegramDevicesPalette(
-                screenBg = Color(0xFFF8F9FF),
+                screenBg = Color(0xFFFAFAFA),
                 cardBg = Color(0xFFFFFFFF),
                 cardBorder = Color(0xFFE5E7EB),
-                sectionTitle = Color(0xFF4F46E5),
-                textPrimary = Color(0xFF0F1117),
-                textSecondary = Color(0xFF6B7280),
+                sectionTitle = Color(0xFF0097C7),
+                textPrimary = Color(0xFF111215),
+                textSecondary = Color(0xFF656C76),
                 divider = Color(0xFFE5E7EB),
-                ctaBlue = Color(0xFF6366F1),
+                ctaBlue = Color(0xFF0097C7),
                 dangerRed = Color(0xFFEF4444),
-                onlineBlue = Color(0xFF4F46E5),
-                backButtonBg = Color(0xFFF3F4FF),
+                onlineBlue = Color(0xFF0097C7),
+                backButtonBg = Color(0xFFF0F2F4),
             )
         }
     }
@@ -710,7 +710,7 @@ private fun TelegramLaptopIllustration(modifier: Modifier = Modifier) {
         val scrW = (bezelRight - bezelLeft) - 14f
         val scrH = (bezelBottom - bezelTop) - 14f
         drawRoundRect(
-            brush = Brush.linearGradient(listOf(Color(0xFFE0E7FF), Color(0xFFEDE9FE))),
+            brush = Brush.linearGradient(listOf(Color(0xFFE3F6FC), Color(0xFFF0F2F4))),
             topLeft = Offset(scrLeft, scrTop),
             size = Size(scrW, scrH),
             cornerRadius = CornerRadius(6f, 6f),
@@ -723,7 +723,7 @@ private fun TelegramLaptopIllustration(modifier: Modifier = Modifier) {
             size = Size(sideW, scrH),
         )
         // Sidebar dots & lines
-        val rowColors = listOf(Color(0xFF6366F1), Color(0xFF8B5CF6), Color(0xFF10B981), Color(0xFFEC4899))
+        val rowColors = listOf(Color(0xFF1FB6E8), Color(0xFF111215), Color(0xFF10B981), Color(0xFFF0543B))
         rowColors.forEachIndexed { idx, c ->
             val cy = scrTop + 14f + idx * 24f
             if (cy + 10f < scrTop + scrH) {
@@ -843,7 +843,7 @@ private fun TelegramSessionRow(
                         Text(
                             text = "در انتظار تایید",
                             color = Color(0xFFF59E0B),
-                            fontSize = 10.5.sp,
+                            fontSize = 11.sp,
                             fontWeight = FontWeight.SemiBold,
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
                         )
@@ -884,11 +884,11 @@ private fun TelegramSessionRow(
 private fun platformBadgePresentation(platform: String): Pair<Color, ImageVector> = when {
     platform.contains("android") -> Color(0xFF4CAF50) to Icons.Rounded.Android
     platform.contains("ios") || platform.contains("iphone") || platform.contains("ipad") ->
-        Color(0xFF6366F1) to Icons.Rounded.PhoneIphone
-    platform.contains("web") -> Color(0xFF8B5CF6) to Icons.Rounded.Language
+        Color(0xFF1FB6E8) to Icons.Rounded.PhoneIphone
+    platform.contains("web") -> Color(0xFF0097C7) to Icons.Rounded.Language
     platform.contains("win") || platform.contains("mac") || platform.contains("linux") || platform.contains("desktop") ->
-        Color(0xFF6366F1) to Icons.Rounded.Computer
-    else -> Color(0xFF6366F1) to Icons.Rounded.Devices
+        Color(0xFF1FB6E8) to Icons.Rounded.Computer
+    else -> Color(0xFF1FB6E8) to Icons.Rounded.Devices
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

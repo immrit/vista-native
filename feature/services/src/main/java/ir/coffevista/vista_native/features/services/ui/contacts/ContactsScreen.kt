@@ -130,9 +130,6 @@ fun ContactsScreen(
                         .fillMaxWidth()
                         .background(MaterialTheme.colorScheme.background),
                 ) {
-                    ir.coffevista.vista_native.core.designsystem.component.VistaAppBarAmbientOverlay(
-                        modifier = Modifier.matchParentSize(),
-                    )
                     TopAppBar(
                         title = {
                             Text(
@@ -175,7 +172,7 @@ fun ContactsScreen(
                         ) {
                             CircularProgressIndicator(
                                 strokeWidth = 2.5.dp,
-                                color = VistaBrandColors.Indigo,
+                                color = VistaBrandColors.ViuBlueDeep,
                             )
                         }
                     }
@@ -257,7 +254,7 @@ fun ContactsScreen(
                                                 fontSize = 13.5.sp,
                                             ),
                                             singleLine = true,
-                                            cursorBrush = SolidColor(VistaBrandColors.Indigo),
+                                            cursorBrush = SolidColor(VistaBrandColors.ViuBlueDeep),
                                             decorationBox = { innerTextField ->
                                                 if (searchQuery.isEmpty()) {
                                                     Text(
@@ -296,7 +293,7 @@ fun ContactsScreen(
                                         .fillMaxWidth()
                                         .padding(horizontal = 16.dp, vertical = 6.dp),
                                     shape = RoundedCornerShape(14.dp),
-                                    color = VistaBrandColors.Indigo.copy(alpha = 0.08f),
+                                    color = VistaBrandColors.ViuBlueDeep.copy(alpha = 0.08f),
                                 ) {
                                     Row(
                                         modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
@@ -305,7 +302,7 @@ fun ContactsScreen(
                                         Icon(
                                             imageVector = Icons.Rounded.People,
                                             contentDescription = null,
-                                            tint = VistaBrandColors.Indigo,
+                                            tint = VistaBrandColors.ViuBlueDeep,
                                             modifier = Modifier.size(20.dp),
                                         )
                                         Spacer(modifier = Modifier.width(10.dp))
@@ -314,7 +311,7 @@ fun ContactsScreen(
                                             style = MaterialTheme.typography.bodySmall.copy(
                                                 fontFamily = VistaFontFamily,
                                                 fontWeight = FontWeight.SemiBold,
-                                                color = VistaBrandColors.Indigo,
+                                                color = VistaBrandColors.ViuBlueDeep,
                                                 fontSize = 12.5.sp,
                                             ),
                                         )
@@ -387,7 +384,7 @@ private fun ContactItemRow(
             Box(
                 modifier = Modifier
                     .size(48.dp)
-                    .background(VistaBrandColors.Indigo.copy(alpha = 0.12f), CircleShape),
+                    .background(VistaBrandColors.ViuBlueDeep.copy(alpha = 0.12f), CircleShape),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
@@ -395,7 +392,7 @@ private fun ContactItemRow(
                     style = MaterialTheme.typography.titleMedium.copy(
                         fontFamily = VistaFontFamily,
                         fontWeight = FontWeight.Bold,
-                        color = VistaBrandColors.Indigo,
+                        color = VistaBrandColors.ViuBlueDeep,
                         fontSize = 18.sp,
                     ),
                 )
@@ -444,7 +441,7 @@ private fun ContactItemRow(
 
         Surface(
             shape = RoundedCornerShape(12.dp),
-            color = VistaBrandColors.Indigo.copy(alpha = 0.08f),
+            color = VistaBrandColors.ViuBlueDeep.copy(alpha = 0.08f),
             modifier = Modifier.padding(start = 8.dp),
         ) {
             Row(
@@ -456,14 +453,14 @@ private fun ContactItemRow(
                     style = MaterialTheme.typography.labelSmall.copy(
                         fontFamily = VistaFontFamily,
                         fontWeight = FontWeight.Bold,
-                        color = VistaBrandColors.Indigo,
+                        color = VistaBrandColors.ViuBlueDeep,
                         fontSize = 11.5.sp,
                     ),
                 )
                 Icon(
                     imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowLeft,
                     contentDescription = null,
-                    tint = VistaBrandColors.Indigo,
+                    tint = VistaBrandColors.ViuBlueDeep,
                     modifier = Modifier.size(14.dp),
                 )
             }
@@ -537,7 +534,7 @@ private fun PermissionRequiredCard(
                         text = "باز کردن تنظیمات برنامه",
                         style = MaterialTheme.typography.labelLarge.copy(
                             fontFamily = VistaFontFamily,
-                            color = VistaBrandColors.Indigo,
+                            color = VistaBrandColors.ViuBlueDeep,
                         ),
                     )
                 }
@@ -599,7 +596,7 @@ private fun EmptyContactsCard(
                 Button(
                     onClick = onInvite,
                     shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = VistaBrandColors.Indigo),
+                    colors = ButtonDefaults.buttonColors(containerColor = VistaBrandColors.ViuBlueDeep),
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.Share,
@@ -655,7 +652,7 @@ private fun ErrorCard(
                     text = "تلاش مجدد",
                     style = MaterialTheme.typography.labelLarge.copy(
                         fontFamily = VistaFontFamily,
-                        color = VistaBrandColors.Indigo,
+                        color = VistaBrandColors.ViuBlueDeep,
                         fontWeight = FontWeight.Bold,
                     ),
                 )

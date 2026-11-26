@@ -151,8 +151,8 @@ private enum class ReviewMode {
     DRAW,
 }
 
-private val ReviewAccentBlue = Color(0xFF6366F1)
-private val ReviewAccentBlueDeep = Color(0xFF4F46E5)
+private val ReviewAccentBlue = Color(0xFF1FB6E8)
+private val ReviewAccentBlueDeep = Color(0xFF0097C7)
 private val ReviewPillBackground = Color(0xFF1E232F)
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -588,7 +588,7 @@ internal fun ChatAttachmentReviewSheet(
                                     Text(
                                         text = (index + 1).toString().toPersianDigits(),
                                         color = Color.White,
-                                        fontSize = 10.sp,
+                                        fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold,
                                         modifier = Modifier
                                             .align(Alignment.BottomStart)

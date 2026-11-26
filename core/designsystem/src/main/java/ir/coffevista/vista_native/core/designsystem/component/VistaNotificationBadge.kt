@@ -31,11 +31,12 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ir.coffevista.vista_native.core.designsystem.theme.VistaFontFamily
+import ir.coffevista.vista_native.core.designsystem.tokens.VistaBrandColors
 
 object VistaBadgeDefaults {
-    /** Modern, vibrant notification scarlet. */
-    val NotificationColor = Color(0xFFFF334B)
-    val ChatBadgeColor = Color(0xFFFF334B)
+    /** Warm Coral notification & chat unread badge accent. */
+    val NotificationColor = VistaBrandColors.Coral
+    val ChatBadgeColor = VistaBrandColors.Coral
     val BadgeHeight = 18.dp
     val BadgeMinSize = 18.dp
     val BorderWidth = 1.5.dp
@@ -102,8 +103,8 @@ fun VistaNotificationBadge(
                 style = TextStyle(
                     fontFamily = VistaFontFamily,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 10.sp,
-                    lineHeight = 10.sp,
+                    fontSize = 11.sp,
+                    lineHeight = 11.sp,
                     platformStyle = PlatformTextStyle(includeFontPadding = false),
                     lineHeightStyle = LineHeightStyle(
                         alignment = LineHeightStyle.Alignment.Center,

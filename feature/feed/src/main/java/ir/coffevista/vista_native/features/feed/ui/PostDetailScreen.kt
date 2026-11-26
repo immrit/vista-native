@@ -352,7 +352,7 @@ internal fun PostDetailContent(
                 .vistaGlass(
                     state = postDetailGlassState,
                     shape = RectangleShape,
-                    tint = if (isDarkDetail) Color(0xFF1A222C) else Color.White,
+                    tint = if (isDarkDetail) Color(0xFF16191E) else Color.White,
                     isDark = isDarkDetail,
                     blurRadius = VistaGlassTokens.BarBlur,
                     tintAlphaOverride = if (isDarkDetail) 0.58f else 0.62f,
@@ -361,9 +361,6 @@ internal fun PostDetailContent(
                     shadowElevation = 3.dp,
                 ),
         ) {
-            ir.coffevista.vista_native.core.designsystem.component.VistaAppBarAmbientOverlay(
-                modifier = Modifier.matchParentSize(),
-            )
             Column(
                 modifier = Modifier
                     .fillMaxWidth()

@@ -74,6 +74,8 @@ import androidx.compose.ui.unit.sp
 import ir.coffevista.vista_native.core.designsystem.component.formatAudioTime
 import ir.coffevista.vista_native.core.designsystem.component.resolveMusicTitle
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaBrandColors
+import ir.coffevista.vista_native.features.chat.presentation.VistaChatPalette
+import ir.coffevista.vista_native.features.chat.presentation.isChatDarkTheme
 import ir.coffevista.vista_native.features.chat.domain.model.Attachment
 import ir.coffevista.vista_native.features.chat.domain.model.DownloadState
 import ir.coffevista.vista_native.features.chat.domain.model.DownloadTask
@@ -166,10 +168,12 @@ fun MusicPlayerBubble(
     val liveProgress = if (durationMs > 0L) (currentPosMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f) else 0f
     val progress = if (isScrubbing) scrubFraction else liveProgress
 
+    val isDark = isChatDarkTheme()
     val titleColor = if (isOutgoing) Color.White else MaterialTheme.colorScheme.onSurface
     val subtitleColor = if (isOutgoing) Color.White.copy(alpha = 0.78f) else MaterialTheme.colorScheme.onSurfaceVariant
-    val activeTrackColor = if (isOutgoing) Color.White else VistaBrandColors.Indigo
+    val activeTrackColor = if (isOutgoing) Color.White else VistaChatPalette.incomingActiveWave(isDark)
     val inactiveTrackColor = if (isOutgoing) Color.White.copy(alpha = 0.30f) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.22f)
+    val incomingPlayAccent = VistaChatPalette.incomingAccent(isDark)
 
     fun onPlayTap() {
         if (!readyToPlay) {
@@ -216,8 +220,8 @@ fun MusicPlayerBubble(
                         } else {
                             Brush.linearGradient(
                                 listOf(
-                                    VistaBrandColors.Indigo,
-                                    VistaBrandColors.VioletDeep,
+                                    incomingPlayAccent,
+                                    incomingPlayAccent,
                                 ),
                             )
                         },
@@ -304,7 +308,7 @@ fun MusicPlayerBubble(
                     Icon(
                         imageVector = Icons.Default.MusicNote,
                         contentDescription = null,
-                        tint = if (isOutgoing) Color.White.copy(alpha = 0.85f) else VistaBrandColors.Indigo,
+                        tint = if (isOutgoing) Color.White.copy(alpha = 0.85f) else VistaChatPalette.incomingActiveWave(isDark),
                         modifier = Modifier.size(14.dp),
                     )
                     Spacer(Modifier.width(4.dp))

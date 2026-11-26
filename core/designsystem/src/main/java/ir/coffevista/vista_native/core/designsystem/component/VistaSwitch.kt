@@ -26,6 +26,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import ir.coffevista.vista_native.core.designsystem.theme.vistaColors
 
 /**
  * Signature Switch used across Vista design system.
@@ -37,9 +38,9 @@ fun VistaSwitch(
     onCheckedChange: ((Boolean) -> Unit)?,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    checkedTrackColor: Color = MaterialTheme.colorScheme.primary,
+    checkedTrackColor: Color = MaterialTheme.vistaColors.viuBlue,
     uncheckedTrackColor: Color = MaterialTheme.colorScheme.surfaceVariant,
-    checkedThumbBorderColor: Color = MaterialTheme.colorScheme.primary,
+    checkedThumbBorderColor: Color = MaterialTheme.vistaColors.viuBlue,
     uncheckedThumbBorderColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
     thumbInnerColor: Color = MaterialTheme.colorScheme.surface,
     trackWidth: Dp = 40.dp,

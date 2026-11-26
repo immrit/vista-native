@@ -102,7 +102,7 @@ internal fun TelegramSelectionNumberBadge(
                 if (isSelected) {
                     Modifier.background(
                         Brush.linearGradient(
-                            listOf(VistaBrandColors.Violet, VistaBrandColors.Indigo),
+                            listOf(VistaBrandColors.ViuBlue, VistaBrandColors.ViuBlueDeep),
                         ),
                     )
                 } else {
@@ -208,13 +208,13 @@ internal fun TelegramGalleryGridContent(
                         modifier = Modifier
                             .size(66.dp)
                             .clip(CircleShape)
-                            .background(VistaBrandColors.Indigo.copy(alpha = 0.14f)),
+                            .background(VistaBrandColors.ViuBlueDeep.copy(alpha = 0.14f)),
                         contentAlignment = Alignment.Center,
                     ) {
                         Icon(
                             imageVector = Icons.Default.PhotoLibrary,
                             contentDescription = null,
-                            tint = VistaBrandColors.Indigo,
+                            tint = VistaBrandColors.ViuBlueDeep,
                             modifier = Modifier.size(32.dp),
                         )
                     }
@@ -239,7 +239,7 @@ internal fun TelegramGalleryGridContent(
                             permissionLauncher.launch(requiredVistaGalleryPermissions(filter))
                         },
                         shape = RoundedCornerShape(16.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = VistaBrandColors.Indigo),
+                        colors = ButtonDefaults.buttonColors(containerColor = VistaBrandColors.ViuBlueDeep),
                     ) {
                         Text("تأیید و اعطای دسترسی", fontWeight = FontWeight.Bold, color = Color.White)
                     }
@@ -266,7 +266,7 @@ internal fun TelegramGalleryGridContent(
                                 .fillMaxWidth()
                                 .padding(horizontal = 8.dp, vertical = 4.dp)
                                 .clip(RoundedCornerShape(12.dp))
-                                .background(VistaBrandColors.Indigo.copy(alpha = if (isDark) 0.16f else 0.10f))
+                                .background(VistaBrandColors.ViuBlueDeep.copy(alpha = if (isDark) 0.16f else 0.10f))
                                 .padding(horizontal = 10.dp, vertical = 6.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -287,7 +287,7 @@ internal fun TelegramGalleryGridContent(
                                     text = "تکمیل دسترسی",
                                     fontSize = 11.5.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = VistaBrandColors.Indigo,
+                                    color = VistaBrandColors.ViuBlueDeep,
                                 )
                             }
                         }
@@ -303,7 +303,7 @@ internal fun TelegramGalleryGridContent(
                                     contentAlignment = Alignment.Center,
                                 ) {
                                     CircularProgressIndicator(
-                                        color = VistaBrandColors.Indigo,
+                                        color = VistaBrandColors.ViuBlueDeep,
                                         modifier = Modifier.size(34.dp),
                                     )
                                 }
@@ -333,14 +333,14 @@ internal fun TelegramGalleryGridContent(
                                                 permissionLauncher.launch(requiredVistaGalleryPermissions(filter))
                                             },
                                             shape = RoundedCornerShape(16.dp),
-                                            colors = ButtonDefaults.buttonColors(containerColor = VistaBrandColors.Indigo),
+                                            colors = ButtonDefaults.buttonColors(containerColor = VistaBrandColors.ViuBlueDeep),
                                         ) {
                                             Text("تکمیل دسترسی گالری", fontWeight = FontWeight.Bold, color = Color.White)
                                         }
                                     }
                                     Spacer(Modifier.height(6.dp))
                                     TextButton(onClick = onCameraTileClick) {
-                                        Text("ثبت تصویر با دوربین", color = VistaBrandColors.Indigo, fontWeight = FontWeight.SemiBold)
+                                        Text("ثبت تصویر با دوربین", color = VistaBrandColors.ViuBlueDeep, fontWeight = FontWeight.SemiBold)
                                     }
                                 }
                             }
@@ -513,7 +513,7 @@ private fun TelegramGalleryMediaTile(
             if (isSelected) {
                 Modifier.border(
                     width = 2.dp,
-                    color = VistaBrandColors.Indigo,
+                    color = VistaBrandColors.ViuBlueDeep,
                     shape = RoundedCornerShape(8.dp),
                 )
             } else {
@@ -573,7 +573,7 @@ private fun TelegramGalleryMediaTile(
                     Text(
                         text = formatGalleryDuration(item.durationMs),
                         color = Color.White,
-                        fontSize = 10.5.sp,
+                        fontSize = 11.sp,
                         fontWeight = FontWeight.Medium,
                     )
                 }
@@ -890,7 +890,7 @@ fun ChatGalleryPickerContent(
                             Text(
                                 text = "${selectedUris.size} مورد انتخاب شده".toPersianDigits(),
                                 fontSize = 11.5.sp,
-                                color = VistaBrandColors.Indigo,
+                                color = VistaBrandColors.ViuBlueDeep,
                                 fontWeight = FontWeight.Medium,
                             )
                         }
@@ -911,7 +911,7 @@ fun ChatGalleryPickerContent(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(14.dp))
                                 .background(
-                                    if (selected) VistaBrandColors.Indigo.copy(alpha = 0.16f)
+                                    if (selected) VistaBrandColors.ViuBlueDeep.copy(alpha = 0.16f)
                                     else Color.Transparent,
                                 )
                                 .clickable { activeFilter = filterOption }
@@ -921,7 +921,7 @@ fun ChatGalleryPickerContent(
                                 text = label,
                                 fontSize = 11.5.sp,
                                 fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                                color = if (selected) VistaBrandColors.Indigo else MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = if (selected) VistaBrandColors.ViuBlueDeep else MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                     }
@@ -976,7 +976,7 @@ fun ChatGalleryPickerContent(
                                 onMediaSelected(selectedUris.toList())
                                 onDismiss()
                             },
-                            colors = ButtonDefaults.buttonColors(containerColor = VistaBrandColors.Indigo),
+                            colors = ButtonDefaults.buttonColors(containerColor = VistaBrandColors.ViuBlueDeep),
                             shape = RoundedCornerShape(18.dp),
                             contentPadding = PaddingValues(horizontal = 22.dp, vertical = 10.dp),
                         ) {

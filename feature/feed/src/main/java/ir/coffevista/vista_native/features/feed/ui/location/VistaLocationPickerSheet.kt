@@ -357,7 +357,7 @@ fun VistaLocationPickerSheet(
                         Spacer(Modifier.height(6.dp))
                         Text(
                             text = "برای تغییر تم شیشه‌ای روی پیش‌نمایش بزنید",
-                            fontSize = 10.sp,
+                            fontSize = 11.sp,
                             color = Color.White.copy(alpha = 0.72f),
                         )
                     }

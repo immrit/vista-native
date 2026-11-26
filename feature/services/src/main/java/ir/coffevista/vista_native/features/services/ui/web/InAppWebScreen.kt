@@ -40,10 +40,10 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import ir.coffevista.vista_native.core.designsystem.component.VistaActionItem
+import ir.coffevista.vista_native.core.designsystem.component.VistaPopupMenu
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -483,7 +483,7 @@ fun InAppWebScreen(
                             .fillMaxSize()
                             .background(barBg)
                     }
-                    val errorTextColor = if (miniAppMode) Color(0xFF4C1D95) else fgColor
+                    val errorTextColor = if (miniAppMode) Color(0xFF053B4E) else fgColor
                     Box(
                         modifier = errorBgModifier,
                         contentAlignment = Alignment.Center,
@@ -508,7 +508,7 @@ fun InAppWebScreen(
                                     text = "تلاش مجدد",
                                     style = MaterialTheme.typography.labelLarge.copy(
                                         fontFamily = VistaFontFamily,
-                                        color = if (miniAppMode) Color(0xFF7C3AED) else VistaBrandColors.Indigo,
+                                        color = if (miniAppMode) Color(0xFF0097C7) else VistaBrandColors.ViuBlueDeep,
                                         fontWeight = FontWeight.Bold,
                                     ),
                                 )
@@ -531,7 +531,7 @@ fun InAppWebScreen(
                             .windowInsetsPadding(WindowInsets.statusBars)
                             .fillMaxWidth()
                             .height(2.5.dp),
-                        color = Color(0xFF7C3AED).copy(alpha = 0.8f),
+                        color = Color(0xFF0097C7).copy(alpha = 0.8f),
                         trackColor = Color.Transparent,
                     )
                 }
@@ -593,7 +593,7 @@ fun InAppWebScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(3.dp),
-                                color = if (appBarColor != null) Color.White.copy(alpha = 0.5f) else VistaBrandColors.Indigo,
+                                color = if (appBarColor != null) Color.White.copy(alpha = 0.5f) else VistaBrandColors.ViuBlueDeep,
                                 trackColor = Color.Transparent,
                             )
                         }
@@ -682,57 +682,28 @@ private fun FloatingMiniAppTopBar(
                 }
             }
 
-            DropdownMenu(
+            VistaPopupMenu(
                 expanded = menuExpanded,
                 onDismissRequest = { menuExpanded = false },
-            ) {
-                DropdownMenuItem(
-                    text = {
-                        Text(
-                            text = "بارگذاری مجدد",
-                            style = MaterialTheme.typography.bodyMedium.copy(
-                                fontFamily = VistaFontFamily,
-                                fontWeight = FontWeight.Medium,
+                items = buildList {
+                    add(
+                        VistaActionItem(
+                            label = "بارگذاری مجدد",
+                            icon = Icons.Rounded.Refresh,
+                            onClick = onReload,
+                        ),
+                    )
+                    if (canGoBack()) {
+                        add(
+                            VistaActionItem(
+                                label = "صفحه قبل",
+                                icon = Icons.AutoMirrored.Rounded.ArrowForward,
+                                onClick = onGoBack,
                             ),
                         )
-                    },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Rounded.Refresh,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                        )
-                    },
-                    onClick = {
-                        menuExpanded = false
-                        onReload()
-                    },
-                )
-                if (canGoBack()) {
-                    DropdownMenuItem(
-                        text = {
-                            Text(
-                                text = "صفحه قبل",
-                                style = MaterialTheme.typography.bodyMedium.copy(
-                                    fontFamily = VistaFontFamily,
-                                    fontWeight = FontWeight.Medium,
-                                ),
-                            )
-                        },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Rounded.ArrowForward,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp),
-                            )
-                        },
-                        onClick = {
-                            menuExpanded = false
-                            onGoBack()
-                        },
-                    )
-                }
-            }
+                    }
+                },
+            )
         }
     }
 }
