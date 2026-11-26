@@ -2,7 +2,11 @@ package ir.coffevista.vista_native.features.profile.settings.pricing
 
 import android.content.Context
 import android.content.ContextWrapper
+import android.content.Intent
+import android.net.Uri
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -66,6 +70,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -91,6 +96,7 @@ import ir.cafebazaar.poolakey.config.SecurityCheck
 import ir.cafebazaar.poolakey.request.PurchaseRequest
 import ir.coffevista.vista_native.core.designsystem.component.VistaCoinIcon
 import ir.coffevista.vista_native.features.profile.settings.components.VistaSettingsSection
+import kotlinx.coroutines.launch
 
 private const val BAZAAR_RSA_PUBLIC_KEY =
     "MIHNMA0GCSqGSIb3DQEBAQUAA4G7ADCBtwKBrwDFm5WUUaqhq2Ha3Al1b8OmGNnBCsPNNjbp04bDJUCFo/QTF6P9JPpqAwVeo0MqR84WEo3KKZBwIYA+aJZuVPYjZ5J6S9tJ1McWKY0v4+6s4PR07Z5N55TMCFz0ofi0GsnpQHVp94zLvhYBQqQatLBq0XsmOiPWTHt2UgP7d0ib2anR2LtRE/1J1WPe2/lji4u8b1+CLRgfT3hzdfqv2RkrpAn69GYqEfUuohQyQK8CAwEAAQ=="
@@ -123,6 +129,8 @@ fun PricingScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     initialTab: Int = 0,
+    pendingPaymentCallbackQuery: String? = null,
+    onConsumePaymentCallbackQuery: () -> Unit = {},
     viewModel: PricingViewModel = hiltViewModel(),
 ) {
     val goldGradient = Brush.linearGradient(
@@ -132,6 +140,9 @@ fun PricingScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val plans = uiState.plans
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val storeChannel = uiState.storeChannel
+    val activeGateway = uiState.activeGateway
 
     val features = listOf(
         PremiumFeatureUiModel(
@@ -211,24 +222,32 @@ fun PricingScreen(
     var showPaymentConfirmation by remember { mutableStateOf(false) }
     val selectedPlan = plans.getOrNull(selectedPlanIndex.coerceAtLeast(0)) ?: plans.firstOrNull()
     val snackbarHostState = remember { SnackbarHostState() }
-    val payment = remember(context) {
-        Payment(
-            context = context.applicationContext,
-            config = PaymentConfiguration(
-                localSecurityCheck = SecurityCheck.Enable(rsaPublicKey = BAZAAR_RSA_PUBLIC_KEY),
-            ),
-        )
+
+    // CafeBazaar billing (only initialized in Bazaar store flavor)
+    val bazaarPayment = remember(context, storeChannel) {
+        if (storeChannel == StoreChannel.Bazaar) {
+            Payment(
+                context = context.applicationContext,
+                config = PaymentConfiguration(
+                    localSecurityCheck = SecurityCheck.Enable(rsaPublicKey = BAZAAR_RSA_PUBLIC_KEY),
+                ),
+            )
+        } else {
+            null
+        }
     }
     var bazaarConnection by remember { mutableStateOf<Connection?>(null) }
 
-    DisposableEffect(payment) {
-        val connection = runCatching {
-            payment.connect {
-                connectionSucceed {}
-                connectionFailed {}
-                disconnected {}
-            }
-        }.getOrNull()
+    DisposableEffect(bazaarPayment) {
+        val connection = bazaarPayment?.let { paymentClient ->
+            runCatching {
+                paymentClient.connect {
+                    connectionSucceed {}
+                    connectionFailed {}
+                    disconnected {}
+                }
+            }.getOrNull()
+        }
         bazaarConnection = connection
         onDispose {
             runCatching { bazaarConnection?.disconnect() }
@@ -236,9 +255,49 @@ fun PricingScreen(
         }
     }
 
-    fun launchBazaarProduct(productId: String, isSubscription: Boolean = false) {
+    // Myket billing (only initialized in Myket store flavor)
+    val myketClient = remember(context, storeChannel) {
+        if (storeChannel == StoreChannel.Myket) {
+            MyketBillingClient(
+                context = context.applicationContext,
+                publicKeyBase64 = viewModel.storeBillingConfig.myketPublicKey,
+            )
+        } else {
+            null
+        }
+    }
+    var pendingMyketSku by remember { mutableStateOf("") }
+    val myketActivityLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartIntentSenderForResult(),
+    ) { result ->
+        val client = myketClient
+        if (client == null) {
+            viewModel.onBazaarPurchaseFailed("سرویس پرداخت مایکت آماده نیست.")
+            return@rememberLauncherForActivityResult
+        }
+        when (val parsed = client.parseActivityResult(result.resultCode, result.data, pendingMyketSku)) {
+            is MyketActivityParseResult.Success -> {
+                viewModel.verifyMyketPurchase(
+                    productId = parsed.purchase.productId,
+                    purchaseToken = parsed.purchase.purchaseToken,
+                    packageName = parsed.purchase.packageName,
+                )
+            }
+            MyketActivityParseResult.Canceled -> viewModel.onBazaarPurchaseCanceled()
+            is MyketActivityParseResult.Error -> viewModel.onBazaarPurchaseFailed(parsed.message)
+        }
+    }
+
+    DisposableEffect(myketClient) {
+        onDispose {
+            myketClient?.disconnect()
+        }
+    }
+
+    fun launchBazaarProduct(productId: String, isSubscription: Boolean) {
+        val paymentClient = bazaarPayment
         val activity = context.findComponentActivity()
-        if (activity == null) {
+        if (paymentClient == null || activity == null) {
             viewModel.onBazaarPurchaseFailed("امکان باز کردن درگاه پرداخت کافه‌بازار وجود ندارد.")
             return
         }
@@ -246,7 +305,7 @@ fun PricingScreen(
         val executePurchase = {
             runCatching {
                 if (isSubscription) {
-                    payment.subscribeProduct(
+                    paymentClient.subscribeProduct(
                         registry = activity.activityResultRegistry,
                         request = PurchaseRequest(
                             productId = productId,
@@ -269,7 +328,7 @@ fun PricingScreen(
                         }
                     }
                 } else {
-                    payment.purchaseProduct(
+                    paymentClient.purchaseProduct(
                         registry = activity.activityResultRegistry,
                         request = PurchaseRequest(
                             productId = productId,
@@ -300,7 +359,7 @@ fun PricingScreen(
             executePurchase()
         } else {
             runCatching {
-                bazaarConnection = payment.connect {
+                bazaarConnection = paymentClient.connect {
                     connectionSucceed { executePurchase() }
                     connectionFailed { throwable ->
                         viewModel.onBazaarPurchaseFailed(
@@ -315,7 +374,65 @@ fun PricingScreen(
         }
     }
 
-    fun launchBazaarSubscription(planId: String) = launchBazaarProduct(planId, isSubscription = true)
+    fun launchMyketProduct(productId: String) {
+        val client = myketClient
+        if (client == null) {
+            viewModel.onBazaarPurchaseFailed("امکان باز کردن درگاه پرداخت مایکت وجود ندارد.")
+            return
+        }
+        viewModel.onStorePurchaseStarted()
+        pendingMyketSku = productId
+        scope.launch {
+            when (val launchResult = client.startPurchase(sku = productId, developerPayload = viewModel.resolveBazaarPayload())) {
+                is MyketBuyLaunchResult.LaunchIntentSender -> {
+                    runCatching {
+                        myketActivityLauncher.launch(launchResult.request)
+                    }.onFailure { err ->
+                        viewModel.onBazaarPurchaseFailed(err.message ?: "باز کردن صفحه پرداخت مایکت ناموفق بود.")
+                    }
+                }
+                is MyketBuyLaunchResult.RecoveredOwnedPurchase -> {
+                    viewModel.verifyMyketPurchase(
+                        productId = launchResult.purchase.productId,
+                        purchaseToken = launchResult.purchase.purchaseToken,
+                        packageName = launchResult.purchase.packageName,
+                    )
+                }
+                is MyketBuyLaunchResult.Error -> {
+                    viewModel.onBazaarPurchaseFailed(launchResult.message)
+                }
+            }
+        }
+    }
+
+    fun launchCheckout(productId: String, isSubscription: Boolean) {
+        when (activeGateway) {
+            "zibal" -> viewModel.startZibalPurchase(productId)
+            "myket" -> launchMyketProduct(productId)
+            else -> launchBazaarProduct(productId, isSubscription)
+        }
+    }
+
+    LaunchedEffect(pendingPaymentCallbackQuery) {
+        val q = pendingPaymentCallbackQuery
+        if (!q.isNullOrBlank()) {
+            viewModel.handlePaymentCallbackQuery(q)
+            onConsumePaymentCallbackQuery()
+        }
+    }
+
+    uiState.pendingZibalCheckoutUrl?.let { checkoutUrl ->
+        LaunchedEffect(checkoutUrl) {
+            viewModel.consumeZibalCheckoutUrl()
+            runCatching {
+                context.startActivity(
+                    Intent(Intent.ACTION_VIEW, Uri.parse(checkoutUrl)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                )
+            }.onFailure {
+                viewModel.onBazaarPurchaseFailed("مرورگر برای ادامه پرداخت باز نشد.")
+            }
+        }
+    }
 
     uiState.errorMessage?.let { message ->
         LaunchedEffect(message) { snackbarHostState.showSnackbar(message) }
@@ -324,13 +441,21 @@ fun PricingScreen(
         LaunchedEffect(message) { snackbarHostState.showSnackbar(message) }
     }
     uiState.pendingConsumeToken?.let { token ->
-        LaunchedEffect(token) {
-            runCatching {
-                payment.consumeProduct(token) {
-                    consumeSucceed { viewModel.onPurchaseConsumed() }
-                    consumeFailed { viewModel.onPurchaseConsumed() }
-                }
-            }.onFailure { viewModel.onPurchaseConsumed() }
+        val consumeChannel = uiState.pendingConsumeChannel
+        LaunchedEffect(token, consumeChannel) {
+            if (consumeChannel == StoreChannel.Myket && myketClient != null) {
+                myketClient.consumePurchase(token)
+                viewModel.onPurchaseConsumed()
+            } else if (bazaarPayment != null) {
+                runCatching {
+                    bazaarPayment.consumeProduct(token) {
+                        consumeSucceed { viewModel.onPurchaseConsumed() }
+                        consumeFailed { viewModel.onPurchaseConsumed() }
+                    }
+                }.onFailure { viewModel.onPurchaseConsumed() }
+            } else {
+                viewModel.onPurchaseConsumed()
+            }
         }
     }
 
@@ -415,7 +540,6 @@ fun PricingScreen(
 
                 when (selectedTab) {
                     0 -> {
-                        // Top Hero Banner
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -465,7 +589,6 @@ fun PricingScreen(
                             }
                         }
 
-                        // Plan Cards Selection
                         VistaSettingsSection(title = "انتخاب پلن اشتراک")
 
                         if (uiState.isLoading) {
@@ -570,7 +693,6 @@ fun PricingScreen(
 
                         Spacer(modifier = Modifier.height(24.dp))
 
-                        // Feature List
                         VistaSettingsSection(title = "ویژگی‌های حساب پریمیوم")
 
                         Card(
@@ -642,10 +764,9 @@ fun PricingScreen(
 
                         Spacer(modifier = Modifier.height(24.dp))
 
-                        // Purchase CTA Button
                         Button(
                             onClick = {
-                                if (uiState.pendingBazaarVerification != null) {
+                                if (uiState.pendingStoreVerification != null) {
                                     viewModel.retryBazaarVerification()
                                 } else {
                                     showPaymentConfirmation = true
@@ -668,19 +789,25 @@ fun PricingScreen(
                                     color = Color(0xFF3E2723),
                                     strokeWidth = 2.dp,
                                 )
-                            } else Text(
-                                text = when {
-                                    uiState.pendingBazaarVerification != null -> "تایید مجدد خرید بازار"
-                                    else -> selectedPlan?.let { "خرید اشتراک ${it.title} (${it.price})" }
-                                        ?: "کاتالوگ اشتراک در دسترس نیست"
-                                },
-                                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.ExtraBold, fontSize = 15.sp),
-                            )
+                            } else {
+                                val retryStoreTitle = if (uiState.pendingStoreVerification?.first == StoreChannel.Myket) {
+                                    "تایید مجدد خرید مایکت"
+                                } else {
+                                    "تایید مجدد خرید بازار"
+                                }
+                                Text(
+                                    text = when {
+                                        uiState.pendingStoreVerification != null -> retryStoreTitle
+                                        else -> selectedPlan?.let { "خرید اشتراک ${it.title} (${it.price})" }
+                                            ?: "کاتالوگ اشتراک در دسترس نیست"
+                                    },
+                                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.ExtraBold, fontSize = 15.sp),
+                                )
+                            }
                         }
                     }
 
                     1 -> {
-                        // Coin Packages Tab
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -717,7 +844,12 @@ fun PricingScreen(
                             }
                         }
 
-                        if (uiState.pendingBazaarVerification != null) {
+                        if (uiState.pendingStoreVerification != null) {
+                            val retryCoinsText = if (uiState.pendingStoreVerification?.first == StoreChannel.Myket) {
+                                "تایید مجدد خرید سکه از مایکت"
+                            } else {
+                                "تایید مجدد خرید سکه از بازار"
+                            }
                             Button(
                                 onClick = { viewModel.retryBazaarVerification() },
                                 modifier = Modifier
@@ -729,7 +861,7 @@ fun PricingScreen(
                                 enabled = !uiState.isVerifyingPayment,
                             ) {
                                 Text(
-                                    text = "تایید مجدد خرید سکه از بازار",
+                                    text = retryCoinsText,
                                     style = MaterialTheme.typography.labelLarge.copy(
                                         fontWeight = FontWeight.Bold,
                                         color = Color(0xFF3E2723),
@@ -801,7 +933,7 @@ fun PricingScreen(
                                             )
                                         }
                                         Button(
-                                            onClick = { launchBazaarProduct(pkg.id, isSubscription = false) },
+                                            onClick = { launchCheckout(pkg.id, isSubscription = false) },
                                             shape = RoundedCornerShape(10.dp),
                                             colors = ButtonDefaults.buttonColors(
                                                 containerColor = Color(0xFF0097C7),
@@ -828,15 +960,32 @@ fun PricingScreen(
         }
 
         if (showPaymentConfirmation && selectedPlan != null) {
+            val (dialogTitle, dialogBody, confirmLabel) = when (activeGateway) {
+                "myket" -> Triple(
+                    "خرید از طریق مایکت",
+                    "برای فعال‌سازی اشتراک ${selectedPlan.title} (${selectedPlan.price}) به درگاه پرداخت درون‌برنامه‌ای مایکت منتقل می‌شوید.",
+                    "پرداخت با مایکت",
+                )
+                "zibal" -> Triple(
+                    "پرداخت امن آنلاین",
+                    "برای فعال‌سازی اشتراک ${selectedPlan.title} (${selectedPlan.price}) به درگاه پرداخت امن بانکی منتقل می‌شوید.",
+                    "پرداخت آنلاین",
+                )
+                else -> Triple(
+                    "خرید از طریق کافه‌بازار",
+                    "برای فعال‌سازی اشتراک ${selectedPlan.title} (${selectedPlan.price}) به درگاه پرداخت درون‌برنامه‌ای کافه‌بازار منتقل می‌شوید.",
+                    "پرداخت با بازار",
+                )
+            }
             AlertDialog(
                 onDismissRequest = { showPaymentConfirmation = false },
-                title = { Text("خرید از طریق کافه‌بازار") },
-                text = { Text("برای فعال‌سازی اشتراک ${selectedPlan.title} (${selectedPlan.price}) به درگاه پرداخت درون‌برنامه‌ای کافه‌بازار منتقل می‌شوید.") },
+                title = { Text(dialogTitle) },
+                text = { Text(dialogBody) },
                 confirmButton = {
                     TextButton(onClick = {
                         showPaymentConfirmation = false
-                        launchBazaarSubscription(selectedPlan.id)
-                    }) { Text("پرداخت با بازار") }
+                        launchCheckout(selectedPlan.id, isSubscription = true)
+                    }) { Text(confirmLabel) }
                 },
                 dismissButton = {
                     TextButton(onClick = { showPaymentConfirmation = false }) { Text("انصراف") }

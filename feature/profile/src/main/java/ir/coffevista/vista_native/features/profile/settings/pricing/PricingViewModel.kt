@@ -1,5 +1,6 @@
 package ir.coffevista.vista_native.features.profile.settings.pricing
 
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -20,28 +21,55 @@ data class PricingUiState(
     val plans: List<PricingPlanUiModel> = emptyList(),
     val coinPackages: List<CoinPackageDto> = emptyList(),
     val remotePremiumFeatures: List<String> = emptyList(),
+    val storeChannel: StoreChannel = StoreChannel.Bazaar,
+    val remotePaymentGateway: String = "store",
     val isLoading: Boolean = true,
     val errorMessage: String? = null,
     val isRequestingPayment: Boolean = false,
     val isVerifyingPayment: Boolean = false,
-    val pendingBazaarVerification: BazaarVerifyRequestDto? = null,
+    val pendingStoreVerification: Pair<StoreChannel, BazaarVerifyRequestDto>? = null,
     val pendingConsumeToken: String? = null,
+    val pendingConsumeChannel: StoreChannel? = null,
+    val pendingZibalCheckoutUrl: String? = null,
+    val pendingZibalTrackId: Long? = null,
     val successMessage: String? = null,
-)
+) {
+    /** Compatibility helper for callers inspecting pending verification payload. */
+    val pendingBazaarVerification: BazaarVerifyRequestDto?
+        get() = pendingStoreVerification?.second
+
+    val activeGateway: String
+        get() = if (remotePaymentGateway == "zibal" || storeChannel == StoreChannel.Direct) {
+            "zibal"
+        } else {
+            storeChannel.wireName
+        }
+}
 
 @HiltViewModel
 class PricingViewModel @Inject constructor(
     private val api: PricingPlansApi,
     private val authenticationStateProvider: AuthenticationStateProvider,
     private val ownProfileRepository: OwnProfileRepository,
+    val storeBillingConfig: StoreBillingConfig = StoreBillingConfig(),
 ) : ViewModel() {
-    private val mutableUiState = MutableStateFlow(PricingUiState())
+    private val mutableUiState = MutableStateFlow(
+        PricingUiState(
+            storeChannel = storeBillingConfig.channel,
+            remotePaymentGateway = SystemGateMonitor.remoteConfig.value?.paymentGateway ?: "store",
+        ),
+    )
     val uiState: StateFlow<PricingUiState> = mutableUiState.asStateFlow()
 
     init { refresh() }
 
     fun refresh() {
-        mutableUiState.value = mutableUiState.value.copy(isLoading = true, errorMessage = null)
+        mutableUiState.value = mutableUiState.value.copy(
+            isLoading = true,
+            errorMessage = null,
+            storeChannel = storeBillingConfig.channel,
+            remotePaymentGateway = SystemGateMonitor.remoteConfig.value?.paymentGateway ?: "store",
+        )
         viewModelScope.launch {
             val plansDeferred = runCatching { api.getPlans() }
             val packagesDeferred = runCatching { api.getCoinPackages() }
@@ -78,6 +106,7 @@ class PricingViewModel @Inject constructor(
                     plans = plans,
                     coinPackages = packages,
                     remotePremiumFeatures = dynamicFeatures,
+                    remotePaymentGateway = remoteCfg?.paymentGateway ?: "store",
                     isLoading = false,
                     errorMessage = if (plans.isEmpty() && packages.isEmpty()) "کاتالوگ در دسترس نیست. دوباره تلاش کنید" else null,
                 )
@@ -90,7 +119,7 @@ class PricingViewModel @Inject constructor(
         return "user_$userId"
     }
 
-    fun onBazaarPurchaseStarted() {
+    fun onStorePurchaseStarted() {
         mutableUiState.update {
             it.copy(
                 isRequestingPayment = true,
@@ -99,6 +128,8 @@ class PricingViewModel @Inject constructor(
             )
         }
     }
+
+    fun onBazaarPurchaseStarted() = onStorePurchaseStarted()
 
     fun onBazaarPurchaseCanceled() {
         mutableUiState.update {
@@ -110,8 +141,9 @@ class PricingViewModel @Inject constructor(
     }
 
     fun onBazaarPurchaseFailed(reason: String?) {
+        val storeName = if (storeBillingConfig.channel == StoreChannel.Myket) "مایکت" else "کافه‌بازار"
         val message = reason?.takeIf { it.isNotBlank() }
-            ?: "پرداخت از طریق درگاه کافه‌بازار ناموفق بود. دوباره تلاش کنید."
+            ?: "پرداخت از طریق درگاه $storeName ناموفق بود. دوباره تلاش کنید."
         mutableUiState.update {
             it.copy(
                 isRequestingPayment = false,
@@ -125,8 +157,25 @@ class PricingViewModel @Inject constructor(
         purchaseToken: String,
         packageName: String,
     ) {
+        verifyStorePurchase(StoreChannel.Bazaar, productId, purchaseToken, packageName)
+    }
+
+    fun verifyMyketPurchase(
+        productId: String,
+        purchaseToken: String,
+        packageName: String,
+    ) {
+        verifyStorePurchase(StoreChannel.Myket, productId, purchaseToken, packageName)
+    }
+
+    private fun verifyStorePurchase(
+        channel: StoreChannel,
+        productId: String,
+        purchaseToken: String,
+        packageName: String,
+    ) {
         if (purchaseToken.isBlank() || productId.isBlank()) {
-            onBazaarPurchaseFailed("اطلاعات تراکنش بازار ناقص است.")
+            onBazaarPurchaseFailed("اطلاعات تراکنش فروشگاه ناقص است.")
             return
         }
         val request = BazaarVerifyRequestDto(
@@ -134,51 +183,159 @@ class PricingViewModel @Inject constructor(
             productId = productId,
             packageName = packageName,
         )
-        verifyBazaarRequest(request)
+        verifyStoreRequest(channel, request)
     }
 
     fun retryBazaarVerification() {
-        val pending = mutableUiState.value.pendingBazaarVerification ?: return
+        val pending = mutableUiState.value.pendingStoreVerification ?: return
         if (mutableUiState.value.isVerifyingPayment) return
-        verifyBazaarRequest(pending)
+        verifyStoreRequest(pending.first, pending.second)
     }
 
     fun onPurchaseConsumed() {
-        mutableUiState.update { it.copy(pendingConsumeToken = null) }
+        mutableUiState.update { it.copy(pendingConsumeToken = null, pendingConsumeChannel = null) }
     }
 
-    private fun verifyBazaarRequest(request: BazaarVerifyRequestDto) {
+    fun consumeZibalCheckoutUrl() {
+        mutableUiState.update { it.copy(pendingZibalCheckoutUrl = null) }
+    }
+
+    fun startZibalPurchase(
+        packageId: String,
+        callbackUrl: String = ZIBAL_MOBILE_CALLBACK_URL,
+    ) {
+        if (packageId.isBlank()) return
+        mutableUiState.update {
+            it.copy(
+                isRequestingPayment = true,
+                errorMessage = null,
+                successMessage = null,
+                pendingZibalCheckoutUrl = null,
+            )
+        }
+        viewModelScope.launch {
+            val response = runCatching {
+                api.requestZibal(ZibalRequestDto(packageId = packageId, callbackUrl = callbackUrl))
+            }.getOrNull()
+            val body = response?.takeIf { it.isSuccessful }?.body()
+            if (body == null || body.url.isBlank() || body.trackId <= 0L) {
+                mutableUiState.update {
+                    it.copy(
+                        isRequestingPayment = false,
+                        errorMessage = "اتصال به درگاه پرداخت آنلاین برقرار نشد. لطفاً دوباره تلاش کنید.",
+                    )
+                }
+                return@launch
+            }
+            mutableUiState.update {
+                it.copy(
+                    isRequestingPayment = false,
+                    pendingZibalCheckoutUrl = body.url,
+                    pendingZibalTrackId = body.trackId,
+                )
+            }
+        }
+    }
+
+    fun handlePaymentCallbackQuery(rawQuery: String?) {
+        val query = rawQuery?.trim().orEmpty()
+        if (query.isBlank()) return
+        val parsed = runCatching { Uri.parse("vista://payment/callback?$query") }.getOrNull() ?: return
+        val successParam = parsed.getQueryParameter("success")
+        val trackId = parsed.getQueryParameter("trackId")?.toLongOrNull()
+            ?: parsed.getQueryParameter("track_id")?.toLongOrNull()
+            ?: mutableUiState.value.pendingZibalTrackId
+            ?: 0L
+
+        if (successParam == "0") {
+            mutableUiState.update {
+                it.copy(
+                    isRequestingPayment = false,
+                    isVerifyingPayment = false,
+                    pendingZibalTrackId = null,
+                    errorMessage = "پرداخت توسط کاربر لغو شد.",
+                )
+            }
+            return
+        }
+        if (trackId > 0L) {
+            verifyZibalTrackId(trackId)
+        }
+    }
+
+    fun verifyZibalTrackId(trackId: Long) {
+        if (trackId <= 0L || mutableUiState.value.isVerifyingPayment) return
         mutableUiState.update {
             it.copy(
                 isRequestingPayment = false,
                 isVerifyingPayment = true,
-                pendingBazaarVerification = request,
                 errorMessage = null,
                 successMessage = null,
             )
         }
         viewModelScope.launch {
-            val response = runCatching { api.verifyBazaar(request) }.getOrNull()
+            val response = runCatching { api.verifyZibal(ZibalVerifyRequestDto(trackId)) }.getOrNull()
             val body = response?.takeIf { it.isSuccessful }?.body()
             if (body?.success != true) {
                 mutableUiState.update {
                     it.copy(
                         isVerifyingPayment = false,
-                        errorMessage = body?.message ?: "تایید خرید در سرور ناموفق بود. لطفاً دوباره تلاش کنید.",
+                        errorMessage = body?.message ?: "تایید پرداخت ناموفق بود. در صورت کسر وجه مبلغ طی ۷۲ ساعت بازگشت داده می‌شود.",
                     )
                 }
                 return@launch
             }
-            val accountId = (authenticationStateProvider.state.value as? AuthenticationState.SignedIn)?.context?.userId
-            if (!accountId.isNullOrBlank()) {
-                runCatching { ownProfileRepository.fetchAndCacheOwnProfile(accountId) }
-            }
-            val isCoinPurchase = request.productId.startsWith("coins_")
+            refreshOwnProfileIfSignedIn()
             mutableUiState.update {
                 it.copy(
                     isVerifyingPayment = false,
-                    pendingBazaarVerification = null,
-                    pendingConsumeToken = if (isCoinPurchase) request.purchaseToken else it.pendingConsumeToken,
+                    pendingZibalTrackId = null,
+                    successMessage = body.message ?: "پرداخت با موفقیت انجام و حساب شما ارتقا یافت!",
+                )
+            }
+        }
+    }
+
+    private fun verifyStoreRequest(channel: StoreChannel, request: BazaarVerifyRequestDto) {
+        mutableUiState.update {
+            it.copy(
+                isRequestingPayment = false,
+                isVerifyingPayment = true,
+                pendingStoreVerification = channel to request,
+                errorMessage = null,
+                successMessage = null,
+            )
+        }
+        viewModelScope.launch {
+            val response = runCatching {
+                if (channel == StoreChannel.Myket) {
+                    api.verifyMyket(request)
+                } else {
+                    api.verifyBazaar(request)
+                }
+            }.getOrNull()
+            val body = response?.takeIf { it.isSuccessful }?.body()
+            if (body?.success != true) {
+                val storeLabel = if (channel == StoreChannel.Myket) "مایکت" else "بازار"
+                mutableUiState.update {
+                    it.copy(
+                        isVerifyingPayment = false,
+                        errorMessage = body?.message ?: "تایید خرید در سرور ($storeLabel) ناموفق بود. لطفاً دوباره تلاش کنید.",
+                    )
+                }
+                return@launch
+            }
+            refreshOwnProfileIfSignedIn()
+            val isCoinPurchase = request.productId.startsWith("coins_")
+            // Per Myket spec, ALL products (including subscription SKUs implemented as consumable in-app)
+            // should be consumed once verified on backend; on Bazaar only coin bundles are consumed.
+            val shouldConsume = channel == StoreChannel.Myket || isCoinPurchase
+            mutableUiState.update {
+                it.copy(
+                    isVerifyingPayment = false,
+                    pendingStoreVerification = null,
+                    pendingConsumeToken = if (shouldConsume) request.purchaseToken else it.pendingConsumeToken,
+                    pendingConsumeChannel = if (shouldConsume) channel else it.pendingConsumeChannel,
                     successMessage = body.message ?: if (isCoinPurchase) {
                         "بسته سکه با موفقیت به حساب شما اضافه شد."
                     } else {
@@ -186,6 +343,13 @@ class PricingViewModel @Inject constructor(
                     },
                 )
             }
+        }
+    }
+
+    private suspend fun refreshOwnProfileIfSignedIn() {
+        val accountId = (authenticationStateProvider.state.value as? AuthenticationState.SignedIn)?.context?.userId
+        if (!accountId.isNullOrBlank()) {
+            runCatching { ownProfileRepository.fetchAndCacheOwnProfile(accountId) }
         }
     }
 
@@ -226,4 +390,8 @@ class PricingViewModel @Inject constructor(
         val description: String,
         val badge: String? = null,
     )
+
+    companion object {
+        const val ZIBAL_MOBILE_CALLBACK_URL = "https://cafevista.ir/payment/callback"
+    }
 }

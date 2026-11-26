@@ -8,6 +8,7 @@ import kotlinx.serialization.Serializable
 enum class ShellTab(val labelFa: String, val glyph: String) {
     Feed("خانه", "⌂"),
     Search("جستجو", "⌕"),
+    Ai("ویستا AI", "✦"),
     Services("خدمات", "◇"),
     Chat("گفت‌وگو", "◌"),
     Profile("نمایه", "◎"),
@@ -19,6 +20,8 @@ data class ShellNavigationSlotOverride(
     val visible: Boolean = true,
     val sortOrder: Int = 0,
     val badgeText: String = "",
+    val icon: String = "",
+    val route: String = "",
 )
 
 @Serializable

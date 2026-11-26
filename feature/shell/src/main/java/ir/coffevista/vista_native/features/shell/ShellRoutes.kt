@@ -34,6 +34,9 @@ object ShellRoutes {
     const val SearchRoot = "search_root"
     const val SearchWorkspace = "search_workspace"
 
+    const val AiGraph = "ai_graph"
+    const val AiRoot = "ai_root"
+
     fun postDetail(reference: String) = "post_detail/$reference"
     const val PostDetailRoute = "post_detail/{reference}"
     fun userProfile(userId: String) = "user_profile/$userId"

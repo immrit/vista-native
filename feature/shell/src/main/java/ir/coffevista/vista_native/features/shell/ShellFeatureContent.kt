@@ -214,6 +214,7 @@ data class ShellFeatureContent(
         onOpenChat: (String, String, String, String) -> Unit,
     ) -> Unit),
     val servicesWeb: (@Composable (String, String, () -> Unit) -> Unit),
+    val aiRoot: (@Composable (routeOverride: String?, onOpenWeb: (url: String, title: String) -> Unit) -> Unit)? = null,
     val chatRoot: (@Composable ((String, String) -> Unit, () -> Unit) -> Unit),
     val chatNewMessage: (@Composable (() -> Unit, (String, String) -> Unit) -> Unit),
     val chatDetail: (

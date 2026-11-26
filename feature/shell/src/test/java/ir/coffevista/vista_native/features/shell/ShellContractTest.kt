@@ -5,11 +5,12 @@ import org.junit.Test
 
 class ShellContractTest {
     @Test
-    fun `five tabs keep approved order`() {
+    fun `tabs keep approved order`() {
         assertEquals(
             listOf(
                 ShellTab.Feed,
                 ShellTab.Search,
+                ShellTab.Ai,
                 ShellTab.Services,
                 ShellTab.Chat,
                 ShellTab.Profile,

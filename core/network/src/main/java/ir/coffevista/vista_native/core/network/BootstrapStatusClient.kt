@@ -149,6 +149,8 @@ data class RemoteNavigationSlot(
     val visible: Boolean = true,
     val sortOrder: Int = 0,
     val badgeText: String = "",
+    val icon: String = "",
+    val route: String = "",
 )
 
 data class RemoteCopyOverrides(
@@ -181,6 +183,7 @@ data class RemoteConfigSnapshot(
     val ambientEffect: RemoteAmbientEffect = RemoteAmbientEffect(),
     val navigationSlots: List<RemoteNavigationSlot> = emptyList(),
     val copyOverrides: RemoteCopyOverrides = RemoteCopyOverrides(),
+    val paymentGateway: String = "store",
     val pricingMeta: Map<String, RemotePricingPlanMeta> = emptyMap(),
     val premiumFeatures: List<String> = emptyList(),
     val rollouts: Map<String, Int> = emptyMap(),
@@ -629,6 +632,8 @@ internal fun parseRemoteConfigSnapshot(obj: JsonObject): RemoteConfigSnapshot {
             visible = (s["visible"] as? JsonPrimitive)?.booleanOrNull ?: true,
             sortOrder = (s["sort_order"] as? JsonPrimitive)?.intOrNull ?: 0,
             badgeText = (s["badge_text"] as? JsonPrimitive)?.contentOrNull.orEmpty(),
+            icon = (s["icon"] as? JsonPrimitive)?.contentOrNull.orEmpty(),
+            route = (s["route"] as? JsonPrimitive)?.contentOrNull.orEmpty(),
         )
     }.orEmpty()
 
@@ -642,6 +647,10 @@ internal fun parseRemoteConfigSnapshot(obj: JsonObject): RemoteConfigSnapshot {
     )
 
     val pricingObj = obj["pricing"] as? JsonObject
+    val paymentGateway = when ((pricingObj?.get("payment_gateway") as? JsonPrimitive)?.contentOrNull?.trim()?.lowercase()) {
+        "zibal" -> "zibal"
+        else -> "store"
+    }
     val pricingMeta = (pricingObj?.get("plans") as? JsonObject)?.mapNotNull { (k, elem) ->
         val p = elem as? JsonObject ?: return@mapNotNull null
         k to RemotePricingPlanMeta(
@@ -670,6 +679,7 @@ internal fun parseRemoteConfigSnapshot(obj: JsonObject): RemoteConfigSnapshot {
         ambientEffect = ambientEffect,
         navigationSlots = navigationSlots,
         copyOverrides = copyOverrides,
+        paymentGateway = paymentGateway,
         pricingMeta = pricingMeta,
         premiumFeatures = premiumFeatures,
         rollouts = rollouts,

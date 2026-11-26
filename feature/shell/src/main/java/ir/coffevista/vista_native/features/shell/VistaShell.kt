@@ -719,6 +719,19 @@ fun VistaShell(
                     }
                 }
             }
+            navigation(route = ShellRoutes.AiGraph, startDestination = ShellRoutes.AiRoot) {
+                composable(ShellRoutes.AiRoot) {
+                    val aiRouteOverride = remember(navigationSlots) {
+                        navigationSlots
+                            .firstOrNull { it.key.trim().lowercase() == "ai" }
+                            ?.route
+                            ?.takeIf { it.isNotBlank() }
+                    }
+                    content.aiRoot?.invoke(aiRouteOverride) { url, title ->
+                        navController.navigate(ShellRoutes.servicesWeb(url, title))
+                    } ?: ControlledDetailScreen(ShellTab.Ai)
+                }
+            }
             navigation(route = ShellRoutes.ServicesGraph, startDestination = ShellRoutes.ServicesRoot) {
                 composable(ShellRoutes.ServicesRoot) {
                     content.servicesRoot(
@@ -1284,7 +1297,9 @@ fun VistaShell(
             }
         }
         }
-        val islandVisible = showBottomIsland && isBottomIslandVisible
+        val imeDensity = LocalDensity.current
+        val isImeOpen = WindowInsets.ime.getBottom(imeDensity) > WindowInsets.navigationBars.getBottom(imeDensity)
+        val islandVisible = showBottomIsland && isBottomIslandVisible && !(selectedTab == ShellTab.Ai && isImeOpen)
         val hasUpdateBar = showUpdateBar
         val snackbarBottomPadding by animateDpAsState(
             targetValue = when {
@@ -1330,8 +1345,26 @@ fun VistaShell(
                     chatBadgeCount = content.chatBadgeCount,
                     navigationSlots = navigationSlots,
                     hasBottomBarBelow = hasUpdateBar,
-                    onSelect = { tab ->
-                        if (tab == ShellTab.Feed) {
+                    onSelect = { tab, routeOverride, label ->
+                        val customRoute = routeOverride.trim()
+                        val defaultRoutes = when (tab) {
+                            ShellTab.Feed -> setOf("", "vista://feed", "/feed")
+                            ShellTab.Search -> setOf("", "vista://search", "vista://explore", "/explore", "/search")
+                            ShellTab.Ai -> setOf("", "vista://ai", "https://ai.cafevista.ir")
+                            ShellTab.Services -> setOf("", "vista://services", "/services")
+                            ShellTab.Chat -> setOf("", "vista://chat", "vista://messages", "/messages")
+                            ShellTab.Profile -> setOf("", "vista://profile", "/profile")
+                        }
+                        if (tab != ShellTab.Ai && customRoute.lowercase() !in defaultRoutes) {
+                            val gamePath = VistaGameUrlHelper.parseGameTargetPath(customRoute)
+                            when {
+                                gamePath != null -> navigateToGame(targetPath = gamePath, switchToServicesTab = false)
+                                internalLinkNavigator.openUrl(customRoute) -> Unit
+                                customRoute.startsWith("https://", ignoreCase = true) || customRoute.startsWith("http://", ignoreCase = true) ->
+                                    navController.navigate(ShellRoutes.servicesWeb(customRoute, label))
+                                else -> selectTab(tab)
+                            }
+                        } else if (tab == ShellTab.Feed) {
                             isBottomIslandVisible = true
                             if (selectedTab == ShellTab.Feed && atRoot) {
                                 homeTabClickFlow.tryEmit(Unit)
@@ -1340,6 +1373,19 @@ fun VistaShell(
                             }
                         } else {
                             selectTab(tab)
+                        }
+                    },
+                    onOpenCustomSlot = { route, label ->
+                        val trimmed = route.trim()
+                        val gamePath = VistaGameUrlHelper.parseGameTargetPath(trimmed)
+                        when {
+                            gamePath != null -> navigateToGame(targetPath = gamePath, switchToServicesTab = false)
+                            trimmed.equals("https://ai.cafevista.ir", ignoreCase = true) ||
+                                trimmed.lowercase().startsWith("https://ai.cafevista.ir/") -> selectTab(ShellTab.Ai)
+                            trimmed.isNotBlank() && internalLinkNavigator.openUrl(trimmed) -> Unit
+                            trimmed.startsWith("https://", ignoreCase = true) || trimmed.startsWith("http://", ignoreCase = true) ->
+                                navController.navigate(ShellRoutes.servicesWeb(trimmed, label))
+                            else -> selectTab(ShellTab.Services)
                         }
                     },
                 )
@@ -1399,7 +1445,8 @@ private fun VistaBottomIsland(
     selectedTab: ShellTab,
     glassState: VistaGlassState,
     chatBadgeCount: Int,
-    onSelect: (ShellTab) -> Unit,
+    onSelect: (tab: ShellTab, routeOverride: String, label: String) -> Unit,
+    onOpenCustomSlot: (route: String, label: String) -> Unit,
     modifier: Modifier = Modifier,
     navigationSlots: List<ShellNavigationSlotOverride> = emptyList(),
     hasBottomBarBelow: Boolean = false,
@@ -1452,22 +1499,46 @@ private fun VistaBottomIsland(
             shadowElevation = 0.dp,
         ) {
             val slotMap = remember(navigationSlots) {
-                navigationSlots.associateBy { it.key.trim().lowercase() }
+                buildMap {
+                    navigationSlots.forEach { slot ->
+                        val rawKey = slot.key.trim().lowercase()
+                        val normalizedKey = if (rawKey == "explore") "search" else rawKey
+                        if (normalizedKey.isNotBlank() && (!containsKey(normalizedKey) || rawKey == normalizedKey)) {
+                            put(normalizedKey, slot)
+                        }
+                    }
+                }
             }
-            val visibleTabs = remember(slotMap) {
-                ShellTab.entries
+            val visibleEntries = remember(slotMap) {
+                val builtinKeys = ShellTab.entries.map { it.name.lowercase() }.toSet()
+                val builtins = ShellTab.entries
                     .filter { tab ->
                         tab == ShellTab.Feed || (slotMap[tab.name.lowercase()]?.visible != false)
                     }
-                    .sortedWith(
-                        compareBy(
-                            { slotMap[it.name.lowercase()]?.sortOrder ?: it.ordinal },
-                            { it.ordinal },
-                        ),
-                    )
+                    .map { tab ->
+                        val slot = slotMap[tab.name.lowercase()]
+                        IslandSlotEntry.Builtin(
+                            tab = tab,
+                            slot = slot,
+                            sortOrder = slot?.sortOrder ?: tab.ordinal,
+                            tieBreaker = tab.ordinal,
+                        )
+                    }
+                val custom = slotMap.entries
+                    .filter { (key, slot) -> key !in builtinKeys && slot.visible && (slot.route.isNotBlank() || slot.label.isNotBlank()) }
+                    .mapIndexed { idx, (_, slot) ->
+                        IslandSlotEntry.Custom(
+                            slot = slot,
+                            sortOrder = slot.sortOrder,
+                            tieBreaker = 100 + idx,
+                        )
+                    }
+                (builtins + custom).sortedWith(compareBy({ it.sortOrder }, { it.tieBreaker }))
             }
-            val selectedIndex = visibleTabs.indexOf(selectedTab).coerceAtLeast(0)
-            val tabCount = visibleTabs.size.coerceAtLeast(1)
+            val selectedIndex = visibleEntries
+                .indexOfFirst { it is IslandSlotEntry.Builtin && it.tab == selectedTab }
+                .coerceAtLeast(0)
+            val tabCount = visibleEntries.size.coerceAtLeast(1)
             val activeColor = MaterialTheme.colorScheme.primary
             val inactiveColor = if (isLight) Color(0xFF656C76) else Color(0xFF8A919C)
             val animatedIndex by animateFloatAsState(
@@ -1504,82 +1575,185 @@ private fun VistaBottomIsland(
                     horizontalArrangement = Arrangement.spacedBy(tabSpacing),
                 ) {
                     val haptics = rememberVistaHaptics()
-                    visibleTabs.forEach { tab ->
-                        val slot = slotMap[tab.name.lowercase()]
-                        val tabLabel = slot?.label?.takeIf { it.isNotBlank() } ?: tab.labelFa
-                        val slotBadgeText = slot?.badgeText?.trim().orEmpty()
-                        val selected = tab == selectedTab
-                        val tabInteractionSource = remember { MutableInteractionSource() }
-                        val isTabPressed by tabInteractionSource.collectIsPressedAsState()
-                        val tabScale by animateFloatAsState(
-                            targetValue = if (isTabPressed) 0.94f else 1.0f,
-                            animationSpec = spring(
-                                dampingRatio = 0.72f,
-                                stiffness = 580f,
-                            ),
-                            label = "tab_press_scale_${tab.name}",
-                        )
-                        val tabIconColor by animateColorAsState(
-                            targetValue = if (selected) activeColor else inactiveColor,
-                            animationSpec = tween(durationMillis = 180),
-                            label = "tab_color_${tab.name}",
-                        )
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(50.dp)
-                                .testTag("shell-tab-${tab.name.lowercase()}")
-                                .graphicsLayer {
-                                    scaleX = tabScale
-                                    scaleY = tabScale
-                                }
-                                .clip(RoundedCornerShape(VistaRadii.XXLarge))
-                                .clickable(
-                                    interactionSource = tabInteractionSource,
-                                    indication = ripple(bounded = true),
-                                    onClick = {
-                                        haptics.tap()
-                                        onSelect(tab)
-                                    },
+                    visibleEntries.forEach { entry ->
+                        when (entry) {
+                            is IslandSlotEntry.Builtin -> {
+                                val tab = entry.tab
+                                val slot = entry.slot
+                                val tabLabel = slot?.label?.takeIf { it.isNotBlank() } ?: tab.labelFa
+                                val slotBadgeText = slot?.badgeText?.trim().orEmpty()
+                                val selected = tab == selectedTab
+                                val tabInteractionSource = remember { MutableInteractionSource() }
+                                val isTabPressed by tabInteractionSource.collectIsPressedAsState()
+                                val tabScale by animateFloatAsState(
+                                    targetValue = if (isTabPressed) 0.94f else 1.0f,
+                                    animationSpec = spring(
+                                        dampingRatio = 0.72f,
+                                        stiffness = 580f,
+                                    ),
+                                    label = "tab_press_scale_${tab.name}",
                                 )
-                                .semantics(mergeDescendants = true) {
-                                    contentDescription = tabLabel
-                                    role = Role.Tab
-                                    this.selected = selected
-                                },
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            VistaBadgedBox(
-                                badge = {
-                                    if (tab == ShellTab.Chat && chatBadgeCount > 0) {
-                                        VistaNotificationBadge(
-                                            count = chatBadgeCount,
-                                            borderColor = if (isDark) Color(0xFF16191E) else Color.White,
-                                            modifier = Modifier.testTag("shell-chat-badge"),
+                                val tabIconColor by animateColorAsState(
+                                    targetValue = if (selected) activeColor else inactiveColor,
+                                    animationSpec = tween(durationMillis = 180),
+                                    label = "tab_color_${tab.name}",
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(50.dp)
+                                        .testTag("shell-tab-${tab.name.lowercase()}")
+                                        .graphicsLayer {
+                                            scaleX = tabScale
+                                            scaleY = tabScale
+                                        }
+                                        .clip(RoundedCornerShape(VistaRadii.XXLarge))
+                                        .clickable(
+                                            interactionSource = tabInteractionSource,
+                                            indication = ripple(bounded = true),
+                                            onClick = {
+                                                haptics.tap()
+                                                onSelect(tab, slot?.route.orEmpty(), tabLabel)
+                                            },
                                         )
-                                    } else if (slotBadgeText.isNotBlank()) {
-                                        Surface(
-                                            shape = RoundedCornerShape(VistaRadii.Small),
-                                            color = ir.coffevista.vista_native.core.designsystem.tokens.VistaBrandColors.ViuBlueDeep,
+                                        .semantics(mergeDescendants = true) {
+                                            contentDescription = tabLabel
+                                            role = Role.Tab
+                                            this.selected = selected
+                                        },
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Column(
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.Center,
+                                        modifier = Modifier.padding(horizontal = 2.dp),
+                                    ) {
+                                        VistaBadgedBox(
+                                            badge = {
+                                                if (tab == ShellTab.Chat && chatBadgeCount > 0) {
+                                                    VistaNotificationBadge(
+                                                        count = chatBadgeCount,
+                                                        borderColor = if (isDark) Color(0xFF16191E) else Color.White,
+                                                        modifier = Modifier.testTag("shell-chat-badge"),
+                                                    )
+                                                } else if (slotBadgeText.isNotBlank()) {
+                                                    Surface(
+                                                        shape = RoundedCornerShape(VistaRadii.Small),
+                                                        color = ir.coffevista.vista_native.core.designsystem.tokens.VistaBrandColors.ViuBlueDeep,
+                                                    ) {
+                                                        Text(
+                                                            text = slotBadgeText.take(6),
+                                                            color = Color.White,
+                                                            fontSize = 8.sp,
+                                                            lineHeight = 9.sp,
+                                                            fontWeight = FontWeight.Bold,
+                                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 0.5.dp),
+                                                        )
+                                                    }
+                                                }
+                                            },
                                         ) {
-                                            Text(
-                                                text = slotBadgeText.take(6),
-                                                color = Color.White,
-                                                fontSize = 11.sp,
-                                                lineHeight = 12.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
+                                            VistaNavigationIcon(
+                                                tab = tab,
+                                                selected = selected,
+                                                color = tabIconColor,
+                                                iconOverride = slot?.icon.orEmpty(),
+                                                modifier = Modifier.size(20.dp),
                                             )
                                         }
+                                        Text(
+                                            text = tabLabel,
+                                            color = tabIconColor,
+                                            fontSize = 9.sp,
+                                            lineHeight = 10.sp,
+                                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
                                     }
-                                },
-                            ) {
-                                VistaNavigationIcon(
-                                    tab = tab,
-                                    selected = selected,
-                                    color = tabIconColor,
-                                    modifier = Modifier.size(24.dp),
+                                }
+                            }
+                            is IslandSlotEntry.Custom -> {
+                                val slot = entry.slot
+                                val customLabel = slot.label.ifBlank { slot.key }
+                                val slotBadgeText = slot.badgeText.trim()
+                                val tabInteractionSource = remember { MutableInteractionSource() }
+                                val isTabPressed by tabInteractionSource.collectIsPressedAsState()
+                                val tabScale by animateFloatAsState(
+                                    targetValue = if (isTabPressed) 0.94f else 1.0f,
+                                    animationSpec = spring(
+                                        dampingRatio = 0.72f,
+                                        stiffness = 580f,
+                                    ),
+                                    label = "tab_press_scale_${slot.key}",
                                 )
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(50.dp)
+                                        .testTag("shell-tab-${slot.key.lowercase()}")
+                                        .graphicsLayer {
+                                            scaleX = tabScale
+                                            scaleY = tabScale
+                                        }
+                                        .clip(RoundedCornerShape(VistaRadii.XXLarge))
+                                        .clickable(
+                                            interactionSource = tabInteractionSource,
+                                            indication = ripple(bounded = true),
+                                            onClick = {
+                                                haptics.tap()
+                                                onOpenCustomSlot(slot.route, customLabel)
+                                            },
+                                        )
+                                        .semantics(mergeDescendants = true) {
+                                            contentDescription = customLabel
+                                            role = Role.Tab
+                                        },
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Column(
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.Center,
+                                        modifier = Modifier.padding(horizontal = 2.dp),
+                                    ) {
+                                        VistaBadgedBox(
+                                            badge = {
+                                                if (slotBadgeText.isNotBlank()) {
+                                                    Surface(
+                                                        shape = RoundedCornerShape(VistaRadii.Small),
+                                                        color = ir.coffevista.vista_native.core.designsystem.tokens.VistaBrandColors.ViuBlueDeep,
+                                                    ) {
+                                                        Text(
+                                                            text = slotBadgeText.take(6),
+                                                            color = Color.White,
+                                                            fontSize = 8.sp,
+                                                            lineHeight = 9.sp,
+                                                            fontWeight = FontWeight.Bold,
+                                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 0.5.dp),
+                                                        )
+                                                    }
+                                                }
+                                            },
+                                        ) {
+                                            VistaNavigationIcon(
+                                                tab = ShellTab.Ai,
+                                                selected = false,
+                                                color = inactiveColor,
+                                                iconOverride = slot.icon,
+                                                modifier = Modifier.size(20.dp),
+                                            )
+                                        }
+                                        Text(
+                                            text = customLabel,
+                                            color = inactiveColor,
+                                            fontSize = 9.sp,
+                                            lineHeight = 10.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -1668,9 +1842,28 @@ private fun ControlledDetailScreen(tab: ShellTab) {
     }
 }
 
+private sealed interface IslandSlotEntry {
+    val sortOrder: Int
+    val tieBreaker: Int
+
+    data class Builtin(
+        val tab: ShellTab,
+        val slot: ShellNavigationSlotOverride?,
+        override val sortOrder: Int,
+        override val tieBreaker: Int,
+    ) : IslandSlotEntry
+
+    data class Custom(
+        val slot: ShellNavigationSlotOverride,
+        override val sortOrder: Int,
+        override val tieBreaker: Int,
+    ) : IslandSlotEntry
+}
+
 private fun NavDestination.toShellTab(): ShellTab = when {
     hierarchy.any { it.route == ShellRoutes.FeedGraph } -> ShellTab.Feed
     hierarchy.any { it.route == ShellRoutes.SearchGraph } -> ShellTab.Search
+    hierarchy.any { it.route == ShellRoutes.AiGraph } -> ShellTab.Ai
     hierarchy.any { it.route == ShellRoutes.ServicesGraph } -> ShellTab.Services
     hierarchy.any { it.route == ShellRoutes.ChatGraph } -> ShellTab.Chat
     hierarchy.any { it.route == ShellRoutes.ProfileGraph } -> ShellTab.Profile
@@ -1680,6 +1873,7 @@ private fun NavDestination.toShellTab(): ShellTab = when {
 private fun NavDestination.isTabRoot(): Boolean =
     route == ShellRoutes.FeedRoot ||
         route == ShellRoutes.SearchRoot ||
+        route == ShellRoutes.AiRoot ||
         route == ShellRoutes.ServicesRoot ||
         route == ShellRoutes.ChatRoot ||
         route == ShellRoutes.ProfileRoot
@@ -1687,6 +1881,7 @@ private fun NavDestination.isTabRoot(): Boolean =
 private fun ShellTab.graphRoute(): String = when (this) {
     ShellTab.Feed -> ShellRoutes.FeedGraph
     ShellTab.Search -> ShellRoutes.SearchGraph
+    ShellTab.Ai -> ShellRoutes.AiGraph
     ShellTab.Services -> ShellRoutes.ServicesGraph
     ShellTab.Chat -> ShellRoutes.ChatGraph
     ShellTab.Profile -> ShellRoutes.ProfileGraph
@@ -1695,6 +1890,7 @@ private fun ShellTab.graphRoute(): String = when (this) {
 private fun ShellTab.rootRoute(): String = when (this) {
     ShellTab.Feed -> ShellRoutes.FeedRoot
     ShellTab.Search -> ShellRoutes.SearchRoot
+    ShellTab.Ai -> ShellRoutes.AiRoot
     ShellTab.Services -> ShellRoutes.ServicesRoot
     ShellTab.Chat -> ShellRoutes.ChatRoot
     ShellTab.Profile -> ShellRoutes.ProfileRoot

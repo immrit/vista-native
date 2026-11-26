@@ -8,6 +8,9 @@ plugins {
 
 android {
     namespace = "ir.coffevista.vista_native.features.profile"
+    defaultConfig {
+        consumerProguardFiles("proguard-rules.pro")
+    }
     compileOptions {
         isCoreLibraryDesugaringEnabled = true
     }

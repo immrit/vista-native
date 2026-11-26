@@ -97,6 +97,11 @@ android {
             "TLS_POLICY_PUBLIC_KEY",
             "\"${injectedValue("vista.tlsPolicyPublicKey", "VISTA_TLS_POLICY_PUBLIC_KEY") ?: ""}\"",
         )
+        buildConfigField(
+            "String",
+            "MYKET_RSA_PUBLIC_KEY",
+            "\"${injectedValue("vista.myketPublicKey", "MYKET_RSA_PUBLIC_KEY", "myketPublicKey") ?: ""}\"",
+        )
     }
 
     signingConfigs {
@@ -113,7 +118,7 @@ android {
         }
     }
 
-    flavorDimensions += "environment"
+    flavorDimensions += listOf("environment", "store")
     productFlavors {
         create("beta") {
             dimension = "environment"
@@ -135,6 +140,18 @@ android {
                 "API_BASE_URL",
                 "\"${injectedValue("vista.api.production", "VISTA_PRODUCTION_API_BASE_URL") ?: "https://api.coffevista.ir"}\"",
             )
+        }
+        create("bazaar") {
+            dimension = "store"
+            buildConfigField("String", "STORE_CHANNEL", "\"bazaar\"")
+        }
+        create("myket") {
+            dimension = "store"
+            buildConfigField("String", "STORE_CHANNEL", "\"myket\"")
+        }
+        create("direct") {
+            dimension = "store"
+            buildConfigField("String", "STORE_CHANNEL", "\"direct\"")
         }
     }
 

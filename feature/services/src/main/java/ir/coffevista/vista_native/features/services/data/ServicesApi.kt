@@ -12,6 +12,11 @@ interface ServicesApi {
     @POST("v1/game-sso/ticket")
     suspend fun createGameSsoTicket(): Response<GameSsoTicketResponseDto>
 
+    @POST("v1/sso/ticket")
+    suspend fun createVistaSsoTicket(
+        @Body body: VistaSsoTicketRequestDto,
+    ): Response<VistaSsoTicketResponseDto>
+
     @POST("v1/services-hub/contacts")
     suspend fun findContacts(
         @Body body: FindContactsRequestDto,

@@ -79,6 +79,8 @@ import ir.coffevista.vista_native.features.profile.settings.about.TermsAndCondit
 import ir.coffevista.vista_native.features.profile.settings.about.PrivacyPolicyScreen
 import ir.coffevista.vista_native.features.search.data.SearchRepository
 import ir.coffevista.vista_native.features.search.ui.SearchWorkspaceScreen
+import ir.coffevista.vista_native.features.services.ui.ai.VistaAiScreen
+import ir.coffevista.vista_native.features.services.ui.ai.VistaAiWebViewRegistry
 import ir.coffevista.vista_native.features.shell.ShellDeepLinkRequest
 import ir.coffevista.vista_native.features.shell.ShellDeferredKind
 import ir.coffevista.vista_native.features.shell.ShellFeatureContent
@@ -150,6 +152,7 @@ fun VistaApp(
     val bannedReasonFa by SystemGateMonitor.bannedReasonFa.collectAsStateWithLifecycle()
     val sessionTerminated by SystemGateMonitor.sessionTerminated.collectAsStateWithLifecycle()
     var shellDeepLinkRequest by remember { mutableStateOf<ShellDeepLinkRequest?>(null) }
+    var pendingPaymentCallbackQuery by remember { mutableStateOf<String?>(null) }
     val applicationScope = rememberCoroutineScope()
     val appContext = LocalContext.current.applicationContext
     val sessionLifecycleManager = remember(appContext) {
@@ -264,6 +267,11 @@ fun VistaApp(
     LaunchedEffect(deepLinkState) {
         when (val delivery = deepLinkState) {
             is DeepLinkDeliveryState.Ready -> {
+                if (delivery.destination.kind.name == "PROFILE" &&
+                    delivery.destination.reference == "payment_callback"
+                ) {
+                    pendingPaymentCallbackQuery = delivery.destination.secondaryReference
+                }
                 shellDeepLinkRequest = ShellDeepLinkRequest(
                     deliveryId = delivery.id,
                     kind = ShellDeferredKind.valueOf(delivery.destination.kind.name),
@@ -530,6 +538,8 @@ fun VistaApp(
                             visible = slot.visible,
                             sortOrder = slot.sortOrder,
                             badgeText = slot.badgeText,
+                            icon = slot.icon,
+                            route = slot.route,
                         )
                     }
                 }
@@ -561,6 +571,11 @@ fun VistaApp(
                             }
                             runCatching {
                                 chatRepository.clearAccount(signedIn.context.userId)
+                            }
+                            withContext(Dispatchers.Main.immediate) {
+                                runCatching {
+                                    VistaAiWebViewRegistry.clearForUser(signedIn.context.userId)
+                                }
                             }
                             withContext(Dispatchers.Main.immediate) {
                                 authenticationStateOwner.signOut()
@@ -890,10 +905,20 @@ fun VistaApp(
                             )
                         },
                         pricingPage = { onBack ->
-                            PricingScreen(onBack = onBack, initialTab = 0)
+                            PricingScreen(
+                                onBack = onBack,
+                                initialTab = 0,
+                                pendingPaymentCallbackQuery = pendingPaymentCallbackQuery,
+                                onConsumePaymentCallbackQuery = { pendingPaymentCallbackQuery = null },
+                            )
                         },
                         badgeStore = { onBack ->
-                            PricingScreen(onBack = onBack, initialTab = 1)
+                            PricingScreen(
+                                onBack = onBack,
+                                initialTab = 1,
+                                pendingPaymentCallbackQuery = pendingPaymentCallbackQuery,
+                                onConsumePaymentCallbackQuery = { pendingPaymentCallbackQuery = null },
+                            )
                         },
                         privacySecurity = { onBack, onBlockedUsers, onActiveSessions, onDeleteAccount, onTwoFactorSettings ->
                             val profileViewModel = hiltViewModel<OwnProfileViewModel>()
@@ -1237,6 +1262,14 @@ fun VistaApp(
                                     },
                                 )
                             }
+                        },
+                        aiRoot = { routeOverride, onOpenWeb ->
+                            VistaAiScreen(
+                                userId = signedIn.context.userId,
+                                repository = servicesRepository,
+                                routeOverride = routeOverride,
+                                onOpenWebFallback = onOpenWeb,
+                            )
                         },
                         chatRoot = { onConversationClick, onNewMessage ->
                             ConversationListRoute(

@@ -14,6 +14,15 @@ interface PricingPlansApi {
     @POST("v1/payment/bazaar-verify")
     suspend fun verifyBazaar(@Body request: BazaarVerifyRequestDto): Response<BazaarVerifyResponseDto>
 
+    @POST("v1/payment/myket-verify")
+    suspend fun verifyMyket(@Body request: BazaarVerifyRequestDto): Response<BazaarVerifyResponseDto>
+
+    @POST("v1/payment/zibal/request")
+    suspend fun requestZibal(@Body request: ZibalRequestDto): Response<ZibalRequestResponseDto>
+
+    @POST("v1/payment/zibal/verify")
+    suspend fun verifyZibal(@Body request: ZibalVerifyRequestDto): Response<BazaarVerifyResponseDto>
+
     @GET("v1/payment/packages")
     suspend fun getCoinPackages(): Response<CoinPackagesResponseDto>
 }
@@ -44,6 +53,23 @@ data class BazaarVerifyRequestDto(
     @SerialName("purchase_token") val purchaseToken: String,
     @SerialName("product_id") val productId: String,
     @SerialName("package_name") val packageName: String,
+)
+
+@Serializable
+data class ZibalRequestDto(
+    @SerialName("package_id") val packageId: String,
+    @SerialName("callback_url") val callbackUrl: String,
+)
+
+@Serializable
+data class ZibalRequestResponseDto(
+    @SerialName("track_id") val trackId: Long = 0L,
+    val url: String = "",
+)
+
+@Serializable
+data class ZibalVerifyRequestDto(
+    @SerialName("track_id") val trackId: Long,
 )
 
 @Serializable

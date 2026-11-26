@@ -1,0 +1,3 @@
+-keep class com.android.vending.billing.** { *; }
+-keep interface com.android.vending.billing.** { *; }
+-keep class ir.coffevista.vista_native.features.profile.settings.pricing.MyketBillingClient** { *; }

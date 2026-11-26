@@ -9,6 +9,7 @@ import javax.inject.Singleton
 interface ServicesRepository {
     suspend fun getHub(): ServicesHubData
     suspend fun createGameSsoTicket(): String
+    suspend fun createVistaSsoTicket(clientId: String = "vista-ai"): String
     suspend fun findContacts(phoneNumbers: List<String>): List<ContactVistaUser>
     suspend fun getTopGroups(): List<TopGroup>
 }
@@ -30,6 +31,20 @@ class DefaultServicesRepository(
                 statusCode = 200,
                 code = "game_ticket_empty",
                 message = "Failed to create game session",
+            )
+        }
+        return ticket
+    }
+
+    override suspend fun createVistaSsoTicket(clientId: String): String {
+        val response = api.createVistaSsoTicket(VistaSsoTicketRequestDto(clientId = clientId))
+            .bodyOrThrow("sso_ticket_empty")
+        val ticket = response.ticket?.trim().orEmpty()
+        if (ticket.isEmpty()) {
+            throw RemoteFailure(
+                statusCode = 200,
+                code = "sso_ticket_empty",
+                message = "Failed to create Vista SSO session",
             )
         }
         return ticket

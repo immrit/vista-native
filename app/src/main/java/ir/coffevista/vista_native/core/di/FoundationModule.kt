@@ -31,6 +31,8 @@ import ir.coffevista.vista_native.core.network.KeystoreTlsPolicyPersistence
 import ir.coffevista.vista_native.core.network.TlsMode
 import ir.coffevista.vista_native.core.network.TlsPolicy
 import ir.coffevista.vista_native.core.network.TlsPolicyStore
+import ir.coffevista.vista_native.features.profile.settings.pricing.StoreBillingConfig
+import ir.coffevista.vista_native.features.profile.settings.pricing.StoreChannel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
@@ -52,6 +54,13 @@ object FoundationModule {
         debugBuild = BuildConfig.DEBUG,
         appVersion = BuildConfig.VERSION_NAME,
         tlsPolicyPublicKeyBase64 = BuildConfig.TLS_POLICY_PUBLIC_KEY,
+    )
+
+    @Provides
+    @Singleton
+    fun provideStoreBillingConfig(): StoreBillingConfig = StoreBillingConfig(
+        channel = StoreChannel.fromWire(BuildConfig.STORE_CHANNEL),
+        myketPublicKey = BuildConfig.MYKET_RSA_PUBLIC_KEY,
     )
 
     @Provides

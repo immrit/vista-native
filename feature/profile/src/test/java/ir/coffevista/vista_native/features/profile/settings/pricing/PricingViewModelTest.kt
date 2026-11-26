@@ -101,6 +101,7 @@ class PricingViewModelTest {
         assertEquals("اشتراک ویژه فعال شد!", viewModel.uiState.value.successMessage)
         assertEquals(1, ownProfileRepository.fetchCount)
     }
+
     @Test
     fun verifyBazaarPurchase_coinsSetsConsumeTokenAndMessage() = runTest {
         val fakeApi = FakePricingPlansApi(
@@ -125,17 +126,97 @@ class PricingViewModelTest {
 
         val state = viewModel.uiState.value
         assertEquals("coin-token-1", state.pendingConsumeToken)
+        assertEquals(StoreChannel.Bazaar, state.pendingConsumeChannel)
         assertEquals("1000 سکه به موجودی شما اضافه شد.", state.successMessage)
 
         viewModel.onPurchaseConsumed()
         assertNull(viewModel.uiState.value.pendingConsumeToken)
     }
+
+    @Test
+    fun verifyMyketPurchase_subscriptionVerifiesOnMyketEndpointAndSchedulesConsume() = runTest {
+        val fakeApi = FakePricingPlansApi(
+            bazaarResponse = BazaarVerifyResponseDto(),
+            myketResponse = BazaarVerifyResponseDto(
+                success = true,
+                message = "مدت اشتراک شما 30 روز اضافه شد.",
+                plan = "monthly",
+                daysAdded = 30,
+            ),
+        )
+        authStateProvider.setSignedIn("user-myket-1")
+        val viewModel = PricingViewModel(
+            api = fakeApi,
+            authenticationStateProvider = authStateProvider,
+            ownProfileRepository = ownProfileRepository,
+            storeBillingConfig = StoreBillingConfig(channel = StoreChannel.Myket, myketPublicKey = "rsa-test"),
+        )
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(StoreChannel.Myket, viewModel.uiState.value.storeChannel)
+
+        viewModel.verifyMyketPurchase(
+            productId = "vista_premium_monthly",
+            purchaseToken = "myket-tok-99",
+            packageName = "ir.coffevista.vista",
+        )
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertFalse(state.isVerifyingPayment)
+        assertNull(state.pendingStoreVerification)
+        assertEquals("myket-tok-99", state.pendingConsumeToken)
+        assertEquals(StoreChannel.Myket, state.pendingConsumeChannel)
+        assertEquals("myket-tok-99", fakeApi.lastMyketRequest?.purchaseToken)
+        assertEquals("مدت اشتراک شما 30 روز اضافه شد.", state.successMessage)
+        assertEquals(1, ownProfileRepository.fetchCount)
+    }
+
+    @Test
+    fun startZibalPurchaseAndVerifyTrackId_completesCheckout() = runTest {
+        val fakeApi = FakePricingPlansApi(
+            bazaarResponse = BazaarVerifyResponseDto(),
+            zibalRequestResponse = ZibalRequestResponseDto(
+                trackId = 987654L,
+                url = "https://gateway.zibal.ir/start/987654",
+            ),
+            zibalVerifyResponse = BazaarVerifyResponseDto(
+                success = true,
+                message = "پرداخت با موفقیت انجام شد.",
+                type = "subscription",
+                plan = "monthly",
+            ),
+        )
+        authStateProvider.setSignedIn("user-zibal-1")
+        val viewModel = PricingViewModel(fakeApi, authStateProvider, ownProfileRepository)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        viewModel.startZibalPurchase("vista_premium_monthly")
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals("https://gateway.zibal.ir/start/987654", viewModel.uiState.value.pendingZibalCheckoutUrl)
+        assertEquals(987654L, viewModel.uiState.value.pendingZibalTrackId)
+
+        viewModel.consumeZibalCheckoutUrl()
+        assertNull(viewModel.uiState.value.pendingZibalCheckoutUrl)
+
+        viewModel.verifyZibalTrackId(987654L)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertNull(viewModel.uiState.value.pendingZibalTrackId)
+        assertEquals("پرداخت با موفقیت انجام شد.", viewModel.uiState.value.successMessage)
+        assertEquals(1, ownProfileRepository.fetchCount)
+    }
 }
 
 private class FakePricingPlansApi(
     var bazaarResponse: BazaarVerifyResponseDto,
+    var myketResponse: BazaarVerifyResponseDto = BazaarVerifyResponseDto(success = true),
+    var zibalRequestResponse: ZibalRequestResponseDto = ZibalRequestResponseDto(),
+    var zibalVerifyResponse: BazaarVerifyResponseDto = BazaarVerifyResponseDto(success = true),
 ) : PricingPlansApi {
     var lastBazaarRequest: BazaarVerifyRequestDto? = null
+    var lastMyketRequest: BazaarVerifyRequestDto? = null
 
     override suspend fun getPlans(): Response<PricingPlansResponseDto> =
         Response.success(
@@ -152,6 +233,17 @@ private class FakePricingPlansApi(
         lastBazaarRequest = request
         return Response.success(bazaarResponse)
     }
+
+    override suspend fun verifyMyket(request: BazaarVerifyRequestDto): Response<BazaarVerifyResponseDto> {
+        lastMyketRequest = request
+        return Response.success(myketResponse)
+    }
+
+    override suspend fun requestZibal(request: ZibalRequestDto): Response<ZibalRequestResponseDto> =
+        Response.success(zibalRequestResponse)
+
+    override suspend fun verifyZibal(request: ZibalVerifyRequestDto): Response<BazaarVerifyResponseDto> =
+        Response.success(zibalVerifyResponse)
 
     override suspend fun getCoinPackages(): Response<CoinPackagesResponseDto> =
         Response.success(CoinPackagesResponseDto())

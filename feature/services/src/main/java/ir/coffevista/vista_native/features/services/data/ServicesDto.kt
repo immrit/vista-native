@@ -110,6 +110,22 @@ data class GameSsoTicketResponseDto(
 )
 
 @Serializable
+data class VistaSsoTicketRequestDto(
+    @SerialName("client_id")
+    val clientId: String,
+)
+
+@Serializable
+data class VistaSsoTicketResponseDto(
+    @SerialName("ticket")
+    val ticket: String? = null,
+    @SerialName("client_id")
+    val clientId: String? = null,
+    @SerialName("expires_in")
+    val expiresIn: Long? = null,
+)
+
+@Serializable
 data class TopGroupDto(
     @SerialName("id")
     val id: String? = null,
