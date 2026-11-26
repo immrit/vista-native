@@ -2,15 +2,19 @@ package ir.coffevista.vista_native.update
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageInfo
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import android.util.Log
 import androidx.core.content.FileProvider
+import androidx.core.content.pm.PackageInfoCompat
 import dagger.hilt.android.qualifiers.ApplicationContext
 import ir.coffevista.vista_native.core.network.BootstrapApi
 import java.io.File
 import java.io.FileOutputStream
+import java.net.Proxy
 import java.security.MessageDigest
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -49,6 +53,8 @@ class VistaUpdateManager @Inject constructor(
     private companion object {
         const val TAG = "VistaUpdateManager"
         const val BAZAAR_PACKAGE = "com.farsitel.bazaar"
+        const val MAX_APK_BYTES = 250L * 1024L * 1024L
+        const val MAX_REDIRECTS = 3
         val SHA256_REGEX = Regex("^[a-fA-F0-9]{64}$")
         val ALLOWED_UPDATE_HOSTS = setOf(
             "cafevista.ir",
@@ -57,18 +63,91 @@ class VistaUpdateManager @Inject constructor(
             "coffevista.ir",
             "www.coffevista.ir",
             "api.coffevista.ir",
+            "dl.coffevista.ir",
+            "vista-media.s3.ir-thr-at1.arvanstorage.ir",
+            "vista-storage.s3.ir-thr-at1.arvanstorage.ir",
         )
     }
 
     private fun isAllowedDownloadUrl(rawUrl: String): Boolean {
         val uri = runCatching { Uri.parse(rawUrl) }.getOrNull() ?: return false
         if (uri.scheme?.lowercase() != "https") return false
+        if (!uri.userInfo.isNullOrBlank()) return false
         val host = uri.host?.lowercase() ?: return false
         return host in ALLOWED_UPDATE_HOSTS ||
             host.endsWith(".cafevista.ir") ||
-            host.endsWith(".coffevista.ir") ||
-            host.endsWith(".arvanstorage.ir") ||
-            host.endsWith(".cdn.ir")
+            host.endsWith(".coffevista.ir")
+    }
+
+    private fun downloadClient(): OkHttpClient = httpClient.newBuilder()
+        .proxy(Proxy.NO_PROXY)
+        .followRedirects(false)
+        .followSslRedirects(false)
+        .build()
+
+    @Suppress("DEPRECATION")
+    private fun extractSigningDigests(packageInfo: PackageInfo): Set<String>? {
+        val signatures = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val signingInfo = packageInfo.signingInfo ?: return null
+            if (signingInfo.hasMultipleSigners()) {
+                signingInfo.apkContentsSigners
+            } else {
+                signingInfo.signingCertificateHistory
+            }
+        } else {
+            packageInfo.signatures
+        } ?: return null
+        if (signatures.isEmpty()) return null
+        val md = MessageDigest.getInstance("SHA-256")
+        return signatures.map { sig ->
+            md.digest(sig.toByteArray()).joinToString("") { "%02x".format(it) }
+        }.toSet()
+    }
+
+    @Suppress("DEPRECATION")
+    fun verifyApkPackageAndSignature(apkFile: File): Boolean {
+        if (!apkFile.exists() || apkFile.length() <= 0L || apkFile.length() > MAX_APK_BYTES) return false
+        return runCatching {
+            val pm = context.packageManager
+            val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                PackageManager.GET_SIGNING_CERTIFICATES
+            } else {
+                PackageManager.GET_SIGNATURES
+            }
+            val archiveInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                pm.getPackageArchiveInfo(apkFile.absolutePath, PackageManager.PackageInfoFlags.of(flags.toLong()))
+            } else {
+                pm.getPackageArchiveInfo(apkFile.absolutePath, flags)
+            } ?: return false
+
+            if (archiveInfo.packageName != context.packageName) {
+                Log.e(TAG, "APK package mismatch: ${archiveInfo.packageName}")
+                return false
+            }
+
+            val installedInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                pm.getPackageInfo(context.packageName, PackageManager.PackageInfoFlags.of(flags.toLong()))
+            } else {
+                pm.getPackageInfo(context.packageName, flags)
+            }
+            val installedVersionCode = PackageInfoCompat.getLongVersionCode(installedInfo)
+            val archiveVersionCode = PackageInfoCompat.getLongVersionCode(archiveInfo)
+            if (archiveVersionCode <= installedVersionCode) {
+                Log.e(TAG, "Refusing APK downgrade or same-version replay: $archiveVersionCode <= $installedVersionCode")
+                return false
+            }
+
+            val archiveDigests = extractSigningDigests(archiveInfo) ?: return false
+            val installedDigests = extractSigningDigests(installedInfo) ?: return false
+            if (archiveDigests.intersect(installedDigests).isEmpty()) {
+                Log.e(TAG, "Refusing APK: signing certificate digest mismatch")
+                return false
+            }
+            true
+        }.getOrElse { e ->
+            Log.e(TAG, "APK signature/metadata verification failed", e)
+            false
+        }
     }
 
     private fun updatesDir(): File = File(context.cacheDir, "updates").apply { mkdirs() }
@@ -97,7 +176,7 @@ class VistaUpdateManager @Inject constructor(
         val file = apkFileForVersion(versionCode)
         if (!file.exists() || file.length() <= 0L) return null
         val actual = runCatching { computeSha256(file) }.getOrNull() ?: return null
-        if (!actual.equals(cleanExpectedSha, ignoreCase = true)) {
+        if (!actual.equals(cleanExpectedSha, ignoreCase = true) || !verifyApkPackageAndSignature(file)) {
             file.delete()
             return null
         }
@@ -197,14 +276,30 @@ class VistaUpdateManager @Inject constructor(
             }
 
             try {
-                val request = Request.Builder().url(downloadUrl).build()
-                httpClient.newCall(request).execute().use { response ->
-                    if (!response.isSuccessful) {
-                        return@withContext ApkDownloadResult.Failed("خطا در دریافت فایل (کد ${response.code})")
+                val client = downloadClient()
+                var activeUrl = downloadUrl
+                var redirects = 0
+                var response = client.newCall(Request.Builder().url(activeUrl).build()).execute()
+                while (response.isRedirect && redirects < MAX_REDIRECTS) {
+                    val location = response.header("Location")?.trim().orEmpty()
+                    response.close()
+                    if (location.isEmpty() || !isAllowedDownloadUrl(location)) {
+                        return@withContext ApkDownloadResult.Failed("تغییر مسیر دانلود به نشانی نامعتبر مسدود شد")
                     }
-                    val body = response.body
+                    activeUrl = location
+                    redirects++
+                    response = client.newCall(Request.Builder().url(activeUrl).build()).execute()
+                }
+                response.use { res ->
+                    if (!res.isSuccessful) {
+                        return@withContext ApkDownloadResult.Failed("خطا در دریافت فایل (کد ${res.code})")
+                    }
+                    val body = res.body
                         ?: return@withContext ApkDownloadResult.Failed("بدنه پاسخ سرور خالی است")
                     val contentLength = body.contentLength().takeIf { it > 0L } ?: update.fileSizeBytes
+                    if (contentLength > MAX_APK_BYTES) {
+                        return@withContext ApkDownloadResult.Failed("حجم فایل به‌روزرسانی بیش از حد مجاز است")
+                    }
                     var bytesCopied = 0L
                     var lastReportTime = 0L
 
@@ -214,8 +309,11 @@ class VistaUpdateManager @Inject constructor(
                             var read: Int
                             while (input.read(buffer).also { read = it } != -1) {
                                 currentCoroutineContext().ensureActive()
-                                output.write(buffer, 0, read)
                                 bytesCopied += read
+                                if (bytesCopied > MAX_APK_BYTES) {
+                                    throw IllegalStateException("APK size exceeded limit")
+                                }
+                                output.write(buffer, 0, read)
                                 val now = System.currentTimeMillis()
                                 if (now - lastReportTime >= 90L) {
                                     lastReportTime = now
@@ -236,6 +334,10 @@ class VistaUpdateManager @Inject constructor(
                     Log.e(TAG, "SHA256 mismatch! Refusing APK installation.")
                     tempFile.delete()
                     return@withContext ApkDownloadResult.Failed("تایید اصالت فایل APK ناموفق بود")
+                }
+                if (!verifyApkPackageAndSignature(tempFile)) {
+                    tempFile.delete()
+                    return@withContext ApkDownloadResult.Failed("امضای بسته APK یا شماره نسخه با ویستا مطابقت ندارد")
                 }
 
                 if (targetFile.exists()) targetFile.delete()
@@ -300,7 +402,7 @@ class VistaUpdateManager @Inject constructor(
 
     fun installApk(apkFile: File): Boolean {
         return runCatching {
-            if (!apkFile.exists()) return false
+            if (!apkFile.exists() || !verifyApkPackageAndSignature(apkFile)) return false
 
             val uri = FileProvider.getUriForFile(
                 context,

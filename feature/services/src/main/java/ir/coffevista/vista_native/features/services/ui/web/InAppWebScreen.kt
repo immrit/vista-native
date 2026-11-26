@@ -165,6 +165,21 @@ fun InAppWebScreen(
         }
     }
 
+    DisposableEffect(Unit) {
+        onDispose {
+            webViewInstance?.let { webView ->
+                runCatching {
+                    webView.stopLoading()
+                    webView.loadUrl("about:blank")
+                    webView.clearHistory()
+                    webView.removeJavascriptInterface("VistaGameBridge")
+                    webView.destroy()
+                }
+            }
+            webViewInstance = null
+        }
+    }
+
     LaunchedEffect(webViewInstance, miniAppMode, webTopSafeInsetDp, webBottomSafeInsetDp) {
         if (miniAppMode) {
             injectGameSafeAreaCssVars(
@@ -221,6 +236,11 @@ fun InAppWebScreen(
                             settings.useWideViewPort = true
                             settings.allowFileAccess = false
                             settings.allowContentAccess = false
+                            @Suppress("DEPRECATION")
+                            settings.allowFileAccessFromFileURLs = false
+                            @Suppress("DEPRECATION")
+                            settings.allowUniversalAccessFromFileURLs = false
+                            settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
                             settings.setSupportMultipleWindows(false)
                             settings.javaScriptCanOpenWindowsAutomatically = false
 
@@ -271,6 +291,8 @@ fun InAppWebScreen(
                                             val parsed = runCatching { JSONObject(payloadJson.orEmpty()) }.getOrNull()
                                                 ?: return@post
                                             val shareUrl = parsed.optString("url").trim()
+                                                .takeIf { it.startsWith("https://", ignoreCase = true) }
+                                                .orEmpty()
                                             val shareText = parsed.optString("text").trim()
                                             val shareTitle = parsed.optString("title").trim().ifBlank { "ویستا کوییز" }
                                             if (shareUrl.isBlank() && shareText.isBlank()) return@post
@@ -744,13 +766,14 @@ internal fun isNavigationAllowed(
     allowedPathPrefix: String?,
 ): Boolean {
     if (url == "about:blank") return true
-    if (restrictHost == null) return true
+    if (url != null && url.startsWith("data:text/plain,", ignoreCase = true)) return true
     val uri = runCatching { java.net.URI(url) }.getOrNull() ?: return false
 
     val scheme = uri.scheme.orEmpty().lowercase()
     if (scheme != "https") {
         return false
     }
+    if (restrictHost == null) return true
 
     val host = uri.host.orEmpty().lowercase()
     val target = restrictHost.lowercase()

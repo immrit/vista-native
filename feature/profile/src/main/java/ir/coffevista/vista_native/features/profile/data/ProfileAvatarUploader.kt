@@ -89,6 +89,7 @@ class ProfileAvatarUploader @Inject constructor(
         onProgress: (Float) -> Unit = {},
     ): UploadedProfileAvatar = withContext(Dispatchers.IO) {
         require(userId.isNotBlank()) { "شناسه کاربر نامعتبر است" }
+        require(resolver.getType(uri)?.startsWith("image/") != false) { "فقط تصویر مدرک قابل انتخاب است" }
         val sourceSize = resolver.openAssetFileDescriptor(uri, "r")?.length
             ?.takeIf { it >= 0 }
             ?: sourceLengthAtMost(uri)
@@ -105,7 +106,7 @@ class ProfileAvatarUploader @Inject constructor(
             if (temporaryJpeg.length() !in 1..MAX_INPUT_BYTES) {
                 throw IOException("حجم تصویر مدرک فشرده‌شده باید حداکثر ۵ مگابایت باشد")
             }
-            val objectKey = "documents/${userId.safeSegment()}/${System.currentTimeMillis()}_verification.jpg"
+            val objectKey = "verification/${userId.safeSegment()}/${System.currentTimeMillis()}_verification.jpg"
             val presign = api.presignUpload(
                 ProfileMediaPresignRequestDto(
                     objectKey = objectKey,

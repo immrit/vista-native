@@ -222,8 +222,12 @@ fun FullscreenMediaViewerDialog(
     VistaFullscreenSurface(
         onDismissRequest = onDismiss,
     ) {
+        val currentItem = mediaItems.getOrNull(pagerState.currentPage)
         BackHandler(enabled = true, onBack = onDismiss)
-        ConfigureViewerSystemBars(chromeVisible = chromeVisible || isDraggingToDismiss)
+        ConfigureViewerSystemBars(
+            chromeVisible = chromeVisible || isDraggingToDismiss,
+            secureSurface = !allowSave || isSecretLocalUri(currentItem?.url),
+        )
         val safeInsets = rememberViewerSafeInsets()
 
         val mediaGlassState = rememberVistaGlassState()
@@ -231,8 +235,6 @@ fun FullscreenMediaViewerDialog(
         val dismissThresholdPx = with(density) { 130.dp.toPx() }
         val dragFraction = (abs(verticalDragOffsetY) / (dismissThresholdPx * 2.2f)).coerceIn(0f, 1f)
         val backgroundAlpha = (1f - dragFraction * 0.72f).coerceIn(0.22f, 1f)
-
-        val currentItem = mediaItems.getOrNull(pagerState.currentPage)
 
         // Subtle opening entrance from source bounds if provided.
         val openScale = remember(sourceBounds) { Animatable(if (sourceBounds != null) 0.92f else 0.96f) }
@@ -354,13 +356,13 @@ fun FullscreenMediaViewerDialog(
                 modifier = Modifier.align(Alignment.BottomCenter),
             ) {
                 currentItem?.let { item ->
-                    val canSaveItem = allowSave && !isSecretLocalUri(item.url)
+                    val canExportItem = allowSave && !isSecretLocalUri(item.url)
                     ViewerBottomBar(
                         glassState = mediaGlassState,
                         safeInsets = safeInsets,
                         item = item,
                         isSaving = isSavingToGallery,
-                        onSaveToGallery = if (!canSaveItem) null else {
+                        onSaveToGallery = if (!canExportItem) null else {
                             {
                                 if (!isSavingToGallery) {
                                     isSavingToGallery = true
@@ -384,13 +386,15 @@ fun FullscreenMediaViewerDialog(
                                 }
                             }
                         },
-                        onShare = {
-                            coroutineScope.launch {
-                                val ok = shareMediaItem(context, item)
-                                if (!ok) statusBannerText = "اشتراک‌گذاری امکان‌پذیر نیست"
+                        onShare = if (!canExportItem) null else {
+                            {
+                                coroutineScope.launch {
+                                    val ok = shareMediaItem(context, item)
+                                    if (!ok) statusBannerText = "اشتراک‌گذاری امکان‌پذیر نیست"
+                                }
                             }
                         },
-                        onForward = onForward?.let { cb -> { cb(item) } },
+                        onForward = if (!canExportItem) null else onForward?.let { cb -> { cb(item) } },
                         onShowInChat = onShowInChat?.let { cb -> { cb(item) } },
                         onDelete = if (item.isMine && onDelete != null) {
                             { onDelete(item) }
@@ -536,7 +540,10 @@ private fun applyLockedEdgeToEdgeDialogWindow(window: Window) {
 }
 
 @Composable
-private fun ConfigureViewerSystemBars(chromeVisible: Boolean) {
+private fun ConfigureViewerSystemBars(
+    chromeVisible: Boolean,
+    secureSurface: Boolean = false,
+) {
     val view = LocalView.current
     val dialogWindow = (view.parent as? DialogWindowProvider)?.window
     val activityWindow = remember(view) { view.context.findViewerActivity()?.window }
@@ -544,18 +551,33 @@ private fun ConfigureViewerSystemBars(chromeVisible: Boolean) {
     SideEffect {
         if (dialogWindow != null) {
             applyLockedEdgeToEdgeDialogWindow(dialogWindow)
+            if (secureSurface) {
+                dialogWindow.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+            }
         }
     }
 
-    DisposableEffect(dialogWindow, activityWindow) {
+    DisposableEffect(dialogWindow, activityWindow, secureSurface) {
         val targetWindow = dialogWindow ?: activityWindow
+        val hadActivitySecure = activityWindow != null &&
+            (activityWindow.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE) != 0
         if (dialogWindow != null) {
             applyLockedEdgeToEdgeDialogWindow(dialogWindow)
+            if (secureSurface) {
+                dialogWindow.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+            }
+        } else if (secureSurface) {
+            activityWindow?.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         }
         val controller = targetWindow?.let { WindowCompat.getInsetsController(it, view) }
         val previousLightStatus = controller?.isAppearanceLightStatusBars ?: false
         val previousLightNav = controller?.isAppearanceLightNavigationBars ?: false
         onDispose {
+            if (dialogWindow != null && secureSurface) {
+                dialogWindow.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+            } else if (secureSurface && !hadActivitySecure) {
+                activityWindow?.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+            }
             val restoreWindow = dialogWindow ?: activityWindow
             if (restoreWindow != null) {
                 val restoreController = WindowCompat.getInsetsController(restoreWindow, view)
@@ -715,7 +737,7 @@ private fun ViewerBottomBar(
     item: MediaViewerItem,
     isSaving: Boolean,
     onSaveToGallery: (() -> Unit)?,
-    onShare: () -> Unit,
+    onShare: (() -> Unit)?,
     onForward: (() -> Unit)?,
     onShowInChat: (() -> Unit)?,
     onDelete: (() -> Unit)?,
@@ -804,11 +826,13 @@ private fun ViewerBottomBar(
                     onClick = onSaveToGallery,
                 )
             }
-            ViewerActionButton(
-                icon = Icons.Default.Share,
-                label = "اشتراک",
-                onClick = onShare,
-            )
+            if (onShare != null) {
+                ViewerActionButton(
+                    icon = Icons.Default.Share,
+                    label = "اشتراک",
+                    onClick = onShare,
+                )
+            }
             if (onForward != null) {
                 ViewerActionButton(
                     icon = Icons.AutoMirrored.Filled.Forward,
@@ -1370,16 +1394,40 @@ private suspend fun shareMediaItem(context: Context, item: MediaViewerItem): Boo
             else -> "image/*"
         }
         val shareUri: Uri? = when (uri.scheme) {
-            "content" -> uri
+            "content" -> {
+                val authority = uri.authority.orEmpty()
+                if (authority == "${context.packageName}.files") uri else null
+            }
             "file", null -> {
                 val file = File(uri.path ?: item.url)
-                if (file.isFile) {
+                val canonicalFile = runCatching { file.canonicalFile }.getOrNull()
+                val canonicalDataDir = runCatching { context.dataDir.canonicalFile }.getOrNull()
+                val canonicalCacheDir = runCatching { context.cacheDir.canonicalFile }.getOrNull()
+                val isAllowedSource = canonicalFile != null &&
+                    file.isFile &&
+                    !isSecretLocalUri(canonicalFile.path) &&
+                    (
+                        canonicalCacheDir != null && canonicalFile.path.startsWith(canonicalCacheDir.path + File.separator) ||
+                            canonicalDataDir == null ||
+                            !canonicalFile.path.startsWith(canonicalDataDir.path + File.separator)
+                        )
+                if (isAllowedSource) {
                     val shareDir = File(context.cacheDir, "chat_media").apply { mkdirs() }
-                    val target = File(shareDir, item.title?.takeIf(String::isNotBlank) ?: file.name)
-                    if (file.absolutePath != target.absolutePath) {
-                        file.copyTo(target, overwrite = true)
+                    val shareRoot = shareDir.canonicalFile
+                    val rawName = item.title?.takeIf(String::isNotBlank) ?: canonicalFile!!.name
+                    val safeName = File(rawName).name
+                        .replace(Regex("[\\\\/:*?\"<>|\\x00-\\x1f]"), "_")
+                        .trim('.')
+                        .ifBlank { "media_${System.currentTimeMillis()}" }
+                    val target = File(shareRoot, safeName)
+                    if (!target.canonicalPath.startsWith(shareRoot.path + File.separator)) {
+                        null
+                    } else {
+                        if (canonicalFile.path != target.canonicalPath) {
+                            canonicalFile.copyTo(target, overwrite = true)
+                        }
+                        FileProvider.getUriForFile(context, "${context.packageName}.files", target)
                     }
-                    FileProvider.getUriForFile(context, "${context.packageName}.files", target)
                 } else null
             }
             else -> null

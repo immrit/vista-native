@@ -8,7 +8,10 @@ import android.media.MediaFormat
 import android.media.MediaMetadataRetriever
 import android.media.MediaMuxer
 import android.net.Uri
+import android.os.SystemClock
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.nio.ByteBuffer
@@ -151,7 +154,8 @@ object AudioTrimEngine {
             var firstDecodedPtsUs = -1L
             var lastEncodedPtsUs = -1L
 
-            val maxLoopCount = 8_000
+            val maxLoopCount = 150_000
+            val deadlineMs = SystemClock.elapsedRealtime() + 30_000L
             var loopCount = 0
 
             fun drainEncoderOutput() {
@@ -193,7 +197,10 @@ object AudioTrimEngine {
                 }
             }
 
-            while (!encoderDone && loopCount++ < maxLoopCount) {
+            while (!encoderDone && loopCount++ < maxLoopCount && SystemClock.elapsedRealtime() < deadlineMs) {
+                if (loopCount % 64 == 0) {
+                    currentCoroutineContext().ensureActive()
+                }
                 // 1. Feed Extractor -> Decoder
                 if (!extractorDone) {
                     val inputBufIndex = decoder.dequeueInputBuffer(TIMEOUT_US)
@@ -204,7 +211,7 @@ object AudioTrimEngine {
                             val sampleSize = extractor.readSampleData(inputBuf, 0)
                             val sampleTimeUs = extractor.sampleTime
 
-                            if (sampleSize < 0 || (sampleTimeUs > endUs && sampleTimeUs >= 0)) {
+                            if (sampleSize < 0 || extractor.sampleTrackIndex < 0 || sampleTimeUs > endUs) {
                                 decoder.queueInputBuffer(
                                     inputBufIndex,
                                     0,
@@ -218,7 +225,7 @@ object AudioTrimEngine {
                                     inputBufIndex,
                                     0,
                                     sampleSize,
-                                    sampleTimeUs,
+                                    sampleTimeUs.coerceAtLeast(0L),
                                     0,
                                 )
                                 extractor.advance()
@@ -228,8 +235,9 @@ object AudioTrimEngine {
                 }
 
                 // 2. Drain Decoder -> Feed to Encoder
+                val decTimeoutUs = if (extractorDone) 2_000L else 0L
                 while (!decoderDone) {
-                    val decOutIndex = decoder.dequeueOutputBuffer(bufferInfo, 0L)
+                    val decOutIndex = decoder.dequeueOutputBuffer(bufferInfo, decTimeoutUs)
                     if (decOutIndex == MediaCodec.INFO_TRY_AGAIN_LATER) {
                         break
                     } else if (decOutIndex >= 0) {
@@ -246,7 +254,7 @@ object AudioTrimEngine {
                         if (bufferInfo.size > 0 || isEos) {
                             var encInQueued = false
                             var retryCount = 0
-                            while (!encInQueued && retryCount++ < 15) {
+                            while (!encInQueued && retryCount++ < 250) {
                                 val encInIndex = encoder.dequeueInputBuffer(500L)
                                 if (encInIndex >= 0) {
                                     val encInBuf = encoder.getInputBuffer(encInIndex)

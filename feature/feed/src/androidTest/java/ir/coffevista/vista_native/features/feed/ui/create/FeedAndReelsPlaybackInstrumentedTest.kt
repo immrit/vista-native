@@ -263,9 +263,14 @@ class FeedAndReelsPlaybackInstrumentedTest {
                 raf.write(byteArrayOf(0, 0, 0, 0))
             }
 
+            val detailed = verifyMp4WithMedia3ExtractorDetailed(corruptedMp4)
             assertFalse(
                 "Media3 Mp4Extractor must reject zero NAL length sample",
-                verifyMp4WithMedia3Extractor(corruptedMp4),
+                detailed.isValid,
+            )
+            assertTrue(
+                "Expected ParserException detail, got ${detailed.reason}",
+                detailed.reason.contains("ParserException"),
             )
             assertFalse(
                 "validateTrimmedMp4 must reject container with Invalid NAL length",
@@ -273,6 +278,137 @@ class FeedAndReelsPlaybackInstrumentedTest {
             )
         } finally {
             workDir.deleteRecursively()
+        }
+    }
+
+    @OptIn(UnstableApi::class)
+    @Test
+    fun trimVideo_dropsEmptyAudioSliceAcrossLosslessAndTranscode() {
+        runBlocking {
+            val workDir = File(context.cacheDir, "empty_audio_slice_${System.currentTimeMillis()}").apply { mkdirs() }
+            try {
+                // Synthesize a 4s video whose AAC audio track only spans the first 1s, then trim [2200ms, 3800ms].
+                val src = File(workDir, "short_audio_tail.mp4")
+                val (vFmt, vSamples) = encodeVideoSamples(MediaFormat.MIMETYPE_VIDEO_AVC, 360, 640, 30, 4_000L, false)
+                val (aFmt, aSamples) = encodeAacSamples(900L)
+                val muxer = MediaMuxer(src.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+                var started = false
+                try {
+                    val vTrack = muxer.addTrack(vFmt)
+                    val aTrack = muxer.addTrack(aFmt)
+                    muxer.start()
+                    started = true
+                    val info = MediaCodec.BufferInfo()
+                    var vi = 0
+                    var ai = 0
+                    while (vi < vSamples.size || ai < aSamples.size) {
+                        val vt = if (vi < vSamples.size) vSamples[vi].ptsUs else Long.MAX_VALUE
+                        val at = if (ai < aSamples.size) aSamples[ai].ptsUs else Long.MAX_VALUE
+                        if (vt <= at) {
+                            val s = vSamples[vi++]
+                            info.set(0, s.data.size, s.ptsUs, s.flags)
+                            muxer.writeSampleData(vTrack, ByteBuffer.wrap(s.data), info)
+                        } else {
+                            val s = aSamples[ai++]
+                            info.set(0, s.data.size, s.ptsUs, s.flags)
+                            muxer.writeSampleData(aTrack, ByteBuffer.wrap(s.data), info)
+                        }
+                    }
+                } finally {
+                    if (started) runCatching { muxer.stop() }
+                    runCatching { muxer.release() }
+                }
+
+                // 1) Hybrid trimVideo (lossless path when monotonic/keyframe-aligned)
+                val trimmedHybrid = trimVideo(
+                    context = context,
+                    uri = Uri.fromFile(src),
+                    startMs = 2_200L,
+                    endMs = 3_800L,
+                    maxDurationMs = 60_000L,
+                )
+                try {
+                    val v = validateTrimmedMp4Detailed(trimmedHybrid, requireDecodedFrame = false)
+                    assertTrue("Hybrid trim must succeed when audio slice is empty: ${v.reason}", v.isValid)
+                    assertTrue("Hybrid output must be faststart", Mp4FastStart.isFastStart(trimmedHybrid))
+                } finally {
+                    trimmedHybrid.delete()
+                }
+
+                // 2) Explicit GPU transcodeTrimVideo path (muxCleanVideoAndAudio must drop empty audio track)
+                val trimmedTranscode = transcodeTrimVideo(
+                    context = context,
+                    uri = Uri.fromFile(src),
+                    startMs = 2_200L,
+                    endMs = 3_800L,
+                    maxDurationMs = 60_000L,
+                    rotation = 0,
+                )
+                try {
+                    val v = validateTrimmedMp4Detailed(trimmedTranscode, requireDecodedFrame = false)
+                    assertTrue("Transcode trim must succeed when audio slice is empty: ${v.reason}", v.isValid)
+                    assertTrue("Transcode output must be faststart", Mp4FastStart.isFastStart(trimmedTranscode))
+                } finally {
+                    trimmedTranscode.delete()
+                }
+            } finally {
+                workDir.deleteRecursively()
+            }
+        }
+    }
+
+    @OptIn(UnstableApi::class)
+    @Test
+    fun trimVideo_preservesAudioTrackAcrossZeroStartAndTranscode() {
+        runBlocking {
+            val workDir = File(context.cacheDir, "audio_preserve_test_${System.currentTimeMillis()}").apply { mkdirs() }
+            try {
+                val src = File(workDir, "av_clip.mp4")
+                synthesizeMp4(
+                    outputFile = src,
+                    videoMime = MediaFormat.MIMETYPE_VIDEO_AVC,
+                    durationMs = 3_500L,
+                    width = 360,
+                    height = 640,
+                    fps = 30,
+                    orientationDegrees = 0,
+                    tryBFrames = false,
+                    includeAudio = true,
+                )
+
+                val trimmedLossless = trimVideo(
+                    context = context,
+                    uri = Uri.fromFile(src),
+                    startMs = 0L,
+                    endMs = 2_800L,
+                    maxDurationMs = 60_000L,
+                )
+                try {
+                    val insp = inspectFile(trimmedLossless)
+                    assertNotNull("Trimmed lossless clip must preserve audio track", insp.audioMime)
+                    assertTrue("Trimmed lossless clip must pass validation", validateTrimmedMp4(trimmedLossless))
+                } finally {
+                    trimmedLossless.delete()
+                }
+
+                val trimmedTranscode = transcodeTrimVideo(
+                    context = context,
+                    uri = Uri.fromFile(src),
+                    startMs = 0L,
+                    endMs = 2_800L,
+                    maxDurationMs = 60_000L,
+                    rotation = 0,
+                )
+                try {
+                    val insp = inspectFile(trimmedTranscode)
+                    assertNotNull("Transcoded clip must preserve audio track", insp.audioMime)
+                    assertTrue("Transcoded clip must pass validation", validateTrimmedMp4(trimmedTranscode))
+                } finally {
+                    trimmedTranscode.delete()
+                }
+            } finally {
+                workDir.deleteRecursively()
+            }
         }
     }
 

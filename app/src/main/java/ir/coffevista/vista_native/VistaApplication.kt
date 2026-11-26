@@ -93,10 +93,22 @@ class VistaApplication : Application(), Configuration.Provider, ImageLoaderFacto
                     null,
                 )?.takeIf(String::isNotBlank)
 
-                override fun currentSessionToken(): String? = sessionPrefs.getString(
-                    ir.coffevista.vista_native.core.common.SessionCredentialsProvider.KEY_SESSION_TOKEN,
-                    null,
-                )?.takeIf(String::isNotBlank)
+                override fun currentSessionToken(): String? {
+                    val raw = sessionPrefs.getString(
+                        ir.coffevista.vista_native.core.common.SessionCredentialsProvider.KEY_SESSION_TOKEN,
+                        null,
+                    )?.takeIf(String::isNotBlank) ?: return null
+                    if (raw.startsWith(TOKEN_ENC_PREFIX)) {
+                        return decryptSessionToken(raw)
+                    }
+                    // Migrate legacy plaintext token into Keystore AES-GCM storage on first read.
+                    encryptSessionToken(raw)?.let { encrypted ->
+                        sessionPrefs.edit()
+                            .putString(ir.coffevista.vista_native.core.common.SessionCredentialsProvider.KEY_SESSION_TOKEN, encrypted)
+                            .apply()
+                    }
+                    return raw
+                }
 
                 override fun currentUserId(): String? = sessionPrefs.getString(
                     ir.coffevista.vista_native.core.common.SessionCredentialsProvider.KEY_SESSION_USER_ID,
@@ -104,9 +116,10 @@ class VistaApplication : Application(), Configuration.Provider, ImageLoaderFacto
                 )?.takeIf(String::isNotBlank)
 
                 override fun saveSessionCredentials(sessionId: String, sessionToken: String, userId: String?) {
+                    val encryptedToken = encryptSessionToken(sessionToken) ?: return
                     sessionPrefs.edit()
                         .putString(ir.coffevista.vista_native.core.common.SessionCredentialsProvider.KEY_SESSION_ID, sessionId)
-                        .putString(ir.coffevista.vista_native.core.common.SessionCredentialsProvider.KEY_SESSION_TOKEN, sessionToken)
+                        .putString(ir.coffevista.vista_native.core.common.SessionCredentialsProvider.KEY_SESSION_TOKEN, encryptedToken)
                         .apply {
                             if (!userId.isNullOrBlank()) {
                                 putString(ir.coffevista.vista_native.core.common.SessionCredentialsProvider.KEY_SESSION_USER_ID, userId)
@@ -191,3 +204,51 @@ private class LocalVideoThumbnailFetcher(
         }
     }
 }
+
+private const val SESSION_CREDS_KEY_ALIAS = "vista_active_session_creds_aes_v1"
+private const val TOKEN_ENC_PREFIX = "v1:"
+private const val KEYSTORE_PROVIDER_NAME = "AndroidKeyStore"
+private const val AES_GCM_MODE = "AES/GCM/NoPadding"
+
+private fun getOrCreateSessionCredsKey(): javax.crypto.SecretKey? = runCatching {
+    val keyStore = java.security.KeyStore.getInstance(KEYSTORE_PROVIDER_NAME).apply { load(null) }
+    val existing = runCatching { keyStore.getKey(SESSION_CREDS_KEY_ALIAS, null) as? javax.crypto.SecretKey }.getOrNull()
+    if (existing != null) return@runCatching existing
+    val generator = javax.crypto.KeyGenerator.getInstance(
+        android.security.keystore.KeyProperties.KEY_ALGORITHM_AES,
+        KEYSTORE_PROVIDER_NAME,
+    )
+    generator.init(
+        android.security.keystore.KeyGenParameterSpec.Builder(
+            SESSION_CREDS_KEY_ALIAS,
+            android.security.keystore.KeyProperties.PURPOSE_ENCRYPT or android.security.keystore.KeyProperties.PURPOSE_DECRYPT,
+        )
+            .setBlockModes(android.security.keystore.KeyProperties.BLOCK_MODE_GCM)
+            .setEncryptionPaddings(android.security.keystore.KeyProperties.ENCRYPTION_PADDING_NONE)
+            .setRandomizedEncryptionRequired(true)
+            .build(),
+    )
+    generator.generateKey()
+}.getOrNull()
+
+private fun encryptSessionToken(plainToken: String): String? = runCatching {
+    val key = getOrCreateSessionCredsKey() ?: return@runCatching null
+    val cipher = javax.crypto.Cipher.getInstance(AES_GCM_MODE)
+    cipher.init(javax.crypto.Cipher.ENCRYPT_MODE, key)
+    val encrypted = cipher.doFinal(plainToken.toByteArray(Charsets.UTF_8))
+    val ivB64 = android.util.Base64.encodeToString(cipher.iv, android.util.Base64.NO_WRAP)
+    val bodyB64 = android.util.Base64.encodeToString(encrypted, android.util.Base64.NO_WRAP)
+    "$TOKEN_ENC_PREFIX$ivB64.$bodyB64"
+}.getOrNull()
+
+private fun decryptSessionToken(encoded: String): String? = runCatching {
+    if (!encoded.startsWith(TOKEN_ENC_PREFIX)) return@runCatching null
+    val parts = encoded.removePrefix(TOKEN_ENC_PREFIX).split('.')
+    if (parts.size != 2) return@runCatching null
+    val iv = android.util.Base64.decode(parts[0], android.util.Base64.NO_WRAP)
+    val ciphertext = android.util.Base64.decode(parts[1], android.util.Base64.NO_WRAP)
+    val key = getOrCreateSessionCredsKey() ?: return@runCatching null
+    val cipher = javax.crypto.Cipher.getInstance(AES_GCM_MODE)
+    cipher.init(javax.crypto.Cipher.DECRYPT_MODE, key, javax.crypto.spec.GCMParameterSpec(128, iv))
+    String(cipher.doFinal(ciphertext), Charsets.UTF_8).takeIf(String::isNotBlank)
+}.getOrNull()

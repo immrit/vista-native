@@ -272,8 +272,12 @@ class VistaFirebaseMessagingService : FirebaseMessagingService() {
         fetchBitmapBounded(rawUrl, circular = true)
 
     private fun fetchBitmapBounded(rawUrl: String?, circular: Boolean): Bitmap? {
-        val url = rawUrl?.trim()?.takeIf { it.startsWith("http://") || it.startsWith("https://") }
+        val url = rawUrl?.trim()?.takeIf { it.startsWith("https://", ignoreCase = true) }
             ?: return null
+        val parsedUri = runCatching { java.net.URI(url) }.getOrNull() ?: return null
+        val host = parsedUri.host?.lowercase()?.trim().orEmpty()
+        if (host.isEmpty() || !isSafePublicNotificationImageHost(host)) return null
+
         val cacheKey = "${if (circular) "c" else "r"}:$url"
         avatarCache.get(cacheKey)?.let { return it }
 
@@ -283,7 +287,18 @@ class VistaFirebaseMessagingService : FirebaseMessagingService() {
                     val request = Request.Builder().url(url).get().build()
                     externalMediaClient.newCall(request).execute().use { response ->
                         if (!response.isSuccessful) return@use null
-                        val bytes = response.body?.bytes() ?: return@use null
+                        val declaredLength = response.body?.contentLength() ?: -1L
+                        if (declaredLength > MAX_IMAGE_BYTES) return@use null
+                        val source = response.body?.source() ?: return@use null
+                        val buffer = okio.Buffer()
+                        var totalRead = 0L
+                        while (totalRead <= MAX_IMAGE_BYTES) {
+                            val read = source.read(buffer, minOf(8192L, (MAX_IMAGE_BYTES + 1L) - totalRead))
+                            if (read == -1L) break
+                            totalRead += read
+                            if (totalRead > MAX_IMAGE_BYTES) return@use null
+                        }
+                        val bytes = buffer.readByteArray()
                         if (bytes.isEmpty() || bytes.size > MAX_IMAGE_BYTES) return@use null
                         val decoded = decodeSampledBitmap(bytes, targetPx = if (circular) 192 else 512)
                             ?: return@use null
@@ -296,6 +311,25 @@ class VistaFirebaseMessagingService : FirebaseMessagingService() {
             avatarCache.put(cacheKey, fetched)
         }
         return fetched
+    }
+
+    private fun isSafePublicNotificationImageHost(host: String): Boolean {
+        if (host == "localhost" || host.endsWith(".local") || host.endsWith(".internal")) return false
+        val stripped = host.removeSurrounding("[", "]")
+        val ipv4 = Regex("""^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$""").matchEntire(stripped)
+        if (ipv4 != null) {
+            val octets = ipv4.groupValues.drop(1).mapNotNull { it.toIntOrNull() }
+            if (octets.size != 4 || octets.any { it !in 0..255 }) return false
+            val (a, b) = octets[0] to octets[1]
+            if (a == 0 || a == 10 || a == 127) return false
+            if (a == 169 && b == 254) return false
+            if (a == 172 && b in 16..31) return false
+            if (a == 192 && b == 168) return false
+            if (a == 100 && b in 64..127) return false
+            if (a >= 224) return false
+        }
+        if (stripped.contains(':')) return false // Block raw IPv6 literals including ::1 / fc00::/7 / fe80::/10
+        return true
     }
 
     private fun decodeSampledBitmap(bytes: ByteArray, targetPx: Int): Bitmap? {

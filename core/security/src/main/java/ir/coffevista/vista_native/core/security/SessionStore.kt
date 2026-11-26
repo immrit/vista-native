@@ -44,6 +44,7 @@ class EncryptedSessionStore internal constructor(
     private val storage: SessionPayloadStorage,
     private val keyProvider: SessionSecretKeyProvider,
     private val flutterMigration: FlutterSessionMigration = NoOpFlutterSessionMigration,
+    private val onClearExtra: () -> Unit = {},
 ) : SessionStore {
     @Inject
     constructor(
@@ -52,6 +53,7 @@ class EncryptedSessionStore internal constructor(
         storage = SharedPreferencesSessionPayloadStorage(context),
         keyProvider = AndroidKeystoreSessionKeyProvider(),
         flutterMigration = AndroidFlutterSessionMigration(context),
+        onClearExtra = { clearAuxiliarySessionState(context.applicationContext) },
     )
 
     override fun read(): StoredSession? {
@@ -114,6 +116,7 @@ class EncryptedSessionStore internal constructor(
     override fun clear() {
         check(flutterMigration.preventFutureImport()) { "Flutter session logout marker failed" }
         check(storage.clear()) { "Encrypted session clear failed" }
+        runCatching(onClearExtra)
     }
 
     private fun importFlutterSession(): StoredSession? {
@@ -370,4 +373,32 @@ private object Base64UrlCodec {
     fun encode(bytes: ByteArray): String = codec.encode(bytes)
 
     fun decode(encoded: String): ByteArray = codec.decode(encoded)
+}
+
+private fun clearAuxiliarySessionState(context: Context) {
+    runCatching {
+        context.getSharedPreferences("vista_active_session_prefs", Context.MODE_PRIVATE)
+            .edit()
+            .clear()
+            .commit()
+    }
+    runCatching {
+        context.getSharedPreferences("vista_verified_tls_policy_enc", Context.MODE_PRIVATE)
+            .edit()
+            .clear()
+            .commit()
+    }
+    runCatching {
+        val ks = KeyStore.getInstance(KEYSTORE_PROVIDER).apply { load(null) }
+        if (ks.containsAlias("vista_active_session_creds_aes_v1")) {
+            ks.deleteEntry("vista_active_session_creds_aes_v1")
+        }
+    }
+    runCatching {
+        android.webkit.CookieManager.getInstance().removeAllCookies(null)
+        android.webkit.CookieManager.getInstance().flush()
+    }
+    runCatching {
+        android.webkit.WebStorage.getInstance().deleteAllData()
+    }
 }

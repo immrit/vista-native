@@ -20,6 +20,9 @@ class InAppWebScreenNavigationTest {
     fun `scoped navigation rejects external schemes but permits webview internals`() {
         assertTrue(isNavigationAllowed("about:blank", "coffevista.ir", "/game"))
         assertTrue(isNavigationAllowed("data:text/plain,ok", "coffevista.ir", "/game"))
+        assertFalse(isNavigationAllowed("data:text/html,<script>alert(1)</script>", "coffevista.ir", "/game"))
+        assertFalse(isNavigationAllowed("http://coffevista.ir/game", null, null))
+        assertFalse(isNavigationAllowed("file:///etc/hosts", null, null))
         assertFalse(isNavigationAllowed("intent://coffevista.ir/game", "coffevista.ir", "/game"))
         assertFalse(isNavigationAllowed(null, "coffevista.ir", "/game"))
     }

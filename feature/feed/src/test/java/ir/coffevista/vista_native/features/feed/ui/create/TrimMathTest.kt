@@ -228,5 +228,29 @@ class TrimMathTest {
                 seekDriftUs = 3_000_000L,
             ),
         )
+        assertTrue(
+            shouldUseLosslessFastPath(
+                videoMime = "video/avc",
+                audioMime = "audio/mp4a-latm",
+                isHdr = false,
+                hasNonMonotonicVideoPts = false,
+                startsWithSyncFrame = true,
+                videoSampleCount = 60,
+                seekDriftUs = 500_000L,
+                estimatedBitrateBps = 2_500_000L,
+            ),
+        )
+        assertFalse(
+            shouldUseLosslessFastPath(
+                videoMime = "video/avc",
+                audioMime = "audio/mp4a-latm",
+                isHdr = false,
+                hasNonMonotonicVideoPts = false,
+                startsWithSyncFrame = true,
+                videoSampleCount = 60,
+                seekDriftUs = 500_000L,
+                estimatedBitrateBps = 12_000_000L,
+            ),
+        )
     }
 }

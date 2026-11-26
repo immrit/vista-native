@@ -40,7 +40,7 @@ class ActiveSessionLifecycleManager @Inject constructor(
         var sessionId = SessionCredentialsProvider.current?.currentSessionId()
             ?: prefs.getString(SessionCredentialsProvider.KEY_SESSION_ID, null)?.takeIf(String::isNotBlank)
         var sessionToken = SessionCredentialsProvider.current?.currentSessionToken()
-            ?: prefs.getString(SessionCredentialsProvider.KEY_SESSION_TOKEN, null)?.takeIf(String::isNotBlank)
+            ?: SessionCredentialsProvider.current?.currentSessionToken()?.takeIf(String::isNotBlank)
 
         if (savedUserId != null && savedUserId != activeUserId) {
             sessionId = null
@@ -130,7 +130,7 @@ class ActiveSessionLifecycleManager @Inject constructor(
             ?: prefs.getString(SessionCredentialsProvider.KEY_SESSION_ID, null)?.takeIf(String::isNotBlank)
             ?: return
         val sessionToken = SessionCredentialsProvider.current?.currentSessionToken()
-            ?: prefs.getString(SessionCredentialsProvider.KEY_SESSION_TOKEN, null)?.takeIf(String::isNotBlank)
+            ?: SessionCredentialsProvider.current?.currentSessionToken()?.takeIf(String::isNotBlank)
             ?: return
         val fcmPrefs = context.getSharedPreferences("fcm_token_prefs", Context.MODE_PRIVATE)
         val cachedFcmToken = fcmPrefs.getString("last_synced_fcm_token", null)
@@ -200,15 +200,6 @@ class ActiveSessionLifecycleManager @Inject constructor(
                 .apply()
         } else {
             provider?.saveSessionCredentials(sessionId, sessionToken, userId)
-            prefs.edit()
-                .putString(SessionCredentialsProvider.KEY_SESSION_ID, sessionId)
-                .putString(SessionCredentialsProvider.KEY_SESSION_TOKEN, sessionToken)
-                .apply {
-                    if (!userId.isNullOrBlank()) {
-                        putString(SessionCredentialsProvider.KEY_SESSION_USER_ID, userId)
-                    }
-                }
-                .apply()
         }
     }
 

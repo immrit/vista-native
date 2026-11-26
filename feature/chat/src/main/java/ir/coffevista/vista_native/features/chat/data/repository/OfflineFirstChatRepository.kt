@@ -946,6 +946,7 @@ class OfflineFirstChatRepository(
                 api.uploadPreKeys(
                     UploadPreKeysRequest(
                         identityKey = bundle.identityKey,
+                        signingKey = bundle.signingKey,
                         signedPreKeyId = bundle.signedPreKeyId,
                         signedPreKey = bundle.signedPreKey,
                         signedPreKeySig = bundle.signedPreKeySig,
@@ -969,7 +970,39 @@ class OfflineFirstChatRepository(
         conversationId: String,
         senderId: String,
         messageId: String,
+        isMine: Boolean = false,
+        field: String = "content",
     ): String? {
+        if (payload.startsWith(ir.coffevista.vista_native.features.chat.data.security.ChatE2EEService.PREFIX_V4)) {
+            val v4Attempt = runCatching {
+                e2eeService.decryptMessageV4(
+                    encrypted = payload,
+                    myPrivateKey = myPrivateKey,
+                    peerPublicKey = peerPublicKey,
+                    conversationId = conversationId,
+                    senderId = senderId,
+                    messageId = messageId,
+                    isMine = isMine,
+                    field = field,
+                )
+            }.getOrNull() ?: if (field != "content") {
+                runCatching {
+                    e2eeService.decryptMessageV4(
+                        encrypted = payload,
+                        myPrivateKey = myPrivateKey,
+                        peerPublicKey = peerPublicKey,
+                        conversationId = conversationId,
+                        senderId = senderId,
+                        messageId = messageId,
+                        isMine = isMine,
+                        field = "content",
+                    )
+                }.getOrNull()
+            } else {
+                null
+            }
+            return v4Attempt?.takeUnless { e2eeService.isEncryptedPayload(it) }
+        }
         if (payload.startsWith(ir.coffevista.vista_native.features.chat.data.security.ChatE2EEService.PREFIX_V3)) {
             val v3Attempt = runCatching {
                 e2eeService.decryptMessageV3(
@@ -979,8 +1012,23 @@ class OfflineFirstChatRepository(
                     conversationId = conversationId,
                     senderId = senderId,
                     messageId = messageId,
+                    field = field,
                 )
-            }.getOrNull()
+            }.getOrNull() ?: if (field != "content") {
+                runCatching {
+                    e2eeService.decryptMessageV3(
+                        encrypted = payload,
+                        myPrivateKey = myPrivateKey,
+                        peerPublicKey = peerPublicKey,
+                        conversationId = conversationId,
+                        senderId = senderId,
+                        messageId = messageId,
+                        field = "content",
+                    )
+                }.getOrNull()
+            } else {
+                null
+            }
             return v3Attempt?.takeUnless { e2eeService.isEncryptedPayload(it) }
         }
         val binding = ir.coffevista.vista_native.features.chat.data.security.ChatE2EEService.messageBinding(
@@ -1034,10 +1082,22 @@ class OfflineFirstChatRepository(
         val peerId = conversation.peerId
         if (storedPeerPub == null && !peerId.isNullOrBlank()) {
             val bundle = runCatching { api.fetchPreKeyBundle(peerId) }.getOrNull()
-            val bundleKeyBytes = bundle?.identityKey?.trim()?.takeIf(String::isNotEmpty)?.let { encoded ->
-                runCatching { Base64.decode(encoded, Base64.DEFAULT) }
-                    .getOrNull()
-                    ?.takeIf { it.size == 32 }
+            val bundleVerified = bundle != null && e2eeService.verifyAndPinPeerPreKeyBundle(
+                accountId = account.accountId,
+                peerUserId = peerId,
+                identityKeyB64 = bundle.identityKey,
+                signingKeyB64 = bundle.signingKey,
+                signedPreKeyB64 = bundle.signedPreKey,
+                signedPreKeySigB64 = bundle.signedPreKeySig,
+            )
+            val bundleKeyBytes = if (bundleVerified) {
+                bundle?.identityKey?.trim()?.takeIf(String::isNotEmpty)?.let { encoded ->
+                    runCatching { Base64.decode(encoded, Base64.DEFAULT) }
+                        .getOrNull()
+                        ?.takeIf { it.size == 32 }
+                }
+            } else {
+                null
             }
             if (bundleKeyBytes != null) {
                 secretRedecryptionKeyFingerprints.remove("${account.accountId}:$conversationId")
@@ -1311,6 +1371,7 @@ class OfflineFirstChatRepository(
                                 conversationId = conversationId,
                                 senderId = entity.senderId,
                                 messageId = candId,
+                                isMine = entity.isMine,
                             )
                             if (attempt != null) {
                                 decrypted = attempt
@@ -1521,6 +1582,7 @@ class OfflineFirstChatRepository(
                         conversationId = conversationId,
                         senderId = dto.senderId,
                         messageId = dto.id,
+                        isMine = dto.senderId == accountId,
                     )?.let { contentText = it }
                 }
                 if (replyText != null && e2eeService.isEncryptedPayload(replyText)) {
@@ -1532,6 +1594,8 @@ class OfflineFirstChatRepository(
                         conversationId = conversationId,
                         senderId = dto.senderId,
                         messageId = dto.id,
+                        isMine = dto.senderId == accountId,
+                        field = "reply",
                     )?.let { replyText = it }
                 }
             }
@@ -2290,35 +2354,37 @@ class OfflineFirstChatRepository(
             var replyContentToSend = payload.reply?.content
 
             if (secretSharedKey != null && secretKeyPair != null && peerPub != null) {
-                contentToSend = e2eeService.encryptMessageV3(
+                contentToSend = e2eeService.encryptMessageV4(
                     plainText = payload.text,
                     myPrivateKey = secretKeyPair.privateKey,
                     peerPublicKey = peerPub,
                     conversationId = local.conversationId,
                     senderId = local.accountId,
                     messageId = local.clientId,
+                    field = "content",
                 )
                 if (replyContentToSend != null) {
-                    replyContentToSend = e2eeService.encryptMessageV3(
+                    replyContentToSend = e2eeService.encryptMessageV4(
                         plainText = replyContentToSend,
                         myPrivateKey = secretKeyPair.privateKey,
                         peerPublicKey = peerPub,
                         conversationId = local.conversationId,
                         senderId = local.accountId,
                         messageId = local.clientId,
+                        field = "reply",
                     )
                 }
             }
 
             val dto = api.sendMessage(
                 local.conversationId,
-            SendMessageRequest(
-                id = local.clientId,
-                content = contentToSend,
-                messageType = payload.messageType,
+                SendMessageRequest(
+                    id = local.clientId,
+                    content = contentToSend,
+                    messageType = payload.messageType,
                     replyToMessageId = payload.reply?.messageId,
                     replyToContent = replyContentToSend,
-                    replyToSenderName = payload.reply?.senderName,
+                    replyToSenderName = if (isSecretTarget) null else payload.reply?.senderName,
                     replyToKind = payload.reply?.kind,
                 ),
             )
@@ -2348,13 +2414,14 @@ class OfflineFirstChatRepository(
                     }
                     ?: throw IllegalStateException("کلید مخاطب برای GIF محرمانه آماده نیست")
                 val keyPair = e2eeService.getOrGenerateKeyPair(local.accountId)
-                e2eeService.encryptMessageV3(
+                e2eeService.encryptMessageV4(
                     plainText = "",
                     myPrivateKey = keyPair.privateKey,
                     peerPublicKey = peerPub,
                     conversationId = local.conversationId,
                     senderId = local.accountId,
                     messageId = local.clientId,
+                    field = "content",
                 )
             } else {
                 ""
@@ -2458,7 +2525,8 @@ class OfflineFirstChatRepository(
             runCatching { mediaUploader.deleteUploadedObject(uploaded.objectKey) }
             throw java.io.IOException("انتقال لغو شد")
         }
-        val contentToSend = if (dao.conversation(local.accountId, local.conversationId)?.type == ConversationType.SECRET.name) {
+        val isSecretUploadConv = dao.conversation(local.accountId, local.conversationId)?.type == ConversationType.SECRET.name
+        val contentToSend = if (isSecretUploadConv) {
             val peerPub = resolvePeerPublicKey(local.accountId, local.conversationId)
                 ?: run {
                     ensureSecretChatHandshake(local.conversationId)
@@ -2467,13 +2535,14 @@ class OfflineFirstChatRepository(
                 ?: throw IllegalStateException("کلید مخاطب برای رسانه محرمانه آماده نیست")
             val keyPair = e2eeService.getOrGenerateKeyPair(local.accountId)
             val safeCaption = if (draft.caption.startsWith("wf:")) "" else draft.caption
-            e2eeService.encryptMessageV3(
+            e2eeService.encryptMessageV4(
                 plainText = safeCaption,
                 myPrivateKey = keyPair.privateKey,
                 peerPublicKey = peerPub,
                 conversationId = local.conversationId,
                 senderId = local.accountId,
                 messageId = local.clientId,
+                field = "content",
             )
         } else {
             if (draft.caption.startsWith("wf:")) "" else draft.caption
@@ -2487,12 +2556,12 @@ class OfflineFirstChatRepository(
                 content = contentToSend,
                 messageType = draft.kind.wireName,
                 mediaUrl = uploaded.objectUrl,
-                attachmentFileName = draft.fileName,
+                attachmentFileName = if (isSecretUploadConv) "secret.bin" else draft.fileName,
                 attachmentMimeType = draft.mimeType,
                 attachmentSizeBytes = draft.sizeBytes,
                 duration = draft.durationSeconds,
-                audioTitle = draft.audioTitle,
-                audioArtist = draft.audioArtist,
+                audioTitle = if (isSecretUploadConv) null else draft.audioTitle,
+                audioArtist = if (isSecretUploadConv) null else draft.audioArtist,
                 audioAlbum = waveformToSend,
                 mediaGroupId = draft.mediaGroupId,
             ),
@@ -2685,13 +2754,14 @@ class OfflineFirstChatRepository(
             val localKey = e2eeService.getOrGenerateKeyPair(account.accountId)
             runCatching { e2eeService.computeSharedSecret(localKey.privateKey, peerPub) }.getOrNull()
                 ?: return ChatResult.Failure("خطا در ایجاد کلید مشترک", retryable = false)
-            e2eeService.encryptMessageV3(
+            e2eeService.encryptMessageV4(
                 plainText = normalized,
                 myPrivateKey = localKey.privateKey,
                 peerPublicKey = peerPub,
                 conversationId = message.conversationId,
-                senderId = message.accountId,
+                senderId = account.accountId,
                 messageId = messageId,
+                field = "content",
             )
         } else {
             normalized
@@ -2896,6 +2966,7 @@ class OfflineFirstChatRepository(
         mediaUploader.cancelAccount(accountId)
         mediaDownloader.clearAccount(accountId)
         dao.clearAccount(accountId)
+        e2eeService.clearAccountKeys(accountId)
         runCatching {
             wipeDecryptedMediaCache(context.cacheDir)
             wipeDecryptedMediaCache(context.filesDir)

@@ -67,6 +67,7 @@ internal suspend fun transcodeTrimVideo(
             sourceUri = uri,
             startUs = startUs,
             endUs = endUs,
+            rotation = rotation,
             outputVideoOnlyFile = videoOnlyFile,
         )
 
@@ -99,23 +100,53 @@ internal suspend fun transcodeTrimVideo(
             }
         }
 
-        // Stage C: Clean monotonic mux (videoOnly.mp4 + AAC audio) + faststart moov relocation.
-        muxCleanVideoAndAudio(
-            context = context,
-            videoOnlyFile = videoOnlyFile,
-            audioSourceUri = audioUriForMux,
-            audioStartUs = audioStartUs,
-            audioEndUs = audioEndUs,
-            rotation = rotation,
-            muxedOutFile = muxedTempFile,
-        )
+        // Stage C: Clean monotonic mux (videoOnly.mp4 + AAC audio when non-empty) + faststart moov relocation.
+        val sourceForFastStart = if (audioUriForMux != null) {
+            val muxedWithAudio = muxCleanVideoAndAudio(
+                context = context,
+                videoOnlyFile = videoOnlyFile,
+                audioSourceUri = audioUriForMux,
+                audioStartUs = audioStartUs,
+                audioEndUs = audioEndUs,
+                rotation = rotation,
+                muxedOutFile = muxedTempFile,
+            )
+            if (!muxedWithAudio && videoStageResult.hasAudio && audioUriForMux == uri) {
+                // Direct AAC copy failed (e.g. negative/weird priming or non-standard AAC track format);
+                // re-encode audio to standard LC-AAC .m4a and remux cleanly so sound is preserved.
+                val trimAudioStartMs = (videoStageResult.actualStartUs / 1000L).coerceAtLeast(0L)
+                val trimAudioEndMs = (videoStageResult.actualEndUs / 1000L).coerceAtLeast(trimAudioStartMs + 100L)
+                transcodedAudioFile = runCatching {
+                    AudioTrimEngine.trimAudio(
+                        context = context,
+                        audioUri = uri,
+                        startMs = trimAudioStartMs,
+                        endMs = trimAudioEndMs,
+                    )
+                }.getOrNull()
+                if (transcodedAudioFile != null) {
+                    muxCleanVideoAndAudio(
+                        context = context,
+                        videoOnlyFile = videoOnlyFile,
+                        audioSourceUri = Uri.fromFile(transcodedAudioFile),
+                        audioStartUs = 0L,
+                        audioEndUs = Long.MAX_VALUE,
+                        rotation = rotation,
+                        muxedOutFile = muxedTempFile,
+                    )
+                }
+            }
+            muxedTempFile
+        } else {
+            videoOnlyFile
+        }
 
-        if (!Mp4FastStart.relocateMoovToFront(muxedTempFile, finalOutput)) {
-            muxedTempFile.copyTo(finalOutput, overwrite = true)
+        if (!Mp4FastStart.relocateMoovToFront(sourceForFastStart, finalOutput)) {
+            sourceForFastStart.copyTo(finalOutput, overwrite = true)
         }
 
         if (!finalOutput.exists() || finalOutput.length() == 0L) {
-            throw VideoTrimException("خطا در ایجاد فایل ویدیو برش‌خورده")
+            throw VideoTrimException("خطا در ایجاد فایل ویدیو برش‌خورده [TRANSCODE_EMPTY_OUT]")
         }
         finalSuccess = true
         finalOutput
@@ -141,6 +172,7 @@ private suspend fun transcodeVideoTrackOnly(
     sourceUri: Uri,
     startUs: Long,
     endUs: Long,
+    rotation: Int,
     outputVideoOnlyFile: File,
 ): VideoTranscodeStageResult {
     val extractor = MediaExtractor()
@@ -212,7 +244,9 @@ private suspend fun transcodeVideoTrackOnly(
             start()
         }
 
-        muxer = MediaMuxer(outputVideoOnlyFile.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+        muxer = MediaMuxer(outputVideoOnlyFile.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4).apply {
+            setOrientationHint(rotation)
+        }
 
         extractor.selectTrack(videoTrack)
         extractor.seekTo(startUs, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
@@ -375,7 +409,7 @@ private suspend fun transcodeVideoTrackOnly(
         }
 
         if (keptFrames == 0 || !muxerStarted) {
-            throw VideoTrimException("خطا در ایجاد فایل ویدیو برش‌خورده")
+            throw VideoTrimException("خطا در ایجاد فایل ویدیو برش‌خورده [TRANSCODE_NO_FRAMES]")
         }
 
         muxerStarted = false
@@ -472,9 +506,9 @@ private fun alignDimension(value: Int, alignment: Int): Int {
 private fun resolveTargetBitrate(width: Int, height: Int): Int {
     val pixels = width.toLong() * height.toLong()
     return when {
-        pixels <= 854L * 480L -> 2_200_000
-        pixels <= 1280L * 720L -> 3_800_000
-        else -> 5_500_000
+        pixels <= 854L * 480L -> 1_350_000
+        pixels <= 1280L * 720L -> 2_100_000
+        else -> 2_600_000
     }
 }
 
@@ -530,7 +564,7 @@ private suspend fun muxCleanVideoAndAudio(
     audioEndUs: Long,
     rotation: Int,
     muxedOutFile: File,
-) {
+): Boolean {
     val videoExt = MediaExtractor()
     var audioExt: MediaExtractor? = null
     var muxer: MediaMuxer? = null
@@ -556,8 +590,7 @@ private suspend fun muxCleanVideoAndAudio(
                 if (aTrack >= 0) {
                     aFormat = candidateExt.getTrackFormat(aTrack)
                     candidateExt.selectTrack(aTrack)
-                    candidateExt.seekTo(audioStartUs, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
-                    true
+                    seekAudioExtractorToSliceStart(candidateExt, audioStartUs, audioEndUs)
                 } else {
                     false
                 }
@@ -567,6 +600,12 @@ private suspend fun muxCleanVideoAndAudio(
             } else {
                 runCatching { candidateExt.release() }
             }
+        }
+
+        if (audioExt == null) {
+            runCatching { videoExt.release() }
+            videoOnlyFile.copyTo(muxedOutFile, overwrite = true)
+            return false
         }
 
         val newMuxer = MediaMuxer(muxedOutFile.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
@@ -581,7 +620,10 @@ private suspend fun muxCleanVideoAndAudio(
         }
         if (muxAudioTrack < 0) {
             runCatching { audioExt?.release() }
-            audioExt = null
+            runCatching { newMuxer.release() }
+            runCatching { videoExt.release() }
+            videoOnlyFile.copyTo(muxedOutFile, overwrite = true)
+            return false
         }
 
         newMuxer.start()
@@ -594,6 +636,7 @@ private suspend fun muxCleanVideoAndAudio(
         var lastVideoPtsUs = -1L
         var lastAudioPtsUs: Long? = null
         var written = 0
+        var audioSamplesWritten = 0
 
         while (!videoDone || !audioDone) {
             val vRaw = if (!videoDone) videoExt.sampleTime else Long.MAX_VALUE
@@ -651,6 +694,7 @@ private suspend fun muxCleanVideoAndAudio(
                 lastAudioPtsUs = ptsUs
                 info.set(0, readSize, ptsUs, MediaCodec.BUFFER_FLAG_KEY_FRAME)
                 newMuxer.writeSampleData(muxAudioTrack, buffer, info)
+                audioSamplesWritten++
                 if (!aExt.advance()) audioDone = true
             }
 
@@ -661,6 +705,7 @@ private suspend fun muxCleanVideoAndAudio(
 
         muxerStarted = false
         newMuxer.stop()
+        return audioSamplesWritten > 0
     } finally {
         if (muxerStarted) runCatching { muxer?.stop() }
         runCatching { muxer?.release() }

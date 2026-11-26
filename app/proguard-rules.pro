@@ -35,11 +35,18 @@
     <fields>;
 }
 
-# Chat feature E2EE security, models, and DTOs
--keep class ir.coffevista.vista_native.features.chat.data.security.** { *; }
+# Chat feature models and DTOs (security crypto package remains obfuscated)
 -keep class ir.coffevista.vista_native.features.chat.domain.model.** { *; }
 -keep class ir.coffevista.vista_native.features.chat.data.remote.** { *; }
 -keep class ir.coffevista.vista_native.features.chat.data.local.** { *; }
+
+# Strip debug and warning logging calls in release builds
+-assumenosideeffects class android.util.Log {
+    public static int v(...);
+    public static int d(...);
+    public static int i(...);
+    public static int w(...);
+}
 
 # Kotlinx Serialization
 -keepattributes *Annotation*,Signature,InnerClasses,EnclosingMethod

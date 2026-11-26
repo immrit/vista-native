@@ -87,6 +87,9 @@ internal fun isSecretLocalUri(uriOrPath: String?): Boolean {
     if (value.isEmpty()) return false
     return value.contains("sec_up_") ||
         value.contains("enc_chat_") ||
+        value.contains("dec_enc_chat_") ||
+        value.contains("temp_dec_") ||
+        value.contains("/dec_") ||
         value.contains("secret_pending_uploads")
 }
 

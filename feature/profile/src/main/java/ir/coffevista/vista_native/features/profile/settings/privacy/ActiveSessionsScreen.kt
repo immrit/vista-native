@@ -462,13 +462,11 @@ fun ActiveSessionsScreen(
                     TextButton(
                         onClick = {
                             confirmTerminateAll = false
-                            val activity = context as? FragmentActivity
+                            val activity = context.findFragmentActivity()
                             if (activity != null) {
                                 viewModel.authorizeSensitiveAction(activity) {
                                     viewModel.terminateAllOther()
                                 }
-                            } else {
-                                viewModel.terminateAllOther()
                             }
                         },
                     ) {
@@ -496,16 +494,12 @@ fun ActiveSessionsScreen(
                     }
                 },
                 onTerminate = {
-                    val activity = context as? FragmentActivity
+                    val activity = context.findFragmentActivity()
                     if (activity != null) {
                         viewModel.authorizeSensitiveAction(activity) {
                             viewModel.terminate(target) {
                                 selectedSession = null
                             }
-                        }
-                    } else {
-                        viewModel.terminate(target) {
-                            selectedSession = null
                         }
                     }
                 },
@@ -1145,4 +1139,10 @@ private fun AddDeviceManualCodeSheet(
             }
         }
     }
+}
+
+private tailrec fun android.content.Context.findFragmentActivity(): FragmentActivity? = when (this) {
+    is FragmentActivity -> this
+    is android.content.ContextWrapper -> baseContext.findFragmentActivity()
+    else -> null
 }

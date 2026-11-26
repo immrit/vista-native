@@ -8,6 +8,7 @@ import android.media.MediaFormat
 import android.media.MediaMetadataRetriever
 import android.media.MediaMuxer
 import android.net.Uri
+import android.util.Log
 import androidx.annotation.OptIn
 import androidx.media3.common.C
 import androidx.media3.common.DataReader
@@ -183,6 +184,7 @@ internal fun shouldUseLosslessFastPath(
     startsWithSyncFrame: Boolean,
     videoSampleCount: Int,
     seekDriftUs: Long,
+    estimatedBitrateBps: Long = 0L,
 ): Boolean =
     videoMime.equals(MediaFormat.MIMETYPE_VIDEO_AVC, ignoreCase = true) &&
         (audioMime == null || audioMime.equals(MediaFormat.MIMETYPE_AUDIO_AAC, ignoreCase = true)) &&
@@ -190,7 +192,20 @@ internal fun shouldUseLosslessFastPath(
         !hasNonMonotonicVideoPts &&
         startsWithSyncFrame &&
         videoSampleCount >= 2 &&
-        seekDriftUs <= MAX_LOSSLESS_SEEK_DRIFT_US
+        seekDriftUs <= MAX_LOSSLESS_SEEK_DRIFT_US &&
+        (estimatedBitrateBps <= 0L || estimatedBitrateBps <= MAX_LOSSLESS_BITRATE_BPS)
+
+internal fun seekAudioExtractorToSliceStart(
+    extractor: MediaExtractor,
+    startUs: Long,
+    endUs: Long,
+): Boolean {
+    extractor.seekTo(startUs, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
+    while (extractor.sampleTrackIndex >= 0 && extractor.sampleTime < startUs) {
+        if (!extractor.advance()) break
+    }
+    return extractor.sampleTrackIndex >= 0 && extractor.sampleTime <= endUs
+}
 
 private data class TrimPreScan(
     val videoMime: String,
@@ -201,6 +216,7 @@ private data class TrimPreScan(
     val startsWithSyncFrame: Boolean,
     val videoSampleCount: Int,
     val seekDriftUs: Long,
+    val estimatedBitrateBps: Long,
 ) {
     val canUseLossless: Boolean
         get() = shouldUseLosslessFastPath(
@@ -211,6 +227,7 @@ private data class TrimPreScan(
             startsWithSyncFrame = startsWithSyncFrame,
             videoSampleCount = videoSampleCount,
             seekDriftUs = seekDriftUs,
+            estimatedBitrateBps = estimatedBitrateBps,
         )
 }
 
@@ -234,6 +251,7 @@ internal suspend fun trimVideo(
     if (endMs <= startMs) throw VideoTrimException("لطفاً بازه زمانی معتبری انتخاب کنید")
 
     val preScan = inspectTrimRange(context, uri, startMs, endMs, maxDurationMs)
+    var losslessRejectReason: String? = null
     if (preScan.canUseLossless) {
         val losslessFile = try {
             trimVideoLossless(
@@ -246,13 +264,17 @@ internal suspend fun trimVideo(
             )
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             throw cancelled
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            losslessRejectReason = e.javaClass.simpleName
             null
         }
         if (losslessFile != null) {
-            if (validateTrimmedMp4(losslessFile)) {
+            val validation = validateTrimmedMp4Detailed(losslessFile, requireDecodedFrame = true)
+            if (validation.isValid) {
                 return@withContext losslessFile
             }
+            losslessRejectReason = validation.reason
+            Log.w("VideoTrimEngine", "Lossless trim rejected (${validation.reason}); falling back to GPU transcode")
             losslessFile.delete()
         }
     }
@@ -266,9 +288,17 @@ internal suspend fun trimVideo(
         maxDurationMs = maxDurationMs,
         rotation = preScan.rotation,
     )
-    if (!validateTrimmedMp4(transcoded)) {
+    val validation = validateTrimmedMp4Detailed(transcoded, requireDecodedFrame = false)
+    if (!validation.isValid) {
         transcoded.delete()
-        throw VideoTrimException("خطا در ایجاد فایل ویدیو برش‌خورده")
+        val detail = buildString {
+            append(validation.reason)
+            if (!losslessRejectReason.isNullOrBlank()) {
+                append("|L:")
+                append(losslessRejectReason)
+            }
+        }
+        throw VideoTrimException("خطا در ایجاد فایل ویدیو برش‌خورده [$detail]")
     }
     transcoded
 }
@@ -308,6 +338,7 @@ private suspend fun inspectTrimRange(
         }
 
         val rotation = readRotation(context, uri, vFormat)
+        val estimatedBitrateBps = readEstimatedBitrateBps(context, uri, vFormat)
         val colorTransfer = runCatching {
             if (vFormat.containsKey(MediaFormat.KEY_COLOR_TRANSFER)) {
                 vFormat.getInteger(MediaFormat.KEY_COLOR_TRANSFER)
@@ -368,6 +399,7 @@ private suspend fun inspectTrimRange(
             startsWithSyncFrame = startsWithSync,
             videoSampleCount = sampleCount,
             seekDriftUs = seekDriftUs,
+            estimatedBitrateBps = estimatedBitrateBps,
         )
     } finally {
         runCatching { extractor.release() }
@@ -425,6 +457,27 @@ private suspend fun trimVideoLossless(
             throw VideoTrimException("ویدیویی در این فایل یافت نشد")
         }
 
+        videoExtractor.selectTrack(videoTrack)
+        videoExtractor.seekTo(startMs * 1000L + 999L, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
+        val baseUs = videoExtractor.sampleTime.coerceAtLeast(0L)
+        val endUs = minOf(endMs * 1000L, baseUs + maxDurationMs * 1000L)
+
+        var selectedAudioFormat: MediaFormat? = null
+        if (audioTrack >= 0 && audioFormat != null) {
+            val candidateAudio = MediaExtractor()
+            val hasAudioInSlice = runCatching {
+                candidateAudio.setDataSource(context, uri, null)
+                candidateAudio.selectTrack(audioTrack)
+                seekAudioExtractorToSliceStart(candidateAudio, baseUs, endUs)
+            }.getOrDefault(false)
+            if (hasAudioInSlice) {
+                audioExtractor = candidateAudio
+                selectedAudioFormat = audioFormat
+            } else {
+                runCatching { candidateAudio.release() }
+            }
+        }
+
         bufferSize = bufferSize.coerceIn(DEFAULT_BUFFER_BYTES, MAX_BUFFER_BYTES)
         val newMuxer = MediaMuxer(muxedTemp.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
         muxer = newMuxer
@@ -434,26 +487,13 @@ private suspend fun trimVideoLossless(
         val muxerAudioTrack: Int
         try {
             muxerVideoTrack = newMuxer.addTrack(resolvedVideoFormat)
-            muxerAudioTrack = if (audioFormat != null) newMuxer.addTrack(audioFormat) else -1
+            muxerAudioTrack = if (selectedAudioFormat != null) newMuxer.addTrack(selectedAudioFormat) else -1
         } catch (e: Exception) {
             throw VideoTrimException("فرمت این ویدیو برای برش پشتیبانی نمی‌شود", e)
         }
-
-        videoExtractor.selectTrack(videoTrack)
-        videoExtractor.seekTo(startMs * 1000L + 999L, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
-        val baseUs = videoExtractor.sampleTime.coerceAtLeast(0L)
-        val endUs = minOf(endMs * 1000L, baseUs + maxDurationMs * 1000L)
-
-        if (audioTrack >= 0 && muxerAudioTrack >= 0) {
-            audioExtractor = MediaExtractor().apply {
-                try {
-                    setDataSource(context, uri, null)
-                } catch (e: Exception) {
-                    throw VideoTrimException("امکان باز کردن فایل ویدیو وجود ندارد", e)
-                }
-                selectTrack(audioTrack)
-                seekTo(baseUs, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
-            }
+        if (muxerAudioTrack < 0) {
+            runCatching { audioExtractor?.release() }
+            audioExtractor = null
         }
 
         newMuxer.start()
@@ -559,73 +599,111 @@ private suspend fun trimVideoLossless(
     }
 }
 
-internal fun validateTrimmedMp4(file: File): Boolean {
-    if (!file.exists() || file.length() <= 0L) return false
+internal data class Mp4ValidationResult(
+    val isValid: Boolean,
+    val reason: String,
+)
+
+internal fun validateTrimmedMp4(file: File): Boolean =
+    validateTrimmedMp4Detailed(file, requireDecodedFrame = true).isValid
+
+internal fun validateTrimmedMp4Detailed(
+    file: File,
+    requireDecodedFrame: Boolean = true,
+): Mp4ValidationResult {
+    if (!file.exists() || file.length() <= 0L) {
+        return Mp4ValidationResult(false, "NO_FILE")
+    }
     val retriever = MediaMetadataRetriever()
-    val hasValidMetadataAndFrame = try {
+    val retrieverResult: Mp4ValidationResult = try {
         retriever.setDataSource(file.absolutePath)
         val durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
         if (durationMs <= 0L) {
-            false
+            Mp4ValidationResult(false, "NO_DURATION")
         } else {
             val frame = retriever.getFrameAtTime(0L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                ?: retriever.getFrameAtTime(500_000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                ?: retriever.getFrameAtTime(0L, MediaMetadataRetriever.OPTION_CLOSEST)
                 ?: retriever.frameAtTime
             if (frame != null) {
                 frame.recycle()
-                true
+                Mp4ValidationResult(true, "OK")
+            } else if (requireDecodedFrame) {
+                Mp4ValidationResult(false, "NO_FRAME")
             } else {
-                false
+                Log.w("VideoTrimEngine", "MediaMetadataRetriever returned null frame for transcoded file; continuing to extractor verification")
+                Mp4ValidationResult(true, "OK_NO_FRAME")
             }
         }
-    } catch (_: Throwable) {
-        false
+    } catch (t: Throwable) {
+        if (requireDecodedFrame) {
+            Mp4ValidationResult(false, "MMR_${t.javaClass.simpleName}")
+        } else {
+            Log.w("VideoTrimEngine", "MediaMetadataRetriever failed for transcoded file; continuing to extractor verification", t)
+            Mp4ValidationResult(true, "OK_MMR_WARN")
+        }
     } finally {
         runCatching { retriever.release() }
     }
-    if (!hasValidMetadataAndFrame) return false
+    if (!retrieverResult.isValid) return retrieverResult
 
     val extractor = MediaExtractor()
-    val extractorOk = try {
+    val extractorResult: Mp4ValidationResult = try {
         extractor.setDataSource(file.absolutePath)
         val videoTrack = (0 until extractor.trackCount).firstOrNull { index ->
             extractor.getTrackFormat(index).getString(MediaFormat.KEY_MIME)?.startsWith("video/") == true
-        } ?: return false
-        extractor.selectTrack(videoTrack)
-
-        var samples = 0
-        var prevPts = Long.MIN_VALUE
-        while (true) {
-            val pts = extractor.sampleTime
-            if (pts < 0L) break
-            if (samples == 0 && (extractor.sampleFlags and MediaExtractor.SAMPLE_FLAG_SYNC) == 0) {
-                return false
+        }
+        if (videoTrack == null) {
+            Mp4ValidationResult(false, "OS_NO_VIDEO")
+        } else {
+            extractor.selectTrack(videoTrack)
+            var samples = 0
+            var prevPts = Long.MIN_VALUE
+            var failReason: String? = null
+            while (true) {
+                val pts = extractor.sampleTime
+                if (pts < 0L) break
+                if (samples == 0 && (extractor.sampleFlags and MediaExtractor.SAMPLE_FLAG_SYNC) == 0) {
+                    failReason = "OS_FIRST_NOT_SYNC"
+                    break
+                }
+                if (prevPts != Long.MIN_VALUE && pts <= prevPts) {
+                    failReason = "OS_NON_MONOTONIC"
+                    break
+                }
+                prevPts = pts
+                samples++
+                if (!extractor.advance()) break
             }
-            if (prevPts != Long.MIN_VALUE && pts <= prevPts) {
-                return false
+            if (failReason != null) {
+                Mp4ValidationResult(false, failReason)
+            } else if (samples < 1) {
+                Mp4ValidationResult(false, "OS_NO_SAMPLES")
+            } else {
+                val audioTrack = (0 until extractor.trackCount).firstOrNull { index ->
+                    extractor.getTrackFormat(index).getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true
+                }
+                if (audioTrack != null) {
+                    extractor.unselectTrack(videoTrack)
+                    extractor.selectTrack(audioTrack)
+                    if (extractor.sampleTime < 0L) {
+                        Mp4ValidationResult(false, "OS_EMPTY_AUDIO")
+                    } else {
+                        Mp4ValidationResult(true, "OK")
+                    }
+                } else {
+                    Mp4ValidationResult(true, "OK")
+                }
             }
-            prevPts = pts
-            samples++
-            if (!extractor.advance()) break
         }
-        if (samples < 1) return false
-
-        val audioTrack = (0 until extractor.trackCount).firstOrNull { index ->
-            extractor.getTrackFormat(index).getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true
-        }
-        if (audioTrack != null) {
-            extractor.unselectTrack(videoTrack)
-            extractor.selectTrack(audioTrack)
-            if (extractor.sampleTime < 0L) return false
-        }
-        true
-    } catch (_: Throwable) {
-        false
+    } catch (t: Throwable) {
+        Mp4ValidationResult(false, "OS_${t.javaClass.simpleName}")
     } finally {
         runCatching { extractor.release() }
     }
-    if (!extractorOk) return false
+    if (!extractorResult.isValid) return extractorResult
 
-    return verifyMp4WithMedia3Extractor(file)
+    return verifyMp4WithMedia3ExtractorDetailed(file)
 }
 
 /**
@@ -634,8 +712,14 @@ internal fun validateTrimmedMp4(file: File): Boolean {
  * accepting a trimmed or faststart-relocated file.
  */
 @OptIn(UnstableApi::class)
-internal fun verifyMp4WithMedia3Extractor(file: File): Boolean {
-    if (!file.exists() || file.length() < 16L) return false
+internal fun verifyMp4WithMedia3Extractor(file: File): Boolean =
+    verifyMp4WithMedia3ExtractorDetailed(file).isValid
+
+@OptIn(UnstableApi::class)
+internal fun verifyMp4WithMedia3ExtractorDetailed(file: File): Mp4ValidationResult {
+    if (!file.exists() || file.length() < 16L) {
+        return Mp4ValidationResult(false, "M3_TOO_SMALL")
+    }
     val mp4Extractor = Mp4Extractor()
     return try {
         RandomAccessFile(file, "r").use { raf ->
@@ -727,7 +811,7 @@ internal fun verifyMp4WithMedia3Extractor(file: File): Boolean {
             raf.seek(0L)
             var extractorInput = DefaultExtractorInput(reader, 0L, fileLength)
             if (!mp4Extractor.sniff(extractorInput)) {
-                return false
+                return Mp4ValidationResult(false, "M3_SNIFF")
             }
 
             raf.seek(0L)
@@ -736,30 +820,39 @@ internal fun verifyMp4WithMedia3Extractor(file: File): Boolean {
 
             val positionHolder = PositionHolder()
             var iterations = 0
-            while (iterations++ < 500_000) {
+            val maxIterations = 2_000_000
+            while (iterations++ < maxIterations) {
                 when (mp4Extractor.read(extractorInput, positionHolder)) {
                     Extractor.RESULT_CONTINUE -> Unit
                     Extractor.RESULT_SEEK -> {
                         val nextPos = positionHolder.position
-                        if (nextPos < 0L || nextPos > fileLength) return false
+                        if (nextPos < 0L || nextPos > fileLength) {
+                            return Mp4ValidationResult(false, "M3_BAD_SEEK")
+                        }
                         raf.seek(nextPos)
                         extractorInput = DefaultExtractorInput(reader, nextPos, fileLength)
                     }
                     Extractor.RESULT_END_OF_INPUT -> break
                 }
             }
+            if (iterations >= maxIterations) {
+                return Mp4ValidationResult(false, "M3_MAX_ITER")
+            }
 
             val resolvedSeekMap = seekMap
-            tracksEnded &&
-                resolvedSeekMap != null &&
-                resolvedSeekMap.isSeekable &&
-                resolvedSeekMap.durationUs > 0L &&
-                videoFormatSeen &&
-                videoSamples >= 1 &&
-                (!hasAudioTrack || (audioFormatSeen && audioSamples >= 1))
+            when {
+                !tracksEnded -> Mp4ValidationResult(false, "M3_NO_END_TRACKS")
+                resolvedSeekMap == null -> Mp4ValidationResult(false, "M3_NO_SEEK_MAP")
+                !resolvedSeekMap.isSeekable -> Mp4ValidationResult(false, "M3_UNSEEKABLE")
+                resolvedSeekMap.durationUs <= 0L -> Mp4ValidationResult(false, "M3_ZERO_DURATION")
+                !videoFormatSeen || videoSamples < 1 -> Mp4ValidationResult(false, "M3_NO_VIDEO")
+                hasAudioTrack && (!audioFormatSeen || audioSamples < 1) -> Mp4ValidationResult(false, "M3_NO_AUDIO")
+                else -> Mp4ValidationResult(true, "OK")
+            }
         }
-    } catch (_: Throwable) {
-        false
+    } catch (t: Throwable) {
+        val msg = t.message?.replace('\n', ' ')?.trim()?.take(36).orEmpty()
+        Mp4ValidationResult(false, "M3_${t.javaClass.simpleName}_$msg")
     } finally {
         runCatching { mp4Extractor.release() }
     }
@@ -804,8 +897,44 @@ private fun readRotation(context: Context, uri: Uri, videoFormat: MediaFormat?):
     return 0
 }
 
+private fun readEstimatedBitrateBps(
+    context: Context,
+    uri: Uri,
+    videoFormat: MediaFormat?,
+): Long {
+    if (videoFormat != null && videoFormat.containsKey(MediaFormat.KEY_BIT_RATE)) {
+        val formatBitrate = runCatching { videoFormat.getInteger(MediaFormat.KEY_BIT_RATE).toLong() }.getOrDefault(0L)
+        if (formatBitrate > 0L) return formatBitrate
+    }
+    val retriever = MediaMetadataRetriever()
+    try {
+        retriever.setDataSource(context, uri)
+        val metaBitrate = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_BITRATE)?.toLongOrNull() ?: 0L
+        if (metaBitrate > 0L) return metaBitrate
+        val durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+        if (durationMs > 0L) {
+            val fileBytes = runCatching {
+                if (uri.scheme.equals("file", ignoreCase = true)) {
+                    uri.path?.let(::File)?.length() ?: 0L
+                } else {
+                    context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length } ?: 0L
+                }
+            }.getOrDefault(0L)
+            if (fileBytes > 0L) {
+                return (fileBytes * 8_000L) / durationMs
+            }
+        }
+    } catch (_: Throwable) {
+        // Fallback to unknown bitrate (0 -> allow lossless if codecs/PTS are clean)
+    } finally {
+        runCatching { retriever.release() }
+    }
+    return 0L
+}
+
 private val VALID_ROTATIONS = listOf(0, 90, 180, 270)
 private const val DEFAULT_BUFFER_BYTES = 2 * 1024 * 1024
 private const val MAX_BUFFER_BYTES = 16 * 1024 * 1024
 private const val CANCEL_CHECK_INTERVAL = 100
 private const val MAX_LOSSLESS_SEEK_DRIFT_US = 2_500_000L
+private const val MAX_LOSSLESS_BITRATE_BPS = 3_500_000L

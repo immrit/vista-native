@@ -19,7 +19,9 @@ object InternalNetworkModule {
     @Provides
     @Singleton
     @BootstrapApi
-    fun provideBootstrapClient(): OkHttpClient = baseClientBuilder().build()
+    fun provideBootstrapClient(): OkHttpClient = baseClientBuilder()
+        .proxy(Proxy.NO_PROXY)
+        .build()
 
     @Provides
     @Singleton

@@ -480,12 +480,13 @@ class ChatRealtimeCoordinator(
     }
 
     suspend fun sendTyping(conversationId: String): Boolean {
-        val safeConversationId = conversationId
-            .replace("\\", "\\\\")
-            .replace("\"", "\\\"")
-            .replace("\n", "")
-            .replace("\r", "")
-        val payload = """{"type":"typing","conversation_id":"$safeConversationId","is_typing":true}"""
+        val cleanId = conversationId.trim()
+        if (cleanId.isEmpty()) return false
+        val payload = org.json.JSONObject()
+            .put("type", "typing")
+            .put("conversation_id", cleanId)
+            .put("is_typing", true)
+            .toString()
         return activeSocket?.send(payload) ?: false
     }
 

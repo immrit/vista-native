@@ -660,6 +660,7 @@ data class OneTimePreKeyDto(
 @Serializable
 data class UploadPreKeysRequest(
     @SerialName("identity_key") val identityKey: String,
+    @SerialName("signing_key") val signingKey: String = "",
     @SerialName("signed_prekey_id") val signedPreKeyId: Long,
     @SerialName("signed_prekey") val signedPreKey: String,
     @SerialName("signed_prekey_sig") val signedPreKeySig: String,
@@ -675,6 +676,7 @@ data class PreKeyCountDto(
 data class PreKeyBundleDto(
     @SerialName("user_id") val userId: String = "",
     @SerialName("identity_key") val identityKey: String = "",
+    @SerialName("signing_key") val signingKey: String = "",
     @SerialName("signed_prekey_id") val signedPreKeyId: Long = 0L,
     @SerialName("signed_prekey") val signedPreKey: String = "",
     @SerialName("signed_prekey_sig") val signedPreKeySig: String = "",

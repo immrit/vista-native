@@ -40,6 +40,11 @@ artifacts/
 dist/
 *.apk
 *.aab
+*AUDIT*.md
+SECURITY_AUDIT_REPORT.md
+VISTA_WHITEHAT_SECURITY_AUDIT.md
+replay_pid*.log
+hs_err_pid*.log
 
 # Local validation builds, caches, and logs
 .chat-validation-build*/

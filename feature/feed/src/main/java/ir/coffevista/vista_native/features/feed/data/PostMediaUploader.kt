@@ -491,6 +491,8 @@ class PostMediaUploader @Inject constructor(
         return try {
             retriever.setDataSource(videoFile.absolutePath)
             val bitmap = retriever.getFrameAtTime(0L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                ?: retriever.getFrameAtTime(500_000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                ?: retriever.getFrameAtTime(0L, MediaMetadataRetriever.OPTION_CLOSEST)
                 ?: retriever.getFrameAtTime(1_000_000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
                 ?: retriever.frameAtTime
             if (bitmap != null) {
@@ -644,7 +646,7 @@ internal fun Throwable.toUserFriendlyUploadError(defaultMessage: String): String
     }
 }
 
-private const val UPLOAD_BUFFER_BYTES = 64 * 1024
+private const val UPLOAD_BUFFER_BYTES = 256 * 1024
 
 private class ProgressRequestBody(
     private val file: File,

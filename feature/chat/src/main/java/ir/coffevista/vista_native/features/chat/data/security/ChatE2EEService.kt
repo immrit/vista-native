@@ -516,7 +516,11 @@ class ChatE2EEService(
     fun computeSharedSecret(myPrivateKey: ByteArray, peerPublicKey: ByteArray): ByteArray {
         require(myPrivateKey.size == 32) { "Invalid private key size: ${myPrivateKey.size}" }
         require(peerPublicKey.size == 32) { "Invalid peer public key size: ${peerPublicKey.size}" }
-        return X25519.scalarMult(myPrivateKey, peerPublicKey)
+        val secret = X25519.scalarMult(myPrivateKey, peerPublicKey)
+        if (MessageDigest.isEqual(secret, ByteArray(32))) {
+            throw SecurityException("Rejected low-order X25519 public key (all-zero shared secret)")
+        }
+        return secret
     }
 
     /**
@@ -578,6 +582,7 @@ class ChatE2EEService(
         conversationId: String,
         senderId: String,
         messageId: String,
+        field: String = "content",
     ): String = encryptV3Payload(
         plainText = plainText,
         myPrivateKey = myPrivateKey,
@@ -585,6 +590,7 @@ class ChatE2EEService(
         conversationId = conversationId,
         senderId = senderId,
         messageId = messageId,
+        field = field,
         secureRandom = secureRandom,
     )
 
@@ -598,6 +604,7 @@ class ChatE2EEService(
         conversationId: String,
         senderId: String,
         messageId: String,
+        field: String = "content",
     ): String = runCatching {
         decryptV3Payload(
             encrypted = encrypted,
@@ -606,41 +613,225 @@ class ChatE2EEService(
             conversationId = conversationId,
             senderId = senderId,
             messageId = messageId,
+            field = field,
+        )
+    }.getOrDefault(encrypted)
+
+    /**
+     * Encrypts a forward-secret hybrid payload ("VE2E4:") with per-message ephemeral X25519
+     * AND dual-wrapped content key so BOTH recipient and sender can decrypt across history syncs.
+     */
+    fun encryptMessageV4(
+        plainText: String,
+        myPrivateKey: ByteArray,
+        peerPublicKey: ByteArray,
+        conversationId: String,
+        senderId: String,
+        messageId: String,
+        field: String = "content",
+    ): String = encryptV4Payload(
+        plainText = plainText,
+        myPrivateKey = myPrivateKey,
+        peerPublicKey = peerPublicKey,
+        conversationId = conversationId,
+        senderId = senderId,
+        messageId = messageId,
+        field = field,
+        secureRandom = secureRandom,
+    )
+
+    fun decryptMessageV4(
+        encrypted: String,
+        myPrivateKey: ByteArray,
+        peerPublicKey: ByteArray,
+        conversationId: String,
+        senderId: String,
+        messageId: String,
+        isMine: Boolean,
+        field: String = "content",
+    ): String = runCatching {
+        decryptV4Payload(
+            encrypted = encrypted,
+            myPrivateKey = myPrivateKey,
+            peerPublicKey = peerPublicKey,
+            conversationId = conversationId,
+            senderId = senderId,
+            messageId = messageId,
+            isMine = isMine,
+            field = field,
         )
     }.getOrDefault(encrypted)
 
     data class GeneratedPreKeyBundle(
         val identityKey: String,
+        val signingKey: String,
         val signedPreKeyId: Long,
         val signedPreKey: String,
         val signedPreKeySig: String,
         val oneTimePreKeys: List<Pair<Long, String>>,
     )
 
+    @Synchronized
+    fun getOrGenerateSigningKeyPair(userId: String): Ed25519Crypto.SigningKeyPair {
+        val pubB64 = prefs.getString("e2e_sig_pub_$userId", null)
+        val encSeed = prefs.getString("e2e_sig_priv_enc_$userId", null)
+        if (!encSeed.isNullOrBlank()) {
+            val seed = runCatching { decryptScopedSecret("sig|$userId", encSeed) }
+                .getOrNull()
+                ?.takeIf { it.size == 32 }
+            if (seed != null) {
+                val derivedPub = Ed25519Crypto.derivePublicKey(seed)
+                val storedPub = runCatching { Base64.decode(pubB64.orEmpty(), Base64.NO_WRAP) }.getOrNull()
+                if (storedPub == null || !storedPub.contentEquals(derivedPub)) {
+                    prefs.edit().putString("e2e_sig_pub_$userId", Base64.encodeToString(derivedPub, Base64.NO_WRAP)).apply()
+                }
+                return Ed25519Crypto.SigningKeyPair(seed = seed, publicKey = derivedPub)
+            }
+        }
+        val kp = Ed25519Crypto.generateKeyPair(secureRandom)
+        val encrypted = runCatching { encryptScopedSecret("sig|$userId", kp.seed) }.getOrNull()
+        if (encrypted != null) {
+            prefs.edit()
+                .putString("e2e_sig_priv_enc_$userId", encrypted)
+                .putString("e2e_sig_pub_$userId", Base64.encodeToString(kp.publicKey, Base64.NO_WRAP))
+                .apply()
+        }
+        return kp
+    }
+
+    fun getSignedPreKeyPrivate(userId: String, spkId: Long): ByteArray? {
+        val enc = prefs.getString("e2e_spk_priv_enc_${userId}_$spkId", null) ?: return null
+        return runCatching { decryptScopedSecret("spk|$userId|$spkId", enc) }
+            .getOrNull()
+            ?.takeIf { it.size == X25519_KEY_LENGTH }
+    }
+
+    fun consumeOneTimePreKeyPrivate(userId: String, keyId: Long): ByteArray? {
+        val prefKey = "e2e_otpk_priv_enc_${userId}_$keyId"
+        val enc = prefs.getString(prefKey, null) ?: return null
+        val decrypted = runCatching { decryptScopedSecret("otpk|$userId|$keyId", enc) }
+            .getOrNull()
+            ?.takeIf { it.size == X25519_KEY_LENGTH }
+        prefs.edit().remove(prefKey).apply()
+        return decrypted
+    }
+
+    fun verifyAndPinPeerPreKeyBundle(
+        accountId: String,
+        peerUserId: String,
+        identityKeyB64: String,
+        signingKeyB64: String,
+        signedPreKeyB64: String,
+        signedPreKeySigB64: String,
+    ): Boolean {
+        val cleanSigKey = signingKeyB64.trim()
+        if (cleanSigKey.isEmpty()) return true // Legacy peer without Ed25519 signing key yet
+        val idBytes = runCatching { Base64.decode(identityKeyB64.trim(), Base64.DEFAULT) }.getOrNull()
+            ?.takeIf { it.size == X25519_KEY_LENGTH } ?: return false
+        val spkBytes = runCatching { Base64.decode(signedPreKeyB64.trim(), Base64.DEFAULT) }.getOrNull()
+            ?.takeIf { it.size == X25519_KEY_LENGTH } ?: return false
+        val pubBytes = runCatching { Base64.decode(cleanSigKey, Base64.DEFAULT) }.getOrNull()
+            ?.takeIf { it.size == 32 } ?: return false
+        val sigBytes = runCatching { Base64.decode(signedPreKeySigB64.trim(), Base64.DEFAULT) }.getOrNull()
+            ?.takeIf { it.size == 64 } ?: return false
+
+        val signedMsg = ByteArray("VISTA-E2EE-SPK-V1:".length + idBytes.size + spkBytes.size)
+        val prefix = "VISTA-E2EE-SPK-V1:".toByteArray(Charsets.UTF_8)
+        System.arraycopy(prefix, 0, signedMsg, 0, prefix.size)
+        System.arraycopy(idBytes, 0, signedMsg, prefix.size, idBytes.size)
+        System.arraycopy(spkBytes, 0, signedMsg, prefix.size + idBytes.size, spkBytes.size)
+        if (!Ed25519Crypto.verify(pubBytes, signedMsg, sigBytes)) {
+            return false
+        }
+        val tofuKey = "e2e_peer_sig_tofu_${accountId}_$peerUserId"
+        val canonicalPin = Base64.encodeToString(pubBytes, Base64.NO_WRAP)
+        prefs.edit().putString(tofuKey, canonicalPin).apply()
+        return true
+    }
+
+    fun clearAccountKeys(accountId: String) {
+        if (accountId.isBlank()) return
+        val editor = prefs.edit()
+        prefs.all.keys.forEach { key ->
+            if (key.contains(accountId)) {
+                editor.remove(key)
+            }
+        }
+        editor.apply()
+    }
+
+    private fun encryptScopedSecret(scope: String, secret: ByteArray): String {
+        val cipher = Cipher.getInstance(KEYSTORE_TRANSFORMATION)
+        cipher.init(Cipher.ENCRYPT_MODE, privateKeyEncryptionKey())
+        cipher.updateAAD("vista-e2ee-scoped-v1|$scope".toByteArray(Charsets.UTF_8))
+        val encrypted = cipher.doFinal(secret)
+        return Base64.encodeToString(
+            ByteBuffer.allocate(2 + cipher.iv.size + encrypted.size)
+                .put(PRIVATE_KEY_ENVELOPE_VERSION)
+                .put(cipher.iv.size.toByte())
+                .put(cipher.iv)
+                .put(encrypted)
+                .array(),
+            Base64.NO_WRAP,
+        )
+    }
+
+    private fun decryptScopedSecret(scope: String, encoded: String): ByteArray {
+        val buffer = ByteBuffer.wrap(Base64.decode(encoded, Base64.NO_WRAP))
+        require(buffer.remaining() > 2) { "Malformed encrypted secret" }
+        require(buffer.get() == PRIVATE_KEY_ENVELOPE_VERSION) { "Unsupported envelope version" }
+        val ivSize = buffer.get().toInt() and 0xFF
+        require(ivSize in 12..16 && buffer.remaining() > ivSize) { "Malformed IV" }
+        val iv = ByteArray(ivSize).also(buffer::get)
+        val encrypted = ByteArray(buffer.remaining()).also(buffer::get)
+        val cipher = Cipher.getInstance(KEYSTORE_TRANSFORMATION)
+        cipher.init(Cipher.DECRYPT_MODE, privateKeyEncryptionKey(), GCMParameterSpec(GCM_TAG_BITS, iv))
+        cipher.updateAAD("vista-e2ee-scoped-v1|$scope".toByteArray(Charsets.UTF_8))
+        return cipher.doFinal(encrypted)
+    }
+
     fun generatePreKeyBundle(userId: String, oneTimeCount: Int = 20): GeneratedPreKeyBundle {
         val identity = getOrGenerateKeyPair(userId)
+        val signingKeyPair = getOrGenerateSigningKeyPair(userId)
         val spkId = System.currentTimeMillis() / 1000L
         val spkPriv = generateRandomClampedScalar(secureRandom)
         val spkPub = X25519.scalarMultBase(spkPriv)
+        runCatching {
+            encryptScopedSecret("spk|$userId|$spkId", spkPriv)
+        }.getOrNull()?.let { encSpk ->
+            prefs.edit()
+                .putString("e2e_spk_priv_enc_${userId}_$spkId", encSpk)
+                .putLong("e2e_active_spk_id_$userId", spkId)
+                .apply()
+        }
         spkPriv.fill(0)
 
-        val sigDigest = MessageDigest.getInstance("SHA-256").apply {
-            update(identity.publicKey)
-            update(spkPub)
-        }.digest()
+        val prefix = "VISTA-E2EE-SPK-V1:".toByteArray(Charsets.UTF_8)
+        val signedPayload = ByteArray(prefix.size + identity.publicKey.size + spkPub.size)
+        System.arraycopy(prefix, 0, signedPayload, 0, prefix.size)
+        System.arraycopy(identity.publicKey, 0, signedPayload, prefix.size, identity.publicKey.size)
+        System.arraycopy(spkPub, 0, signedPayload, prefix.size + identity.publicKey.size, spkPub.size)
+        val edSig = Ed25519Crypto.sign(signingKeyPair.seed, signedPayload)
 
         val baseOtId = spkId * 100L
+        val otEditor = prefs.edit()
         val otKeys = (1..oneTimeCount).map { idx ->
+            val keyId = baseOtId + idx
             val otPriv = generateRandomClampedScalar(secureRandom)
             val otPub = X25519.scalarMultBase(otPriv)
+            runCatching { encryptScopedSecret("otpk|$userId|$keyId", otPriv) }.getOrNull()?.let { encOt ->
+                otEditor.putString("e2e_otpk_priv_enc_${userId}_$keyId", encOt)
+            }
             otPriv.fill(0)
-            (baseOtId + idx) to Base64.encodeToString(otPub, Base64.NO_WRAP)
+            keyId to Base64.encodeToString(otPub, Base64.NO_WRAP)
         }
+        otEditor.apply()
         return GeneratedPreKeyBundle(
             identityKey = identity.publicKeyB64,
+            signingKey = Base64.encodeToString(signingKeyPair.publicKey, Base64.NO_WRAP),
             signedPreKeyId = spkId,
             signedPreKey = Base64.encodeToString(spkPub, Base64.NO_WRAP),
-            signedPreKeySig = Base64.encodeToString(sigDigest, Base64.NO_WRAP),
+            signedPreKeySig = Base64.encodeToString(edSig, Base64.NO_WRAP),
             oneTimePreKeys = otKeys,
         )
     }
@@ -781,7 +972,8 @@ class ChatE2EEService(
 
     fun isEncryptedEnvelope(content: String): Boolean {
         val trimmed = content.trim()
-        return trimmed.startsWith(PREFIX_V3) ||
+        return trimmed.startsWith(PREFIX_V4) ||
+            trimmed.startsWith(PREFIX_V3) ||
             trimmed.startsWith(PREFIX_V1) ||
             trimmed.startsWith(PREFIX_V2) ||
             trimmed.startsWith(PREFIX_LEGACY_V1) ||
@@ -967,10 +1159,13 @@ class ChatE2EEService(
         const val PREFIX_V1 = "VE2E1:"
         const val PREFIX_V2 = "VE2E2:"
         const val PREFIX_V3 = "VE2E3:"
+        const val PREFIX_V4 = "VE2E4:"
         const val PREFIX_LEGACY_V1 = "e2ee:v1:"
         const val PREFIX_GROUP_V1 = "VE2E_GROUP_V1:"
         const val HKDF_INFO = "vista-e2e-msg-v1"
         const val HKDF_INFO_V3 = "vista-e2e-msg-v3"
+        const val HKDF_INFO_V4_PEER = "vista-e2e-msg-v4-peer"
+        const val HKDF_INFO_V4_SELF = "vista-e2e-msg-v4-self"
         const val GROUP_HKDF_INFO = "vista-e2e-group-v1"
         const val SALT_LENGTH = 16
         private const val X25519_KEY_LENGTH = 32
@@ -1050,6 +1245,7 @@ internal fun encryptV3Payload(
     conversationId: String,
     senderId: String,
     messageId: String,
+    field: String = "content",
     secureRandom: SecureRandom = SecureRandom(),
 ): String {
     require(myPrivateKey.size == 32 && peerPublicKey.size == 32) { "Invalid X25519 key size" }
@@ -1057,7 +1253,13 @@ internal fun encryptV3Payload(
     val ephPub = X25519.scalarMultBase(ephPriv)
     val ephDh = X25519.scalarMult(ephPriv, peerPublicKey)
     ephPriv.fill(0)
+    if (MessageDigest.isEqual(ephDh, ByteArray(32))) {
+        throw SecurityException("Rejected low-order X25519 peer key")
+    }
     val staticDh = X25519.scalarMult(myPrivateKey, peerPublicKey)
+    if (MessageDigest.isEqual(staticDh, ByteArray(32))) {
+        throw SecurityException("Rejected low-order X25519 static shared secret")
+    }
 
     val ikm = ByteArray(64)
     System.arraycopy(ephDh, 0, ikm, 0, 32)
@@ -1076,7 +1278,7 @@ internal fun encryptV3Payload(
     ikm.fill(0)
 
     val ephPubB64 = java.util.Base64.getEncoder().encodeToString(ephPub)
-    val aad = ChatE2EEService.messageBindingV3(conversationId, senderId, messageId, ephPubB64)
+    val aad = ChatE2EEService.messageBindingV3(conversationId, senderId, messageId, ephPubB64, field)
         .toByteArray(Charsets.UTF_8)
 
     val cipher = Cipher.getInstance("AES/GCM/NoPadding")
@@ -1103,6 +1305,7 @@ internal fun decryptV3Payload(
     conversationId: String,
     senderId: String,
     messageId: String,
+    field: String = "content",
 ): String {
     val trimmed = encrypted.trim()
     require(trimmed.startsWith(ChatE2EEService.PREFIX_V3)) { "Not a VE2E3 payload" }
@@ -1124,6 +1327,11 @@ internal fun decryptV3Payload(
 
     val ephDh = X25519.scalarMult(myPrivateKey, ephPub)
     val staticDh = X25519.scalarMult(myPrivateKey, peerPublicKey)
+    if (MessageDigest.isEqual(ephDh, ByteArray(32)) || MessageDigest.isEqual(staticDh, ByteArray(32))) {
+        ephDh.fill(0)
+        staticDh.fill(0)
+        throw SecurityException("Rejected low-order X25519 public key")
+    }
     val ikm = ByteArray(64)
     System.arraycopy(ephDh, 0, ikm, 0, 32)
     System.arraycopy(staticDh, 0, ikm, 32, 32)
@@ -1139,7 +1347,7 @@ internal fun decryptV3Payload(
     ikm.fill(0)
 
     val ephPubB64 = java.util.Base64.getEncoder().encodeToString(ephPub)
-    val aad = ChatE2EEService.messageBindingV3(conversationId, senderId, messageId, ephPubB64)
+    val aad = ChatE2EEService.messageBindingV3(conversationId, senderId, messageId, ephPubB64, field)
         .toByteArray(Charsets.UTF_8)
 
     val cipher = Cipher.getInstance("AES/GCM/NoPadding")
@@ -1147,6 +1355,157 @@ internal fun decryptV3Payload(
     cipher.updateAAD(aad)
     val clear = cipher.doFinal(cipherAndTag)
     msgKey.fill(0)
+    return String(clear, Charsets.UTF_8)
+}
+
+internal fun encryptV4Payload(
+    plainText: String,
+    myPrivateKey: ByteArray,
+    peerPublicKey: ByteArray,
+    conversationId: String,
+    senderId: String,
+    messageId: String,
+    field: String = "content",
+    secureRandom: SecureRandom = SecureRandom(),
+): String {
+    require(myPrivateKey.size == 32 && peerPublicKey.size == 32) { "Invalid X25519 key size" }
+    val myPublicKey = X25519.scalarMultBase(myPrivateKey)
+    val ephPriv = generateRandomClampedScalar(secureRandom)
+    val ephPub = X25519.scalarMultBase(ephPriv)
+    val ephDh = X25519.scalarMult(ephPriv, peerPublicKey)
+    ephPriv.fill(0)
+    val staticDh = X25519.scalarMult(myPrivateKey, peerPublicKey)
+    if (MessageDigest.isEqual(ephDh, ByteArray(32)) || MessageDigest.isEqual(staticDh, ByteArray(32))) {
+        ephDh.fill(0)
+        staticDh.fill(0)
+        throw SecurityException("Rejected low-order X25519 peer public key")
+    }
+    val peerIkm = ByteArray(64)
+    System.arraycopy(ephDh, 0, peerIkm, 0, 32)
+    System.arraycopy(staticDh, 0, peerIkm, 32, 32)
+    ephDh.fill(0)
+    staticDh.fill(0)
+
+    val selfDh = X25519.scalarMult(myPrivateKey, myPublicKey)
+    val contentKey = ByteArray(32).also { secureRandom.nextBytes(it) }
+    val salt = ByteArray(ChatE2EEService.SALT_LENGTH).also { secureRandom.nextBytes(it) }
+    val msgNonce = ByteArray(12).also { secureRandom.nextBytes(it) }
+    val peerWrapNonce = ByteArray(12).also { secureRandom.nextBytes(it) }
+    val selfWrapNonce = ByteArray(12).also { secureRandom.nextBytes(it) }
+
+    val peerWrapKey = ChatE2EEService.hkdf(peerIkm, salt, ChatE2EEService.HKDF_INFO_V4_PEER.toByteArray(Charsets.UTF_8), 32)
+    peerIkm.fill(0)
+    val selfWrapKey = ChatE2EEService.hkdf(selfDh, salt, ChatE2EEService.HKDF_INFO_V4_SELF.toByteArray(Charsets.UTF_8), 32)
+    selfDh.fill(0)
+
+    val ephPubB64 = java.util.Base64.getEncoder().encodeToString(ephPub)
+    val aad = ChatE2EEService.messageBindingV3(conversationId, senderId, messageId, ephPubB64, field)
+        .toByteArray(Charsets.UTF_8)
+
+    val peerWrapCipher = Cipher.getInstance("AES/GCM/NoPadding")
+    peerWrapCipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(peerWrapKey, "AES"), GCMParameterSpec(128, peerWrapNonce))
+    peerWrapCipher.updateAAD(aad)
+    val peerWrappedKey = peerWrapCipher.doFinal(contentKey)
+    peerWrapKey.fill(0)
+
+    val selfWrapCipher = Cipher.getInstance("AES/GCM/NoPadding")
+    selfWrapCipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(selfWrapKey, "AES"), GCMParameterSpec(128, selfWrapNonce))
+    selfWrapCipher.updateAAD(aad)
+    val selfWrappedKey = selfWrapCipher.doFinal(contentKey)
+    selfWrapKey.fill(0)
+
+    val bodyCipher = Cipher.getInstance("AES/GCM/NoPadding")
+    bodyCipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(contentKey, "AES"), GCMParameterSpec(128, msgNonce))
+    bodyCipher.updateAAD(aad)
+    val bodyCipherAndTag = bodyCipher.doFinal(plainText.toByteArray(Charsets.UTF_8))
+    contentKey.fill(0)
+
+    // Wire format: ver(1=0x04) | ephPub(32) | salt(16) | peerWrapNonce(12) | peerWrapped(48) | selfWrapNonce(12) | selfWrapped(48) | msgNonce(12) | bodyCipherAndTag
+    val out = ByteBuffer.allocate(1 + 32 + ChatE2EEService.SALT_LENGTH + 12 + peerWrappedKey.size + 12 + selfWrappedKey.size + 12 + bodyCipherAndTag.size)
+        .put(0x04.toByte())
+        .put(ephPub)
+        .put(salt)
+        .put(peerWrapNonce)
+        .put(peerWrappedKey)
+        .put(selfWrapNonce)
+        .put(selfWrappedKey)
+        .put(msgNonce)
+        .put(bodyCipherAndTag)
+        .array()
+    return ChatE2EEService.PREFIX_V4 + java.util.Base64.getEncoder().encodeToString(out)
+}
+
+internal fun decryptV4Payload(
+    encrypted: String,
+    myPrivateKey: ByteArray,
+    peerPublicKey: ByteArray,
+    conversationId: String,
+    senderId: String,
+    messageId: String,
+    isMine: Boolean,
+    field: String = "content",
+): String {
+    val trimmed = encrypted.trim()
+    require(trimmed.startsWith(ChatE2EEService.PREFIX_V4)) { "Not a VE2E4 payload" }
+    require(myPrivateKey.size == 32 && peerPublicKey.size == 32) { "Invalid X25519 key size" }
+    val raw = java.util.Base64.getDecoder().decode(trimmed.removePrefix(ChatE2EEService.PREFIX_V4))
+    val wrappedSize = 32 + 16 // AES-256 key + GCM tag
+    val minSize = 1 + 32 + ChatE2EEService.SALT_LENGTH + 12 + wrappedSize + 12 + wrappedSize + 12 + 16
+    require(raw.size > minSize && raw[0] == 0x04.toByte()) { "Malformed VE2E4 envelope" }
+
+    var offset = 1
+    val ephPub = raw.copyOfRange(offset, offset + 32); offset += 32
+    val salt = raw.copyOfRange(offset, offset + ChatE2EEService.SALT_LENGTH); offset += ChatE2EEService.SALT_LENGTH
+    val peerWrapNonce = raw.copyOfRange(offset, offset + 12); offset += 12
+    val peerWrappedKey = raw.copyOfRange(offset, offset + wrappedSize); offset += wrappedSize
+    val selfWrapNonce = raw.copyOfRange(offset, offset + 12); offset += 12
+    val selfWrappedKey = raw.copyOfRange(offset, offset + wrappedSize); offset += wrappedSize
+    val msgNonce = raw.copyOfRange(offset, offset + 12); offset += 12
+    val bodyCipherAndTag = raw.copyOfRange(offset, raw.size)
+
+    val ephPubB64 = java.util.Base64.getEncoder().encodeToString(ephPub)
+    val aad = ChatE2EEService.messageBindingV3(conversationId, senderId, messageId, ephPubB64, field)
+        .toByteArray(Charsets.UTF_8)
+
+    val contentKey: ByteArray = if (isMine) {
+        val myPub = X25519.scalarMultBase(myPrivateKey)
+        val selfDh = X25519.scalarMult(myPrivateKey, myPub)
+        val selfWrapKey = ChatE2EEService.hkdf(selfDh, salt, ChatE2EEService.HKDF_INFO_V4_SELF.toByteArray(Charsets.UTF_8), 32)
+        selfDh.fill(0)
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(selfWrapKey, "AES"), GCMParameterSpec(128, selfWrapNonce))
+        cipher.updateAAD(aad)
+        val unwrapped = cipher.doFinal(selfWrappedKey)
+        selfWrapKey.fill(0)
+        unwrapped
+    } else {
+        val ephDh = X25519.scalarMult(myPrivateKey, ephPub)
+        val staticDh = X25519.scalarMult(myPrivateKey, peerPublicKey)
+        if (MessageDigest.isEqual(ephDh, ByteArray(32)) || MessageDigest.isEqual(staticDh, ByteArray(32))) {
+            ephDh.fill(0)
+            staticDh.fill(0)
+            throw SecurityException("Rejected low-order X25519 public key")
+        }
+        val peerIkm = ByteArray(64)
+        System.arraycopy(ephDh, 0, peerIkm, 0, 32)
+        System.arraycopy(staticDh, 0, peerIkm, 32, 32)
+        ephDh.fill(0)
+        staticDh.fill(0)
+        val peerWrapKey = ChatE2EEService.hkdf(peerIkm, salt, ChatE2EEService.HKDF_INFO_V4_PEER.toByteArray(Charsets.UTF_8), 32)
+        peerIkm.fill(0)
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(peerWrapKey, "AES"), GCMParameterSpec(128, peerWrapNonce))
+        cipher.updateAAD(aad)
+        val unwrapped = cipher.doFinal(peerWrappedKey)
+        peerWrapKey.fill(0)
+        unwrapped
+    }
+
+    val bodyCipher = Cipher.getInstance("AES/GCM/NoPadding")
+    bodyCipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(contentKey, "AES"), GCMParameterSpec(128, msgNonce))
+    bodyCipher.updateAAD(aad)
+    val clear = bodyCipher.doFinal(bodyCipherAndTag)
+    contentKey.fill(0)
     return String(clear, Charsets.UTF_8)
 }
 
@@ -1186,80 +1545,172 @@ internal fun wipeDecryptedMediaCache(rootDir: File?) {
 }
 
 /**
- * Pure Kotlin implementation of RFC 7748 X25519 (Curve25519 Montgomery form).
+ * Constant-time pure Kotlin RFC 7748 X25519 (Curve25519 Montgomery ladder)
+ * over 16-limb signed radix-2^16 field elements with branchless cswap.
  */
 object X25519 {
-    private val P = BigInteger.valueOf(2).pow(255).subtract(BigInteger.valueOf(19))
-    private val A24 = BigInteger.valueOf(121665)
-    private val BASE_POINT = BigInteger.valueOf(9)
+    private val BASE_U = ByteArray(32).apply { this[0] = 9 }
 
-    fun scalarMultBase(scalar: ByteArray): ByteArray = scalarMult(scalar, BASE_POINT)
+    fun scalarMultBase(scalar: ByteArray): ByteArray = scalarMult(scalar, BASE_U)
+
+    fun scalarMult(scalar: ByteArray, u: BigInteger): ByteArray =
+        scalarMult(scalar, encodeBigInt32(u))
 
     fun scalarMult(scalar: ByteArray, uCoords: ByteArray): ByteArray {
-        val u = decodeLittleEndian(uCoords)
-        return scalarMult(scalar, u)
+        val k = clampScalarBytes(scalar)
+        val x1 = unpack25519(uCoords)
+        val x = LongArray(16)
+        val a = LongArray(16)
+        val b = LongArray(16)
+        val c = LongArray(16)
+        val d = LongArray(16)
+        val e = LongArray(16)
+        val f = LongArray(16)
+
+        for (i in 0 until 16) {
+            b[i] = x1[i]
+            a[i] = 0L
+            c[i] = 0L
+            d[i] = 0L
+        }
+        a[0] = 1L
+        d[0] = 1L
+
+        for (pos in 254 downTo 0) {
+            val r = (k[pos ushr 3].toInt() ushr (pos and 7)) and 1
+            sel25519(a, b, r)
+            sel25519(c, d, r)
+            add(e, a, c)
+            sub(a, a, c)
+            add(c, b, d)
+            sub(b, b, d)
+            mult(d, e, e)
+            mult(f, a, a)
+            mult(a, c, a)
+            mult(c, b, e)
+            add(e, a, c)
+            sub(a, a, c)
+            mult(b, a, a)
+            sub(c, d, f)
+            mult(a, c, C121665)
+            add(a, a, d)
+            mult(c, c, a)
+            mult(a, d, f)
+            mult(d, b, x1)
+            mult(b, e, e)
+            sel25519(a, b, r)
+            sel25519(c, d, r)
+        }
+
+        inv25519(c, c)
+        mult(x, a, c)
+        val out = pack25519(x)
+        k.fill(0)
+        return out
     }
 
-    fun scalarMult(scalar: ByteArray, u: BigInteger): ByteArray {
-        val k = clampScalar(scalar)
-        var x1 = u
-        var x2 = BigInteger.ONE
-        var z2 = BigInteger.ZERO
-        var x3 = u
-        var z3 = BigInteger.ONE
-        var swap = 0
+    private val C121665 = longArrayOf(0xDB41, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 
-        for (t in 254 downTo 0) {
-            val kt = (k.shiftRight(t).toInt()) and 1
-            swap = swap xor kt
-            if (swap == 1) {
-                val tempX = x2; x2 = x3; x3 = tempX
-                val tempZ = z2; z2 = z3; z3 = tempZ
+    private fun clampScalarBytes(k: ByteArray): ByteArray {
+        val z = k.copyOf(32)
+        z[0] = (z[0].toInt() and 248).toByte()
+        z[31] = (z[31].toInt() and 127).toByte()
+        z[31] = (z[31].toInt() or 64).toByte()
+        return z
+    }
+
+    private fun unpack25519(n: ByteArray): LongArray {
+        val o = LongArray(16)
+        val masked = n.copyOf(32)
+        // RFC 7748 Section 5: always mask MSB of final byte.
+        masked[31] = (masked[31].toInt() and 0x7F).toByte()
+        for (i in 0 until 16) {
+            o[i] = ((masked[2 * i].toInt() and 0xFF) + ((masked[2 * i + 1].toInt() and 0xFF) shl 8)).toLong()
+        }
+        return o
+    }
+
+    private fun sel25519(p: LongArray, q: LongArray, b: Int) {
+        val c = -(b and 1).toLong()
+        for (i in 0 until 16) {
+            val t = c and (p[i] xor q[i])
+            p[i] = p[i] xor t
+            q[i] = q[i] xor t
+        }
+    }
+
+    private fun car25519(o: LongArray) {
+        var c: Long
+        for (i in 0 until 16) {
+            o[i] += 65536L
+            c = o[i] shr 16
+            o[if (i < 15) i + 1 else 0] += c - 1L + if (i == 15) 37L * (c - 1L) else 0L
+            o[i] -= c shl 16
+        }
+    }
+
+    private fun add(o: LongArray, a: LongArray, b: LongArray) {
+        for (i in 0 until 16) o[i] = a[i] + b[i]
+    }
+
+    private fun sub(o: LongArray, a: LongArray, b: LongArray) {
+        for (i in 0 until 16) o[i] = a[i] - b[i]
+    }
+
+    private fun mult(o: LongArray, a: LongArray, b: LongArray) {
+        val t = LongArray(31)
+        for (i in 0 until 16) {
+            for (j in 0 until 16) {
+                t[i + j] += a[i] * b[j]
             }
-            swap = kt
-
-            val a = x2.add(z2).mod(P)
-            val aa = a.multiply(a).mod(P)
-            val b = x2.subtract(z2).mod(P)
-            val bb = b.multiply(b).mod(P)
-            val e = aa.subtract(bb).mod(P)
-            val c = x3.add(z3).mod(P)
-            val d = x3.subtract(z3).mod(P)
-            val da = d.multiply(a).mod(P)
-            val cb = c.multiply(b).mod(P)
-
-            x3 = da.add(cb).mod(P).pow(2).mod(P)
-            z3 = x1.multiply(da.subtract(cb).mod(P).pow(2).mod(P)).mod(P)
-            x2 = aa.multiply(bb).mod(P)
-            z2 = e.multiply(aa.add(A24.multiply(e).mod(P)).mod(P)).mod(P)
         }
-
-        if (swap == 1) {
-            val tempX = x2; x2 = x3; x3 = tempX
-            val tempZ = z2; z2 = z3; z3 = tempZ
+        for (i in 0 until 15) {
+            t[i] += 38L * t[i + 16]
         }
-
-        val result = x2.multiply(z2.modInverse(P)).mod(P)
-        return encodeLittleEndian(result)
+        for (i in 0 until 16) o[i] = t[i]
+        car25519(o)
+        car25519(o)
     }
 
-    private fun clampScalar(k: ByteArray): BigInteger {
-        val copy = k.copyOf(32)
-        copy[0] = (copy[0].toInt() and 248).toByte()
-        copy[31] = (copy[31].toInt() and 127).toByte()
-        copy[31] = (copy[31].toInt() or 64).toByte()
-        return decodeLittleEndian(copy)
-    }
-
-    private fun decodeLittleEndian(bytes: ByteArray): BigInteger {
-        val reversed = ByteArray(bytes.size + 1)
-        for (i in bytes.indices) {
-            reversed[bytes.size - 1 - i + 1] = bytes[i]
+    private fun inv25519(o: LongArray, i: LongArray) {
+        val c = LongArray(16)
+        for (a in 0 until 16) c[a] = i[a]
+        for (a in 253 downTo 0) {
+            mult(c, c, c)
+            if (a != 2 && a != 4) {
+                mult(c, c, i)
+            }
         }
-        return BigInteger(reversed)
+        for (a in 0 until 16) o[a] = c[a]
     }
 
-    private fun encodeLittleEndian(n: BigInteger): ByteArray {
+    private fun pack25519(n: LongArray): ByteArray {
+        val m = LongArray(16)
+        val t = LongArray(16)
+        for (i in 0 until 16) t[i] = n[i]
+        car25519(t)
+        car25519(t)
+        car25519(t)
+        for (j in 0 until 2) {
+            m[0] = t[0] - 0xffedL
+            for (i in 1 until 15) {
+                m[i] = t[i] - 0xffffL - ((m[i - 1] shr 16) and 1L)
+                m[i - 1] = m[i - 1] and 0xffffL
+            }
+            m[15] = t[15] - 0x7fffL - ((m[14] shr 16) and 1L)
+            val b = ((m[15] shr 16) and 1L).toInt()
+            m[14] = m[14] and 0xffffL
+            sel25519(t, m, 1 - b)
+        }
+        val o = ByteArray(32)
+        for (i in 0 until 16) {
+            o[2 * i] = (t[i] and 0xffL).toByte()
+            o[2 * i + 1] = ((t[i] shr 8) and 0xffL).toByte()
+        }
+        return o
+    }
+
+    private fun encodeBigInt32(n: BigInteger): ByteArray {
         val raw = n.toByteArray()
         val result = ByteArray(32)
         var rawIdx = raw.size - 1

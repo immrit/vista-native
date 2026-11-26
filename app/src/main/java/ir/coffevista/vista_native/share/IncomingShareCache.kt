@@ -117,6 +117,7 @@ internal class IncomingShareCache(private val context: Context) {
     }.getOrNull()
 
     private fun copyBounded(sourceUri: Uri, mimeType: String, maxBytes: Long): File? {
+        if (isInternalPrivateUri(sourceUri)) return null
         val shareDirectory = File(context.cacheDir, CACHE_DIRECTORY).apply { mkdirs() }
         val destination = File(shareDirectory, "share_${UUID.randomUUID()}${extensionFor(mimeType)}")
         return runCatching {
@@ -140,6 +141,37 @@ internal class IncomingShareCache(private val context: Context) {
             destination.delete()
             null
         }
+    }
+
+    private fun isInternalPrivateUri(uri: Uri): Boolean {
+        val canonicalDataDir = runCatching { context.dataDir.canonicalPath }.getOrNull()
+        val scheme = uri.scheme?.lowercase()
+        if (scheme == "file") {
+            val filePath = uri.path ?: return true
+            val canonicalFile = runCatching { File(filePath).canonicalPath }.getOrNull() ?: return true
+            if (canonicalDataDir != null &&
+                (canonicalFile == canonicalDataDir || canonicalFile.startsWith("$canonicalDataDir${File.separator}"))
+            ) {
+                return true
+            }
+        }
+        if (scheme == "content") {
+            val authority = uri.authority.orEmpty()
+            if (authority.startsWith(context.packageName, ignoreCase = true)) {
+                return true
+            }
+            val fdTarget = runCatching {
+                context.contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
+                    android.system.Os.readlink("/proc/self/fd/${pfd.fd}")
+                }
+            }.getOrNull()
+            if (fdTarget != null && canonicalDataDir != null &&
+                (fdTarget == canonicalDataDir || fdTarget.startsWith("$canonicalDataDir${File.separator}"))
+            ) {
+                return true
+            }
+        }
+        return false
     }
 
     private fun pruneExpiredFiles() {

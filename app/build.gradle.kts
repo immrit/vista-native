@@ -58,8 +58,8 @@ check(configuredSigningValues == 0 || configuredSigningValues == signingValues.s
 }
 val vistaVersionCode = injectedValue("vista.versionCode", "VISTA_VERSION_CODE")
     ?.toIntOrNull()
-    ?: 4052
-val vistaVersionName = injectedValue("vista.versionName", "VISTA_VERSION_NAME") ?: "3.0.2"
+    ?: 4054
+val vistaVersionName = injectedValue("vista.versionName", "VISTA_VERSION_NAME") ?: "3.0.4"
 val flutterReferenceApplicationId = "ir.coffevista.vista"
 val nativeBetaApplicationId = injectedValue("vista.applicationId.beta", "VISTA_BETA_APPLICATION_ID")
     ?: "ir.coffevista.vista_native.beta"
@@ -75,6 +75,14 @@ android {
     lint {
         checkReleaseBuilds = true
         abortOnError = false
+        error += setOf(
+            "TrustAllX509TrustManager",
+            "BadHostnameVerifier",
+            "ExportedReceiver",
+            "ExportedService",
+            "ExportedContentProvider",
+            "InsecureBaseConfiguration",
+        )
     }
 
     compileOptions {
@@ -84,6 +92,11 @@ android {
     defaultConfig {
         versionCode = vistaVersionCode
         versionName = vistaVersionName
+        buildConfigField(
+            "String",
+            "TLS_POLICY_PUBLIC_KEY",
+            "\"${injectedValue("vista.tlsPolicyPublicKey", "VISTA_TLS_POLICY_PUBLIC_KEY") ?: ""}\"",
+        )
     }
 
     signingConfigs {
@@ -130,7 +143,7 @@ android {
             isDebuggable = true
             isMinifyEnabled = false
             isShrinkResources = false
-            signingConfig = signingConfigs.findByName("injectedRelease") ?: signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("debug")
         }
         release {
             isDebuggable = false
@@ -267,6 +280,11 @@ val verifyNativeApplicationIds by tasks.registering {
         }
         check(betaFlavor?.applicationId?.startsWith("ir.coffevista.vista_native") == true) {
             "Native beta variant must retain isolated beta package ID: ${betaFlavor?.applicationId}"
+        }
+        val prodApiUrl = injectedValue("vista.api.production", "VISTA_PRODUCTION_API_BASE_URL") ?: "https://api.coffevista.ir"
+        val betaApiUrl = injectedValue("vista.api.beta", "VISTA_BETA_API_BASE_URL") ?: "https://api.coffevista.ir"
+        check(prodApiUrl.startsWith("https://") && betaApiUrl.startsWith("https://")) {
+            "API_BASE_URL must use https:// in release and production builds."
         }
     }
 }

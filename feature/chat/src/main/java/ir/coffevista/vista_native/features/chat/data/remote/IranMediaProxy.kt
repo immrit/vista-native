@@ -48,7 +48,7 @@ object IranMediaProxy {
         }
 
         val host = runCatching { URI(trimmed).host }.getOrNull()
-        val needsProxy = isHostBlocked(host) || trimmed.endsWith(".gif", ignoreCase = true)
+        val needsProxy = isHostBlocked(host)
 
         return if (needsProxy) {
             val encoded = runCatching { URLEncoder.encode(trimmed, "UTF-8") }.getOrDefault(trimmed)

@@ -208,6 +208,7 @@ class VistaNotificationManager @Inject constructor(
                 putExtra(EXTRA_MESSAGE_ID, it)
                 putExtra("message_id", it)
             }
+            NotificationIntentAuthenticator.stamp(this)
         }
 
         val pendingIntent = PendingIntent.getActivity(
@@ -225,16 +226,17 @@ class VistaNotificationManager @Inject constructor(
         }
         val accentColor = ContextCompat.getColor(context, R.color.vista_notification_accent)
 
+        val appLocked = sessionStore?.isBiometricEnabled() == true
+        val safeSenderLabel = if (appLocked) "کاربر ویستا" else senderName.ifBlank { "کاربر" }
         val senderPersonBuilder = Person.Builder()
-            .setName(senderName.ifBlank { "کاربر" })
-            .setKey(peerId.ifBlank { senderName })
-        if (avatarBitmap != null) {
+            .setName(safeSenderLabel)
+            .setKey(if (appLocked) "locked_sender" else peerId.ifBlank { senderName })
+        if (!appLocked && avatarBitmap != null) {
             senderPersonBuilder.setIcon(IconCompat.createWithBitmap(avatarBitmap))
         }
         val senderPerson = senderPersonBuilder.build()
         val mePerson = Person.Builder().setName("شما").setKey("me").build()
 
-        val appLocked = sessionStore?.isBiometricEnabled() == true
         val safeMessageText = if (appLocked) {
             "برای مشاهده محتوای پیام، قفل برنامه را باز کنید"
         } else {
@@ -261,10 +263,10 @@ class VistaNotificationManager @Inject constructor(
         }
         messagingStyle.addMessage(safeMessageText, timestampMillis, senderPerson)
 
-        val displayTitle = if (isGroup && !groupName.isNullOrBlank()) {
-            groupName
-        } else {
-            senderName.ifBlank { "کاربر" }
+        val displayTitle = when {
+            appLocked -> "ویستا"
+            isGroup && !groupName.isNullOrBlank() -> groupName
+            else -> senderName.ifBlank { "کاربر" }
         }
         val displaySummary = when {
             appLocked -> "یک پیام جدید دارید"
@@ -419,6 +421,7 @@ class VistaNotificationManager @Inject constructor(
                 putExtra(EXTRA_DEEPLINK, it)
                 putExtra("deeplink", it)
             }
+            NotificationIntentAuthenticator.stamp(this)
         }
 
         val pendingIntent = PendingIntent.getActivity(
@@ -430,12 +433,16 @@ class VistaNotificationManager @Inject constructor(
 
         val channelId = if (soundEnabled) CHANNEL_SOCIAL_NOTIFY else CHANNEL_SOCIAL_SILENT
         val accentColor = ContextCompat.getColor(context, R.color.vista_notification_accent)
+        val appLocked = sessionStore?.isBiometricEnabled() == true
+        val safeTitle = if (appLocked) "ویستا" else title
+        val safeBody = if (appLocked) "یک اعلان جدید دارید" else body
 
         val builder = NotificationCompat.Builder(context, channelId)
             .setSmallIcon(DesignSystemR.drawable.ic_notification)
             .setColor(accentColor)
-            .setContentTitle(title)
-            .setContentText(body)
+            .setContentTitle(safeTitle)
+            .setContentText(safeBody)
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .setPriority(if (soundEnabled) NotificationCompat.PRIORITY_DEFAULT else NotificationCompat.PRIORITY_LOW)
             .setGroup(GROUP_KEY_SOCIAL)
             .setAutoCancel(true)
@@ -444,17 +451,17 @@ class VistaNotificationManager @Inject constructor(
         if (!soundEnabled && !vibrationEnabled) {
             builder.setSilent(true)
         }
-        if (avatarBitmap != null) {
+        if (!appLocked && avatarBitmap != null) {
             builder.setLargeIcon(avatarBitmap)
         }
-        if (largeImageBitmap != null) {
+        if (!appLocked && largeImageBitmap != null) {
             builder.setStyle(
                 NotificationCompat.BigPictureStyle()
                     .bigPicture(largeImageBitmap)
                     .bigLargeIcon(avatarBitmap),
             )
         } else {
-            builder.setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            builder.setStyle(NotificationCompat.BigTextStyle().bigText(safeBody))
         }
 
         try {
@@ -521,6 +528,7 @@ class VistaNotificationManager @Inject constructor(
                 putExtra(EXTRA_DEEPLINK, "vista://notifications")
                 putExtra("deeplink", "vista://notifications")
             }
+            NotificationIntentAuthenticator.stamp(this)
         }
         val pending = PendingIntent.getActivity(
             context,

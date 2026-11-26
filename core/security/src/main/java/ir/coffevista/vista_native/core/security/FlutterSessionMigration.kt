@@ -14,21 +14,41 @@ internal object NoOpFlutterSessionMigration : FlutterSessionMigration {
 }
 
 internal class AndroidFlutterSessionMigration(context: Context) : FlutterSessionMigration {
-    private val reader = FlutterSecureStorageReader(context)
-    private val gate = context.getSharedPreferences(MIGRATION_STATE_PREFS, Context.MODE_PRIVATE)
+    private val appContext = context.applicationContext
+    private val reader = FlutterSecureStorageReader(appContext)
+    private val gate = appContext.getSharedPreferences(MIGRATION_STATE_PREFS, Context.MODE_PRIVATE)
 
     override fun importOrNull(): StoredSession? {
         if (gate.getBoolean(IMPORT_DISABLED, false)) return null
         return runCatching { flutterSessionFromValues(reader::read) }.getOrNull()
     }
 
-    override fun preventFutureImport(): Boolean = gate.edit()
-        .putBoolean(IMPORT_DISABLED, true)
-        .commit()
+    override fun preventFutureImport(): Boolean {
+        runCatching { clearLegacyStorage() }
+        return gate.edit()
+            .putBoolean(IMPORT_DISABLED, true)
+            .commit()
+    }
+
+    private fun clearLegacyStorage() {
+        listOf(
+            LEGACY_FLUTTER_DATA_PREFS,
+            LEGACY_FLUTTER_CONFIG_PREFS,
+            LEGACY_FLUTTER_BASE_CONFIG_PREFS,
+        ).forEach { name ->
+            appContext.getSharedPreferences(name, Context.MODE_PRIVATE)
+                .edit()
+                .clear()
+                .commit()
+        }
+    }
 
     private companion object {
         const val MIGRATION_STATE_PREFS = "vista_flutter_session_migration"
         const val IMPORT_DISABLED = "legacy_import_disabled"
+        const val LEGACY_FLUTTER_DATA_PREFS = "FlutterSecureStorage"
+        const val LEGACY_FLUTTER_CONFIG_PREFS = "FlutterSecureStorageConfiguration:FlutterSecureStorage"
+        const val LEGACY_FLUTTER_BASE_CONFIG_PREFS = "FlutterSecureStorageConfiguration"
     }
 }
 

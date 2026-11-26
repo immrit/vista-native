@@ -59,4 +59,13 @@ class IranMediaProxyTest {
         val danceResults = IranGifBank.search("رقص")
         assertTrue(danceResults.isNotEmpty())
     }
+
+    @Test
+    fun `non blocked vista cdn gif urls bypass third party image proxy`() {
+        val s3Gif = "https://s3.ir-thr-at1.arvanstorage.ir/vista/private/reaction.gif"
+        val apiGif = "https://api.coffevista.ir/media/Sticker_01.GIF"
+        assertEquals(s3Gif, IranMediaProxy.toIranAccessibleUrl(s3Gif, preview = false))
+        assertEquals(s3Gif, IranMediaProxy.toIranAccessibleUrl(s3Gif, preview = true))
+        assertEquals(apiGif, IranMediaProxy.toIranAccessibleUrl(apiGif, preview = false))
+    }
 }

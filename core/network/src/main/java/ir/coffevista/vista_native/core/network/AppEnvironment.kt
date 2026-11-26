@@ -10,6 +10,7 @@ data class AppEnvironment(
     val internalBaseUrl: String,
     val debugBuild: Boolean,
     val appVersion: String = "1.0.0",
+    val tlsPolicyPublicKeyBase64: String = "",
 ) {
     init {
         require(internalBaseUrl.startsWith("https://")) {

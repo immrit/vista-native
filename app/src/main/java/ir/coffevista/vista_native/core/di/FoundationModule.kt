@@ -27,6 +27,7 @@ import ir.coffevista.vista_native.core.logging.AndroidLogSink
 import ir.coffevista.vista_native.core.network.AppEnvironment
 import ir.coffevista.vista_native.core.network.EnvironmentName
 import ir.coffevista.vista_native.core.network.InternalEnvironment
+import ir.coffevista.vista_native.core.network.KeystoreTlsPolicyPersistence
 import ir.coffevista.vista_native.core.network.TlsMode
 import ir.coffevista.vista_native.core.network.TlsPolicy
 import ir.coffevista.vista_native.core.network.TlsPolicyStore
@@ -50,6 +51,7 @@ object FoundationModule {
         internalBaseUrl = BuildConfig.API_BASE_URL,
         debugBuild = BuildConfig.DEBUG,
         appVersion = BuildConfig.VERSION_NAME,
+        tlsPolicyPublicKeyBase64 = BuildConfig.TLS_POLICY_PUBLIC_KEY,
     )
 
     @Provides
@@ -98,20 +100,25 @@ object FoundationModule {
     @Provides
     @Singleton
     fun provideTlsPolicyStore(
+        @ApplicationContext context: Context,
         dao: VerifiedTlsPolicyDao,
         @ApplicationScope applicationScope: CoroutineScope,
         dispatchers: DispatcherProvider,
     ): TlsPolicyStore {
         lateinit var store: TlsPolicyStore
         store = TlsPolicyStore(initialPolicy = TlsPolicyStore.DEFAULT_POLICY) { policy ->
+            val savedKeystore = KeystoreTlsPolicyPersistence.save(context, policy)
             applicationScope.launch(dispatchers.io) {
                 runCatching { dao.replaceAtomically(policy.toEntity()) }
             }
-            true
+            savedKeystore
         }
         applicationScope.launch(dispatchers.io) {
-            runCatching { dao.read() }.getOrNull()?.let { entity ->
-                store.hydrateFromDisk(entity.toPolicy())
+            val keystoreSaved = KeystoreTlsPolicyPersistence.read(context)
+            val roomSaved = runCatching { dao.read() }.getOrNull()?.toPolicy()
+            val best = listOfNotNull(keystoreSaved, roomSaved).maxByOrNull { it.revision }
+            if (best != null) {
+                store.hydrateFromDisk(best)
             }
         }
         return store

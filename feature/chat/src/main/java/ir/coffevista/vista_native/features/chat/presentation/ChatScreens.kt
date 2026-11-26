@@ -1803,6 +1803,8 @@ fun MessageDetailScreen(
     DisposableEffect(localView, isSecretConversation, isDarkTheme) {
         val activity = localView.context.findActivity()
         val window = activity?.takeUnless { it.isFinishing || it.isDestroyed }?.window
+        val hadSecureFlag = window != null &&
+            (window.attributes.flags and android.view.WindowManager.LayoutParams.FLAG_SECURE) != 0
         if (window != null) {
             runCatching {
                 val insetsController = androidx.core.view.WindowCompat.getInsetsController(window, localView)
@@ -1813,7 +1815,7 @@ fun MessageDetailScreen(
             runCatching { window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE) }
         }
         onDispose {
-            if (isSecretConversation) {
+            if (isSecretConversation && !hadSecureFlag) {
                 runCatching { window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE) }
             }
         }

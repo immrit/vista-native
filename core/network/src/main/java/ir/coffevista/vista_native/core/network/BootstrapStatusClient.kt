@@ -233,7 +233,7 @@ data class BootstrapStatus(
 @Singleton
 class BootstrapStatusClient @Inject constructor(
     @BootstrapApi private val client: OkHttpClient,
-    @InternalEnvironment environment: AppEnvironment,
+    @InternalEnvironment private val environment: AppEnvironment,
     private val tlsPolicyStore: TlsPolicyStore,
 ) {
     private val statusUrl = environment.internalBaseUrl.trimEnd('/') + "/api/v1/system/status"
@@ -253,18 +253,18 @@ class BootstrapStatusClient @Inject constructor(
             val maintenance = data["maintenance"]?.jsonPrimitive?.booleanOrNull
                 ?: data["maintenance_mode"]?.jsonPrimitive?.booleanOrNull
                 ?: false
-            val controlPlane = data["control_plane"] as? JsonObject
-            val isVerifiedControlPlane =
-                (controlPlane?.get("source") as? JsonPrimitive)?.contentOrNull == "vista-backend" ||
-                    data["schema_version"] != null
-
             val featureFlags = parseFeatureFlags(data)
             val killSwitches = parseKillSwitches(data, featureFlags)
             val alerts = parseAlerts(data)
             val fcmResyncEpoch = (data["fcm_resync_epoch"] as? JsonPrimitive)?.longOrNull ?: 0L
 
             val tls = data["tls_pinning"] as? JsonObject
-            val update = tls?.let { raw -> observeBackendPolicy(raw, isVerifiedControlPlane) }
+            val update = tls?.let { raw ->
+                observeBackendPolicy(
+                    raw = raw,
+                    tlsPolicyPublicKeyBase64 = environment.tlsPolicyPublicKeyBase64,
+                )
+            }
             val remoteConfig = (data["remote_config"] as? JsonObject)?.let(::parseRemoteConfigSnapshot)
             val status = BootstrapStatus(
                 maintenance = maintenance,
@@ -283,61 +283,12 @@ class BootstrapStatusClient @Inject constructor(
 
     private fun observeBackendPolicy(
         raw: JsonObject,
-        controlPlaneVerified: Boolean,
-    ): TlsPolicyUpdate {
-        val rawMode = (raw["mode"] as? JsonPrimitive)?.contentOrNull?.lowercase()
-        val mode = when (rawMode) {
-            "monitor" -> TlsMode.MONITOR
-            "enforce" -> TlsMode.ENFORCE
-            else -> TlsMode.OFF
-        }
-        val fingerprints = (raw["fingerprints"] as? JsonArray)
-            ?.mapNotNull { element -> (element as? JsonPrimitive)?.contentOrNull.normalizedPin() }
-            .orEmpty()
-        val expiresAtEpochSeconds = parseIsoEpochSeconds(
-            (raw["expires_at"] as? JsonPrimitive)?.contentOrNull,
-        ) ?: if (mode != TlsMode.OFF) {
-            (System.currentTimeMillis() / 1_000L) + DEFAULT_PIN_TTL_SECONDS
-        } else {
-            null
-        }
-        val updatedAtEpochSeconds = parseIsoEpochSeconds(
-            (raw["updated_at"] as? JsonPrimitive)?.contentOrNull,
-        )
-        val current = tlsPolicyStore.current()
-        val maxAllowedRevision = maxOf(
-            current.revision + 100L,
-            (System.currentTimeMillis() / 1_000L) + 3_600L,
-        )
-        val explicitRevision = (raw["revision"] as? JsonPrimitive)?.longOrNull
-            ?.takeIf { it in 1L..maxAllowedRevision }
-        val payloadChanged = mode != current.mode ||
-            fingerprints.getOrNull(0) != current.currentPinSha256 ||
-            fingerprints.getOrNull(1) != current.nextPinSha256 ||
-            expiresAtEpochSeconds != current.expiresAtEpochSeconds
-        val resolvedRevision = when {
-            explicitRevision != null -> explicitRevision
-            updatedAtEpochSeconds != null &&
-                updatedAtEpochSeconds in (current.revision + 1L)..maxAllowedRevision -> updatedAtEpochSeconds
-            payloadChanged -> current.revision + 1L
-            current.revision > 0L -> current.revision
-            else -> 1L
-        }
-        val contractVersion = (raw["contract_version"] as? JsonPrimitive)?.longOrNull?.toInt()
-            ?.takeIf { it > 0 }
-            ?: TlsPolicyStore.SUPPORTED_CONTRACT_VERSION
-
-        val candidate = TlsPolicy(
-            contractVersion = contractVersion,
-            revision = resolvedRevision,
-            mode = mode,
-            currentPinSha256 = fingerprints.getOrNull(0),
-            nextPinSha256 = fingerprints.getOrNull(1),
-            expiresAtEpochSeconds = expiresAtEpochSeconds,
-        )
-        val signatureVerified = controlPlaneVerified && (mode != TlsMode.ENFORCE || fingerprints.isNotEmpty())
-        return tlsPolicyStore.update(candidate, signatureVerified = signatureVerified)
-    }
+        tlsPolicyPublicKeyBase64: String,
+    ): TlsPolicyUpdate = verifyAndApplyTlsPolicy(
+        raw = raw,
+        tlsPolicyStore = tlsPolicyStore,
+        tlsPolicyPublicKeyBase64 = tlsPolicyPublicKeyBase64,
+    )
 
     private fun parseFeatureFlags(data: JsonObject): Map<String, Boolean> {
         val result = linkedMapOf<String, Boolean>()
@@ -412,6 +363,88 @@ class BootstrapStatusClient @Inject constructor(
     private companion object {
         const val DEFAULT_PIN_TTL_SECONDS = 30L * 86_400L
     }
+}
+
+internal fun verifyAndApplyTlsPolicy(
+    raw: JsonObject,
+    tlsPolicyStore: TlsPolicyStore,
+    tlsPolicyPublicKeyBase64: String,
+): TlsPolicyUpdate {
+    val rawMode = (raw["mode"] as? JsonPrimitive)?.contentOrNull?.lowercase()
+    val mode = when (rawMode) {
+        "monitor" -> TlsMode.MONITOR
+        "enforce" -> TlsMode.ENFORCE
+        else -> TlsMode.OFF
+    }
+    val fingerprints = (raw["fingerprints"] as? JsonArray)
+        ?.mapNotNull { element -> (element as? JsonPrimitive)?.contentOrNull.normalizedPin() }
+        .orEmpty()
+    val rawExpiresAt = (raw["expires_at"] as? JsonPrimitive)?.contentOrNull?.trim().orEmpty()
+    val expiresAtEpochSeconds = parsePolicyIsoEpochSeconds(rawExpiresAt)
+        ?: if (mode != TlsMode.OFF) {
+            (System.currentTimeMillis() / 1_000L) + 30L * 86_400L
+        } else {
+            null
+        }
+    val current = tlsPolicyStore.current()
+    val maxAllowedRevision = maxOf(
+        current.revision + 100L,
+        (System.currentTimeMillis() / 1_000L) + 3_600L,
+    )
+    val explicitRevision = (raw["revision"] as? JsonPrimitive)?.longOrNull
+        ?.takeIf { it in 1L..maxAllowedRevision }
+    val resolvedRevision = explicitRevision ?: if (current.revision > 0L) current.revision else 1L
+    val contractVersion = (raw["contract_version"] as? JsonPrimitive)?.longOrNull?.toInt()
+        ?.takeIf { it > 0 }
+        ?: TlsPolicyStore.SUPPORTED_CONTRACT_VERSION
+
+    val candidate = TlsPolicy(
+        contractVersion = contractVersion,
+        revision = resolvedRevision,
+        mode = mode,
+        currentPinSha256 = fingerprints.getOrNull(0),
+        nextPinSha256 = fingerprints.getOrNull(1),
+        expiresAtEpochSeconds = expiresAtEpochSeconds,
+    )
+
+    val signatureB64 = (raw["signature"] as? JsonPrimitive)?.contentOrNull?.trim().orEmpty()
+    val signatureVerified = verifyCanonicalTlsPolicySignature(
+        publicKeyB64 = tlsPolicyPublicKeyBase64,
+        signatureB64 = signatureB64,
+        revision = resolvedRevision,
+        mode = mode,
+        fingerprints = fingerprints,
+        rawExpiresAt = rawExpiresAt,
+    ) && (mode != TlsMode.ENFORCE || fingerprints.isNotEmpty())
+
+    return tlsPolicyStore.update(candidate, signatureVerified = signatureVerified)
+}
+
+internal fun verifyCanonicalTlsPolicySignature(
+    publicKeyB64: String,
+    signatureB64: String,
+    revision: Long,
+    mode: TlsMode,
+    fingerprints: List<String>,
+    rawExpiresAt: String,
+): Boolean {
+    val cleanPub = publicKeyB64.trim()
+    val cleanSig = signatureB64.trim()
+    if (cleanPub.isEmpty() || cleanSig.isEmpty()) return false
+    val pubBytes = runCatching { java.util.Base64.getDecoder().decode(cleanPub) }.getOrNull() ?: return false
+    val sigBytes = runCatching { java.util.Base64.getDecoder().decode(cleanSig) }.getOrNull() ?: return false
+    val canonical = "v1|$revision|${mode.name.lowercase()}|${fingerprints.joinToString(",")}|${rawExpiresAt.trim()}"
+    return Ed25519Verifier.verify(
+        publicKey = pubBytes,
+        message = canonical.toByteArray(Charsets.UTF_8),
+        signature = sigBytes,
+    )
+}
+
+private fun parsePolicyIsoEpochSeconds(raw: String?): Long? {
+    val trimmed = raw?.trim()?.takeIf(String::isNotEmpty) ?: return null
+    return runCatching { Instant.parse(trimmed).epochSecond }.getOrNull()
+        ?: runCatching { OffsetDateTime.parse(trimmed).toEpochSecond() }.getOrNull()
 }
 
 internal fun parseRemoteConfigSnapshot(obj: JsonObject): RemoteConfigSnapshot {

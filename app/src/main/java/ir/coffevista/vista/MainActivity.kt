@@ -32,6 +32,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
@@ -413,101 +414,108 @@ class MainActivity : FragmentActivity() {
                                     }
                                 }
                             }
-                            availableUpdate?.takeIf { it.isMandatory }?.let { update ->
-                                val bar = updateBarState
-                                val downloading = bar?.stage == ir.coffevista.vista_native.features.shell.ShellUpdateStage.Downloading ||
-                                    bar?.stage == ir.coffevista.vista_native.features.shell.ShellUpdateStage.Verifying
-                                val readyToInstall = bar?.stage == ir.coffevista.vista_native.features.shell.ShellUpdateStage.ReadyToInstall
-                                androidx.compose.material3.AlertDialog(
-                                    onDismissRequest = { /* Mandatory update cannot be dismissed */ },
-                                    title = {
-                                        Text(text = "به‌روزرسانی ضروری ویستا")
-                                    },
-                                    text = {
-                                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                            Text(
-                                                text = buildString {
-                                                    append("نسخه ")
-                                                    append(update.versionName ?: "جدید")
-                                                    append(" ویستا آماده دریافت است.\nبرای ادامه استفاده از برنامه، لطفاً به نسخه جدید به‌روزرسانی کنید.")
-                                                },
-                                            )
-                                            if (downloading && bar != null) {
-                                                androidx.compose.material3.LinearProgressIndicator(
-                                                    progress = { bar.progress.coerceIn(0f, 1f) },
-                                                )
+                            val isAppLocked = biometricUnlockRequired && sessionStore.isBiometricEnabled()
+                            if (!isAppLocked) {
+                                availableUpdate?.takeIf { it.isMandatory }?.let { update ->
+                                    val bar = updateBarState
+                                    val downloading = bar?.stage == ir.coffevista.vista_native.features.shell.ShellUpdateStage.Downloading ||
+                                        bar?.stage == ir.coffevista.vista_native.features.shell.ShellUpdateStage.Verifying
+                                    val readyToInstall = bar?.stage == ir.coffevista.vista_native.features.shell.ShellUpdateStage.ReadyToInstall
+                                    androidx.compose.material3.AlertDialog(
+                                        onDismissRequest = { /* Mandatory update cannot be dismissed */ },
+                                        title = {
+                                            Text(text = "به‌روزرسانی ضروری ویستا")
+                                        },
+                                        text = {
+                                            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                                 Text(
-                                                    text = if (bar.stage == ir.coffevista.vista_native.features.shell.ShellUpdateStage.Verifying) {
-                                                        "در حال بررسی فایل..."
-                                                    } else {
-                                                        "در حال دریافت: ${(bar.progress * 100f).toInt()}%"
+                                                    text = buildString {
+                                                        append("نسخه ")
+                                                        append(update.versionName ?: "جدید")
+                                                        append(" ویستا آماده دریافت است.\nبرای ادامه استفاده از برنامه، لطفاً به نسخه جدید به‌روزرسانی کنید.")
                                                     },
-                                                    style = MaterialTheme.typography.bodySmall,
                                                 )
-                                            } else if (bar?.stage == ir.coffevista.vista_native.features.shell.ShellUpdateStage.Error && !bar.errorMessage.isNullOrBlank()) {
+                                                if (downloading && bar != null) {
+                                                    androidx.compose.material3.LinearProgressIndicator(
+                                                        progress = { bar.progress.coerceIn(0f, 1f) },
+                                                    )
+                                                    Text(
+                                                        text = if (bar.stage == ir.coffevista.vista_native.features.shell.ShellUpdateStage.Verifying) {
+                                                            "در حال بررسی فایل..."
+                                                        } else {
+                                                            "در حال دریافت: ${(bar.progress * 100f).toInt()}%"
+                                                        },
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                    )
+                                                } else if (bar?.stage == ir.coffevista.vista_native.features.shell.ShellUpdateStage.Error && !bar.errorMessage.isNullOrBlank()) {
+                                                    Text(
+                                                        text = bar.errorMessage.orEmpty(),
+                                                        color = MaterialTheme.colorScheme.error,
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                    )
+                                                }
+                                            }
+                                        },
+                                        confirmButton = {
+                                            Button(
+                                                enabled = bar?.stage != ir.coffevista.vista_native.features.shell.ShellUpdateStage.Verifying,
+                                                onClick = ::handleUpdateBarClick,
+                                            ) {
                                                 Text(
-                                                    text = bar.errorMessage.orEmpty(),
-                                                    color = MaterialTheme.colorScheme.error,
-                                                    style = MaterialTheme.typography.bodySmall,
+                                                    when {
+                                                        downloading -> "لغو دریافت"
+                                                        readyToInstall -> "نصب نسخه جدید"
+                                                        else -> "به‌روزرسانی"
+                                                    },
                                                 )
                                             }
-                                        }
-                                    },
-                                    confirmButton = {
-                                        Button(
-                                            enabled = bar?.stage != ir.coffevista.vista_native.features.shell.ShellUpdateStage.Verifying,
-                                            onClick = ::handleUpdateBarClick,
-                                        ) {
-                                            Text(
-                                                when {
-                                                    downloading -> "لغو دریافت"
-                                                    readyToInstall -> "نصب نسخه جدید"
-                                                    else -> "به‌روزرسانی"
-                                                },
-                                            )
-                                        }
-                                    },
-                                    dismissButton = null,
+                                        },
+                                        dismissButton = null,
+                                    )
+                                }
+                                ir.coffevista.vista_native.core.designsystem.component.VistaFullscreenOverlayHost(
+                                    controller = fullscreenOverlayController,
                                 )
+                                pendingSharedContent?.let { shared ->
+                                    ir.coffevista.vista_native.share.ShareTargetBottomSheet(
+                                        content = shared,
+                                        onSendToChat = {
+                                            routeSharedContent(
+                                                content = it,
+                                                destination = ir.coffevista.vista_native.share.SharedContentDestination.CHAT,
+                                                deepLink = "vista://chat/share",
+                                            )
+                                        },
+                                        onSendToPost = {
+                                            routeSharedContent(
+                                                content = it,
+                                                destination = ir.coffevista.vista_native.share.SharedContentDestination.POST,
+                                                deepLink = "vista://post/share",
+                                            )
+                                        },
+                                        onSendToStory = {
+                                            routeSharedContent(
+                                                content = it,
+                                                destination = ir.coffevista.vista_native.share.SharedContentDestination.STORY,
+                                                deepLink = "vista://post/share_story",
+                                            )
+                                        },
+                                        onDismiss = {
+                                            pendingSharedContent = null
+                                        },
+                                    )
+                                }
                             }
-                            ir.coffevista.vista_native.core.designsystem.component.VistaFullscreenOverlayHost(
-                                controller = fullscreenOverlayController,
-                            )
-                            if (biometricUnlockRequired && sessionStore.isBiometricEnabled()) {
+                            if (isAppLocked) {
+                                androidx.activity.compose.BackHandler(enabled = true) { /* Prevent back bypass while locked */ }
                                 BiometricLockOverlay(
                                     onUnlock = {
                                         biometricAuthenticator.authenticate(this@MainActivity) { authenticated ->
-                                            if (authenticated) biometricUnlockRequired = false
+                                            if (authenticated) {
+                                                biometricUnlockRequired = false
+                                                window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+                                            }
                                         }
-                                    },
-                                )
-                            }
-                            pendingSharedContent?.let { shared ->
-                                ir.coffevista.vista_native.share.ShareTargetBottomSheet(
-                                    content = shared,
-                                    onSendToChat = {
-                                        routeSharedContent(
-                                            content = it,
-                                            destination = ir.coffevista.vista_native.share.SharedContentDestination.CHAT,
-                                            deepLink = "vista://chat/share",
-                                        )
-                                    },
-                                    onSendToPost = {
-                                        routeSharedContent(
-                                            content = it,
-                                            destination = ir.coffevista.vista_native.share.SharedContentDestination.POST,
-                                            deepLink = "vista://post/share",
-                                        )
-                                    },
-                                    onSendToStory = {
-                                        routeSharedContent(
-                                            content = it,
-                                            destination = ir.coffevista.vista_native.share.SharedContentDestination.STORY,
-                                            deepLink = "vista://post/share_story",
-                                        )
-                                    },
-                                    onDismiss = {
-                                        pendingSharedContent = null
                                     },
                                 )
                             }
@@ -565,7 +573,7 @@ class MainActivity : FragmentActivity() {
         if (!isInternalPackage) return false
         // External browsers/apps invoking ACTION_VIEW with a data URI must not inject push notification extras
         if (intent.action == Intent.ACTION_VIEW && intent.data != null) return false
-        return true
+        return ir.coffevista.vista_native.notifications.NotificationIntentAuthenticator.verify(intent)
     }
 
     private fun isAllowedNotificationDeepLink(raw: String): Boolean {
@@ -976,23 +984,36 @@ class MainActivity : FragmentActivity() {
 
 @androidx.compose.runtime.Composable
 private fun BiometricLockOverlay(onUnlock: () -> Unit) {
-    Box(
+    Surface(
         modifier = Modifier
             .fillMaxSize()
-            .safeDrawingPadding()
-            .background(MaterialTheme.colorScheme.background),
-        contentAlignment = Alignment.Center,
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        event.changes.forEach { it.consume() }
+                    }
+                }
+            },
+        color = MaterialTheme.colorScheme.background,
     ) {
-        Column(
-            modifier = Modifier.padding(32.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .safeDrawingPadding(),
+            contentAlignment = Alignment.Center,
         ) {
-            Text("ویستا قفل است", style = MaterialTheme.typography.headlineSmall)
-            Spacer(modifier = Modifier.height(12.dp))
-            Text("برای ادامه هویت خود را تایید کنید", style = MaterialTheme.typography.bodyMedium)
-            Spacer(modifier = Modifier.height(24.dp))
-            Button(onClick = onUnlock) { Text("باز کردن قفل") }
+            Column(
+                modifier = Modifier.padding(32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                Text("ویستا قفل است", style = MaterialTheme.typography.headlineSmall)
+                Spacer(modifier = Modifier.height(12.dp))
+                Text("برای ادامه هویت خود را تایید کنید", style = MaterialTheme.typography.bodyMedium)
+                Spacer(modifier = Modifier.height(24.dp))
+                Button(onClick = onUnlock) { Text("باز کردن قفل") }
+            }
         }
     }
 }
