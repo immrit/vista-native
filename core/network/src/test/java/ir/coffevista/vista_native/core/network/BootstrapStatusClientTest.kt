@@ -73,6 +73,7 @@ class BootstrapStatusClientTest {
         assertEquals("medium", parsed.ambientEffect.density)
 
         assertEquals(2, parsed.navigationSlots.size)
+        assertFalse(parsed.navigationShowLabels)
         assertEquals("بازارچه", parsed.navigationSlots.first().label)
         assertEquals("جدید", parsed.navigationSlots.first().badgeText)
         assertEquals("grid", parsed.navigationSlots.first().icon)

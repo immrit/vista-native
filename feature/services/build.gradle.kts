@@ -8,6 +8,9 @@ plugins {
 
 android {
     namespace = "ir.coffevista.vista_native.features.services"
+    defaultConfig {
+        consumerProguardFiles("proguard-rules.pro")
+    }
     buildFeatures {
         compose = true
     }

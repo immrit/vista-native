@@ -11,6 +11,7 @@
         <package android:name="ir.mservices.market" />
         <intent>
             <action android:name="ir.mservices.market.InAppBillingService.BIND" />
+            <data android:mimeType="*/*" />
         </intent>
         <package
             android:name="com.farsitel.bazaar"

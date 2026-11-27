@@ -267,15 +267,13 @@ fun PricingScreen(
         }
     }
     var pendingMyketSku by remember { mutableStateOf("") }
-    val myketActivityLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.StartIntentSenderForResult(),
-    ) { result ->
+    fun handleMyketActivityResult(resultCode: Int, data: Intent?) {
         val client = myketClient
         if (client == null) {
             viewModel.onBazaarPurchaseFailed("سرویس پرداخت مایکت آماده نیست.")
-            return@rememberLauncherForActivityResult
+            return
         }
-        when (val parsed = client.parseActivityResult(result.resultCode, result.data, pendingMyketSku)) {
+        when (val parsed = client.parseActivityResult(resultCode, data, pendingMyketSku)) {
             is MyketActivityParseResult.Success -> {
                 viewModel.verifyMyketPurchase(
                     productId = parsed.purchase.productId,
@@ -286,6 +284,16 @@ fun PricingScreen(
             MyketActivityParseResult.Canceled -> viewModel.onBazaarPurchaseCanceled()
             is MyketActivityParseResult.Error -> viewModel.onBazaarPurchaseFailed(parsed.message)
         }
+    }
+    val myketActivityLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartIntentSenderForResult(),
+    ) { result ->
+        handleMyketActivityResult(result.resultCode, result.data)
+    }
+    val myketV2ActivityLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        handleMyketActivityResult(result.resultCode, result.data)
     }
 
     DisposableEffect(myketClient) {
@@ -384,6 +392,13 @@ fun PricingScreen(
         pendingMyketSku = productId
         scope.launch {
             when (val launchResult = client.startPurchase(sku = productId, developerPayload = viewModel.resolveBazaarPayload())) {
+                is MyketBuyLaunchResult.LaunchIntent -> {
+                    runCatching {
+                        myketV2ActivityLauncher.launch(launchResult.intent)
+                    }.onFailure { err ->
+                        viewModel.onBazaarPurchaseFailed(err.message ?: "باز کردن صفحه پرداخت مایکت ناموفق بود.")
+                    }
+                }
                 is MyketBuyLaunchResult.LaunchIntentSender -> {
                     runCatching {
                         myketActivityLauncher.launch(launchResult.request)
@@ -670,7 +685,7 @@ fun PricingScreen(
                                                 text = plan.originalPrice,
                                                 style = MaterialTheme.typography.labelSmall.copy(
                                                     fontSize = 11.sp,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    color = if (isSelected) Color(0xFF6D4C41) else MaterialTheme.colorScheme.onSurfaceVariant,
                                                     textDecoration = TextDecoration.LineThrough,
                                                 ),
                                                 textAlign = TextAlign.Center,
@@ -682,7 +697,7 @@ fun PricingScreen(
                                             style = MaterialTheme.typography.bodySmall.copy(
                                                 fontWeight = FontWeight.SemiBold,
                                                 fontSize = 11.5.sp,
-                                                color = MaterialTheme.colorScheme.onSurface,
+                                                color = if (isSelected) Color(0xFF3E2723) else MaterialTheme.colorScheme.onSurface,
                                             ),
                                             textAlign = TextAlign.Center,
                                         )

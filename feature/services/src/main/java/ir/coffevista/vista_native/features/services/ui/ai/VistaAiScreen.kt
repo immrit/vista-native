@@ -20,6 +20,7 @@ import android.webkit.WebViewClient
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.Keep
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -79,7 +80,7 @@ private const val VISTA_AI_HOST = "ai.cafevista.ir"
 
 internal class VistaAiCallbacksHolder {
     var onPageStarted: (() -> Unit)? = null
-    var onPageFinished: (() -> Unit)? = null
+    var onPageFinished: ((WebView?, String?) -> Unit)? = null
     var onProgressChanged: ((Int) -> Unit)? = null
     var onLoadError: ((String) -> Unit)? = null
     var onRequestSsoReauth: (() -> Unit)? = null
@@ -89,73 +90,57 @@ internal class VistaAiCallbacksHolder {
     var currentThemeName: String = "dark"
 }
 
+@Keep
+private class VistaAiJsBridge(
+    private val webViewProvider: () -> WebView,
+    private val callbacksHolder: VistaAiCallbacksHolder,
+) {
+    @JavascriptInterface
+    fun requestSsoReauth() {
+        val wv = webViewProvider()
+        wv.post {
+            val host = runCatching { URI(wv.url.orEmpty()).host?.lowercase() }.getOrNull()
+            if (host == VISTA_AI_HOST) {
+                callbacksHolder.onRequestSsoReauth?.invoke()
+            }
+        }
+    }
+
+    @JavascriptInterface
+    fun getTheme(): String = callbacksHolder.currentThemeName
+}
+
 /**
- * Retains an authenticated WebView instance per signed-in userId so switching away from
- * and back to the Vista AI tab restores conversations and DOM state with zero reload delay.
- * Cleared strictly on logout or account switch.
+ * Coordinates Vista AI WebView cookie cleanup on sign-out/user switch while each screen
+ * owns a clean Activity-bound WebView backed by Chromium disk cache, Service Worker, and IndexedDB.
  */
 object VistaAiWebViewRegistry {
-    private var retainedUserId: String? = null
-    private var retainedRouteKey: String? = null
-    private var retainedWebView: WebView? = null
-    internal val callbacksHolder = VistaAiCallbacksHolder()
+    @Volatile
+    private var activeUserId: String? = null
 
-    internal fun getOrCreate(
-        context: Context,
-        userId: String,
-        routeKey: String,
-        factory: (Context) -> WebView,
-    ): Pair<WebView, Boolean> {
-        val existing = retainedWebView
-        if (existing != null && retainedUserId == userId && retainedRouteKey == routeKey) {
-            (existing.parent as? ViewGroup)?.removeView(existing)
-            return existing to false
+    internal fun onActiveUser(userId: String) {
+        val previous = activeUserId
+        if (previous != null && previous != userId) {
+            clearCookies()
         }
-
-        val switchingUser = retainedUserId != null && retainedUserId != userId
-        clearAll(expireAiSessionCookies = switchingUser)
-
-        val created = factory(context.applicationContext)
-        retainedUserId = userId
-        retainedRouteKey = routeKey
-        retainedWebView = created
-        return created to true
+        activeUserId = userId
     }
 
     fun clearForUser(userId: String? = null) {
-        if (userId == null || retainedUserId == userId) {
-            clearAll(expireAiSessionCookies = true)
+        if (userId == null || activeUserId == userId) {
+            clearCookies()
+            if (userId == null || activeUserId == userId) {
+                activeUserId = null
+            }
         }
     }
 
-    private fun clearAll(expireAiSessionCookies: Boolean) {
-        retainedWebView?.let { webView ->
-            (webView.parent as? ViewGroup)?.removeView(webView)
-            runCatching {
-                if (expireAiSessionCookies) {
-                    webView.evaluateJavascript(
-                        "try{localStorage.clear();sessionStorage.clear();}catch(e){}",
-                        null,
-                    )
-                }
-                webView.stopLoading()
-                webView.loadUrl("about:blank")
-                webView.clearHistory()
-                webView.removeJavascriptInterface("VistaAiBridge")
-                webView.destroy()
-            }
-        }
-        retainedWebView = null
-        retainedUserId = null
-        retainedRouteKey = null
-
-        if (expireAiSessionCookies) {
-            runCatching {
-                val cm = CookieManager.getInstance()
-                cm.setCookie(VISTA_AI_ORIGIN, "vista_ai_access_token=; Max-Age=0; Path=/")
-                cm.setCookie(VISTA_AI_ORIGIN, "vista_ai_user_meta=; Max-Age=0; Path=/")
-                cm.flush()
-            }
+    private fun clearCookies() {
+        runCatching {
+            val cm = CookieManager.getInstance()
+            cm.setCookie(VISTA_AI_ORIGIN, "vista_ai_access_token=; Max-Age=0; Path=/")
+            cm.setCookie(VISTA_AI_ORIGIN, "vista_ai_user_meta=; Max-Age=0; Path=/")
+            cm.flush()
         }
     }
 }
@@ -182,6 +167,7 @@ fun VistaAiScreen(
 
     var webViewInstance by remember { mutableStateOf<WebView?>(null) }
     var needsInitialLoad by remember { mutableStateOf(false) }
+    var canGoBack by remember { mutableStateOf(false) }
     var isBootstrappingSso by remember { mutableStateOf(false) }
     var isPageLoading by remember { mutableStateOf(false) }
     var loadingProgress by remember { mutableFloatStateOf(0f) }
@@ -189,6 +175,12 @@ fun VistaAiScreen(
     var reauthNonce by remember { mutableIntStateOf(0) }
     var lastReauthAtMs by remember { mutableStateOf(0L) }
     var pendingFileCallback by remember { mutableStateOf<ValueCallback<Array<Uri>>?>(null) }
+    var webViewInitRetryKey by remember { mutableIntStateOf(0) }
+    val callbacksHolder = remember { VistaAiCallbacksHolder() }
+
+    LaunchedEffect(userId) {
+        VistaAiWebViewRegistry.onActiveUser(userId)
+    }
 
     val fileChooserLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult(),
@@ -202,23 +194,42 @@ fun VistaAiScreen(
     val imeBottomPx = WindowInsets.ime.getBottom(density)
     val navBottomPx = WindowInsets.navigationBars.getBottom(density)
     val isImeVisible = imeBottomPx > navBottomPx
-    // Clear floating VistaBottomIsland (height 58dp + 10dp bottom margin) when keyboard is hidden
     val bottomIslandClearance = if (isImeVisible) 0.dp else 74.dp
 
+    fun triggerSilentSsoReauth() {
+        val now = System.currentTimeMillis()
+        if (now - lastReauthAtMs > 3_500L) {
+            lastReauthAtMs = now
+            reauthNonce += 1
+        }
+    }
+
     SideEffect {
-        VistaAiWebViewRegistry.callbacksHolder.apply {
+        callbacksHolder.apply {
             currentThemeName = themeName
             onPageStarted = {
                 isPageLoading = true
                 loadError = null
             }
-            onPageFinished = {
+            onPageFinished = { view, loadedUrl ->
                 isPageLoading = false
                 loadingProgress = 1f
-                webViewInstance?.evaluateJavascript(
-                    "window.__vistaAiSyncTheme && window.__vistaAiSyncTheme('$themeName')",
-                    null,
-                )
+                canGoBack = runCatching { view?.canGoBack() == true }.getOrDefault(false)
+                val parsed = loadedUrl?.let { runCatching { URI(it) }.getOrNull() }
+                val path = parsed?.path.orEmpty()
+                if (parsed?.host?.equals(VISTA_AI_HOST, ignoreCase = true) == true &&
+                    isManualAiAuthPath(path)
+                ) {
+                    // Never leave user on manual login inside native app; re-exchange SSO automatically.
+                    triggerSilentSsoReauth()
+                } else {
+                    runCatching {
+                        view?.evaluateJavascript(
+                            "window.__vistaAiSyncTheme && window.__vistaAiSyncTheme('$themeName')",
+                            null,
+                        )
+                    }
+                }
             }
             onProgressChanged = { progress ->
                 loadingProgress = (progress / 100f).coerceIn(0f, 1f)
@@ -230,13 +241,7 @@ fun VistaAiScreen(
                 isPageLoading = false
                 loadError = message
             }
-            onRequestSsoReauth = {
-                val now = System.currentTimeMillis()
-                if (now - lastReauthAtMs > 5_000L) {
-                    lastReauthAtMs = now
-                    reauthNonce += 1
-                }
-            }
+            onRequestSsoReauth = { triggerSilentSsoReauth() }
             onOpenInternalLink = { url ->
                 val result = internalNavigator?.openUrl(url) == true
                 if (!result && url.startsWith("https://", ignoreCase = true)) {
@@ -276,22 +281,24 @@ fun VistaAiScreen(
 
     LaunchedEffect(themeName, webViewInstance) {
         webViewInstance?.let { wv ->
-            wv.setBackgroundColor(surfaceBgColor.toArgb())
-            wv.evaluateJavascript(
-                "window.__vistaAiSyncTheme && window.__vistaAiSyncTheme('$themeName')",
-                null,
-            )
+            runCatching {
+                wv.setBackgroundColor(surfaceBgColor.toArgb())
+                wv.evaluateJavascript(
+                    "window.__vistaAiSyncTheme && window.__vistaAiSyncTheme('$themeName')",
+                    null,
+                )
+            }
         }
     }
 
-    LaunchedEffect(userId, resolvedTarget.cacheKey, needsInitialLoad, reauthNonce) {
+    LaunchedEffect(userId, resolvedTarget.cacheKey, needsInitialLoad, reauthNonce, webViewInstance) {
         val wv = webViewInstance ?: return@LaunchedEffect
         val shouldExchangeSso = (needsInitialLoad || reauthNonce > 0) && resolvedTarget.useSso
         if (!shouldExchangeSso) {
             if (needsInitialLoad) {
                 needsInitialLoad = false
                 isPageLoading = true
-                wv.loadUrl(resolvedTarget.directUrl)
+                runCatching { wv.loadUrl(resolvedTarget.directUrl) }
             }
             return@LaunchedEffect
         }
@@ -309,7 +316,7 @@ fun VistaAiScreen(
             needsInitialLoad = false
             isBootstrappingSso = false
             isPageLoading = true
-            wv.loadUrl(callbackUrl)
+            runCatching { wv.loadUrl(callbackUrl) }
         }.onFailure { err ->
             isBootstrappingSso = false
             isPageLoading = false
@@ -322,13 +329,38 @@ fun VistaAiScreen(
         onDispose {
             pendingFileCallback?.onReceiveValue(null)
             pendingFileCallback = null
-            // Detach view from Compose AndroidView without destroying cached WebView
-            (webViewInstance?.parent as? ViewGroup)?.removeView(webViewInstance)
+            callbacksHolder.apply {
+                onPageStarted = null
+                onPageFinished = null
+                onProgressChanged = null
+                onLoadError = null
+                onRequestSsoReauth = null
+                onOpenInternalLink = null
+                onOpenExternalBrowser = null
+                onLaunchFileChooser = null
+            }
+            webViewInstance?.let { wv ->
+                runCatching {
+                    (wv.parent as? ViewGroup)?.removeView(wv)
+                    wv.stopLoading()
+                    wv.loadUrl("about:blank")
+                    wv.clearHistory()
+                    wv.removeJavascriptInterface("VistaAiBridge")
+                    wv.destroy()
+                }
+            }
+            webViewInstance = null
         }
     }
 
-    BackHandler(enabled = webViewInstance?.canGoBack() == true) {
-        webViewInstance?.goBack()
+    BackHandler(enabled = canGoBack) {
+        runCatching {
+            if (webViewInstance?.canGoBack() == true) {
+                webViewInstance?.goBack()
+            } else {
+                canGoBack = false
+            }
+        }
     }
 
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
@@ -341,30 +373,34 @@ fun VistaAiScreen(
                 .padding(bottom = bottomIslandClearance)
                 .imePadding(),
         ) {
-            AndroidView(
-                modifier = Modifier.fillMaxSize(),
-                factory = { ctx ->
-                    val (webView, createdNew) = VistaAiWebViewRegistry.getOrCreate(
-                        context = ctx,
-                        userId = userId,
-                        routeKey = resolvedTarget.cacheKey,
-                    ) { appCtx ->
-                        buildConfiguredVistaAiWebView(
-                            appContext = appCtx,
-                            bgColorArgb = surfaceBgColor.toArgb(),
-                        )
-                    }
-                    webViewInstance = webView
-                    if (createdNew || webView.url.isNullOrBlank() || webView.url == "about:blank") {
-                        needsInitialLoad = true
-                    }
-                    webView
-                },
-                update = { view ->
-                    webViewInstance = view
-                    view.setBackgroundColor(surfaceBgColor.toArgb())
-                },
-            )
+            androidx.compose.runtime.key(webViewInitRetryKey, resolvedTarget.cacheKey) {
+                AndroidView(
+                    modifier = Modifier.fillMaxSize(),
+                    factory = { ctx ->
+                        runCatching {
+                            val webView = buildConfiguredVistaAiWebView(
+                                context = ctx,
+                                bgColorArgb = surfaceBgColor.toArgb(),
+                                callbacksHolder = callbacksHolder,
+                            )
+                            webView.post {
+                                webViewInstance = webView
+                                needsInitialLoad = true
+                            }
+                            webView
+                        }.getOrElse { err ->
+                            loadError = err.message?.takeIf { it.isNotBlank() }
+                                ?: "مرورگر داخلی دستگاه آماده نشد. لطفاً Android System WebView را بررسی کنید."
+                            android.widget.FrameLayout(ctx)
+                        }
+                    },
+                    update = { view ->
+                        if (view is WebView) {
+                            runCatching { view.setBackgroundColor(surfaceBgColor.toArgb()) }
+                        }
+                    },
+                )
+            }
 
             if (isBootstrappingSso || (isPageLoading && loadingProgress < 0.95f)) {
                 LinearProgressIndicator(
@@ -394,7 +430,7 @@ fun VistaAiScreen(
                     )
                     Spacer(modifier = Modifier.height(14.dp))
                     Text(
-                        text = "در حال ورود یکپارچه به ویستا AI...",
+                        text = "در حال ورود خودکار به ویستا AI...",
                         fontFamily = VistaFontFamily,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Medium,
@@ -432,7 +468,9 @@ fun VistaAiScreen(
                     Button(
                         onClick = {
                             loadError = null
-                            if (resolvedTarget.useSso) {
+                            if (webViewInstance == null) {
+                                webViewInitRetryKey += 1
+                            } else if (resolvedTarget.useSso) {
                                 reauthNonce += 1
                             } else {
                                 webViewInstance?.reload()
@@ -455,6 +493,11 @@ fun VistaAiScreen(
             }
         }
     }
+}
+
+private fun isManualAiAuthPath(path: String): Boolean {
+    val clean = path.trim().lowercase().trimEnd('/')
+    return clean == "/auth" || (clean.startsWith("/auth/") && !clean.startsWith("/auth/callback"))
 }
 
 private data class ResolvedVistaAiTarget(
@@ -499,10 +542,11 @@ private fun resolveVistaAiTarget(routeOverride: String?): ResolvedVistaAiTarget 
 
 @SuppressLint("SetJavaScriptEnabled")
 private fun buildConfiguredVistaAiWebView(
-    appContext: Context,
+    context: Context,
     bgColorArgb: Int,
+    callbacksHolder: VistaAiCallbacksHolder,
 ): WebView {
-    return WebView(appContext).apply {
+    return WebView(context).apply {
         layoutParams = ViewGroup.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.MATCH_PARENT,
@@ -529,34 +573,24 @@ private fun buildConfiguredVistaAiWebView(
         }
 
         val webView = this
-        CookieManager.getInstance().apply {
-            setAcceptCookie(true)
-            setAcceptThirdPartyCookies(webView, false)
+        runCatching {
+            CookieManager.getInstance().apply {
+                setAcceptCookie(true)
+                setAcceptThirdPartyCookies(webView, false)
+            }
         }
 
         addJavascriptInterface(
-            object {
-                @JavascriptInterface
-                fun requestSsoReauth() {
-                    post {
-                        val host = runCatching { URI(this@apply.url.orEmpty()).host?.lowercase() }.getOrNull()
-                        if (host == VISTA_AI_HOST) {
-                            VistaAiWebViewRegistry.callbacksHolder.onRequestSsoReauth?.invoke()
-                        }
-                    }
-                }
-
-                @JavascriptInterface
-                fun getTheme(): String {
-                    return VistaAiWebViewRegistry.callbacksHolder.currentThemeName
-                }
-            },
+            VistaAiJsBridge(
+                webViewProvider = { webView },
+                callbacksHolder = callbacksHolder,
+            ),
             "VistaAiBridge",
         )
 
         webChromeClient = object : WebChromeClient() {
             override fun onProgressChanged(view: WebView?, newProgress: Int) {
-                VistaAiWebViewRegistry.callbacksHolder.onProgressChanged?.invoke(newProgress)
+                callbacksHolder.onProgressChanged?.invoke(newProgress)
             }
 
             override fun onShowFileChooser(
@@ -565,7 +599,7 @@ private fun buildConfiguredVistaAiWebView(
                 fileChooserParams: FileChooserParams?,
             ): Boolean {
                 val intent = runCatching { fileChooserParams?.createIntent() }.getOrNull()
-                return VistaAiWebViewRegistry.callbacksHolder.onLaunchFileChooser?.invoke(
+                return callbacksHolder.onLaunchFileChooser?.invoke(
                     filePathCallback,
                     intent,
                 ) ?: false
@@ -574,11 +608,11 @@ private fun buildConfiguredVistaAiWebView(
 
         webViewClient = object : WebViewClient() {
             override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
-                VistaAiWebViewRegistry.callbacksHolder.onPageStarted?.invoke()
+                callbacksHolder.onPageStarted?.invoke()
             }
 
             override fun onPageFinished(view: WebView?, url: String?) {
-                VistaAiWebViewRegistry.callbacksHolder.onPageFinished?.invoke()
+                callbacksHolder.onPageFinished?.invoke(view, url)
             }
 
             override fun shouldOverrideUrlLoading(
@@ -589,26 +623,34 @@ private fun buildConfiguredVistaAiWebView(
                 if (targetUrl.isBlank()) return true
 
                 if (targetUrl.startsWith("vista://", ignoreCase = true)) {
-                    return VistaAiWebViewRegistry.callbacksHolder.onOpenInternalLink?.invoke(targetUrl) == true
+                    return callbacksHolder.onOpenInternalLink?.invoke(targetUrl) == true
                 }
 
                 val parsed = runCatching { URI(targetUrl) }.getOrNull() ?: return true
                 val scheme = parsed.scheme?.lowercase().orEmpty()
                 if (scheme != "https" && scheme != "http") {
-                    VistaAiWebViewRegistry.callbacksHolder.onOpenExternalBrowser?.invoke(Uri.parse(targetUrl))
+                    callbacksHolder.onOpenExternalBrowser?.invoke(Uri.parse(targetUrl))
                     return true
                 }
 
                 val host = parsed.host?.lowercase().orEmpty()
-                if (host == VISTA_AI_HOST || host == "sso.cafevista.ir") {
+                val path = parsed.path.orEmpty()
+                if (host == VISTA_AI_HOST) {
+                    if (isManualAiAuthPath(path)) {
+                        callbacksHolder.onRequestSsoReauth?.invoke()
+                        return true
+                    }
+                    return false
+                }
+                if (host == "sso.cafevista.ir") {
                     return false
                 }
 
                 if (VistaGameUrlHelper.isVistaWebHost(host)) {
-                    return VistaAiWebViewRegistry.callbacksHolder.onOpenInternalLink?.invoke(targetUrl) == true
+                    return callbacksHolder.onOpenInternalLink?.invoke(targetUrl) == true
                 }
 
-                VistaAiWebViewRegistry.callbacksHolder.onOpenExternalBrowser?.invoke(Uri.parse(targetUrl))
+                callbacksHolder.onOpenExternalBrowser?.invoke(Uri.parse(targetUrl))
                 return true
             }
 
@@ -618,7 +660,7 @@ private fun buildConfiguredVistaAiWebView(
                 error: SslError?,
             ) {
                 handler?.cancel()
-                VistaAiWebViewRegistry.callbacksHolder.onLoadError?.invoke(
+                callbacksHolder.onLoadError?.invoke(
                     "اتصال امن به هوش مصنوعی ویستا برقرار نشد.",
                 )
             }
@@ -629,7 +671,7 @@ private fun buildConfiguredVistaAiWebView(
                 error: WebResourceError?,
             ) {
                 if (request?.isForMainFrame == true) {
-                    VistaAiWebViewRegistry.callbacksHolder.onLoadError?.invoke(
+                    callbacksHolder.onLoadError?.invoke(
                         "عدم دسترسی به سرویس هوش مصنوعی ویستا. لطفاً اتصال اینترنت را بررسی کنید.",
                     )
                 }

@@ -548,6 +548,7 @@ fun VistaApp(
                     context = signedIn.context,
                     deepLinkRequest = shellDeepLinkRequest,
                     navigationSlots = shellNavSlots,
+                    showNavigationLabels = remoteConfig?.navigationShowLabels ?: false,
                     updateBarState = updateBarState,
                     onUpdateBarClick = onUpdateBarClick,
                     onDeepLinkConsumed = { id ->

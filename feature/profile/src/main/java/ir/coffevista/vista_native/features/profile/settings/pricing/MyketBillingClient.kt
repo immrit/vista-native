@@ -9,6 +9,7 @@ import android.content.ServiceConnection
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
+import android.os.Parcel
 import android.util.Base64
 import androidx.activity.result.IntentSenderRequest
 import com.android.vending.billing.IInAppBillingService
@@ -30,6 +31,12 @@ data class MyketPurchaseResult(
 sealed interface MyketBuyLaunchResult {
     data class LaunchIntentSender(
         val request: IntentSenderRequest,
+        val productId: String,
+        val expectedPayload: String,
+    ) : MyketBuyLaunchResult
+
+    data class LaunchIntent(
+        val intent: Intent,
         val productId: String,
         val expectedPayload: String,
     ) : MyketBuyLaunchResult
@@ -64,6 +71,9 @@ class MyketBillingClient(
     private var service: IInAppBillingService? = null
 
     @Volatile
+    private var rawBinder: IBinder? = null
+
+    @Volatile
     private var connection: ServiceConnection? = null
 
     private var pendingBind: CompletableDeferred<IInAppBillingService?>? = null
@@ -77,11 +87,13 @@ class MyketBillingClient(
         val conn = object : ServiceConnection {
             override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
                 val iab = IInAppBillingService.Stub.asInterface(binder)
+                rawBinder = binder
                 service = iab
                 deferred.complete(iab)
             }
 
             override fun onServiceDisconnected(name: ComponentName?) {
+                rawBinder = null
                 service = null
                 deferred.complete(null)
             }
@@ -131,9 +143,28 @@ class MyketBillingClient(
             )
         }
 
-        val buyBundle = runCatching {
-            iab.getBuyIntent(API_VERSION, appContext.packageName, sku, ITEM_TYPE_INAPP, developerPayload)
-        }.getOrNull() ?: return@withContext MyketBuyLaunchResult.Error("درخواست پرداخت از مایکت پاسخ نداد.")
+        val safePayload = developerPayload.take(MAX_DEVELOPER_PAYLOAD_CHARS)
+        val binder = rawBinder ?: iab.asBinder()
+        val supportsIntentV2 = runCatching {
+            queryPurchaseConfig(binder)?.getBoolean(INTENT_V2_SUPPORT, false) == true
+        }.getOrDefault(false)
+
+        val buyBundle = if (supportsIntentV2) {
+            runCatching {
+                queryBuyIntentV2(
+                    binder = binder,
+                    apiVersion = API_VERSION,
+                    packageName = appContext.packageName,
+                    sku = sku,
+                    type = ITEM_TYPE_INAPP,
+                    developerPayload = safePayload,
+                )
+            }.getOrNull()
+        } else {
+            runCatching {
+                iab.getBuyIntent(API_VERSION, appContext.packageName, sku, ITEM_TYPE_INAPP, safePayload)
+            }.getOrNull()
+        } ?: return@withContext MyketBuyLaunchResult.Error("درخواست پرداخت از مایکت پاسخ نداد.")
 
         val code = buyBundle.getInt(RESPONSE_CODE, -1)
         if (code == BILLING_RESPONSE_RESULT_ITEM_ALREADY_OWNED) {
@@ -144,7 +175,28 @@ class MyketBillingClient(
             return@withContext MyketBuyLaunchResult.Error("این محصول قبلاً خریداری شده اما هنوز مصرف نشده است.")
         }
         if (code != BILLING_RESPONSE_RESULT_OK) {
-            return@withContext MyketBuyLaunchResult.Error(mapResponseError(code))
+            val skuHint = if (code == BILLING_RESPONSE_RESULT_ERROR) {
+                inspectSkuAvailabilityHint(iab, sku)
+            } else {
+                null
+            }
+            return@withContext MyketBuyLaunchResult.Error(mapResponseError(code, skuHint))
+        }
+
+        if (supportsIntentV2) {
+            val launchIntent: Intent? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                buyBundle.getParcelable(RESPONSE_BUY_INTENT, Intent::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                buyBundle.getParcelable(RESPONSE_BUY_INTENT)
+            }
+            if (launchIntent != null) {
+                return@withContext MyketBuyLaunchResult.LaunchIntent(
+                    intent = launchIntent,
+                    productId = sku,
+                    expectedPayload = safePayload,
+                )
+            }
         }
 
         val pendingIntent: PendingIntent? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -161,7 +213,7 @@ class MyketBillingClient(
         MyketBuyLaunchResult.LaunchIntentSender(
             request = IntentSenderRequest.Builder(pendingIntent.intentSender).build(),
             productId = sku,
-            expectedPayload = developerPayload,
+            expectedPayload = safePayload,
         )
     }
 
@@ -232,9 +284,73 @@ class MyketBillingClient(
             runCatching { appContext.unbindService(conn) }
         }
         connection = null
+        rawBinder = null
         service = null
         pendingBind?.cancel()
         pendingBind = null
+    }
+
+    private fun queryPurchaseConfig(binder: IBinder): Bundle? {
+        val data = Parcel.obtain()
+        val reply = Parcel.obtain()
+        return try {
+            data.writeInterfaceToken(BILLING_DESCRIPTOR)
+            data.writeInt(API_VERSION)
+            if (!binder.transact(TRANSACTION_GET_PURCHASE_CONFIG, data, reply, 0)) {
+                return null
+            }
+            reply.readException()
+            if (reply.readInt() != 0) Bundle.CREATOR.createFromParcel(reply) else null
+        } finally {
+            reply.recycle()
+            data.recycle()
+        }
+    }
+
+    private fun queryBuyIntentV2(
+        binder: IBinder,
+        apiVersion: Int,
+        packageName: String,
+        sku: String,
+        type: String,
+        developerPayload: String,
+    ): Bundle? {
+        val data = Parcel.obtain()
+        val reply = Parcel.obtain()
+        return try {
+            data.writeInterfaceToken(BILLING_DESCRIPTOR)
+            data.writeInt(apiVersion)
+            data.writeString(packageName)
+            data.writeString(sku)
+            data.writeString(type)
+            data.writeString(developerPayload)
+            if (!binder.transact(TRANSACTION_GET_BUY_INTENT_V2, data, reply, 0)) {
+                return null
+            }
+            reply.readException()
+            if (reply.readInt() != 0) Bundle.CREATOR.createFromParcel(reply) else null
+        } finally {
+            reply.recycle()
+            data.recycle()
+        }
+    }
+
+    private fun inspectSkuAvailabilityHint(iab: IInAppBillingService, sku: String): String? {
+        val query = Bundle().apply {
+            putStringArrayList(GET_SKU_DETAILS_ITEM_LIST, arrayListOf(sku))
+        }
+        val detailsBundle = runCatching {
+            iab.getSkuDetails(API_VERSION, appContext.packageName, ITEM_TYPE_INAPP, query)
+        }.getOrNull() ?: return "خطا در استعلام محصول از سرور مایکت؛ فیلترشکن (VPN) را خاموش کنید."
+        val detailsCode = detailsBundle.getInt(RESPONSE_CODE, -1)
+        if (detailsCode != BILLING_RESPONSE_RESULT_OK) {
+            return "استعلام محصول ناموفق بود (کد $detailsCode)؛ اگر فیلترشکن روشن است آن را خاموش کنید."
+        }
+        val list = detailsBundle.getStringArrayList(RESPONSE_GET_SKU_DETAILS_LIST).orEmpty()
+        if (list.isEmpty()) {
+            return "شناسه «$sku» در پنل مایکت ثبت/فعال نشده یا نسخه فعلی با امضای پنل مایکت مطابقت ندارد."
+        }
+        return null
     }
 
     private fun findOwnedPurchase(iab: IInAppBillingService, sku: String): MyketPurchaseResult? {
@@ -266,20 +382,36 @@ class MyketBillingClient(
         return null
     }
 
-    private fun mapResponseError(code: Int): String = when (code) {
+    private fun mapResponseError(code: Int, diagnosticHint: String? = null): String = when (code) {
         BILLING_RESPONSE_RESULT_USER_CANCELED -> "پرداخت توسط کاربر لغو شد."
         BILLING_RESPONSE_RESULT_SERVICE_UNAVAILABLE -> "ارتباط با سرور مایکت برقرار نشد."
         BILLING_RESPONSE_RESULT_BILLING_UNAVAILABLE -> "سرویس پرداخت مایکت روی دستگاه فعال نیست."
         BILLING_RESPONSE_RESULT_ITEM_UNAVAILABLE -> "این محصول در پنل مایکت تعریف یا فعال نشده است."
         BILLING_RESPONSE_RESULT_DEVELOPER_ERROR -> "خطا در پیکربندی شناسه محصول مایکت."
+        BILLING_RESPONSE_RESULT_ERROR -> buildString {
+            append("خطا در پرداخت مایکت (کد 6).")
+            if (!diagnosticHint.isNullOrBlank()) {
+                append(' ')
+                append(diagnosticHint)
+            } else {
+                append(" فیلترشکن (VPN) را خاموش کنید، وارد حساب مایکت شوید و از ثبت محصول و APK در پنل مایکت مطمئن شوید.")
+            }
+        }
         else -> "خطا در پرداخت مایکت (کد $code)."
     }
 
     companion object {
         private const val API_VERSION = 3
+        private const val MAX_DEVELOPER_PAYLOAD_CHARS = 700
         private const val ITEM_TYPE_INAPP = "inapp"
         private const val MYKET_PACKAGE_NAME = "ir.mservices.market"
         private const val MYKET_BIND_ACTION = "ir.mservices.market.InAppBillingService.BIND"
+        private const val BILLING_DESCRIPTOR = "com.android.vending.billing.IInAppBillingService"
+        private const val TRANSACTION_GET_BUY_INTENT_V2 = IBinder.FIRST_CALL_TRANSACTION + 5
+        private const val TRANSACTION_GET_PURCHASE_CONFIG = IBinder.FIRST_CALL_TRANSACTION + 6
+        private const val INTENT_V2_SUPPORT = "INTENT_V2_SUPPORT"
+        private const val GET_SKU_DETAILS_ITEM_LIST = "ITEM_ID_LIST"
+        private const val RESPONSE_GET_SKU_DETAILS_LIST = "DETAILS_LIST"
 
         private const val RESPONSE_CODE = "RESPONSE_CODE"
         private const val RESPONSE_BUY_INTENT = "BUY_INTENT"
@@ -294,6 +426,7 @@ class MyketBillingClient(
         private const val BILLING_RESPONSE_RESULT_BILLING_UNAVAILABLE = 3
         private const val BILLING_RESPONSE_RESULT_ITEM_UNAVAILABLE = 4
         private const val BILLING_RESPONSE_RESULT_DEVELOPER_ERROR = 5
+        private const val BILLING_RESPONSE_RESULT_ERROR = 6
         private const val BILLING_RESPONSE_RESULT_ITEM_ALREADY_OWNED = 7
 
         internal fun verifySignature(

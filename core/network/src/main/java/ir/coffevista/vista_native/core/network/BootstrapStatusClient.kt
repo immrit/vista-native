@@ -182,6 +182,7 @@ data class RemoteConfigSnapshot(
     val brandOrnament: RemoteBrandOrnament = RemoteBrandOrnament(),
     val ambientEffect: RemoteAmbientEffect = RemoteAmbientEffect(),
     val navigationSlots: List<RemoteNavigationSlot> = emptyList(),
+    val navigationShowLabels: Boolean = false,
     val copyOverrides: RemoteCopyOverrides = RemoteCopyOverrides(),
     val paymentGateway: String = "store",
     val pricingMeta: Map<String, RemotePricingPlanMeta> = emptyMap(),
@@ -623,6 +624,7 @@ internal fun parseRemoteConfigSnapshot(obj: JsonObject): RemoteConfigSnapshot {
         density = (ambientObj?.get("density") as? JsonPrimitive)?.contentOrNull ?: "low",
     )
 
+    val navigationShowLabels = (uiObj?.get("navigation_show_labels") as? JsonPrimitive)?.booleanOrNull ?: false
     val navigationSlots = (uiObj?.get("navigation_slots") as? JsonArray)?.mapNotNull { elem ->
         val s = elem as? JsonObject ?: return@mapNotNull null
         val key = (s["key"] as? JsonPrimitive)?.contentOrNull ?: return@mapNotNull null
@@ -678,6 +680,7 @@ internal fun parseRemoteConfigSnapshot(obj: JsonObject): RemoteConfigSnapshot {
         brandOrnament = brandOrnament,
         ambientEffect = ambientEffect,
         navigationSlots = navigationSlots,
+        navigationShowLabels = navigationShowLabels,
         copyOverrides = copyOverrides,
         paymentGateway = paymentGateway,
         pricingMeta = pricingMeta,

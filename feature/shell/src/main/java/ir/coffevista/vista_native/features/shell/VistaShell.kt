@@ -156,6 +156,7 @@ fun VistaShell(
     content: ShellFeatureContent,
     modifier: Modifier = Modifier,
     navigationSlots: List<ShellNavigationSlotOverride> = emptyList(),
+    showNavigationLabels: Boolean = false,
     updateBarState: ShellUpdateBarState? = null,
     onUpdateBarClick: () -> Unit = {},
 ) {
@@ -458,6 +459,7 @@ fun VistaShell(
                 openPostFromMiniPlayer,
             )
         }
+        val useGlassBackdrop = selectedTab != ShellTab.Ai
         @OptIn(ExperimentalSharedTransitionApi::class)
         SharedTransitionLayout(modifier = modifier.fillMaxSize()) {
         Box(modifier = Modifier.fillMaxSize()) {
@@ -494,7 +496,9 @@ fun VistaShell(
             },
             modifier = Modifier
                 .fillMaxSize()
-                .vistaGlassSource(glassState)
+                .let { baseModifier ->
+                    if (useGlassBackdrop) baseModifier.vistaGlassSource(glassState) else baseModifier
+                }
                 .background(MaterialTheme.colorScheme.background),
         ) {
             navigation(route = ShellRoutes.FeedGraph, startDestination = ShellRoutes.FeedRoot) {
@@ -1344,7 +1348,9 @@ fun VistaShell(
                     glassState = glassState,
                     chatBadgeCount = content.chatBadgeCount,
                     navigationSlots = navigationSlots,
+                    showNavigationLabels = showNavigationLabels,
                     hasBottomBarBelow = hasUpdateBar,
+                    useBackdropBlur = selectedTab != ShellTab.Ai,
                     onSelect = { tab, routeOverride, label ->
                         val customRoute = routeOverride.trim()
                         val defaultRoutes = when (tab) {
@@ -1449,7 +1455,9 @@ private fun VistaBottomIsland(
     onOpenCustomSlot: (route: String, label: String) -> Unit,
     modifier: Modifier = Modifier,
     navigationSlots: List<ShellNavigationSlotOverride> = emptyList(),
+    showNavigationLabels: Boolean = false,
     hasBottomBarBelow: Boolean = false,
+    useBackdropBlur: Boolean = true,
 ) {
     val density = LocalDensity.current
     val bottomInset = if (hasBottomBarBelow) {
@@ -1465,37 +1473,65 @@ private fun VistaBottomIsland(
     val bottomMargin = if (hasBottomBarBelow) 6.dp else 12.dp + bottomInset
     val isLight = MaterialTheme.colorScheme.background.luminance() > 0.5f
     val isDark = !isLight
-    Box(
-        modifier = modifier
+    val pillShape = RoundedCornerShape(VistaRadii.Pill)
+    val surfaceModifier = if (useBackdropBlur) {
+        Modifier
+            .padding(start = 18.dp, end = 18.dp, bottom = bottomMargin)
             .fillMaxWidth()
-            .height((if (hasBottomBarBelow) 62.dp else 72.dp) + bottomInset)
-            .vistaGlassHalo(
+            .height(58.dp)
+            .vistaGlass(
                 state = glassState,
+                shape = pillShape,
+                tint = if (isDark) Color(0xFF16191E) else Color.White,
                 isDark = isDark,
-                blurRadius = 16.dp,
-                startOffsetFraction = 0.22f,
-                maxAlpha = if (isDark) 0.28f else 0.30f,
-            ),
+                blurRadius = VistaGlassTokens.BarBlur,
+                tintAlphaOverride = if (isDark) 0.58f else 0.60f,
+                drawHighlight = true,
+                rimWidth = 0.6.dp,
+                shadowElevation = 5.dp,
+            )
+    } else {
+        Modifier
+            .padding(start = 18.dp, end = 18.dp, bottom = bottomMargin)
+            .fillMaxWidth()
+            .height(58.dp)
+            .shadow(elevation = 6.dp, shape = pillShape, clip = false)
+            .border(
+                width = 0.6.dp,
+                color = if (isDark) Color.White.copy(alpha = 0.12f) else Color.Black.copy(alpha = 0.08f),
+                shape = pillShape,
+            )
+    }
+    val outerModifier = modifier
+        .fillMaxWidth()
+        .height((if (hasBottomBarBelow) 62.dp else 72.dp) + bottomInset)
+        .let { baseModifier ->
+            if (useBackdropBlur) {
+                baseModifier.vistaGlassHalo(
+                    state = glassState,
+                    isDark = isDark,
+                    blurRadius = 16.dp,
+                    startOffsetFraction = 0.22f,
+                    maxAlpha = if (isDark) 0.28f else 0.30f,
+                )
+            } else {
+                baseModifier
+            }
+        }
+    Box(
+        modifier = outerModifier,
         contentAlignment = Alignment.BottomCenter,
     ) {
         Surface(
-            modifier = Modifier
-                .padding(start = 18.dp, end = 18.dp, bottom = bottomMargin)
-                .fillMaxWidth()
-                .height(58.dp)
-                .vistaGlass(
-                    state = glassState,
-                    shape = RoundedCornerShape(VistaRadii.Pill),
-                    tint = if (isDark) Color(0xFF16191E) else Color.White,
-                    isDark = isDark,
-                    blurRadius = VistaGlassTokens.BarBlur,
-                    tintAlphaOverride = if (isDark) 0.58f else 0.60f,
-                    drawHighlight = true,
-                    rimWidth = 0.6.dp,
-                    shadowElevation = 5.dp,
-                ),
-            shape = RoundedCornerShape(VistaRadii.Pill),
-            color = Color.Transparent,
+            modifier = surfaceModifier,
+            shape = pillShape,
+            color = if (useBackdropBlur) {
+                Color.Transparent
+            } else if (isDark) {
+                Color(0xFF16191E).copy(alpha = 0.94f)
+            } else {
+                Color.White.copy(alpha = 0.94f)
+            },
             shadowElevation = 0.dp,
         ) {
             val slotMap = remember(navigationSlots) {
@@ -1581,6 +1617,11 @@ private fun VistaBottomIsland(
                                 val tab = entry.tab
                                 val slot = entry.slot
                                 val tabLabel = slot?.label?.takeIf { it.isNotBlank() } ?: tab.labelFa
+                                val visibleLabel = if (showNavigationLabels) {
+                                    slot?.label?.trim()?.takeIf { it.isNotEmpty() }
+                                } else {
+                                    null
+                                }
                                 val slotBadgeText = slot?.badgeText?.trim().orEmpty()
                                 val selected = tab == selectedTab
                                 val tabInteractionSource = remember { MutableInteractionSource() }
@@ -1623,59 +1664,26 @@ private fun VistaBottomIsland(
                                         },
                                     contentAlignment = Alignment.Center,
                                 ) {
-                                    Column(
-                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                        verticalArrangement = Arrangement.Center,
-                                        modifier = Modifier.padding(horizontal = 2.dp),
-                                    ) {
-                                        VistaBadgedBox(
-                                            badge = {
-                                                if (tab == ShellTab.Chat && chatBadgeCount > 0) {
-                                                    VistaNotificationBadge(
-                                                        count = chatBadgeCount,
-                                                        borderColor = if (isDark) Color(0xFF16191E) else Color.White,
-                                                        modifier = Modifier.testTag("shell-chat-badge"),
-                                                    )
-                                                } else if (slotBadgeText.isNotBlank()) {
-                                                    Surface(
-                                                        shape = RoundedCornerShape(VistaRadii.Small),
-                                                        color = ir.coffevista.vista_native.core.designsystem.tokens.VistaBrandColors.ViuBlueDeep,
-                                                    ) {
-                                                        Text(
-                                                            text = slotBadgeText.take(6),
-                                                            color = Color.White,
-                                                            fontSize = 8.sp,
-                                                            lineHeight = 9.sp,
-                                                            fontWeight = FontWeight.Bold,
-                                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 0.5.dp),
-                                                        )
-                                                    }
-                                                }
-                                            },
-                                        ) {
-                                            VistaNavigationIcon(
-                                                tab = tab,
-                                                selected = selected,
-                                                color = tabIconColor,
-                                                iconOverride = slot?.icon.orEmpty(),
-                                                modifier = Modifier.size(20.dp),
-                                            )
-                                        }
-                                        Text(
-                                            text = tabLabel,
-                                            color = tabIconColor,
-                                            fontSize = 9.sp,
-                                            lineHeight = 10.sp,
-                                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                        )
-                                    }
+                                    VistaBottomIslandTabContent(
+                                        tab = tab,
+                                        selected = selected,
+                                        iconColor = tabIconColor,
+                                        iconOverride = slot?.icon.orEmpty(),
+                                        visibleLabel = visibleLabel,
+                                        badgeText = slotBadgeText,
+                                        chatBadgeCount = if (tab == ShellTab.Chat) chatBadgeCount else 0,
+                                        chatBadgeBorderColor = if (isDark) Color(0xFF16191E) else Color.White,
+                                    )
                                 }
                             }
                             is IslandSlotEntry.Custom -> {
                                 val slot = entry.slot
                                 val customLabel = slot.label.ifBlank { slot.key }
+                                val visibleLabel = if (showNavigationLabels) {
+                                    slot.label.trim().takeIf { it.isNotEmpty() }
+                                } else {
+                                    null
+                                }
                                 val slotBadgeText = slot.badgeText.trim()
                                 val tabInteractionSource = remember { MutableInteractionSource() }
                                 val isTabPressed by tabInteractionSource.collectIsPressedAsState()
@@ -1711,54 +1719,87 @@ private fun VistaBottomIsland(
                                         },
                                     contentAlignment = Alignment.Center,
                                 ) {
-                                    Column(
-                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                        verticalArrangement = Arrangement.Center,
-                                        modifier = Modifier.padding(horizontal = 2.dp),
-                                    ) {
-                                        VistaBadgedBox(
-                                            badge = {
-                                                if (slotBadgeText.isNotBlank()) {
-                                                    Surface(
-                                                        shape = RoundedCornerShape(VistaRadii.Small),
-                                                        color = ir.coffevista.vista_native.core.designsystem.tokens.VistaBrandColors.ViuBlueDeep,
-                                                    ) {
-                                                        Text(
-                                                            text = slotBadgeText.take(6),
-                                                            color = Color.White,
-                                                            fontSize = 8.sp,
-                                                            lineHeight = 9.sp,
-                                                            fontWeight = FontWeight.Bold,
-                                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 0.5.dp),
-                                                        )
-                                                    }
-                                                }
-                                            },
-                                        ) {
-                                            VistaNavigationIcon(
-                                                tab = ShellTab.Ai,
-                                                selected = false,
-                                                color = inactiveColor,
-                                                iconOverride = slot.icon,
-                                                modifier = Modifier.size(20.dp),
-                                            )
-                                        }
-                                        Text(
-                                            text = customLabel,
-                                            color = inactiveColor,
-                                            fontSize = 9.sp,
-                                            lineHeight = 10.sp,
-                                            fontWeight = FontWeight.Medium,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                        )
-                                    }
+                                    VistaBottomIslandTabContent(
+                                        tab = ShellTab.Ai,
+                                        selected = false,
+                                        iconColor = inactiveColor,
+                                        iconOverride = slot.icon,
+                                        visibleLabel = visibleLabel,
+                                        badgeText = slotBadgeText,
+                                        chatBadgeCount = 0,
+                                        chatBadgeBorderColor = if (isDark) Color(0xFF16191E) else Color.White,
+                                    )
                                 }
                             }
                         }
                     }
                 }
             }
+        }
+    }
+}
+
+
+@Composable
+private fun VistaBottomIslandTabContent(
+    tab: ShellTab,
+    selected: Boolean,
+    iconColor: Color,
+    iconOverride: String,
+    visibleLabel: String?,
+    badgeText: String,
+    chatBadgeCount: Int,
+    chatBadgeBorderColor: Color,
+) {
+    val iconSize = if (visibleLabel != null) 20.dp else 24.dp
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+        modifier = Modifier.padding(horizontal = 2.dp),
+    ) {
+        VistaBadgedBox(
+            badge = {
+                if (tab == ShellTab.Chat && chatBadgeCount > 0) {
+                    VistaNotificationBadge(
+                        count = chatBadgeCount,
+                        borderColor = chatBadgeBorderColor,
+                        modifier = Modifier.testTag("shell-chat-badge"),
+                    )
+                } else if (badgeText.isNotBlank()) {
+                    Surface(
+                        shape = RoundedCornerShape(VistaRadii.Small),
+                        color = ir.coffevista.vista_native.core.designsystem.tokens.VistaBrandColors.ViuBlueDeep,
+                    ) {
+                        Text(
+                            text = badgeText.take(6),
+                            color = Color.White,
+                            fontSize = 8.sp,
+                            lineHeight = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 0.5.dp),
+                        )
+                    }
+                }
+            },
+        ) {
+            VistaNavigationIcon(
+                tab = tab,
+                selected = selected,
+                color = iconColor,
+                iconOverride = iconOverride,
+                modifier = Modifier.size(iconSize),
+            )
+        }
+        if (!visibleLabel.isNullOrBlank()) {
+            Text(
+                text = visibleLabel,
+                color = iconColor,
+                fontSize = 9.sp,
+                lineHeight = 10.sp,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }
