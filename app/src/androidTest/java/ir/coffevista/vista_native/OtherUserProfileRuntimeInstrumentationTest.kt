@@ -104,6 +104,26 @@ class OtherUserProfileRuntimeInstrumentationTest {
     }
 
     @Test
+    fun profileAiBottomSheetLoadsAllThreeModesWithoutError() {
+        launch("valid-session").use {
+            awaitText(postText(1))
+            compose.onAllNodesWithTag("feed-author-fixture-author-2")[0].performClick()
+            awaitText("کاربر آزمایشی 2")
+            awaitText("تحلیل AI")
+
+            compose.onNodeWithText("تحلیل AI").performClick()
+            awaitText("پرسونا و الگوی محتوایی عمومی")
+
+            compose.onNodeWithText("شوخی / Roast").performClick()
+            awaitText("شوخی دوستانه با سبک حضور در ویستا")
+
+            compose.onNodeWithText("تفاهم").performClick()
+            awaitText("سنجش تفاهم و نقاط اشتراک فکری")
+            awaitText("87٪")
+        }
+    }
+
+    @Test
     fun offlineScenarioUsesViewerScopedProfileCache() {
         launch("valid-session").use {
             awaitText(postText(1))

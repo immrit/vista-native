@@ -72,9 +72,9 @@ object InternalNetworkModule {
 
     private fun baseClientBuilder(): OkHttpClient.Builder = OkHttpClient.Builder()
         .connectTimeout(20, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(40, TimeUnit.SECONDS)
         .writeTimeout(25, TimeUnit.SECONDS)
-        .callTimeout(45, TimeUnit.SECONDS)
+        .callTimeout(50, TimeUnit.SECONDS)
         .retryOnConnectionFailure(true)
         .addInterceptor(BoundedRetryInterceptor())
 

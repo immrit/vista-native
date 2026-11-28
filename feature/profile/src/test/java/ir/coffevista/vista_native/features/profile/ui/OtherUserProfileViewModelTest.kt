@@ -261,6 +261,53 @@ class OtherUserProfileViewModelTest {
         assertEquals("ارسال پیام‌های مکرر", repository.lastReportDetails)
     }
 
+    @Test
+    fun analyzeProfileUsesCanonicalUserIdCachesModesAndRetriesOnForceRefresh() = runTest(dispatcher) {
+        repository.emit("viewer-a", "yasaman", publicProfile(fullName = "الهه سکوت"))
+        val viewModel = OtherUserProfileViewModel(
+            savedStateHandle = SavedStateHandle(
+                mapOf(OtherUserProfileViewModel.PROFILE_USER_ID_KEY to "yasaman"),
+            ),
+            repository = repository,
+            authenticationStateProvider = auth,
+        )
+        advanceUntilIdle()
+
+        viewModel.analyzeProfile("insight")
+        advanceUntilIdle()
+        assertEquals("user-b", repository.lastAnalyzedUserId)
+        assertEquals("insight", viewModel.profileAiState.value.result?.mode)
+
+        viewModel.analyzeProfile("roast")
+        advanceUntilIdle()
+        assertEquals("roast", viewModel.profileAiState.value.result?.mode)
+        assertEquals(2, repository.analyzeCalls)
+
+        // Switching back to an already-loaded mode uses cache without re-fetching
+        viewModel.analyzeProfile("insight")
+        advanceUntilIdle()
+        assertEquals("insight", viewModel.profileAiState.value.result?.mode)
+        assertEquals(2, repository.analyzeCalls)
+
+        // Retry with forceRefresh=true hits repository again
+        viewModel.analyzeProfile("insight", forceRefresh = true)
+        advanceUntilIdle()
+        assertEquals(3, repository.analyzeCalls)
+    }
+
+    @Test
+    fun analyzeProfileFailureExposesErrorMessage() = runTest(dispatcher) {
+        repository.onAnalyze = { _, _ -> Result.failure(Exception("خطای آزمایشی تحلیل")) }
+        val viewModel = viewModel()
+        advanceUntilIdle()
+
+        viewModel.analyzeProfile("compatibility")
+        advanceUntilIdle()
+
+        assertFalse(viewModel.profileAiState.value.isLoading)
+        assertEquals("خطای آزمایشی تحلیل", viewModel.profileAiState.value.error)
+    }
+
     private fun viewModel() = OtherUserProfileViewModel(
         savedStateHandle = SavedStateHandle(
             mapOf(OtherUserProfileViewModel.PROFILE_USER_ID_KEY to "user-b"),
@@ -364,6 +411,28 @@ private class FakeUserProfileRepository : UserProfileRepository {
     var reportCalls = 0
     var lastReportReason: String? = null
     var lastReportDetails: String? = null
+    var analyzeCalls = 0
+    var lastAnalyzedUserId: String? = null
+    var onAnalyze: suspend (String, String) -> Result<ir.coffevista.vista_native.features.profile.data.SocialProfileAnalysisDto> =
+        { userId, mode ->
+            Result.success(
+                ir.coffevista.vista_native.features.profile.data.SocialProfileAnalysisDto(
+                    targetUserId = userId,
+                    mode = mode,
+                    title = "عنوان $mode",
+                    summary = "خلاصه $mode",
+                ),
+            )
+        }
+
+    override suspend fun analyzePublicProfile(
+        userId: String,
+        mode: String,
+    ): Result<ir.coffevista.vista_native.features.profile.data.SocialProfileAnalysisDto> {
+        analyzeCalls += 1
+        lastAnalyzedUserId = userId
+        return onAnalyze(userId, mode)
+    }
     override suspend fun reportProfile(
         profileId: String,
         reason: String,

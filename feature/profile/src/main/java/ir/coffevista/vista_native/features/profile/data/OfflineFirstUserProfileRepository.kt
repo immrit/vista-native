@@ -361,15 +361,19 @@ class OfflineFirstUserProfileRepository @Inject constructor(
     override suspend fun analyzePublicProfile(
         userId: String,
         mode: String,
-    ): Result<SocialProfileAnalysisDto> = runCatching {
-        val response = api.analyzePublicProfile(userId, SocialProfileAnalyzeRequestDto(mode = mode))
-        val body = response.body()
-        if (response.isSuccessful && body != null) {
-            body
-        } else {
-            val errorBody = response.errorBody()?.string().orEmpty()
-            val parsedMessage = BackendErrorParser.parse(errorBody).message
-            throw Exception(parsedMessage ?: "تحلیل پروفایل با خطا مواجه شد")
+    ): Result<SocialProfileAnalysisDto> {
+        return try {
+            val response = api.analyzePublicProfile(userId, SocialProfileAnalyzeRequestDto(mode = mode))
+            val body = response.body()
+            if (response.isSuccessful && body != null) {
+                Result.success(body)
+            } else {
+                val errorBody = response.errorBody()?.string().orEmpty()
+                val parsedMessage = BackendErrorParser.parse(errorBody).message
+                Result.failure(Exception(parsedMessage ?: "تحلیل پروفایل با خطا مواجه شد"))
+            }
+        } catch (error: Exception) {
+            Result.failure(Exception(ErrorClassifier.classify(error, "تحلیل هوشمند پروفایل").messageFa, error))
         }
     }
 

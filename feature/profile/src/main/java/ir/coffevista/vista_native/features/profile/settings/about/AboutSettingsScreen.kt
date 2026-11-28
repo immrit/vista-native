@@ -50,6 +50,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import ir.coffevista.vista_native.core.common.StoreChannel
 import ir.coffevista.vista_native.features.profile.settings.components.VistaSettingsDivider
 import ir.coffevista.vista_native.features.profile.settings.components.VistaSettingsGroup
 import ir.coffevista.vista_native.features.profile.settings.components.VistaSettingsTile
@@ -66,6 +67,7 @@ fun AboutSettingsScreen(
     onFaqClick: () -> Unit,
     onTickGuideClick: () -> Unit = {},
     onCheckForUpdate: (() -> Unit)? = null,
+    storeChannel: StoreChannel = StoreChannel.Bazaar,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -212,9 +214,14 @@ fun AboutSettingsScreen(
                         onClick = {
                             if (onCheckForUpdate != null) {
                                 onCheckForUpdate()
-                            } else if (!openVistaBazaarPage(context)) {
+                            } else if (!openVistaStorePage(context, storeChannel)) {
                                 scope.launch {
-                                    snackbarHostState.showSnackbar("امکان باز کردن صفحهٔ ویستا در کافه‌بازار وجود ندارد")
+                                    val errorText = when (storeChannel) {
+                                        StoreChannel.Myket -> "امکان باز کردن صفحهٔ ویستا در مایکت وجود ندارد"
+                                        StoreChannel.Direct -> "امکان باز کردن صفحهٔ ویستا وجود ندارد"
+                                        StoreChannel.Bazaar -> "امکان باز کردن صفحهٔ ویستا در کافه‌بازار وجود ندارد"
+                                    }
+                                    snackbarHostState.showSnackbar(errorText)
                                 }
                             }
                         },
@@ -226,20 +233,40 @@ fun AboutSettingsScreen(
         }
 
         if (showRatingDialog) {
+            val (dialogTitle, dialogBody, confirmLabel, ratingErrorText) = when (storeChannel) {
+                StoreChannel.Myket -> Quad(
+                    "امتیاز به ویستا در مایکت",
+                    "حمایت شما با ثبت نظر و امتیاز در مایکت باعث دلگرمی و بهبود مداوم ویستا می‌شود.",
+                    "ثبت نظر در مایکت",
+                    "امکان باز کردن صفحهٔ امتیازدهی در مایکت وجود ندارد",
+                )
+                StoreChannel.Direct -> Quad(
+                    "امتیاز و حمایت از ویستا",
+                    "حمایت شما باعث دلگرمی و بهبود مداوم ویستا می‌شود.",
+                    "باز کردن صفحه ویستا",
+                    "امکان باز کردن صفحهٔ ویستا وجود ندارد",
+                )
+                StoreChannel.Bazaar -> Quad(
+                    "امتیاز به ویستا در کافه‌بازار",
+                    "حمایت شما با ثبت نظر و امتیاز در کافه‌بازار باعث دلگرمی و بهبود مداوم ویستا می‌شود.",
+                    "ثبت نظر در بازار",
+                    "امکان باز کردن صفحهٔ امتیازدهی در کافه‌بازار وجود ندارد",
+                )
+            }
             AlertDialog(
                 onDismissRequest = { showRatingDialog = false },
-                title = { Text("امتیاز به ویستا در کافه‌بازار") },
-                text = { Text("حمایت شما با ثبت نظر و امتیاز در کافه‌بازار باعث دلگرمی و بهبود مداوم ویستا می‌شود.") },
+                title = { Text(dialogTitle) },
+                text = { Text(dialogBody) },
                 confirmButton = {
                     TextButton(onClick = {
                         showRatingDialog = false
-                        if (!openVistaBazaarPage(context)) {
+                        if (!openVistaStorePage(context, storeChannel, forComment = true)) {
                             scope.launch {
-                                snackbarHostState.showSnackbar("امکان باز کردن صفحهٔ امتیازدهی در کافه‌بازار وجود ندارد")
+                                snackbarHostState.showSnackbar(ratingErrorText)
                             }
                         }
                     }) {
-                        Text("ثبت نظر در بازار", fontWeight = FontWeight.Bold)
+                        Text(confirmLabel, fontWeight = FontWeight.Bold)
                     }
                 },
                 dismissButton = {
@@ -253,10 +280,43 @@ fun AboutSettingsScreen(
     }
 }
 
-private fun openVistaBazaarPage(context: android.content.Context): Boolean = runCatching {
-    val bazaarUri = Uri.parse("bazaar://details?id=ir.coffevista.vista")
-    context.startActivity(Intent(Intent.ACTION_VIEW, bazaarUri))
-}.recoverCatching {
-    val webUri = Uri.parse("https://cafebazaar.ir/app/ir.coffevista.vista")
-    context.startActivity(Intent(Intent.ACTION_VIEW, webUri))
-}.isSuccess
+private data class Quad(
+    val title: String,
+    val body: String,
+    val confirmLabel: String,
+    val errorText: String,
+)
+
+private fun openVistaStorePage(
+    context: android.content.Context,
+    storeChannel: StoreChannel,
+    forComment: Boolean = false,
+): Boolean {
+    val pkg = context.packageName.ifBlank { "ir.coffevista.vista" }
+    return when (storeChannel) {
+        StoreChannel.Myket -> runCatching {
+            val scheme = if (forComment) "myket://comment?id=$pkg" else "myket://details?id=$pkg"
+            context.startActivity(
+                Intent(Intent.ACTION_VIEW, Uri.parse(scheme)).apply {
+                    setPackage("ir.mservices.market")
+                },
+            )
+        }.recoverCatching {
+            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://myket.ir/app/$pkg")))
+        }.isSuccess
+        StoreChannel.Direct -> runCatching {
+            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://cafevista.ir")))
+        }.isSuccess
+        StoreChannel.Bazaar -> runCatching {
+            val bazaarUri = Uri.parse("bazaar://details?id=$pkg")
+            context.startActivity(
+                Intent(Intent.ACTION_VIEW, bazaarUri).apply {
+                    setPackage("com.farsitel.bazaar")
+                },
+            )
+        }.recoverCatching {
+            val webUri = Uri.parse("https://cafebazaar.ir/app/$pkg")
+            context.startActivity(Intent(Intent.ACTION_VIEW, webUri))
+        }.isSuccess
+    }
+}

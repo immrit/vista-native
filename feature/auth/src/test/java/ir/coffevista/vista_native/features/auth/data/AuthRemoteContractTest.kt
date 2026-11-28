@@ -17,6 +17,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 
 class AuthRemoteContractTest {
@@ -66,6 +67,55 @@ class AuthRemoteContractTest {
         val requestJson = requestBuffer.readUtf8()
         assertTrue(requestJson.contains("\"identifier\":\"vista\""))
         assertTrue(requestJson.contains("\"password\":\"password\""))
+    }
+
+    @Test
+    fun lookupIdentifierRetriesOnceOnTransient502AndSucceeds() = runBlocking {
+        val attempts = AtomicInteger(0)
+        val client = OkHttpClient.Builder()
+            .addInterceptor { chain ->
+                val attempt = attempts.incrementAndGet()
+                val request = chain.request()
+                if (attempt == 1) {
+                    Response.Builder()
+                        .request(request)
+                        .protocol(Protocol.HTTP_1_1)
+                        .code(502)
+                        .message("Bad Gateway")
+                        .body("<html>502 Bad Gateway</html>".toResponseBody("text/html".toMediaType()))
+                        .build()
+                } else {
+                    Response.Builder()
+                        .request(request)
+                        .protocol(Protocol.HTTP_1_1)
+                        .code(200)
+                        .message("OK")
+                        .body("""{"success":true,"exists":false,"is_phone":true,"normalized_identifier":"09120000000","auth_flow":"otp"}""".toResponseBody(JSON))
+                        .build()
+                }
+            }
+            .build()
+        val environment = AppEnvironment(
+            name = EnvironmentName.PRODUCTION,
+            internalBaseUrl = "https://contract.invalid/",
+            debugBuild = false,
+        )
+        val retrofit = InternalNetworkModule.provideInternalRetrofit(client, environment)
+        val source = OkHttpAuthRemoteDataSource(
+            retrofit = retrofit,
+            bootstrapStatusClient = BootstrapStatusClient(
+                client = client,
+                environment = environment,
+                tlsPolicyStore = TlsPolicyStore(),
+            ),
+        )
+
+        val lookup = source.lookupIdentifier("09120000000")
+
+        assertEquals(2, attempts.get())
+        assertTrue(lookup.isPhone)
+        assertEquals("09120000000", lookup.normalizedIdentifier)
+        assertEquals("otp", lookup.authFlow)
     }
 
     private companion object {

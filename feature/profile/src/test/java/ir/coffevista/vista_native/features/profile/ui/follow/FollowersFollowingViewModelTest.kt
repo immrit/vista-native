@@ -102,6 +102,17 @@ class FollowersFollowingViewModelTest {
         override suspend fun reportProfile(request: ReportProfileRequestDto): Response<Unit> {
             return Response.success(Unit)
         }
+
+        override suspend fun analyzePublicProfile(
+            userId: String,
+            request: ir.coffevista.vista_native.features.profile.data.SocialProfileAnalyzeRequestDto,
+        ): Response<ir.coffevista.vista_native.features.profile.data.SocialProfileAnalysisDto> =
+            Response.success(
+                ir.coffevista.vista_native.features.profile.data.SocialProfileAnalysisDto(
+                    targetUserId = userId,
+                    mode = request.mode,
+                ),
+            )
     }
 
     private lateinit var fakeApi: FakePublicProfileApi

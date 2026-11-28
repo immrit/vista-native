@@ -12,6 +12,8 @@ import ir.coffevista.vista_native.core.model.auth.AuthPayload
 import ir.coffevista.vista_native.core.model.auth.AuthSession
 import ir.coffevista.vista_native.core.model.auth.AuthUser
 import ir.coffevista.vista_native.core.security.SessionStore
+import ir.coffevista.vista_native.features.chat.data.local.ChatDao
+import ir.coffevista.vista_native.features.chat.data.local.ConversationEntity
 import java.util.concurrent.atomic.AtomicReference
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -40,6 +42,7 @@ enum class DebugStartupScenario(val wireName: String) {
 @Singleton
 class DebugStartupFixture @Inject constructor(
     private val sessionStore: SessionStore,
+    private val chatDao: ChatDao,
 ) : StartupFixture {
     private val scenario = AtomicReference(DebugStartupScenario.NONE)
 
@@ -52,11 +55,11 @@ class DebugStartupFixture @Inject constructor(
         DebugStartupScenario.FIRST_RUN -> StartupDestination.Onboarding
         DebugStartupScenario.MAINTENANCE_ENABLED -> StartupDestination.Maintenance
         DebugStartupScenario.MAINTENANCE_DISABLED -> StartupDestination.Authentication
-        DebugStartupScenario.VALID_SESSION,
+        DebugStartupScenario.VALID_SESSION -> authenticated(offline = false, seedChat = true)
         DebugStartupScenario.FEED_ERROR,
         DebugStartupScenario.ACCESS_EXPIRED_REFRESH_SUCCESS,
-        -> authenticated(offline = false)
-        DebugStartupScenario.OFFLINE_VALID_SESSION -> authenticated(offline = true)
+        -> authenticated(offline = false, seedChat = false)
+        DebugStartupScenario.OFFLINE_VALID_SESSION -> authenticated(offline = true, seedChat = false)
         DebugStartupScenario.REFRESH_EXPIRED,
         DebugStartupScenario.REVOKED,
         DebugStartupScenario.MALFORMED,
@@ -64,7 +67,7 @@ class DebugStartupFixture @Inject constructor(
         -> StartupDestination.Authentication
     }
 
-    private fun authenticated(offline: Boolean): StartupDestination {
+    private suspend fun authenticated(offline: Boolean, seedChat: Boolean): StartupDestination {
         sessionStore.save(
             AuthPayload(
                 user = AuthUser(
@@ -85,6 +88,9 @@ class DebugStartupFixture @Inject constructor(
                 isNewUser = false,
             ),
         )
+        if (seedChat) {
+            seedDebugChatIfNeeded()
+        }
         return StartupDestination.Authenticated(
             AuthenticatedContext(
                 userId = "fnd-debug-user",
@@ -92,6 +98,36 @@ class DebugStartupFixture @Inject constructor(
                 passwordRequired = false,
                 offline = offline,
                 displayName = "کاربر تست Foundation",
+            ),
+        )
+    }
+
+    private suspend fun seedDebugChatIfNeeded() {
+        val accountId = "fnd-debug-user"
+        val conversationId = "fixture-chat-yasaman"
+        if (chatDao.conversation(accountId, conversationId) != null) return
+        val now = System.currentTimeMillis()
+        chatDao.upsertConversations(
+            listOf(
+                ConversationEntity(
+                    accountId = accountId,
+                    id = conversationId,
+                    type = "PRIVATE",
+                    title = "yasaman",
+                    avatarUrl = null,
+                    peerId = "fixture2",
+                    lastMessageCiphertext = null,
+                    lastMessageAtEpochMillis = now - 60_000L,
+                    unreadCount = 0,
+                    isArchived = false,
+                    isPinned = false,
+                    isMuted = false,
+                    requestStatus = "accepted",
+                    lastSyncedAtEpochMillis = now,
+                    lastMessageType = "text",
+                    isVerified = true,
+                    verificationType = "blue",
+                ),
             ),
         )
     }

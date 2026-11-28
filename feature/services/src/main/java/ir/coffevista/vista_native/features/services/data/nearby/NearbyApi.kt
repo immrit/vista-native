@@ -100,13 +100,18 @@ interface NearbyApi {
         @Body request: NearbyRespondChatRequestDto,
     ): Response<NearbyRespondChatRequestResponseDto>
 
-    // ── Payment Coin Packages (Cafe Bazaar) ──────────────────────────────────
+    // ── Payment Coin Packages (Store In-App Billing) ─────────────────────────
 
     @GET("/v1/payment/packages")
     suspend fun getCoinPackages(): Response<NearbyCoinPackagesResponseDto>
 
     @POST("/v1/payment/bazaar-verify")
     suspend fun verifyBazaarPurchase(
+        @Body request: NearbyBazaarVerifyRequestDto,
+    ): Response<NearbyBazaarVerifyResponseDto>
+
+    @POST("/v1/payment/myket-verify")
+    suspend fun verifyMyketPurchase(
         @Body request: NearbyBazaarVerifyRequestDto,
     ): Response<NearbyBazaarVerifyResponseDto>
 }

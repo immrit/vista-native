@@ -19,6 +19,10 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.compose.ui.platform.LocalContext
+import ir.coffevista.vista_native.core.common.StoreChannel
+import ir.coffevista.vista_native.core.designsystem.billing.MyketActivityParseResult
+import ir.coffevista.vista_native.core.designsystem.billing.MyketBillingClient
+import ir.coffevista.vista_native.core.designsystem.billing.MyketBuyLaunchResult
 import ir.coffevista.vista_native.core.designsystem.component.VistaViuStateIllustration
 import ir.coffevista.vista_native.core.designsystem.component.VistaViuStateKind
 
@@ -176,24 +180,30 @@ fun NearbyScreen(
     val activeLocationListener = remember { mutableStateOf<LocationListener?>(null) }
     var reportingCandidate by remember { mutableStateOf<NearbyCandidate?>(null) }
 
-    val payment = remember(context) {
-        Payment(
-            context = context.applicationContext,
-            config = PaymentConfiguration(
-                localSecurityCheck = SecurityCheck.Enable(rsaPublicKey = NEARBY_BAZAAR_RSA_PUBLIC_KEY),
-            ),
-        )
+    val payment = remember(context, state.storeChannel) {
+        if (state.storeChannel == StoreChannel.Bazaar) {
+            Payment(
+                context = context.applicationContext,
+                config = PaymentConfiguration(
+                    localSecurityCheck = SecurityCheck.Enable(rsaPublicKey = NEARBY_BAZAAR_RSA_PUBLIC_KEY),
+                ),
+            )
+        } else {
+            null
+        }
     }
     var bazaarConnection by remember { mutableStateOf<Connection?>(null) }
 
     DisposableEffect(payment) {
-        val connection = runCatching {
-            payment.connect {
-                connectionSucceed {}
-                connectionFailed {}
-                disconnected {}
-            }
-        }.getOrNull()
+        val connection = payment?.let { paymentClient ->
+            runCatching {
+                paymentClient.connect {
+                    connectionSucceed {}
+                    connectionFailed {}
+                    disconnected {}
+                }
+            }.getOrNull()
+        }
         bazaarConnection = connection
         onDispose {
             runCatching { bazaarConnection?.disconnect() }
@@ -201,16 +211,100 @@ fun NearbyScreen(
         }
     }
 
+    val myketClient = remember(context, state.storeChannel) {
+        if (state.storeChannel == StoreChannel.Myket) {
+            MyketBillingClient(
+                context = context.applicationContext,
+                publicKeyBase64 = viewModel.storeBillingConfig.myketPublicKey,
+            )
+        } else {
+            null
+        }
+    }
+    var pendingMyketSku by remember { mutableStateOf("") }
+    fun handleMyketActivityResult(resultCode: Int, data: Intent?) {
+        val client = myketClient
+        if (client == null) {
+            viewModel.onBazaarCoinPurchaseFailed("سرویس پرداخت مایکت آماده نیست.")
+            return
+        }
+        when (val parsed = client.parseActivityResult(resultCode, data, pendingMyketSku)) {
+            is MyketActivityParseResult.Success -> {
+                viewModel.verifyMyketCoinPurchase(
+                    productId = parsed.purchase.productId,
+                    purchaseToken = parsed.purchase.purchaseToken,
+                    packageName = parsed.purchase.packageName,
+                )
+            }
+            MyketActivityParseResult.Canceled -> viewModel.onBazaarCoinPurchaseCanceled()
+            is MyketActivityParseResult.Error -> viewModel.onBazaarCoinPurchaseFailed(parsed.message)
+        }
+    }
+    val myketActivityLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartIntentSenderForResult(),
+    ) { result ->
+        handleMyketActivityResult(result.resultCode, result.data)
+    }
+    val myketV2ActivityLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        handleMyketActivityResult(result.resultCode, result.data)
+    }
+    DisposableEffect(myketClient) {
+        onDispose {
+            myketClient?.disconnect()
+        }
+    }
+
+    fun launchMyketCoinPurchase(packageId: String) {
+        val client = myketClient
+        if (client == null) {
+            viewModel.onBazaarCoinPurchaseFailed("امکان باز کردن درگاه پرداخت مایکت وجود ندارد.")
+            return
+        }
+        viewModel.onBazaarCoinPurchaseStarted(packageId)
+        pendingMyketSku = packageId
+        coroutineScope.launch {
+            when (val launchResult = client.startPurchase(sku = packageId, developerPayload = "vista_coins")) {
+                is MyketBuyLaunchResult.LaunchIntent -> {
+                    runCatching {
+                        myketV2ActivityLauncher.launch(launchResult.intent)
+                    }.onFailure { err ->
+                        viewModel.onBazaarCoinPurchaseFailed(err.message ?: "باز کردن صفحه پرداخت مایکت ناموفق بود.")
+                    }
+                }
+                is MyketBuyLaunchResult.LaunchIntentSender -> {
+                    runCatching {
+                        myketActivityLauncher.launch(launchResult.request)
+                    }.onFailure { err ->
+                        viewModel.onBazaarCoinPurchaseFailed(err.message ?: "باز کردن صفحه پرداخت مایکت ناموفق بود.")
+                    }
+                }
+                is MyketBuyLaunchResult.RecoveredOwnedPurchase -> {
+                    viewModel.verifyMyketCoinPurchase(
+                        productId = launchResult.purchase.productId,
+                        purchaseToken = launchResult.purchase.purchaseToken,
+                        packageName = launchResult.purchase.packageName,
+                    )
+                }
+                is MyketBuyLaunchResult.Error -> {
+                    viewModel.onBazaarCoinPurchaseFailed(launchResult.message)
+                }
+            }
+        }
+    }
+
     fun launchBazaarCoinPurchase(packageId: String) {
+        val paymentClient = payment
         val activity = context.findNearbyComponentActivity()
-        if (activity == null) {
+        if (paymentClient == null || activity == null) {
             viewModel.onBazaarCoinPurchaseFailed("امکان باز کردن درگاه پرداخت کافه‌بازار وجود ندارد.")
             return
         }
         viewModel.onBazaarCoinPurchaseStarted(packageId)
         val executePurchase = {
             runCatching {
-                payment.purchaseProduct(
+                paymentClient.purchaseProduct(
                     registry = activity.activityResultRegistry,
                     request = PurchaseRequest(
                         productId = packageId,
@@ -242,7 +336,7 @@ fun NearbyScreen(
         } else {
             runCatching {
                 bazaarConnection?.disconnect()
-                bazaarConnection = payment.connect {
+                bazaarConnection = paymentClient.connect {
                     connectionSucceed { executePurchase() }
                     connectionFailed { throwable ->
                         viewModel.onBazaarCoinPurchaseFailed(
@@ -255,6 +349,14 @@ fun NearbyScreen(
             }.onFailure { throwable ->
                 viewModel.onBazaarCoinPurchaseFailed(throwable.message)
             }
+        }
+    }
+
+    fun launchStoreCoinPurchase(packageId: String) {
+        when (state.storeChannel) {
+            StoreChannel.Myket -> launchMyketCoinPurchase(packageId)
+            StoreChannel.Bazaar -> launchBazaarCoinPurchase(packageId)
+            StoreChannel.Direct -> viewModel.onBazaarCoinPurchaseFailed("خرید سکه فقط از طریق نسخه فروشگاه در دسترس است.")
         }
     }
 
@@ -302,11 +404,18 @@ fun NearbyScreen(
     }
 
     state.pendingConsumeToken?.let { token ->
-        LaunchedEffect(token) {
+        LaunchedEffect(token, state.storeChannel) {
             runCatching {
-                payment.consumeProduct(token) {
-                    consumeSucceed { viewModel.onBazaarPurchaseConsumed() }
-                    consumeFailed { viewModel.onBazaarPurchaseConsumed() }
+                if (state.storeChannel == StoreChannel.Myket && myketClient != null) {
+                    myketClient.consumePurchase(token)
+                    viewModel.onBazaarPurchaseConsumed()
+                } else if (payment != null) {
+                    payment.consumeProduct(token) {
+                        consumeSucceed { viewModel.onBazaarPurchaseConsumed() }
+                        consumeFailed { viewModel.onBazaarPurchaseConsumed() }
+                    }
+                } else {
+                    viewModel.onBazaarPurchaseConsumed()
                 }
             }.onFailure { viewModel.onBazaarPurchaseConsumed() }
         }
@@ -635,9 +744,10 @@ fun NearbyScreen(
                             shopMessage = state.shopMessage,
                             onDismiss = { viewModel.closeShop() },
                             onBuyRequestPack = { packId -> viewModel.buyChatRequestPack(packId) },
-                            onBuyCoinPackage = { packageId -> launchBazaarCoinPurchase(packageId) },
+                            onBuyCoinPackage = { packageId -> launchStoreCoinPurchase(packageId) },
                             onVerifyPendingPayment = { viewModel.retryPendingBazaarVerification() },
                             onClearMessage = { viewModel.clearShopMessage() },
+                            storeChannel = state.storeChannel,
                         )
                     }
 

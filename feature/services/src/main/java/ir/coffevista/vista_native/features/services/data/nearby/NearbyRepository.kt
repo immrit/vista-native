@@ -39,6 +39,12 @@ interface NearbyRepository {
         packageName: String,
     ): NearbyBazaarVerifyResult =
         throw UnsupportedOperationException("verifyBazaarPurchase not implemented")
+    suspend fun verifyMyketPurchase(
+        purchaseToken: String,
+        productId: String,
+        packageName: String,
+    ): NearbyBazaarVerifyResult =
+        throw UnsupportedOperationException("verifyMyketPurchase not implemented")
 }
 
 @Singleton
@@ -177,6 +183,21 @@ class DefaultNearbyRepository @Inject constructor(
             ),
         )
             .bodyOrThrow("bazaar_verify_failed")
+            .toDomain()
+
+    override suspend fun verifyMyketPurchase(
+        purchaseToken: String,
+        productId: String,
+        packageName: String,
+    ): NearbyBazaarVerifyResult =
+        api.verifyMyketPurchase(
+            NearbyBazaarVerifyRequestDto(
+                purchaseToken = purchaseToken,
+                productId = productId,
+                packageName = packageName,
+            ),
+        )
+            .bodyOrThrow("myket_verify_failed")
             .toDomain()
 
     private inline fun <reified T> Response<T>.bodyOrThrow(emptyCode: String): T {

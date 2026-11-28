@@ -629,7 +629,7 @@ fun OwnProfileScreen(
                         isOwnProfile = true,
                         state = profileAiState,
                         onSelectMode = { mode -> viewModel.analyzeOwnProfile(mode) },
-                        onRetry = { viewModel.analyzeOwnProfile(profileAiState.mode) },
+                        onRetry = { viewModel.analyzeOwnProfile(profileAiState.mode, forceRefresh = true) },
                         onDismiss = viewModel::dismissProfileAi,
                     )
                 }
@@ -828,7 +828,7 @@ private fun OwnProfileActions(
         if (onAnalyzeAi != null) {
             VistaAiProfileButton(
                 onClick = onAnalyzeAi,
-                modifier = Modifier.weight(0.85f),
+                modifier = Modifier.weight(0.95f),
             )
         }
     }

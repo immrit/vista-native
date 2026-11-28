@@ -55,9 +55,22 @@ class OwnProfileViewModel @Inject constructor(
 
     private val _profileAiState = MutableStateFlow(ProfileAiUiState())
     val profileAiState: StateFlow<ProfileAiUiState> = _profileAiState.asStateFlow()
+    private val profileAiCache = mutableMapOf<String, ir.coffevista.vista_native.features.profile.data.SocialProfileAnalysisDto>()
 
-    fun analyzeOwnProfile(mode: String = "insight") {
+    fun analyzeOwnProfile(mode: String = "insight", forceRefresh: Boolean = false) {
         val userId = currentUserId ?: return
+        if (!forceRefresh) {
+            profileAiCache[mode]?.let { cached ->
+                _profileAiState.value = ProfileAiUiState(
+                    isVisible = true,
+                    mode = mode,
+                    isLoading = false,
+                    result = cached,
+                    error = null,
+                )
+                return
+            }
+        }
         _profileAiState.value = ProfileAiUiState(
             isVisible = true,
             mode = mode,
@@ -66,6 +79,7 @@ class OwnProfileViewModel @Inject constructor(
         viewModelScope.launch {
             userProfileRepository.analyzePublicProfile(userId, mode)
                 .onSuccess { dto ->
+                    profileAiCache[mode] = dto
                     _profileAiState.update { current ->
                         if (current.isVisible && current.mode == mode) {
                             current.copy(isLoading = false, result = dto, error = null)
@@ -79,7 +93,7 @@ class OwnProfileViewModel @Inject constructor(
                         if (current.isVisible && current.mode == mode) {
                             current.copy(
                                 isLoading = false,
-                                error = err.message ?: "تحلیل هوشمند پروفایل با خطا مواجه شد",
+                                error = err.message?.takeIf { it.isNotBlank() } ?: "تحلیل هوشمند پروفایل با خطا مواجه شد",
                             )
                         } else {
                             current

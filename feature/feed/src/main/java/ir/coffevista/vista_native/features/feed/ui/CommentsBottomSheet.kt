@@ -170,7 +170,10 @@ fun CommentsBottomSheet(
                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                 )
                 Spacer(Modifier.weight(1f))
-                if (uiState.comments.size >= 2) {
+                val totalLoadedComments = remember(uiState.comments) {
+                    uiState.comments.sumOf { 1 + flattenReplies(it.replies).size }
+                }
+                if (totalLoadedComments >= 2) {
                     Surface(
                         onClick = viewModel::summarizeComments,
                         shape = RoundedCornerShape(16.dp),

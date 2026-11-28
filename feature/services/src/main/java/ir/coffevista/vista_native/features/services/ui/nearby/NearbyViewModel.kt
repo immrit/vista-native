@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import ir.coffevista.vista_native.core.common.DeviceLocationSnapshotCache
+import ir.coffevista.vista_native.core.common.StoreBillingConfig
+import ir.coffevista.vista_native.core.common.StoreChannel
 import ir.coffevista.vista_native.core.network.RemoteFailure
 import ir.coffevista.vista_native.features.services.data.nearby.NearbyBazaarPendingVerification
 import ir.coffevista.vista_native.features.services.data.nearby.NearbyCandidate
@@ -74,6 +76,7 @@ data class NearbyUiState(
     val shopMessage: String? = null,
     val pendingBazaarVerification: NearbyBazaarPendingVerification? = null,
     val pendingConsumeToken: String? = null,
+    val storeChannel: StoreChannel = StoreChannel.Bazaar,
     // Quick Preview & Chat Request dialog
     val previewCandidate: NearbyCandidate? = null,
     val chatRequestTarget: NearbyCandidate? = null,
@@ -87,9 +90,10 @@ data class NearbyUiState(
 class NearbyViewModel @Inject constructor(
     private val repository: NearbyRepository,
     val locationSnapshotCache: DeviceLocationSnapshotCache? = null,
+    val storeBillingConfig: StoreBillingConfig = StoreBillingConfig(),
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(NearbyUiState())
+    private val _uiState = MutableStateFlow(NearbyUiState(storeChannel = storeBillingConfig.channel))
     val uiState: StateFlow<NearbyUiState> = _uiState.asStateFlow()
 
     private var currentZone: String? = null
@@ -348,8 +352,9 @@ class NearbyViewModel @Inject constructor(
     }
 
     fun onBazaarCoinPurchaseFailed(reason: String?) {
+        val storeName = storeBillingConfig.channel.displayNameFa
         val message = reason?.takeIf { it.isNotBlank() }
-            ?: "پرداخت از طریق درگاه کافه‌بازار ناموفق بود. دوباره تلاش کنید."
+            ?: "پرداخت از طریق درگاه $storeName ناموفق بود. دوباره تلاش کنید."
         _uiState.update {
             it.copy(
                 shopPurchasingId = null,
@@ -362,9 +367,22 @@ class NearbyViewModel @Inject constructor(
         productId: String,
         purchaseToken: String,
         packageName: String,
+    ) = verifyStoreCoinPurchase(StoreChannel.Bazaar, productId, purchaseToken, packageName)
+
+    fun verifyMyketCoinPurchase(
+        productId: String,
+        purchaseToken: String,
+        packageName: String,
+    ) = verifyStoreCoinPurchase(StoreChannel.Myket, productId, purchaseToken, packageName)
+
+    private fun verifyStoreCoinPurchase(
+        channel: StoreChannel,
+        productId: String,
+        purchaseToken: String,
+        packageName: String,
     ) {
         if (purchaseToken.isBlank() || productId.isBlank()) {
-            onBazaarCoinPurchaseFailed("اطلاعات تراکنش کافه‌بازار ناقص است.")
+            onBazaarCoinPurchaseFailed("اطلاعات تراکنش ${channel.displayNameFa} ناقص است.")
             return
         }
         val pending = NearbyBazaarPendingVerification(
@@ -372,20 +390,23 @@ class NearbyViewModel @Inject constructor(
             purchaseToken = purchaseToken,
             packageName = packageName,
         )
-        verifyBazaarPending(pending)
+        verifyBazaarPending(pending, channel)
     }
 
     fun retryPendingBazaarVerification() {
         val pending = _uiState.value.pendingBazaarVerification ?: return
         if (_uiState.value.isShopLoading) return
-        verifyBazaarPending(pending)
+        verifyBazaarPending(pending, storeBillingConfig.channel)
     }
 
     fun onBazaarPurchaseConsumed() {
         _uiState.update { it.copy(pendingConsumeToken = null) }
     }
 
-    private fun verifyBazaarPending(pending: NearbyBazaarPendingVerification) {
+    private fun verifyBazaarPending(
+        pending: NearbyBazaarPendingVerification,
+        channel: StoreChannel = storeBillingConfig.channel,
+    ) {
         viewModelScope.launch {
             _uiState.update {
                 it.copy(
@@ -396,11 +417,19 @@ class NearbyViewModel @Inject constructor(
                 )
             }
             runCatching {
-                repository.verifyBazaarPurchase(
-                    purchaseToken = pending.purchaseToken,
-                    productId = pending.productId,
-                    packageName = pending.packageName,
-                )
+                if (channel == StoreChannel.Myket) {
+                    repository.verifyMyketPurchase(
+                        purchaseToken = pending.purchaseToken,
+                        productId = pending.productId,
+                        packageName = pending.packageName,
+                    )
+                } else {
+                    repository.verifyBazaarPurchase(
+                        purchaseToken = pending.purchaseToken,
+                        productId = pending.productId,
+                        packageName = pending.packageName,
+                    )
+                }
             }
                 .onSuccess { res ->
                     if (!res.success) {

@@ -27,7 +27,9 @@ import androidx.navigation.toRoute
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import ir.coffevista.vista_native.BuildConfig
 import ir.coffevista.vista_native.R
+import ir.coffevista.vista_native.core.common.StoreChannel
 import ir.coffevista.vista_native.features.auth.AuthScreen
 import ir.coffevista.vista_native.features.auth.AuthViewModel
 import ir.coffevista.vista_native.features.auth.BiometricLoginScreen
@@ -988,6 +990,7 @@ fun VistaApp(
                                 onFaqClick = onFaq,
                                 onTickGuideClick = onTickGuide,
                                 onCheckForUpdate = onCheckForUpdate,
+                                storeChannel = StoreChannel.fromWire(BuildConfig.STORE_CHANNEL),
                             )
                         },
                         tickGuide = { onBack, onUpgradeClick ->

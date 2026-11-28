@@ -163,24 +163,21 @@ fun VistaNotchMetaballHeader(
             )
         }
 
-        // Soft ambient radial glow behind the expanded avatar (fades out on collapse)
+        // Soft ambient radial glow behind the expanded avatar (smoothly fades to transparent inside header bounds)
         if (collapseProgress < 0.95f) {
-            val ambientAlpha = (1f - collapseProgress) * (if (isDark) 0.24f else 0.14f)
+            val ambientAlpha = (1f - collapseProgress) * (if (isDark) 0.24f else 0.15f)
             val primaryColor = MaterialTheme.colorScheme.primary
-            Canvas(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .graphicsLayer { alpha = ambientAlpha },
-            ) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
                 val center = Offset(size.width / 2f, with(density) { startAvatarCenterY.toPx() })
-                val radius = size.width * 0.52f
+                val maxVerticalRadius = (size.height - center.y).coerceAtLeast(1f) * 0.96f
+                val radius = minOf(size.width * 0.48f, maxVerticalRadius).coerceAtLeast(1f)
                 drawCircle(
                     brush = Brush.radialGradient(
-                        colors = listOf(
-                            primaryColor,
-                            primaryColor.copy(alpha = 0.35f),
-                            Color.Transparent,
-                        ),
+                        0.00f to primaryColor.copy(alpha = ambientAlpha),
+                        0.32f to primaryColor.copy(alpha = ambientAlpha * 0.62f),
+                        0.62f to primaryColor.copy(alpha = ambientAlpha * 0.22f),
+                        0.84f to primaryColor.copy(alpha = ambientAlpha * 0.05f),
+                        1.00f to Color.Transparent,
                         center = center,
                         radius = radius,
                     ),

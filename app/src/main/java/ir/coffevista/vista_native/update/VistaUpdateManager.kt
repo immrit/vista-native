@@ -5,6 +5,8 @@ import android.content.Intent
 import android.net.Uri
 import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
+import ir.coffevista.vista_native.core.common.StoreBillingConfig
+import ir.coffevista.vista_native.core.common.StoreChannel
 import ir.coffevista.vista_native.core.network.BootstrapApi
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -30,10 +32,12 @@ data class UpdateCheckResult(
 class VistaUpdateManager @Inject constructor(
     @ApplicationContext private val context: Context,
     @BootstrapApi private val httpClient: OkHttpClient,
+    private val storeBillingConfig: StoreBillingConfig = StoreBillingConfig(),
 ) {
     private companion object {
         const val TAG = "VistaUpdateManager"
         const val BAZAAR_PACKAGE = "com.farsitel.bazaar"
+        const val MYKET_PACKAGE = "ir.mservices.market"
     }
 
     suspend fun checkForUpdate(backendBaseUrl: String, currentVersionCode: Long, flavor: String): UpdateCheckResult {
@@ -71,21 +75,46 @@ class VistaUpdateManager @Inject constructor(
         }
     }
 
-    fun openStoreForUpdate(): Boolean {
+    fun openStoreForUpdate(downloadUrl: String? = null): Boolean {
+        val packageName = context.packageName
+        return when (storeBillingConfig.channel) {
+            StoreChannel.Myket -> openStoreUri(
+                appUri = "myket://details?id=$packageName",
+                appPackage = MYKET_PACKAGE,
+                webUrl = "https://myket.ir/app/$packageName",
+            )
+            StoreChannel.Direct -> openWebUrl(
+                downloadUrl?.takeIf { it.startsWith("https://") } ?: "https://cafevista.ir",
+            )
+            StoreChannel.Bazaar -> openStoreUri(
+                appUri = "bazaar://details?id=$packageName",
+                appPackage = BAZAAR_PACKAGE,
+                webUrl = "https://cafebazaar.ir/app/$packageName",
+            )
+        }
+    }
+
+    private fun openStoreUri(appUri: String, appPackage: String, webUrl: String): Boolean {
         return runCatching {
             val intent = Intent(Intent.ACTION_VIEW).apply {
-                data = Uri.parse("bazaar://details?id=${context.packageName}")
-                setPackage(BAZAAR_PACKAGE)
+                data = Uri.parse(appUri)
+                setPackage(appPackage)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             context.startActivity(intent)
             true
         }.recoverCatching {
-            // Fallback to browser if Bazaar app is not installed
-            val webIntent = Intent(
-                Intent.ACTION_VIEW,
-                Uri.parse("https://cafebazaar.ir/app/${context.packageName}"),
-            ).apply {
+            val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse(webUrl)).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(webIntent)
+            true
+        }.getOrDefault(false)
+    }
+
+    private fun openWebUrl(url: String): Boolean {
+        return runCatching {
+            val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             context.startActivity(webIntent)

@@ -53,6 +53,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import ir.coffevista.vista_native.core.common.StoreChannel
 import ir.coffevista.vista_native.core.designsystem.component.VistaCoinIcon
 import ir.coffevista.vista_native.core.designsystem.theme.VistaFontFamily
 import ir.coffevista.vista_native.core.designsystem.tokens.VistaBrandColors
@@ -78,6 +79,7 @@ fun NearbyShopSheet(
     onBuyCoinPackage: (packageId: String) -> Unit,
     onVerifyPendingPayment: () -> Unit,
     onClearMessage: () -> Unit,
+    storeChannel: StoreChannel = StoreChannel.Bazaar,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var selectedTab by remember { mutableIntStateOf(0) }
@@ -197,7 +199,11 @@ fun NearbyShopSheet(
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = "خرید کافه‌بازار در انتظار تایید",
+                                    text = when (storeChannel) {
+                                        StoreChannel.Myket -> "خرید مایکت در انتظار تایید"
+                                        StoreChannel.Direct -> "خرید در انتظار تایید"
+                                        StoreChannel.Bazaar -> "خرید کافه‌بازار در انتظار تایید"
+                                    },
                                     fontFamily = VistaFontFamily,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 12.sp,
@@ -285,7 +291,11 @@ fun NearbyShopSheet(
                         onClick = { selectedTab = 1 },
                         text = {
                             Text(
-                                "خرید سکه (کافه‌بازار)",
+                                when (storeChannel) {
+                                    StoreChannel.Myket -> "خرید سکه (مایکت)"
+                                    StoreChannel.Direct -> "خرید سکه"
+                                    StoreChannel.Bazaar -> "خرید سکه (کافه‌بازار)"
+                                },
                                 fontFamily = VistaFontFamily,
                                 fontWeight = FontWeight.SemiBold,
                                 fontSize = 12.sp,

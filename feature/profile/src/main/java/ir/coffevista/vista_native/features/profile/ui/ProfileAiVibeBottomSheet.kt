@@ -127,7 +127,7 @@ internal fun ProfileAiSparkleIcon(
 internal fun VistaAiProfileButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    label: String = "هوش مصنوعی",
+    label: String = "تحلیل AI",
 ) {
     val haptics = rememberVistaHaptics()
     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
@@ -147,10 +147,10 @@ internal fun VistaAiProfileButton(
                 ),
             ),
         ),
-        modifier = modifier.height(36.dp),
+        modifier = modifier.height(40.dp),
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 10.dp),
+            modifier = Modifier.padding(horizontal = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center,
         ) {
@@ -161,10 +161,11 @@ internal fun VistaAiProfileButton(
             Spacer(Modifier.width(5.dp))
             Text(
                 text = label,
-                fontSize = 12.5.sp,
+                fontSize = 12.sp,
                 fontWeight = FontWeight.Bold,
                 color = if (isDark) Color(0xFFE0D7FF) else ProfileAiViolet,
                 maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
             )
         }
     }
@@ -246,7 +247,7 @@ fun ProfileAiVibeBottomSheet(
                         Spacer(Modifier.width(12.dp))
                         Column {
                             Text(
-                                text = if (!username.isNullOrBlank()) "تحلیل پروفایل @$username" else "تحلیل هوشمند پروفایل",
+                                text = if (!username.isNullOrBlank()) "تحلیل پروفایل \u2066@$username\u2069" else "تحلیل هوشمند پروفایل",
                                 style = MaterialTheme.typography.titleMedium.copy(
                                     fontWeight = FontWeight.ExtraBold,
                                     fontSize = 16.sp,

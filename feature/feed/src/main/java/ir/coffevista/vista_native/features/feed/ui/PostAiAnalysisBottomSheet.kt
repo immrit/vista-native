@@ -278,7 +278,7 @@ fun PostAiAnalysisBottomSheet(
                             Column(modifier = Modifier.weight(1f)) {
                                 post.authorUsername?.takeIf { it.isNotBlank() }?.let { uname ->
                                     Text(
-                                        text = "@$uname",
+                                        text = "\u2066@$uname\u2069",
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = VistaAiCyan,
@@ -695,6 +695,7 @@ private fun VerdictBadge(verdict: String) {
     val (label, tint) = when (verdict.lowercase()) {
         "verified" -> "تاییدشده" to Color(0xFF10B981)
         "misleading" -> "نیازمند دقت" to Color(0xFFF59E0B)
+        "context_needed", "needs_context" -> "نیازمند زمینه" to Color(0xFFF59E0B)
         "opinion" -> "دیدگاه شخصی" to VistaAiCyan
         "unverified" -> "نیازمند منبع" to Color(0xFFEC4899)
         else -> "تحلیل" to VistaAiViolet

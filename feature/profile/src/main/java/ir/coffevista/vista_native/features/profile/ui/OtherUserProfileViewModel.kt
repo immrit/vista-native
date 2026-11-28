@@ -45,16 +45,31 @@ class OtherUserProfileViewModel @Inject constructor(
 
     private val _profileAiState = MutableStateFlow(ProfileAiUiState())
     val profileAiState: StateFlow<ProfileAiUiState> = _profileAiState.asStateFlow()
+    private val profileAiCache = mutableMapOf<String, ir.coffevista.vista_native.features.profile.data.SocialProfileAnalysisDto>()
 
-    fun analyzeProfile(mode: String = "insight") {
+    fun analyzeProfile(mode: String = "insight", forceRefresh: Boolean = false) {
+        val targetUserId = mutableUiState.value.profile?.userId?.takeIf { it.isNotBlank() } ?: profileUserId
+        if (!forceRefresh) {
+            profileAiCache[mode]?.let { cached ->
+                _profileAiState.value = ProfileAiUiState(
+                    isVisible = true,
+                    mode = mode,
+                    isLoading = false,
+                    result = cached,
+                    error = null,
+                )
+                return
+            }
+        }
         _profileAiState.value = ProfileAiUiState(
             isVisible = true,
             mode = mode,
             isLoading = true,
         )
         viewModelScope.launch {
-            repository.analyzePublicProfile(profileUserId, mode)
+            repository.analyzePublicProfile(targetUserId, mode)
                 .onSuccess { dto ->
+                    profileAiCache[mode] = dto
                     _profileAiState.update { current ->
                         if (current.isVisible && current.mode == mode) {
                             current.copy(isLoading = false, result = dto, error = null)
@@ -68,7 +83,7 @@ class OtherUserProfileViewModel @Inject constructor(
                         if (current.isVisible && current.mode == mode) {
                             current.copy(
                                 isLoading = false,
-                                error = err.message ?: "تحلیل هوشمند پروفایل با خطا مواجه شد",
+                                error = err.message?.takeIf { it.isNotBlank() } ?: "تحلیل هوشمند پروفایل با خطا مواجه شد",
                             )
                         } else {
                             current
@@ -140,7 +155,9 @@ class OtherUserProfileViewModel @Inject constructor(
 
     private fun refresh(viewer: String) {
         viewModelScope.launch {
-            _highlights.value = repository.getUserHighlights(profileUserId)
+            launch {
+                _highlights.value = repository.getUserHighlights(profileUserId)
+            }
             launch {
                 val batchResult = repository.getBatchNotes(listOf(profileUserId))
                 _activeNote.value = batchResult.getOrNull()?.get(profileUserId)

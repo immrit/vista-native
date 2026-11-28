@@ -16,6 +16,7 @@ import ir.coffevista.vista_native.core.network.BootstrapStatusClient
 import ir.coffevista.vista_native.core.network.InternalApi
 import ir.coffevista.vista_native.core.network.RemoteFailure
 import ir.coffevista.vista_native.core.security.expiryFromJwt
+import kotlinx.coroutines.delay
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
@@ -91,7 +92,7 @@ class OkHttpAuthRemoteDataSource @Inject constructor(
     private val api = retrofit.create(AuthApi::class.java)
 
     override suspend fun lookupIdentifier(identifier: String): IdentifierLookup {
-        val json = execute(api.lookup(jsonBody("identifier" to identifier)))
+        val json = executeLookupWithRetry(identifier)
         return IdentifierLookup(
             exists = json.boolean("exists"),
             isPhone = json.boolean("is_phone"),
@@ -99,6 +100,37 @@ class OkHttpAuthRemoteDataSource @Inject constructor(
             authFlow = json.string("auth_flow"),
             accountStatus = json.string("account_status"),
         )
+    }
+
+    private suspend fun executeLookupWithRetry(identifier: String): JsonObject {
+        val body = jsonBody("identifier" to identifier)
+        var lastThrowable: Throwable? = null
+        for (attempt in 0..1) {
+            try {
+                val response = api.lookup(body)
+                if (response.isSuccessful) {
+                    return response.body()
+                        ?: throw kotlinx.serialization.SerializationException("Expected JSON response")
+                }
+                val failure = response.toRemoteFailure()
+                val isTransientGateway = failure.statusCode in setOf(502, 503, 504) &&
+                    !failure.code.equals("maintenance_mode", ignoreCase = true) &&
+                    !failure.message.equals("maintenance_mode", ignoreCase = true)
+                if (attempt == 0 && isTransientGateway) {
+                    lastThrowable = failure
+                    delay(350L)
+                    continue
+                }
+                throw failure
+            } catch (io: java.io.IOException) {
+                if (io is RemoteFailure || io is javax.net.ssl.SSLException || attempt > 0) {
+                    throw io
+                }
+                lastThrowable = io
+                delay(350L)
+            }
+        }
+        throw lastThrowable ?: IllegalStateException("lookup failed")
     }
 
     override suspend fun login(identifier: String, password: String): AuthPayload =

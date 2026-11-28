@@ -412,6 +412,7 @@ class MainActivity : FragmentActivity() {
                                 }
                             }
                             val isAppLocked = biometricUnlockRequired && sessionStore.isBiometricEnabled()
+                            val storeChannel = ir.coffevista.vista_native.core.common.StoreChannel.fromWire(BuildConfig.STORE_CHANNEL)
                             if (!isAppLocked) {
                                 availableUpdate?.takeIf { it.isMandatory }?.let { update ->
                                     androidx.compose.material3.AlertDialog(
@@ -424,13 +425,26 @@ class MainActivity : FragmentActivity() {
                                                 text = buildString {
                                                     append("نسخه ")
                                                     append(update.versionName ?: "جدید")
-                                                    append(" ویستا منتشر شده است.\nبرای ادامه استفاده از برنامه، لطفاً از کافه‌بازار به‌روزرسانی کنید.")
+                                                    when (storeChannel) {
+                                                        ir.coffevista.vista_native.core.common.StoreChannel.Myket ->
+                                                            append(" ویستا منتشر شده است.\nبرای ادامه استفاده از برنامه، لطفاً از مایکت به‌روزرسانی کنید.")
+                                                        ir.coffevista.vista_native.core.common.StoreChannel.Direct ->
+                                                            append(" ویستا منتشر شده است.\nبرای ادامه استفاده از برنامه، لطفاً نسخه جدید را دریافت و نصب کنید.")
+                                                        ir.coffevista.vista_native.core.common.StoreChannel.Bazaar ->
+                                                            append(" ویستا منتشر شده است.\nبرای ادامه استفاده از برنامه، لطفاً از کافه‌بازار به‌روزرسانی کنید.")
+                                                    }
                                                 },
                                             )
                                         },
                                         confirmButton = {
                                             Button(onClick = ::handleUpdateBarClick) {
-                                                Text("به‌روزرسانی در بازار")
+                                                Text(
+                                                    when (storeChannel) {
+                                                        ir.coffevista.vista_native.core.common.StoreChannel.Myket -> "به‌روزرسانی در مایکت"
+                                                        ir.coffevista.vista_native.core.common.StoreChannel.Direct -> "دریافت به‌روزرسانی"
+                                                        ir.coffevista.vista_native.core.common.StoreChannel.Bazaar -> "به‌روزرسانی در بازار"
+                                                    },
+                                                )
                                             }
                                         },
                                         dismissButton = null,
@@ -615,10 +629,19 @@ class MainActivity : FragmentActivity() {
     }
 
     private fun handleUpdateBarClick() {
-        if (!vistaUpdateManager.openStoreForUpdate()) {
+        val storeChannel = ir.coffevista.vista_native.core.common.StoreChannel.fromWire(BuildConfig.STORE_CHANNEL)
+        if (!vistaUpdateManager.openStoreForUpdate(availableUpdate?.downloadUrl)) {
+            val errorMessage = when (storeChannel) {
+                ir.coffevista.vista_native.core.common.StoreChannel.Myket ->
+                    "امکان باز کردن صفحهٔ ویستا در مایکت وجود ندارد"
+                ir.coffevista.vista_native.core.common.StoreChannel.Direct ->
+                    "امکان باز کردن صفحهٔ به‌روزرسانی وجود ندارد"
+                ir.coffevista.vista_native.core.common.StoreChannel.Bazaar ->
+                    "امکان باز کردن صفحهٔ ویستا در کافه‌بازار وجود ندارد"
+            }
             android.widget.Toast.makeText(
                 this@MainActivity,
-                "امکان باز کردن صفحهٔ ویستا در کافه‌بازار وجود ندارد",
+                errorMessage,
                 android.widget.Toast.LENGTH_SHORT,
             ).show()
         }

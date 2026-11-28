@@ -84,9 +84,9 @@ class PolicyAwareInternalCallFactory(
             .proxy(Proxy.NO_PROXY)
             .connectionPool(ConnectionPool(8, 5, TimeUnit.MINUTES))
             .connectTimeout(20, TimeUnit.SECONDS)
-            .readTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(40, TimeUnit.SECONDS)
             .writeTimeout(25, TimeUnit.SECONDS)
-            .callTimeout(45, TimeUnit.SECONDS)
+            .callTimeout(50, TimeUnit.SECONDS)
             .pingInterval(20, TimeUnit.SECONDS)
             .retryOnConnectionFailure(true)
             .addInterceptor { chain ->

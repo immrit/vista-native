@@ -80,6 +80,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -96,6 +97,9 @@ import ir.cafebazaar.poolakey.Payment
 import ir.cafebazaar.poolakey.config.PaymentConfiguration
 import ir.cafebazaar.poolakey.config.SecurityCheck
 import ir.cafebazaar.poolakey.request.PurchaseRequest
+import ir.coffevista.vista_native.core.designsystem.billing.MyketActivityParseResult
+import ir.coffevista.vista_native.core.designsystem.billing.MyketBillingClient
+import ir.coffevista.vista_native.core.designsystem.billing.MyketBuyLaunchResult
 import ir.coffevista.vista_native.core.designsystem.component.VistaCoinIcon
 import ir.coffevista.vista_native.features.profile.settings.components.VistaSettingsSection
 import kotlinx.coroutines.launch
@@ -145,6 +149,7 @@ fun PricingScreen(
     val scope = rememberCoroutineScope()
     val storeChannel = uiState.storeChannel
     val activeGateway = uiState.activeGateway
+    val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
 
     val features = listOf(
         PremiumFeatureUiModel(
@@ -155,7 +160,7 @@ fun PricingScreen(
         PremiumFeatureUiModel(
             Icons.Outlined.Psychology,
             "تحلیل هوشمند پست، نظرات و پروفایل",
-            "خلاصه‌سازی نظرات، راستی‌آزمایی پست‌ها، سنجش تفاهم پروفایل و منشن @vista.",
+            "خلاصه‌سازی نظرات، راستی‌آزمایی پست‌ها، سنجش تفاهم پروفایل و منشن \u2066@vista\u2069.",
         ),
         PremiumFeatureUiModel(
             Icons.Outlined.Verified,
@@ -657,7 +662,7 @@ fun PricingScreen(
                                     )
                                     Spacer(modifier = Modifier.height(2.dp))
                                     Text(
-                                        text = "دسترسی در ai.cafevista.ir، خلاصه نظرات، تحلیل پست و منشن @vista بدون هزینه اضافه.",
+                                        text = "دسترسی در ai.cafevista.ir، خلاصه نظرات، تحلیل پست و منشن \u2066@vista\u2069 بدون هزینه اضافه.",
                                         style = MaterialTheme.typography.bodySmall.copy(
                                             color = Color(0xFFD1D5DB),
                                             fontSize = 11.5.sp,
@@ -705,7 +710,11 @@ fun PricingScreen(
                                         .clickable { selectedPlanIndex = index },
                                     shape = RoundedCornerShape(16.dp),
                                     colors = CardDefaults.cardColors(
-                                        containerColor = if (isSelected) Color(0xFFFFF8E1) else MaterialTheme.colorScheme.surface,
+                                        containerColor = if (isSelected) {
+                                            if (isDark) Color(0xFF28200D) else Color(0xFFFFF8E1)
+                                        } else {
+                                            MaterialTheme.colorScheme.surface
+                                        },
                                     ),
                                     elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                                 ) {
@@ -738,7 +747,11 @@ fun PricingScreen(
                                             style = MaterialTheme.typography.titleMedium.copy(
                                                 fontWeight = FontWeight.Bold,
                                                 fontSize = 15.sp,
-                                                color = if (isSelected) Color(0xFFE65100) else MaterialTheme.colorScheme.onSurface,
+                                                color = if (isSelected) {
+                                                    if (isDark) Color(0xFFFFD54F) else Color(0xFFE65100)
+                                                } else {
+                                                    MaterialTheme.colorScheme.onSurface
+                                                },
                                             ),
                                         )
 
@@ -749,7 +762,11 @@ fun PricingScreen(
                                                 text = plan.originalPrice,
                                                 style = MaterialTheme.typography.labelSmall.copy(
                                                     fontSize = 11.sp,
-                                                    color = if (isSelected) Color(0xFF6D4C41) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    color = if (isSelected) {
+                                                        if (isDark) Color(0xFFD6C399) else Color(0xFF6D4C41)
+                                                    } else {
+                                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                                    },
                                                     textDecoration = TextDecoration.LineThrough,
                                                 ),
                                                 textAlign = TextAlign.Center,
@@ -761,7 +778,11 @@ fun PricingScreen(
                                             style = MaterialTheme.typography.bodySmall.copy(
                                                 fontWeight = FontWeight.SemiBold,
                                                 fontSize = 11.5.sp,
-                                                color = if (isSelected) Color(0xFF3E2723) else MaterialTheme.colorScheme.onSurface,
+                                                color = if (isSelected) {
+                                                    if (isDark) Color.White else Color(0xFF3E2723)
+                                                } else {
+                                                    MaterialTheme.colorScheme.onSurface
+                                                },
                                             ),
                                             textAlign = TextAlign.Center,
                                         )
@@ -800,7 +821,7 @@ fun PricingScreen(
                                             modifier = Modifier
                                                 .size(36.dp)
                                                 .clip(RoundedCornerShape(10.dp))
-                                                .background(Color(0xFFFFF8E1)),
+                                                .background(if (isDark) Color(0xFF2B220E) else Color(0xFFFFF8E1)),
                                             contentAlignment = Alignment.Center,
                                         ) {
                                             Icon(

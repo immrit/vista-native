@@ -27,6 +27,8 @@
 -keep,allowoptimization,allowobfuscation class ir.coffevista.vista_native.features.startup.StartupResolver { *; }
 -keep,allowoptimization,allowobfuscation class ir.coffevista.vista_native.features.auth.AuthViewModel { *; }
 -keep,allowoptimization,allowobfuscation class ir.coffevista.vista_native.features.auth.data.OkHttpAuthRemoteDataSource { *; }
+-keep interface ir.coffevista.vista_native.features.auth.data.AuthApi { *; }
+-keep class ir.coffevista.vista_native.core.designsystem.billing.MyketBillingClient** { *; }
 
 # protobuf-javalite message metadata stores generated field names as strings.
 # R8 may still optimize and obfuscate the generated class, but these field

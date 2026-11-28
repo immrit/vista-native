@@ -340,6 +340,19 @@ private class FakePublicProfileApi : PublicProfileApi {
 
     override suspend fun reportProfile(request: ReportProfileRequestDto): Response<Unit> =
         Response.success(Unit)
+
+    override suspend fun analyzePublicProfile(
+        userId: String,
+        request: SocialProfileAnalyzeRequestDto,
+    ): Response<SocialProfileAnalysisDto> =
+        Response.success(
+            SocialProfileAnalysisDto(
+                targetUserId = userId,
+                mode = request.mode,
+                title = "تحلیل آزمایشی",
+                summary = "خلاصه آزمایشی",
+            ),
+        )
 }
 
 private class FakePublicProfileDao : PublicProfileDao {
