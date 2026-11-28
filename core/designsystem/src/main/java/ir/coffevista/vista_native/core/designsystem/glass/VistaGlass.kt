@@ -505,16 +505,19 @@ fun Modifier.vistaGlassHalo(
 
             val s0 = startOffsetFraction.coerceIn(0f, 0.45f)
             val span = (1f - s0).coerceAtLeast(0.01f)
+            // Keep blur mask near 1.0 across status bar + floating pills so sharp content never bleeds through
+            // behind header controls, while topTintBrush feathers the frosted haze down into the skirt.
+            val fallbackMaxAlpha = if (fromTop) maxAlpha.coerceIn(0f, 0.98f) else (1f - (1f - maxAlpha) * (1f - maxAlpha)).coerceIn(0f, 0.96f)
 
             val alphaGradient = if (fromTop) {
                 val e0 = (1f - s0).coerceIn(0.55f, 1f)
                 Brush.verticalGradient(
                     0f to Color.Black,
-                    (e0 * 0.12f) to Color.Black.copy(alpha = 0.84f),
-                    (e0 * 0.30f) to Color.Black.copy(alpha = 0.56f),
-                    (e0 * 0.50f) to Color.Black.copy(alpha = 0.26f),
-                    (e0 * 0.68f) to Color.Black.copy(alpha = 0.08f),
-                    (e0 * 0.84f) to Color.Black.copy(alpha = 0.02f),
+                    (e0 * 0.56f) to Color.Black,
+                    (e0 * 0.68f) to Color.Black.copy(alpha = 0.88f),
+                    (e0 * 0.78f) to Color.Black.copy(alpha = 0.56f),
+                    (e0 * 0.88f) to Color.Black.copy(alpha = 0.24f),
+                    (e0 * 0.96f) to Color.Black.copy(alpha = 0.05f),
                     e0 to Color.Transparent,
                     1f to Color.Transparent,
                 )
@@ -531,15 +534,32 @@ fun Modifier.vistaGlassHalo(
                 )
             }
 
+            val topTintBrush = if (fromTop) {
+                val e0 = (1f - s0).coerceIn(0.55f, 1f)
+                Brush.verticalGradient(
+                    0f to tint.copy(alpha = fallbackMaxAlpha),
+                    (e0 * 0.24f) to tint.copy(alpha = fallbackMaxAlpha * 0.88f),
+                    (e0 * 0.46f) to tint.copy(alpha = fallbackMaxAlpha * 0.68f),
+                    (e0 * 0.64f) to tint.copy(alpha = fallbackMaxAlpha * 0.44f),
+                    (e0 * 0.80f) to tint.copy(alpha = fallbackMaxAlpha * 0.18f),
+                    (e0 * 0.93f) to tint.copy(alpha = fallbackMaxAlpha * 0.04f),
+                    e0 to Color.Transparent,
+                    1f to Color.Transparent,
+                )
+            } else {
+                null
+            }
+
             val fallbackBrush = if (fromTop) {
                 val e0 = (1f - s0).coerceIn(0.55f, 1f)
                 Brush.verticalGradient(
-                    0f to tint.copy(alpha = maxAlpha),
-                    (e0 * 0.12f) to tint.copy(alpha = maxAlpha * 0.84f),
-                    (e0 * 0.30f) to tint.copy(alpha = maxAlpha * 0.56f),
-                    (e0 * 0.50f) to tint.copy(alpha = maxAlpha * 0.26f),
-                    (e0 * 0.68f) to tint.copy(alpha = maxAlpha * 0.08f),
-                    (e0 * 0.84f) to tint.copy(alpha = maxAlpha * 0.02f),
+                    0f to tint.copy(alpha = fallbackMaxAlpha),
+                    (e0 * 0.24f) to tint.copy(alpha = fallbackMaxAlpha * 0.94f),
+                    (e0 * 0.46f) to tint.copy(alpha = fallbackMaxAlpha * 0.78f),
+                    (e0 * 0.64f) to tint.copy(alpha = fallbackMaxAlpha * 0.52f),
+                    (e0 * 0.78f) to tint.copy(alpha = fallbackMaxAlpha * 0.24f),
+                    (e0 * 0.90f) to tint.copy(alpha = fallbackMaxAlpha * 0.08f),
+                    (e0 * 0.97f) to tint.copy(alpha = fallbackMaxAlpha * 0.02f),
                     e0 to Color.Transparent,
                     1f to Color.Transparent,
                 )
@@ -595,7 +615,11 @@ fun Modifier.vistaGlassHalo(
                             drawLayer(blurLayer)
                         }
                     }
-                    drawRect(tintColor)
+                    if (topTintBrush != null) {
+                        drawRect(brush = topTintBrush)
+                    } else {
+                        drawRect(tintColor)
+                    }
                     drawRect(brush = alphaGradient, blendMode = BlendMode.DstIn)
                     drawIntoCanvas { canvas ->
                         canvas.nativeCanvas.restore()

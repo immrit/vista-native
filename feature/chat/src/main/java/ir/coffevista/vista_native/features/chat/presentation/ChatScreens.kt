@@ -3061,33 +3061,37 @@ fun MessageDetailScreen(
             isDarkTheme -> 0.58f
             else -> 0.62f
         }
+        val haloHeightDp = effectiveTopPadding + 36.dp
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .align(Alignment.TopCenter)
-                .onGloballyPositioned { coordinates ->
-                    val h = with(density) { coordinates.size.height.toDp() }
-                    if (h > 0.dp && headerHeightDp != h) {
-                        headerHeightDp = h
-                    }
-                },
+                .align(Alignment.TopCenter),
         ) {
             Box(
                 modifier = Modifier
-                    .matchParentSize()
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .height(haloHeightDp)
                     .vistaGlassHalo(
                         state = chatGlassState,
                         isDark = isDarkTheme,
-                        blurRadius = 18.dp,
-                        startOffsetFraction = 0.05f,
-                        maxAlpha = if (isDarkTheme) 0.42f else 0.36f,
+                        tint = if (isDarkTheme) Color(0xFF0E1115) else Color(0xFFFFFFFF),
+                        blurRadius = 26.dp,
+                        startOffsetFraction = 0f,
+                        maxAlpha = if (isDarkTheme) 0.92f else 0.90f,
                         fromTop = true,
                     ),
             )
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .windowInsetsPadding(WindowInsets.statusBars.only(WindowInsetsSides.Top)),
+                    .windowInsetsPadding(WindowInsets.statusBars.only(WindowInsetsSides.Top))
+                    .onGloballyPositioned { coordinates ->
+                        val h = with(density) { coordinates.size.height.toDp() }
+                        if (h > 0.dp && headerHeightDp != h) {
+                            headerHeightDp = h
+                        }
+                    },
             ) {
                 if (selectedMessageKeys.isNotEmpty()) {
                     val selectedMessages = state.messages.filter { it.stableKey in selectedMessageKeys }
@@ -8400,9 +8404,7 @@ private fun PartnerDetailsScreen(
     val cardBorderColor = if (isDark) Color(0x20FFFFFF) else Color(0x10000000)
     val detailsScrollState = rememberScrollState()
     val detailsGlassState = rememberVistaGlassState()
-    LaunchedEffect(detailsScrollState.value) {
-        detailsGlassState.invalidate()
-    }
+    VistaGlassScrollSync(detailsGlassState, detailsScrollState)
     val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val expandedHeaderSpace = statusBarTop + 190.dp
     val heroAvatar = profile?.avatarUrl ?: conversation?.avatarUrl

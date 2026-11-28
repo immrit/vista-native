@@ -53,6 +53,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
@@ -103,7 +104,7 @@ fun VistaNotchMetaballHeader(
     modifier: Modifier = Modifier,
 ) {
     val density = LocalDensity.current
-    val isDark = isSystemInDarkTheme()
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
 
     // Collapse over 145.dp of scroll
@@ -144,21 +145,43 @@ fun VistaNotchMetaballHeader(
             .fillMaxWidth()
             .height(totalHeaderHeight),
     ) {
-        // Subtle progressive top-down Liquid Glass halo when scrolled
-        if (glassState != null && collapseProgress > 0.15f) {
+        // Telegram-style top frosted halo: covers status bar + floating pills and feathers ~36.dp below
+        val haloTint = if (isDark) Color(0xFF0E1115) else Color(0xFFFFFFFF)
+        val haloHeight = statusBarTop + 94.dp
+        val peakAlpha = 0.94f
+        if (glassState != null) {
             Box(
                 modifier = Modifier
-                    .matchParentSize()
-                    .graphicsLayer {
-                        alpha = ((collapseProgress - 0.15f) / 0.85f).coerceIn(0f, 1f)
-                    }
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .height(haloHeight)
                     .vistaGlassHalo(
                         state = glassState,
                         isDark = isDark,
-                        blurRadius = 18.dp,
-                        startOffsetFraction = 0.05f,
-                        maxAlpha = if (isDark) 0.52f else 0.46f,
+                        tint = haloTint,
+                        blurRadius = 26.dp,
+                        startOffsetFraction = 0f,
+                        maxAlpha = peakAlpha,
                         fromTop = true,
+                    ),
+            )
+        } else {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .height(haloHeight)
+                    .background(
+                        Brush.verticalGradient(
+                            0f to haloTint.copy(alpha = peakAlpha),
+                            0.22f to haloTint.copy(alpha = peakAlpha * 0.95f),
+                            0.44f to haloTint.copy(alpha = peakAlpha * 0.78f),
+                            0.62f to haloTint.copy(alpha = peakAlpha * 0.52f),
+                            0.76f to haloTint.copy(alpha = peakAlpha * 0.24f),
+                            0.89f to haloTint.copy(alpha = peakAlpha * 0.08f),
+                            0.97f to haloTint.copy(alpha = peakAlpha * 0.02f),
+                            1f to Color.Transparent,
+                        ),
                     ),
             )
         }
