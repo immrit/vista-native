@@ -561,6 +561,32 @@ class OfflineFirstFeedRepository @Inject constructor(
         normalizedDto.asEntity(accountId = accountId, sortOrder = sortOrder)
     }
 
+    override suspend fun analyzePost(postId: String, mode: String): Result<SocialPostAnalysisDto> = runCatching {
+        val response = feedApi.analyzePost(postId, SocialPostAnalyzeRequestDto(mode = mode))
+        val body = response.body()
+        if (response.isSuccessful && body != null) {
+            body
+        } else {
+            val raw = response.errorBody()?.string().orEmpty()
+            val msg = ir.coffevista.vista_native.core.network.BackendErrorParser.parse(raw).message
+                ?: "تحلیل هوشمند پست با خطا مواجه شد"
+            throw IllegalStateException(msg)
+        }
+    }
+
+    override suspend fun summarizePostComments(postId: String): Result<SocialCommentsSummaryDto> = runCatching {
+        val response = feedApi.summarizePostComments(postId)
+        val body = response.body()
+        if (response.isSuccessful && body != null) {
+            body
+        } else {
+            val raw = response.errorBody()?.string().orEmpty()
+            val msg = ir.coffevista.vista_native.core.network.BackendErrorParser.parse(raw).message
+                ?: "خلاصه‌سازی نظرات با خطا مواجه شد"
+            throw IllegalStateException(msg)
+        }
+    }
+
     private fun storageKey(accountId: String, kind: FeedKind): String = when (kind) {
         FeedKind.Explore -> accountId
         FeedKind.Following -> "$accountId${NAMESPACE_SEPARATOR}following"

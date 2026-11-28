@@ -95,6 +95,7 @@ fun PostDetailScreen(
     BackHandler(onBack = onBack)
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val commentsState by commentsViewModel.uiState.collectAsStateWithLifecycle()
+    val postAiState by viewModel.postAiState.collectAsStateWithLifecycle()
     val currentPost = (uiState as? PostDetailUiState.Content)?.post
     val postId = currentPost?.id
     var showShareSheet by remember { mutableStateOf(false) }
@@ -118,6 +119,7 @@ fun PostDetailScreen(
         onLikeClick = { _, isLiked, count -> viewModel.toggleLike(isLiked, count) },
         onSaveClick = { _, isSaved -> viewModel.toggleSave(isSaved) },
         onShareClick = { showShareSheet = true },
+        onAiAnalyzeClick = { post -> viewModel.requestPostAnalysis(post) },
         onEditPost = { showEditDialog = true },
         onDeletePost = viewModel::deletePost,
         onReportPost = { showReportDialog = true },
@@ -238,6 +240,16 @@ fun PostDetailScreen(
             },
         )
     }
+    PostAiAnalysisBottomSheet(
+        state = postAiState,
+        onSelectMode = { mode ->
+            postAiState.post?.let { post -> viewModel.requestPostAnalysis(post, mode) }
+        },
+        onRetry = {
+            postAiState.post?.let { post -> viewModel.requestPostAnalysis(post, postAiState.mode) }
+        },
+        onDismiss = viewModel::dismissPostAnalysis,
+    )
 }
 
 @Composable
@@ -250,6 +262,7 @@ internal fun PostDetailContent(
     onLikeClick: (String, Boolean, Long) -> Unit = { _, _, _ -> },
     onSaveClick: (String, Boolean) -> Unit = { _, _ -> },
     onShareClick: (FeedPost) -> Unit = {},
+    onAiAnalyzeClick: (FeedPost) -> Unit = {},
     onEditPost: () -> Unit = {},
     onDeletePost: () -> Unit = {},
     onReportPost: () -> Unit = {},
@@ -319,6 +332,7 @@ internal fun PostDetailContent(
                         onLikeClick = onLikeClick,
                         onSaveClick = onSaveClick,
                         onShareClick = onShareClick,
+                        onAiAnalyzeClick = onAiAnalyzeClick,
                         onEditPost = onEditPost,
                         onDeletePost = onDeletePost,
                         onReportPost = onReportPost,
@@ -452,6 +466,7 @@ private fun ReadOnlyPostDetail(
     onLikeClick: (String, Boolean, Long) -> Unit,
     onSaveClick: (String, Boolean) -> Unit,
     onShareClick: (FeedPost) -> Unit,
+    onAiAnalyzeClick: (FeedPost) -> Unit = {},
     onEditPost: () -> Unit = {},
     onDeletePost: () -> Unit,
     onReportPost: () -> Unit = {},
@@ -566,6 +581,7 @@ private fun ReadOnlyPostDetail(
                     onSaveClick = onSaveClick,
                     onCommentClick = {},
                     onShareClick = { onShareClick(state.post) },
+                    onAiAnalyzeClick = { onAiAnalyzeClick(state.post) },
                     onEditPost = onEditPost,
                     onDeletePost = onDeletePost,
                     onReportPost = onReportPost,

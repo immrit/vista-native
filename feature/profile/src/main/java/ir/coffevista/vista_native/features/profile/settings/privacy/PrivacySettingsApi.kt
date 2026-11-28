@@ -113,6 +113,7 @@ data class PrivacySettingsDto(
     val read_receipts: Boolean = true,
     val allow_profile_zoom: Boolean = true,
     val inactive_account_ttl: String = "6_months",
+    @kotlinx.serialization.SerialName("allow_ai_profile_analysis") val allow_ai_profile_analysis: Boolean = true,
 )
 
 @Serializable

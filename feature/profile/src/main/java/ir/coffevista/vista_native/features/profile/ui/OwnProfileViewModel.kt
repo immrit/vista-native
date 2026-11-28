@@ -53,6 +53,46 @@ class OwnProfileViewModel @Inject constructor(
     private val _activeNote = MutableStateFlow<ir.coffevista.vista_native.features.profile.data.ProfileNoteDto?>(null)
     val activeNote: StateFlow<ir.coffevista.vista_native.features.profile.data.ProfileNoteDto?> = _activeNote.asStateFlow()
 
+    private val _profileAiState = MutableStateFlow(ProfileAiUiState())
+    val profileAiState: StateFlow<ProfileAiUiState> = _profileAiState.asStateFlow()
+
+    fun analyzeOwnProfile(mode: String = "insight") {
+        val userId = currentUserId ?: return
+        _profileAiState.value = ProfileAiUiState(
+            isVisible = true,
+            mode = mode,
+            isLoading = true,
+        )
+        viewModelScope.launch {
+            userProfileRepository.analyzePublicProfile(userId, mode)
+                .onSuccess { dto ->
+                    _profileAiState.update { current ->
+                        if (current.isVisible && current.mode == mode) {
+                            current.copy(isLoading = false, result = dto, error = null)
+                        } else {
+                            current
+                        }
+                    }
+                }
+                .onFailure { err ->
+                    _profileAiState.update { current ->
+                        if (current.isVisible && current.mode == mode) {
+                            current.copy(
+                                isLoading = false,
+                                error = err.message ?: "تحلیل هوشمند پروفایل با خطا مواجه شد",
+                            )
+                        } else {
+                            current
+                        }
+                    }
+                }
+        }
+    }
+
+    fun dismissProfileAi() {
+        _profileAiState.value = ProfileAiUiState()
+    }
+
     fun loadHighlights() {
         val userId = currentUserId ?: return
         viewModelScope.launch {

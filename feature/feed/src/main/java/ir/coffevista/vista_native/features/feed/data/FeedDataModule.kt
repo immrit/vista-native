@@ -159,6 +159,29 @@ object FeedApiModule {
 
             override suspend fun unfollow(request: FollowActionRequestDto) =
                 remote.unfollow(request)
+
+            override suspend fun analyzePost(
+                postId: String,
+                request: SocialPostAnalyzeRequestDto,
+            ): retrofit2.Response<SocialPostAnalysisDto> {
+                fixtures.forEach { fixture ->
+                    fixture.postAnalysisOrNull(postId, request.mode)?.let {
+                        return retrofit2.Response.success(it)
+                    }
+                }
+                return remote.analyzePost(postId, request)
+            }
+
+            override suspend fun summarizePostComments(
+                postId: String,
+            ): retrofit2.Response<SocialCommentsSummaryDto> {
+                fixtures.forEach { fixture ->
+                    fixture.commentsSummaryOrNull(postId)?.let {
+                        return retrofit2.Response.success(it)
+                    }
+                }
+                return remote.summarizePostComments(postId)
+            }
         }
     }
 

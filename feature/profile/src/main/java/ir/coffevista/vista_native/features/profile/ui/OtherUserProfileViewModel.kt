@@ -43,6 +43,45 @@ class OtherUserProfileViewModel @Inject constructor(
     private val effectChannel = Channel<OtherUserProfileEffect>(Channel.BUFFERED)
     val effects = effectChannel.receiveAsFlow()
 
+    private val _profileAiState = MutableStateFlow(ProfileAiUiState())
+    val profileAiState: StateFlow<ProfileAiUiState> = _profileAiState.asStateFlow()
+
+    fun analyzeProfile(mode: String = "insight") {
+        _profileAiState.value = ProfileAiUiState(
+            isVisible = true,
+            mode = mode,
+            isLoading = true,
+        )
+        viewModelScope.launch {
+            repository.analyzePublicProfile(profileUserId, mode)
+                .onSuccess { dto ->
+                    _profileAiState.update { current ->
+                        if (current.isVisible && current.mode == mode) {
+                            current.copy(isLoading = false, result = dto, error = null)
+                        } else {
+                            current
+                        }
+                    }
+                }
+                .onFailure { err ->
+                    _profileAiState.update { current ->
+                        if (current.isVisible && current.mode == mode) {
+                            current.copy(
+                                isLoading = false,
+                                error = err.message ?: "تحلیل هوشمند پروفایل با خطا مواجه شد",
+                            )
+                        } else {
+                            current
+                        }
+                    }
+                }
+        }
+    }
+
+    fun dismissProfileAi() {
+        _profileAiState.value = ProfileAiUiState()
+    }
+
     init {
         val viewer = viewerAccountId
         if (viewer == null) {

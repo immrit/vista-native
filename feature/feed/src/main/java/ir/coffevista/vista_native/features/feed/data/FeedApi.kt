@@ -107,4 +107,15 @@ interface FeedApi {
 
     @retrofit2.http.POST("v1/me/unfollow")
     suspend fun unfollow(@retrofit2.http.Body request: FollowActionRequestDto): retrofit2.Response<FollowActionResponseDto>
+
+    @retrofit2.http.POST("v1/social-ai/posts/{postId}/analyze")
+    suspend fun analyzePost(
+        @Path("postId") postId: String,
+        @retrofit2.http.Body request: SocialPostAnalyzeRequestDto,
+    ): retrofit2.Response<SocialPostAnalysisDto>
+
+    @GET("v1/social-ai/posts/{postId}/comments-summary")
+    suspend fun summarizePostComments(
+        @Path("postId") postId: String,
+    ): retrofit2.Response<SocialCommentsSummaryDto>
 }

@@ -23,6 +23,10 @@ interface FeedApiFixture {
         limit: Int,
         offset: Int,
     ): FeedResponseDto? = null
+
+    suspend fun postAnalysisOrNull(postId: String, mode: String): SocialPostAnalysisDto? = null
+
+    suspend fun commentsSummaryOrNull(postId: String): SocialCommentsSummaryDto? = null
 }
 
 @Module

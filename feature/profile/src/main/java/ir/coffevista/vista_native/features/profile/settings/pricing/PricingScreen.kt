@@ -32,9 +32,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.EditNote
 import androidx.compose.material.icons.outlined.MusicNote
+import androidx.compose.material.icons.outlined.Psychology
 import androidx.compose.material.icons.outlined.TextSnippet
 import androidx.compose.material.icons.outlined.Timelapse
 import androidx.compose.material.icons.outlined.TrendingUp
@@ -145,6 +147,16 @@ fun PricingScreen(
     val activeGateway = uiState.activeGateway
 
     val features = listOf(
+        PremiumFeatureUiModel(
+            Icons.Outlined.AutoAwesome,
+            "دسترسی به هوش مصنوعی Vista AI",
+            "سهمیه اشتراک برنزی در ai.cafevista.ir و اولویت در مدل‌های Vista-1 Flash و Vista-1 Social.",
+        ),
+        PremiumFeatureUiModel(
+            Icons.Outlined.Psychology,
+            "تحلیل هوشمند پست، نظرات و پروفایل",
+            "خلاصه‌سازی نظرات، راستی‌آزمایی پست‌ها، سنجش تفاهم پروفایل و منشن @vista.",
+        ),
         PremiumFeatureUiModel(
             Icons.Outlined.Verified,
             "نشان تأیید طلایی ویستا",
@@ -594,13 +606,65 @@ fun PricingScreen(
                                 Spacer(modifier = Modifier.height(6.dp))
 
                                 Text(
-                                    text = "تجربه‌ای فراتر از استاندارد با امکانات ویژه",
+                                    text = "تجربه‌ای فراتر از استاندارد با امکانات ویژه + Vista AI",
                                     style = MaterialTheme.typography.bodyMedium.copy(
                                         color = Color(0xFF4E342E),
                                         fontSize = 13.sp,
                                     ),
                                     textAlign = TextAlign.Center,
                                 )
+                            }
+                        }
+
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp)
+                                .padding(bottom = 12.dp),
+                            shape = RoundedCornerShape(18.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = Color(0xFF1E1B2E),
+                            ),
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(0xFF8B5CF6).copy(alpha = 0.25f)),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.AutoAwesome,
+                                        contentDescription = null,
+                                        tint = Color(0xFFC4B5FD),
+                                        modifier = Modifier.size(22.dp),
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "همراه با اشتراک برنزی Vista AI",
+                                        style = MaterialTheme.typography.titleSmall.copy(
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White,
+                                        ),
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = "دسترسی در ai.cafevista.ir، خلاصه نظرات، تحلیل پست و منشن @vista بدون هزینه اضافه.",
+                                        style = MaterialTheme.typography.bodySmall.copy(
+                                            color = Color(0xFFD1D5DB),
+                                            fontSize = 11.5.sp,
+                                            lineHeight = 18.sp,
+                                        ),
+                                    )
+                                }
                             }
                         }
 

@@ -112,6 +112,7 @@ fun CommentsBottomSheet(
     onNavigateToPremium: () -> Unit = {},
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val summaryState by viewModel.commentsSummaryState.collectAsStateWithLifecycle()
     val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var reportCommentTargetId by remember { mutableStateOf<String?>(null) }
@@ -168,10 +169,40 @@ fun CommentsBottomSheet(
                     text = "نظرات",
                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                 )
+                Spacer(Modifier.weight(1f))
+                if (uiState.comments.size >= 2) {
+                    Surface(
+                        onClick = viewModel::summarizeComments,
+                        shape = RoundedCornerShape(16.dp),
+                        color = Color(0xFF8B5CF6).copy(alpha = 0.14f),
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            VistaAiSparkleIcon(
+                                tint = Color(0xFF8B5CF6),
+                                modifier = Modifier.size(14.dp),
+                            )
+                            Spacer(Modifier.width(5.dp))
+                            Text(
+                                text = "خلاصه با Vista AI",
+                                color = Color(0xFF8B5CF6),
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
+                    }
+                }
             }
             HorizontalDivider(
                 color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
                 thickness = 0.5.dp,
+            )
+            CommentsSummaryBanner(
+                state = summaryState,
+                onDismiss = viewModel::dismissCommentsSummary,
+                onRetry = viewModel::summarizeComments,
             )
             
             Box(
@@ -1115,6 +1146,31 @@ internal fun CommentComposer(
                     vertical = if (glassState != null) 10.dp else 16.dp,
                 )
         ) {
+            if (editingComment == null && !text.contains("@vista", ignoreCase = true)) {
+                Surface(
+                    onClick = {
+                        val trimmed = text.trimEnd()
+                        text = if (trimmed.isEmpty()) "@vista " else "$trimmed @vista "
+                    },
+                    shape = RoundedCornerShape(14.dp),
+                    color = Color(0xFF8B5CF6).copy(alpha = 0.12f),
+                    modifier = Modifier.padding(bottom = 8.dp),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        VistaAiSparkleIcon(tint = Color(0xFF8B5CF6), modifier = Modifier.size(13.dp))
+                        Spacer(Modifier.width(5.dp))
+                        Text(
+                            text = "بپرس از @vista",
+                            color = Color(0xFF8B5CF6),
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                }
+            }
             // Mention autocomplete chip row
             if (mentionMatch != null && availableMentions.isNotEmpty()) {
                 val matches = availableMentions.filter {

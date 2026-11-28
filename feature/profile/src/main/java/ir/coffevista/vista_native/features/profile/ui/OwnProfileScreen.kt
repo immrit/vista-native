@@ -149,6 +149,7 @@ fun OwnProfileScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val highlights by viewModel.highlights.collectAsStateWithLifecycle()
     val activeNote by viewModel.activeNote.collectAsStateWithLifecycle()
+    val profileAiState by viewModel.profileAiState.collectAsStateWithLifecycle()
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     var showOptionsSheet by rememberSaveable { mutableStateOf(false) }
     var showShareSheet by rememberSaveable { mutableStateOf(false) }
@@ -390,6 +391,7 @@ fun OwnProfileScreen(
                                         onShareProfile = onShareProfile ?: {
                                             showShareSheet = true
                                         },
+                                        onAnalyzeAi = { viewModel.analyzeOwnProfile("insight") },
                                     )
                                 },
                                 highlightsContent = {
@@ -621,6 +623,17 @@ fun OwnProfileScreen(
                     )
                 }
 
+                if (profileAiState.isVisible) {
+                    ProfileAiVibeBottomSheet(
+                        username = currentUsername,
+                        isOwnProfile = true,
+                        state = profileAiState,
+                        onSelectMode = { mode -> viewModel.analyzeOwnProfile(mode) },
+                        onRetry = { viewModel.analyzeOwnProfile(profileAiState.mode) },
+                        onDismiss = viewModel::dismissProfileAi,
+                    )
+                }
+
                 // Vista ID Card Dialog with 3D Flip
                 if (showVistaIdCard && contentState != null) {
                     val profile = contentState.profile
@@ -796,10 +809,11 @@ private fun OwnProfileAppBar(
 private fun OwnProfileActions(
     onEditProfile: (() -> Unit)?,
     onShareProfile: (() -> Unit)?,
+    onAnalyzeAi: (() -> Unit)? = null,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         ProfileActionButton(
             label = "ویرایش پروفایل",
@@ -811,6 +825,12 @@ private fun OwnProfileActions(
             onClick = onShareProfile,
             modifier = Modifier.weight(1f),
         )
+        if (onAnalyzeAi != null) {
+            VistaAiProfileButton(
+                onClick = onAnalyzeAi,
+                modifier = Modifier.weight(0.85f),
+            )
+        }
     }
 }
 

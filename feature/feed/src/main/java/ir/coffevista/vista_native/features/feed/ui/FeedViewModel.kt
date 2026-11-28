@@ -85,6 +85,45 @@ class FeedViewModel @Inject constructor(
     val storyUploadState: StateFlow<ir.coffevista.vista_native.features.stories.data.StoryUploadState> =
         storyUploadManager?.uploadState ?: MutableStateFlow(ir.coffevista.vista_native.features.stories.data.StoryUploadState())
 
+    private val _postAiState = MutableStateFlow(PostAiUiState())
+    val postAiState: StateFlow<PostAiUiState> = _postAiState.asStateFlow()
+
+    fun requestPostAnalysis(post: FeedPost, mode: String = "explain") {
+        _postAiState.value = PostAiUiState(
+            post = post,
+            mode = mode,
+            isLoading = true,
+        )
+        viewModelScope.launch {
+            feedRepository.analyzePost(post.id, mode)
+                .onSuccess { dto ->
+                    _postAiState.update { current ->
+                        if (current.post?.id == post.id && current.mode == mode) {
+                            current.copy(isLoading = false, result = dto, error = null)
+                        } else {
+                            current
+                        }
+                    }
+                }
+                .onFailure { err ->
+                    _postAiState.update { current ->
+                        if (current.post?.id == post.id && current.mode == mode) {
+                            current.copy(
+                                isLoading = false,
+                                error = err.message ?: "تحلیل هوشمند پست با خطا مواجه شد",
+                            )
+                        } else {
+                            current
+                        }
+                    }
+                }
+        }
+    }
+
+    fun dismissPostAnalysis() {
+        _postAiState.value = PostAiUiState()
+    }
+
     fun retryPostUpload() {
         postUploadManager?.retry()
     }

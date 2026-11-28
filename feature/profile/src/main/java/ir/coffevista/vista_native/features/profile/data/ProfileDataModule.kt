@@ -214,6 +214,18 @@ object ProfileDataModule {
             override suspend fun reportProfile(
                 request: ReportProfileRequestDto,
             ): retrofit2.Response<Unit> = remote.reportProfile(request)
+
+            override suspend fun analyzePublicProfile(
+                userId: String,
+                request: SocialProfileAnalyzeRequestDto,
+            ): retrofit2.Response<SocialProfileAnalysisDto> {
+                fixtures.forEach { fixture ->
+                    fixture.profileAnalysisOrNull(userId, request.mode)?.let {
+                        return retrofit2.Response.success(it)
+                    }
+                }
+                return remote.analyzePublicProfile(userId, request)
+            }
         }
     }
 

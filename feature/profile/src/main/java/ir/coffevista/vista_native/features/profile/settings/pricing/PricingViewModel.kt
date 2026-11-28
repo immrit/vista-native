@@ -81,6 +81,35 @@ class PricingViewModel @Inject constructor(
             val remoteCfg = SystemGateMonitor.remoteConfig.value
             val plans = plansBody?.plans
                 .orEmpty()
+                .ifEmpty {
+                    listOf(
+                        PricingPlanDto(
+                            planType = "monthly",
+                            priceToman = 299000L,
+                            meta = PricingPlanMetaDto(enabled = true),
+                        ),
+                        PricingPlanDto(
+                            planType = "three_monthly",
+                            priceToman = 749000L,
+                            meta = PricingPlanMetaDto(
+                                enabled = true,
+                                originalPriceToman = 897000L,
+                                badgeText = "پیشنهاد ویستا",
+                                recommended = true,
+                            ),
+                        ),
+                        PricingPlanDto(
+                            planType = "yearly",
+                            priceToman = 2490000L,
+                            meta = PricingPlanMetaDto(
+                                enabled = true,
+                                originalPriceToman = 3588000L,
+                                badgeText = "۳۰٪ صرفه‌جویی",
+                                recommended = false,
+                            ),
+                        ),
+                    )
+                }
                 .filter { it.priceToman > 0L }
                 .mapNotNull(::toUiPlan)
 
@@ -95,9 +124,9 @@ class PricingViewModel @Inject constructor(
                 .orEmpty()
                 .ifEmpty {
                     listOf(
-                        CoinPackageDto(id = "coins_1000", coins = 1000, bonus = 0, priceToman = 10000, amountRial = 100000),
-                        CoinPackageDto(id = "coins_5000", coins = 5000, bonus = 500, priceToman = 45000, amountRial = 450000),
-                        CoinPackageDto(id = "coins_12000", coins = 12000, bonus = 2000, priceToman = 90000, amountRial = 900000),
+                        CoinPackageDto(id = "coins_100", coins = 100, bonus = 0, priceToman = 29000, amountRial = 290000),
+                        CoinPackageDto(id = "coins_500", coins = 500, bonus = 50, priceToman = 129000, amountRial = 1290000),
+                        CoinPackageDto(id = "coins_1000", coins = 1000, bonus = 150, priceToman = 249000, amountRial = 2490000),
                     )
                 }
 

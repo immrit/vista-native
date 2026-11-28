@@ -298,3 +298,32 @@ data class FollowActionRequestDto(
 data class FollowActionResponseDto(
     @SerialName("status") val status: String? = null,
 )
+
+@Serializable
+data class SocialPostAnalyzeRequestDto(
+    val mode: String = "explain",
+)
+
+@Serializable
+data class SocialPostAnalysisDto(
+    @SerialName("post_id") val postId: String = "",
+    val mode: String = "explain",
+    val headline: String = "",
+    val verdict: String = "explained",
+    val summary: String = "",
+    @SerialName("key_points") val keyPoints: List<String> = emptyList(),
+    @SerialName("context_note") val contextNote: String = "",
+    val cached: Boolean = false,
+    @SerialName("provider_used") val providerUsed: String? = null,
+)
+
+@Serializable
+data class SocialCommentsSummaryDto(
+    @SerialName("post_id") val postId: String = "",
+    @SerialName("comment_count") val commentCount: Int = 0,
+    @SerialName("overall_mood") val overallMood: String = "",
+    val summary: String = "",
+    val viewpoints: List<String> = emptyList(),
+    val cached: Boolean = false,
+    @SerialName("provider_used") val providerUsed: String? = null,
+)

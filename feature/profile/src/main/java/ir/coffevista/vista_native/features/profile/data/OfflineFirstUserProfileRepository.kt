@@ -358,6 +358,21 @@ class OfflineFirstUserProfileRepository @Inject constructor(
         }
     }
 
+    override suspend fun analyzePublicProfile(
+        userId: String,
+        mode: String,
+    ): Result<SocialProfileAnalysisDto> = runCatching {
+        val response = api.analyzePublicProfile(userId, SocialProfileAnalyzeRequestDto(mode = mode))
+        val body = response.body()
+        if (response.isSuccessful && body != null) {
+            body
+        } else {
+            val errorBody = response.errorBody()?.string().orEmpty()
+            val parsedMessage = BackendErrorParser.parse(errorBody).message
+            throw Exception(parsedMessage ?: "تحلیل پروفایل با خطا مواجه شد")
+        }
+    }
+
     private fun malformed(detail: String): AppError = AppError(
         kind = ErrorKind.MALFORMED_RESPONSE,
         messageFa = "پاسخ سرور قابل پردازش نبود. لطفاً دوباره تلاش کنید",

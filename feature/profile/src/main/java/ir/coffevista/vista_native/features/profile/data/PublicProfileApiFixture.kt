@@ -13,6 +13,7 @@ interface PublicProfileApiFixture {
     suspend fun profileOrNull(userId: String): PublicProfileDto?
     suspend fun followOrNull(targetUserId: String): FollowActionResponseDto?
     suspend fun unfollowOrNull(targetUserId: String): UnfollowResponseDto?
+    suspend fun profileAnalysisOrNull(userId: String, mode: String): SocialProfileAnalysisDto? = null
 }
 
 @Module

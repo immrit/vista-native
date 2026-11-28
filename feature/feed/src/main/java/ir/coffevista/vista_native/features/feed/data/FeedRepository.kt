@@ -80,4 +80,8 @@ interface FeedRepository {
     suspend fun trackBehaviorEvent(event: BehaviorEventDto) = Unit
     suspend fun markPostNotInterestedLocal(postId: String) = Unit
     suspend fun updateAuthorFollowStatus(authorId: String, followStatus: String)
+    suspend fun analyzePost(postId: String, mode: String = "explain"): Result<SocialPostAnalysisDto> =
+        Result.failure(UnsupportedOperationException("تحلیل پست در دسترس نیست"))
+    suspend fun summarizePostComments(postId: String): Result<SocialCommentsSummaryDto> =
+        Result.failure(UnsupportedOperationException("خلاصه‌سازی نظرات در دسترس نیست"))
 }

@@ -82,11 +82,13 @@ fun OtherUserProfileScreen(
     onHighlightClick: ((ir.coffevista.vista_native.features.profile.data.ProfileHighlightDto) -> Unit)? = null,
     onNavigateToStoryEditor: ((android.net.Uri) -> Unit)? = null,
     onLocationClick: (String) -> Unit = {},
+    onAnalyzeAi: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val highlights by viewModel.highlights.collectAsStateWithLifecycle()
     val activeNote by viewModel.activeNote.collectAsStateWithLifecycle()
+    val profileAiState by viewModel.profileAiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(viewModel) {
@@ -123,9 +125,21 @@ fun OtherUserProfileScreen(
         onHighlightClick = onHighlightClick,
         onNavigateToStoryEditor = onNavigateToStoryEditor,
         onLocationClick = onLocationClick,
+        onAnalyzeAi = { viewModel.analyzeProfile("insight") },
         onAction = viewModel::onAction,
         modifier = modifier,
     )
+
+    if (profileAiState.isVisible) {
+        ProfileAiVibeBottomSheet(
+            username = state.profile?.username,
+            isOwnProfile = false,
+            state = profileAiState,
+            onSelectMode = { mode -> viewModel.analyzeProfile(mode) },
+            onRetry = { viewModel.analyzeProfile(profileAiState.mode) },
+            onDismiss = viewModel::dismissProfileAi,
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -154,6 +168,7 @@ internal fun OtherUserProfileContent(
     onHighlightClick: ((ir.coffevista.vista_native.features.profile.data.ProfileHighlightDto) -> Unit)? = null,
     onNavigateToStoryEditor: ((android.net.Uri) -> Unit)? = null,
     onLocationClick: (String) -> Unit = {},
+    onAnalyzeAi: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -280,6 +295,7 @@ internal fun OtherUserProfileContent(
                                         pending = state.followMutationPending,
                                         onAction = onAction,
                                         onMessage = onMessage,
+                                        onAnalyzeAi = onAnalyzeAi,
                                     )
                                 },
                                 highlightsContent = {
@@ -543,6 +559,7 @@ private fun OtherProfileActions(
     pending: FollowMutationPending?,
     onAction: (OtherUserProfileAction) -> Unit,
     onMessage: (() -> Unit)?,
+    onAnalyzeAi: (() -> Unit)? = null,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -577,6 +594,12 @@ private fun OtherProfileActions(
                 label = "پیام",
                 onClick = onMessage,
                 modifier = Modifier.weight(1f),
+            )
+        }
+        if (onAnalyzeAi != null && !profile.isPrivate) {
+            VistaAiProfileButton(
+                onClick = onAnalyzeAi,
+                modifier = Modifier.weight(0.85f),
             )
         }
     }

@@ -56,6 +56,11 @@ interface UserProfileRepository {
         reason: String,
         additionalDetails: String? = null,
     ): Result<Unit>
+
+    suspend fun analyzePublicProfile(
+        userId: String,
+        mode: String = "insight",
+    ): Result<SocialProfileAnalysisDto> = Result.failure(UnsupportedOperationException("تحلیل پروفایل در دسترس نیست"))
 }
 
 sealed interface ProfileRefreshResult {

@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.outlined.AccessTime
 import androidx.compose.material.icons.outlined.AlternateEmail
+import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.AutoDelete
 import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
@@ -293,6 +294,15 @@ fun PrivacySecurityScreen(
                         value = settings.allow_profile_zoom,
                         enabled = canEdit,
                         onChanged = { value -> viewModel.update { it.copy(allow_profile_zoom = value) } },
+                    )
+                    VistaSettingsDivider()
+                    VistaSettingsSwitch(
+                        icon = Icons.Outlined.AutoAwesome,
+                        title = "تحلیل هوش مصنوعی پروفایل عمومی",
+                        subtitle = "اجازه به دیگران برای تحلیل بیو و پست‌های عمومی شما با Vista AI (چت‌ها و ارتباطات خصوصی هرگز خوانده نمی‌شوند)",
+                        value = settings.allow_ai_profile_analysis,
+                        enabled = canEdit,
+                        onChanged = { value -> viewModel.update { it.copy(allow_ai_profile_analysis = value) } },
                     )
                     VistaSettingsDivider()
                     VistaSettingsTile(

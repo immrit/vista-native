@@ -297,6 +297,40 @@ class PostDetailViewModel @Inject constructor(
         viewModelScope.launch { runCatching { repository.trackFeedEvent(postId, "share") } }
     }
 
+    private val _postAiState = MutableStateFlow(PostAiUiState())
+    val postAiState: StateFlow<PostAiUiState> = _postAiState.asStateFlow()
+
+    fun requestPostAnalysis(post: FeedPost, mode: String = "explain") {
+        _postAiState.value = PostAiUiState(
+            post = post,
+            mode = mode,
+            isLoading = true,
+        )
+        viewModelScope.launch {
+            repository.analyzePost(post.id, mode)
+                .onSuccess { dto ->
+                    _postAiState.value = PostAiUiState(
+                        post = post,
+                        mode = mode,
+                        isLoading = false,
+                        result = dto,
+                    )
+                }
+                .onFailure { err ->
+                    _postAiState.value = PostAiUiState(
+                        post = post,
+                        mode = mode,
+                        isLoading = false,
+                        error = err.message ?: "تحلیل هوشمند پست با خطا مواجه شد",
+                    )
+                }
+        }
+    }
+
+    fun dismissPostAnalysis() {
+        _postAiState.value = PostAiUiState()
+    }
+
     private fun signedInAccountId(): String? =
         (authStateProvider.state.value as? AuthenticationState.SignedIn)?.context?.userId
 }

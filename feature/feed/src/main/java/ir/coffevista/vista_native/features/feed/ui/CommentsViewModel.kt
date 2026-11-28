@@ -7,6 +7,7 @@ import ir.coffevista.vista_native.core.common.toSafeUserError
 import ir.coffevista.vista_native.features.feed.data.Comment
 import ir.coffevista.vista_native.features.feed.data.CommentMention
 import ir.coffevista.vista_native.features.feed.data.CommentRepository
+import ir.coffevista.vista_native.features.feed.data.FeedRepository
 import ir.coffevista.vista_native.features.search.data.SearchRepository
 import ir.coffevista.vista_native.core.model.session.AuthenticationState
 import ir.coffevista.vista_native.core.model.session.AuthenticationStateProvider
@@ -53,6 +54,7 @@ class CommentsViewModel @Inject constructor(
     private val authStateProvider: AuthenticationStateProvider,
     private val ownProfileDao: OwnProfileDao,
     private val searchRepository: SearchRepository,
+    private val feedRepository: FeedRepository,
 ) : ViewModel() {
 
     constructor(
@@ -64,10 +66,14 @@ class CommentsViewModel @Inject constructor(
         authStateProvider = authStateProvider,
         ownProfileDao = ownProfileDao,
         searchRepository = NoOpSearchRepository,
+        feedRepository = NoOpFeedRepository,
     )
 
     private val _uiState = MutableStateFlow(CommentsUiState())
     val uiState: StateFlow<CommentsUiState> = _uiState.asStateFlow()
+
+    private val _commentsSummaryState = MutableStateFlow(CommentsSummaryUiState())
+    val commentsSummaryState: StateFlow<CommentsSummaryUiState> = _commentsSummaryState.asStateFlow()
     
     private var currentPostId: String? = null
     private var currentOffset = 0
@@ -153,8 +159,44 @@ class CommentsViewModel @Inject constructor(
 
     fun canReport(comment: Comment): Boolean = !isCurrentUser(comment.authorUserId)
 
+    fun summarizeComments() {
+        val postId = currentPostId ?: return
+        _commentsSummaryState.value = CommentsSummaryUiState(
+            isVisible = true,
+            isLoading = true,
+        )
+        viewModelScope.launch {
+            feedRepository.summarizePostComments(postId)
+                .onSuccess { dto ->
+                    if (currentPostId == postId) {
+                        _commentsSummaryState.value = CommentsSummaryUiState(
+                            isVisible = true,
+                            isLoading = false,
+                            result = dto,
+                        )
+                    }
+                }
+                .onFailure { err ->
+                    if (currentPostId == postId) {
+                        _commentsSummaryState.value = CommentsSummaryUiState(
+                            isVisible = true,
+                            isLoading = false,
+                            error = err.message ?: "خلاصه‌سازی نظرات ناموفق بود",
+                        )
+                    }
+                }
+        }
+    }
+
+    fun dismissCommentsSummary() {
+        _commentsSummaryState.value = CommentsSummaryUiState()
+    }
+
     fun loadComments(postId: String, force: Boolean = false) {
         if (currentPostId == postId && !force) return
+        if (currentPostId != postId) {
+            _commentsSummaryState.value = CommentsSummaryUiState()
+        }
         currentPostId = postId
         currentOffset = 0
         flatLoaded = emptyList()
@@ -565,4 +607,48 @@ private object NoOpSearchRepository : SearchRepository {
     override suspend fun deleteHistory(accountId: String, query: String) {}
     override suspend fun clearHistory(accountId: String) {}
     override suspend fun clearAccount(accountId: String) {}
+}
+
+private object NoOpFeedRepository : FeedRepository {
+    override fun observeFeed(accountId: String, kind: ir.coffevista.vista_native.features.feed.data.FeedKind) =
+        kotlinx.coroutines.flow.emptyFlow<ir.coffevista.vista_native.features.feed.data.FeedSnapshot>()
+    override fun getPostById(accountId: String, postId: String) =
+        kotlinx.coroutines.flow.emptyFlow<ir.coffevista.vista_native.features.feed.data.FeedPost?>()
+    override fun observeUserPosts(accountId: String, userId: String) =
+        kotlinx.coroutines.flow.emptyFlow<ir.coffevista.vista_native.features.feed.data.FeedSnapshot>()
+    override suspend fun refreshFeed(accountId: String, kind: ir.coffevista.vista_native.features.feed.data.FeedKind) =
+        ir.coffevista.vista_native.features.feed.data.FeedRefreshResult(0, false)
+    override suspend fun loadMoreFeed(accountId: String, kind: ir.coffevista.vista_native.features.feed.data.FeedKind) =
+        ir.coffevista.vista_native.features.feed.data.FeedAppendResult.EndReached
+    override suspend fun refreshPost(accountId: String, postId: String) =
+        throw UnsupportedOperationException()
+    override suspend fun refreshUserPosts(accountId: String, userId: String) =
+        ir.coffevista.vista_native.features.feed.data.FeedRefreshResult(0, false)
+    override suspend fun loadMoreUserPosts(accountId: String, userId: String) =
+        ir.coffevista.vista_native.features.feed.data.FeedAppendResult.EndReached
+    override suspend fun getHashtagPosts(accountId: String, hashtag: String, offset: Int) =
+        ir.coffevista.vista_native.features.feed.data.FeedSnapshot(emptyList(), false, 0)
+    override suspend fun getLocationPosts(accountId: String, location: String, offset: Int) =
+        ir.coffevista.vista_native.features.feed.data.FeedSnapshot(emptyList(), false, 0)
+    override suspend fun clearAccount(accountId: String) {}
+    override suspend fun toggleLike(accountId: String, postId: String, ownerId: String, isLiked: Boolean, newLikeCount: Long) {}
+    override suspend fun toggleSave(accountId: String, postId: String, isSaved: Boolean) {}
+    override suspend fun updatePost(
+        accountId: String,
+        postId: String,
+        content: String?,
+        hideLikeCount: Boolean?,
+        hideCommentCount: Boolean?,
+        moderationReason: String?,
+        clearContent: Boolean?,
+        clearImage: Boolean?,
+        clearVideo: Boolean?,
+        clearMusic: Boolean?,
+        notifyUser: Boolean?,
+    ) = throw UnsupportedOperationException()
+    override suspend fun deletePost(accountId: String, postId: String) {}
+    override suspend fun reportPost(postId: String, reportedUserId: String, reason: String, additionalDetails: String?) {}
+    override suspend fun submitAppeal(postId: String, reason: String) {}
+    override suspend fun trackFeedEvent(postId: String, eventType: String) {}
+    override suspend fun updateAuthorFollowStatus(authorId: String, followStatus: String) {}
 }

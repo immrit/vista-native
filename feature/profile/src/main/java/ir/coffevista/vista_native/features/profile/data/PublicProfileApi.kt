@@ -82,4 +82,28 @@ interface PublicProfileApi {
     suspend fun reportProfile(
         @Body request: ReportProfileRequestDto,
     ): Response<Unit>
+
+    @POST("v1/social-ai/profiles/{userId}/analyze")
+    suspend fun analyzePublicProfile(
+        @Path("userId") userId: String,
+        @Body request: SocialProfileAnalyzeRequestDto,
+    ): Response<SocialProfileAnalysisDto>
 }
+
+@kotlinx.serialization.Serializable
+data class SocialProfileAnalyzeRequestDto(
+    val mode: String = "insight",
+)
+
+@kotlinx.serialization.Serializable
+data class SocialProfileAnalysisDto(
+    @kotlinx.serialization.SerialName("target_user_id") val targetUserId: String = "",
+    val mode: String = "insight",
+    val title: String = "",
+    val summary: String = "",
+    val highlights: List<String> = emptyList(),
+    @kotlinx.serialization.SerialName("compatibility_score") val compatibilityScore: Int? = null,
+    val icebreaker: String = "",
+    val cached: Boolean = false,
+    @kotlinx.serialization.SerialName("provider_used") val providerUsed: String? = null,
+)

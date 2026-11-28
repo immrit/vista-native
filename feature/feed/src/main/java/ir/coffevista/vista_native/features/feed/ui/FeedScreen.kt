@@ -270,6 +270,7 @@ fun FeedScreen(
     val postUploadState by viewModel.postUploadState.collectAsStateWithLifecycle()
     val storyUploadState by viewModel.storyUploadState.collectAsStateWithLifecycle()
     val preferences by viewModel.settingsPreferences.collectAsStateWithLifecycle()
+    val postAiState by viewModel.postAiState.collectAsStateWithLifecycle()
     val isViewerBlueTick = ownProfile?.hasBlueBadge == true
     val viewerHasPremiumEdit = ownProfile?.hasPremiumPrivileges == true
     var premiumPromptFeature by remember { mutableStateOf<String?>(null) }
@@ -324,6 +325,7 @@ fun FeedScreen(
             showCommentsForPostId = postId
         },
         onShareClick = { post -> showShareForPost = post },
+        onAiAnalyzeClick = { post -> viewModel.requestPostAnalysis(post) },
         onEditPost = { post -> editPostTarget = post },
         onDeletePost = viewModel::deletePost,
         onReportPost = { post -> reportPostTarget = post },
@@ -462,6 +464,16 @@ fun FeedScreen(
             },
         )
     }
+    PostAiAnalysisBottomSheet(
+        state = postAiState,
+        onSelectMode = { mode ->
+            postAiState.post?.let { post -> viewModel.requestPostAnalysis(post, mode) }
+        },
+        onRetry = {
+            postAiState.post?.let { post -> viewModel.requestPostAnalysis(post, postAiState.mode) }
+        },
+        onDismiss = viewModel::dismissPostAnalysis,
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -484,6 +496,7 @@ internal fun FeedScreenContent(
     onSaveClick: (String, Boolean) -> Unit = { _, _ -> },
     onCommentClick: (String) -> Unit = {},
     onShareClick: (FeedPost) -> Unit = {},
+    onAiAnalyzeClick: (FeedPost) -> Unit = {},
     onEditPost: (FeedPost) -> Unit = {},
     onDeletePost: (String) -> Unit = {},
     onReportPost: (FeedPost) -> Unit = {},
@@ -692,6 +705,7 @@ internal fun FeedScreenContent(
                         onSaveClick = onSaveClick,
                         onCommentClick = onCommentClick,
                         onShareClick = onShareClick,
+                        onAiAnalyzeClick = onAiAnalyzeClick,
                         onEditPost = onEditPost,
                         onDeletePost = onDeletePost,
                         onReportPost = onReportPost,
@@ -1000,6 +1014,7 @@ internal fun FeedContent(
     onSaveClick: (String, Boolean) -> Unit,
     onCommentClick: (String) -> Unit,
     onShareClick: (FeedPost) -> Unit,
+    onAiAnalyzeClick: (FeedPost) -> Unit = {},
     onEditPost: (FeedPost) -> Unit = {},
     onDeletePost: (String) -> Unit,
     onReportPost: (FeedPost) -> Unit,
@@ -1257,6 +1272,10 @@ internal fun FeedContent(
                     engagedPostIds.add(post.id)
                     onShareClick(post)
                 },
+                onAiAnalyzeClick = {
+                    engagedPostIds.add(post.id)
+                    onAiAnalyzeClick(post)
+                },
                 onEditPost = { onEditPost(post) },
                 onDeletePost = { onDeletePost(post.id) },
                 onReportPost = { onReportPost(post) },
@@ -1355,6 +1374,7 @@ fun VistaFeedPostCard(
     onSaveClick: (String, Boolean) -> Unit = { _, _ -> },
     onCommentClick: (String) -> Unit = {},
     onShareClick: () -> Unit = {},
+    onAiAnalyzeClick: () -> Unit = {},
     onEditPost: () -> Unit = {},
     onDeletePost: () -> Unit = {},
     onReportPost: () -> Unit = {},
@@ -1566,6 +1586,7 @@ fun VistaFeedPostCard(
             onSaveClick = { onSaveClick(post.id, post.isSaved) },
             onCommentClick = { onCommentClick(post.id) },
             onShareClick = onShareClick,
+            onAiAnalyzeClick = onAiAnalyzeClick,
             onEditPost = onEditPost,
             onDeletePost = onDeletePost,
             onReportPost = onReportPost,
@@ -1919,6 +1940,7 @@ private fun PostActionRow(
     onSaveClick: () -> Unit,
     onCommentClick: () -> Unit,
     onShareClick: () -> Unit,
+    onAiAnalyzeClick: () -> Unit = {},
     onEditPost: () -> Unit,
     onDeletePost: () -> Unit,
     onReportPost: () -> Unit,
@@ -2086,6 +2108,25 @@ private fun PostActionRow(
                 contentDescription = "ارسال",
                 tint = actionTint,
                 modifier = Modifier.size(19.dp),
+            )
+        }
+        Spacer(Modifier.width(4.dp))
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = ripple(bounded = false, radius = 22.dp),
+                    onClick = {
+                        vistaHaptics.tap()
+                        onAiAnalyzeClick()
+                    },
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            VistaAiSparkleIcon(
+                tint = Color(0xFF8B5CF6),
+                modifier = Modifier.size(18.dp),
             )
         }
         Spacer(Modifier.weight(1f))

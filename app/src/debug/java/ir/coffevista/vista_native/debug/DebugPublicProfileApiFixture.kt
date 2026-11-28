@@ -10,6 +10,7 @@ import ir.coffevista.vista_native.core.database.profile.PublicProfileDao
 import ir.coffevista.vista_native.features.profile.data.FollowActionResponseDto
 import ir.coffevista.vista_native.features.profile.data.PublicProfileApiFixture
 import ir.coffevista.vista_native.features.profile.data.PublicProfileDto
+import ir.coffevista.vista_native.features.profile.data.SocialProfileAnalysisDto
 import ir.coffevista.vista_native.features.profile.data.UnfollowResponseDto
 import ir.coffevista.vista_native.features.profile.data.UserProfileRepository
 import java.io.IOException
@@ -59,6 +60,58 @@ class DebugPublicProfileApiFixture @Inject constructor() : PublicProfileApiFixtu
         failIfRequested()
         relationship[targetUserId] = "none"
         return UnfollowResponseDto(status = "unfollowed")
+    }
+
+    override suspend fun profileAnalysisOrNull(
+        userId: String,
+        mode: String,
+    ): SocialProfileAnalysisDto? {
+        if (scenario != "valid-session") return null
+        return when (mode) {
+            "roast" -> SocialProfileAnalysisDto(
+                targetUserId = userId,
+                mode = "roast",
+                title = "شوخی دوستانه با سبک حضور در ویستا",
+                summary = "این پروفایل آن‌قدر منظم و حساب‌شده طراحی شده که انگار حتی برای نوشیدن قهوه هم چک‌لیست طراحی محصول دارد! 😄",
+                highlights = listOf(
+                    "بایو کوتاه و مرموز؛ طوری که انگار هر کلمه‌اش هزینه اشتراک داشته است.",
+                    "علاقه جدی به تست تمام جزئیات فید قبل از آنکه بقیه متوجه وجودشان شوند.",
+                    "همیشه یک نظر آماده در آستین دارد که بحث را وارد مرحله جدیدی کند.",
+                ),
+                icebreaker = "راستش را بگو؛ قبل از انتشار هر پست چند بار ویرگول‌هایش را جابه‌جا می‌کنی؟ 😄",
+                cached = false,
+                providerUsed = "Vista-1 Social",
+            )
+            "compatibility" -> SocialProfileAnalysisDto(
+                targetUserId = userId,
+                mode = "compatibility",
+                title = "سنجش تفاهم و نقاط اشتراک فکری",
+                summary = "بر اساس علایق عمومی، سبک نگارش پست‌ها و تعاملات آشکار، سطح هم‌فکری شما بسیار بالاست و در مباحث فناوری و طراحی زبان مشترکی دارید.",
+                highlights = listOf(
+                    "توجه مشترک به کیفیت تجربه کاربری، جزئیات بصری و تعاملات هدفمند.",
+                    "ریتم مشابه در انتشار محتوای تحلیلی و پرسش‌گر در فضای عمومی ویستا.",
+                    "پتانسیل بالا برای گفتگوهای عمیق درباره محصول، هوش مصنوعی و طراحی.",
+                ),
+                compatibilityScore = 87,
+                icebreaker = "دیدگاهت درباره طراحی مینیمال و تجربه کاربری برایم جالب بود؛ به نظرت مهم‌ترین جزئیات در رابط کاربری چیست؟",
+                cached = false,
+                providerUsed = "Vista-1 Social",
+            )
+            else -> SocialProfileAnalysisDto(
+                targetUserId = userId,
+                mode = "insight",
+                title = "پرسونا و الگوی محتوایی عمومی",
+                summary = "حضور عمومی این کاربر ترکیبی از نگاه تحلیلی به فناوری، کنجکاوی درباره تجربه کاربری و تعامل ساختارمند با جامعه ویستاست.",
+                highlights = listOf(
+                    "سبک نگارش روشن، دقیق و متمرکز بر کیفیت و کارکرد واقعی قابلیت‌ها.",
+                    "علاقه‌مند به کشف ایده‌های نو و مطرح کردن پرسش‌های بحث‌برانگیز در فید.",
+                    "تعامل عمومی فعال بدون پراکنده‌گویی و با تمرکز بر موضوعات تخصصی.",
+                ),
+                icebreaker = "موضوعاتی که در پست‌هایت دنبال می‌کنی زاویه دید متفاوتی دارند؛ آخرین پروژه‌ای که رویش تمرکز داری چیست؟",
+                cached = false,
+                providerUsed = "Vista-1 Flash",
+            )
+        }
     }
 
     fun failNextMutation() {
